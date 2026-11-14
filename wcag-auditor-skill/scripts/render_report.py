@@ -45,8 +45,8 @@ def main() -> int:
     except Exception as exc:
         print(f"Unable to read report: {exc}", file=sys.stderr)
         return 2
-    c = supports_color(args.color)
-    P = lambda t, s: paint(t, s, c)  # noqa: E731
+    color = supports_color(args.color)
+    P = lambda t, s: paint(t, s, color)  # noqa: E731
     sc, meta, h = d['scope'], d['metadata'], d['headline']
     pages = {p['id']: p for p in meta['sample']}
     out = []
@@ -77,12 +77,16 @@ def main() -> int:
     for t in meta['tools']:
         w(f"- {t['name']} {t['version']} ({t['license']}): {P(t['status'], TOOL_STYLE[t['status']])}" + (f" - {t['reason']}" if t['reason'] else ''))
     cut = {}
-    for c in meta['checks']:
-        if c['status'] == 'partial':
-            cut.setdefault(c['name'], []).append(f"{c['page']} {c['viewport']}")
+    for chk in meta['checks']:
+        if chk['status'] == 'partial':
+            cut.setdefault(chk['name'], []).append(f"{chk['page']} {chk['viewport']}" + (f" [{chk['state']}]" if chk.get('state') else ''))
     for name, where in sorted(cut.items()):
         w(P(f"- {name} probe partial (stopped before a full pass) on {len(where)} check(s): {', '.join(where[:6])}"
             + (' ...' if len(where) > 6 else ''), YELLOW))
+    for u in meta.get('untestable_surfaces') or []:
+        w(P(f"- untestable: {u['surface']} on {u['page']}: {u['reason']}", YELLOW))
+    if meta.get('mobile_viewports'):
+        w(f"- touch emulation on {', '.join(meta['mobile_viewports'])}")
     w('')
     w(P('## Findings', BOLD))
     if not d['findings']:

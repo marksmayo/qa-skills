@@ -100,7 +100,7 @@ leverage (one fix covers several instances).
 
 ## Output
 
-`audit.json`, described by `schemas/audit.schema.json` (`schema_version` `"1.1"`; `"1.0"` reports still validate):
+`audit.json`, described by `schemas/audit.schema.json` (`schema_version` `"1.4"`; `"1.0"` to `"1.3"` reports still validate):
 
 | Section | Content |
 |---|---|

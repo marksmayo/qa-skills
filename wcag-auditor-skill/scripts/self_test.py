@@ -2,7 +2,10 @@
 """Self-test for the WCAG auditor's scripts: merge_findings.py --self-test (colour maths, generated ids),
 template grouping for one generated page in many folders, inner scroll panels a full-page screenshot
 cannot show (needs Playwright with Chromium; skipped without it), and validator cases (blocked_requests
-as run.json records it, an agent finding's re-readable basis).
+as run.json records it, an agent finding's re-readable basis). Also: --color never, named states in the
+check matrix, critical-path priority and untestable surfaces, one zoom-disabled candidate, and in
+Chromium the language script census, a blank canvas behind text, a page with no Tab stops and a touch
+viewport.
 
     python self_test.py
 
@@ -240,9 +243,171 @@ def validator_checks() -> list[str]:
     return fails
 
 
+def render_checks() -> list[str]:
+    """--color never writes no ANSI escape anywhere (the colour flag must not be shadowed by a loop variable)."""
+    import subprocess
+    fails = []
+    out = subprocess.run([sys.executable, str(HERE / 'render_report.py'), str(EXAMPLES / 'audit.example.json'), '--color', 'never'],
+                         capture_output=True, text=True, encoding='utf-8', errors='replace',
+                         env={**__import__('os').environ, 'PYTHONIOENCODING': 'utf-8'})
+    n = (out.stdout or '').count('\033')
+    if out.returncode or n:
+        fails.append(f'render_report.py --color never wrote {n} ANSI escape(s) (exit {out.returncode})')
+    return fails
+
+
+def state_matrix_checks() -> list[str]:
+    """A named state's engines and probes are planned checks too: a partial keyboard probe in a state counts against
+    completeness and confidence like one on the initial page."""
+    fails = []
+    sample = [{'id': 'p01', 'reason': 'listed'}]
+    pages = [{'page': 'p01', 'viewports': {'1280x800': {
+        'engines': {'axe-core': 'ran', 'ibm-equal-access': 'ran', 'htmlcs': 'ran'}, 'probes': {'keyboard': 'ran'},
+        'states': [{'name': 'menu_open', 'engines': {'axe-core': 'ran', 'ibm-equal-access': 'ran', 'htmlcs': 'errored'},
+                    'probes': {'keyboard': 'partial'}}]}}}]
+    fn = getattr(run_audit, 'check_matrix', None)
+    if fn is None:
+        return ['run_audit.check_matrix is missing: the check matrix is built inline and leaves named states out']
+    rows = fn(sample, pages, ['1280x800'], ['keyboard'], ['axe-core', 'ibm-equal-access', 'htmlcs'])
+    st = [r for r in rows if r.get('state') == 'menu_open']
+    if not any(r['name'] == 'keyboard' and r['status'] == 'partial' for r in st):
+        fails.append(f'the partial keyboard probe of state menu_open is not in the check matrix: {st}')
+    if not any(r['name'] == 'htmlcs' and r['status'] == 'errored' for r in st):
+        fails.append(f'the errored engine of state menu_open is not in the check matrix: {st}')
+    return fails
+
+
+def rating_checks() -> list[str]:
+    """RUBRIC: blocks_critical_path makes a finding P0; an agent finding re-readable from a basis keeps it.
+    A finding on a critical-path step that does not affect what the step needs (affects_step false) is not raised.
+    An untestable main surface caps overall confidence below high."""
+    fails = []
+    base = json.loads((EXAMPLES / 'audit.example.json').read_text(encoding='utf-8'))
+    f = {'severity': 'critical', 'evidence_type': 'agent_judgment', 'blocks_critical_path': True,
+         'basis': [{'file': 'index.html', 'line': 3, 'excerpt': 'window.addEventListener'}]}
+    if validate_audit.band(f, 4) != 'P0':
+        fails.append(f'an agent finding with a basis that blocks a critical path is {validate_audit.band(f, 4)}, not P0')
+    f2 = dict(f); f2.pop('basis')
+    if validate_audit.band(f2, 4) != 'P1':
+        fails.append(f'an agent finding with no basis and no candidate that blocks a critical path is {validate_audit.band(f2, 4)}, not P1')
+    g = {'base_severity': 'moderate', 'non_interference': False,
+         'critical_path': {'name': 'checkout', 'step': 'pay', 'affects_step': False}}
+    if validate_audit.expected_severity(g) != 'moderate':
+        fails.append('a critical-path finding marked affects_step false is still raised one level')
+    d = json.loads(json.dumps(base))
+    d['schema_version'] = '1.4'
+    d['metadata']['untestable_surfaces'] = [{'page': d['metadata']['sample'][0]['id'], 'surface': 'canvas.main',
+                                             'reason': 'the main canvas never painted: its content was not tested'}]
+    schema = json.loads(validate_audit.SCHEMA.read_text(encoding='utf-8'))
+    errs = validate_audit.schema_errors(d, schema, schema)
+    if errs:
+        fails.append(f'metadata.untestable_surfaces is a schema error: {errs[:2]}')
+    d['assisted_review']['scs_reviewed'] = d['assisted_review']['scs_reviewed'] or ['1.1.1']
+    for c in d['metadata']['checks']:
+        c['status'] = 'ran'
+    for t in d['metadata']['tools']:
+        t['status'] = 'ran'
+    if validate_audit.compute_summary(d)['overall_confidence'] == 'high':
+        fails.append('overall confidence is high although the main surface of a page is recorded as untestable')
+    return fails
+
+
+def zoom_merge_checks() -> list[str]:
+    """axe meta-viewport, the resize_text probe and an HTMLCS message on the viewport meta are one root cause: one
+    candidate with the zoom-disabled pattern."""
+    fails = []
+    run = json.loads((EXAMPLES / 'run' / 'run.json').read_text(encoding='utf-8'))
+    n = normalize.Norm(run)
+    rec = {'page': 'p01', 'url': run['sample'][0]['url'], 'viewport': '1280x800', 'state': 'initial', 'screenshot': None}
+    meta = '<meta name="viewport" content="width=device-width, user-scalable=no">'
+    n.add(rec, tool='axe-core', rule_id='meta-viewport', act_rules=['b4f0c3'], sc=['1.4.4'], kind='wcag', outcome='failed',
+          el={'xpath': '/html/head/meta[2]', 'sig': 'head > meta', 'html': meta}, html=meta)
+    n.probe(rec, 'resize_text.zoom_disabled', 'failed', message='Viewport meta prevents zoom')
+    n.add(rec, tool='htmlcs', rule_id='Guideline1_4.1_4_10.C32', sc=['1.4.10'], kind='wcag', outcome='failed',
+          el={'xpath': '/html/head/meta[2]', 'sig': 'head > meta', 'html': meta})
+    scs = validate_audit.load_scs()
+    cands = [c for c in merge_findings.merge(n.items, scs) if c['kind'] == 'wcag']
+    if len(cands) != 1:
+        fails.append(f'the zoom-disabled viewport meta came out as {len(cands)} candidates: '
+                     f'{[(c["component"], c["sc"], c["pattern"]) for c in cands]}')
+    elif cands[0]['pattern'] != '1.4.4-zoom-disabled':
+        fails.append(f'the zoom-disabled candidate has pattern {cands[0]["pattern"]}, not 1.4.4-zoom-disabled')
+    return fails
+
+
+LANG_PAGE = """<!doctype html><html lang="en"><body><main><h1>Настройки</h1>
+<p>Выберите язык интерфейса и нажмите кнопку, чтобы продолжить работу с приложением.</p>
+<p>Введите ключ доступа из пяти букв в поле ниже и сохраните изменения на этой странице.</p>
+<button>Сохранить</button></main></body></html>"""
+
+CANVAS_PAGE = """<!doctype html><html lang="en"><body style="margin:0;background:#fff">
+<canvas id="c" width="800" height="600" style="position:fixed;inset:0;width:100vw;height:100vh"></canvas>
+<p id="t" style="position:relative;color:#767676;margin:40px">Loading the player</p></body></html>"""
+
+
+def browser_probe_checks() -> tuple[list[str], str]:
+    """Probes in a real page: the language probe sees non-Latin text (a Cyrillic page marked lang=en), a blank canvas
+    behind text is not an unknown background, a page with no Tab stops is fully traversed (not partial), and a
+    mobile viewport emulates touch."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return [], 'skipped (Playwright not installed)'
+    fails = []
+    with tempfile.TemporaryDirectory() as tmp, sync_playwright() as pw:
+        try:
+            browser = pw.chromium.launch()
+        except Exception as exc:
+            return [], f'skipped ({type(exc).__name__})'
+        shots = Path(tmp)
+        r = run_audit.Runner({'probes': ['keyboard', 'language']}, shots, None)
+        page = browser.new_page(viewport={'width': 1000, 'height': 700})
+        page.set_content(LANG_PAGE)
+        r.inject_helpers(page)
+        lg = r.probe_language(page)
+        lg['status'] = 'ran'
+        run = json.loads((EXAMPLES / 'run' / 'run.json').read_text(encoding='utf-8'))
+        n = normalize.Norm(run)
+        rec = {'page': 'p01', 'url': run['sample'][0]['url'], 'viewport': '1000x700', 'state': 'initial', 'screenshot': None}
+        n.probes(rec, {'language': lg})
+        if not any(i['rule_id'] == 'language.mismatch' for i in n.items):
+            fails.append(f'a page of Cyrillic text marked lang="en" gives no language.mismatch (probe: detected '
+                         f'{lg.get("detected")}, script {lg.get("script")})')
+        page.set_content(CANVAS_PAGE)
+        r.inject_helpers(page)
+        ctx = page.evaluate("() => window.__qa.contrastTarget(['#t'])")
+        est = merge_findings.estimate(ctx)
+        if not est or est.get('unknown_background'):
+            fails.append(f'text over a canvas that was never drawn has an unknown background: {est}')
+        page.evaluate("() => { const g = document.getElementById('c').getContext('2d'); g.fillStyle = '#333'; g.fillRect(0, 0, 800, 600); }")
+        est = merge_findings.estimate(page.evaluate("() => window.__qa.contrastTarget(['#t'])"))
+        if not est or not est.get('unknown_background'):
+            fails.append(f'text over a painted canvas is estimated against the CSS background: {est}')
+        page.set_content('<!doctype html><html><body><div style="position:fixed;inset:0;cursor:pointer">Click to continue</div></body></html>')
+        r.inject_helpers(page)
+        res = r.probe_keyboard(page, shots, 'p01')
+        if res.get('status') == 'partial':
+            fails.append(f'a page with no focusable element is a partial keyboard probe: {res.get("reason")}')
+        page.close()
+        r = run_audit.Runner({'viewports': ['390x844'], 'mobile_viewports': ['390x844']}, shots, None)
+        ctx = r.new_context(browser, '390x844')
+        p = ctx.new_page()
+        p.set_content('<p>x</p>')
+        touch = p.evaluate("() => navigator.maxTouchPoints > 0 && matchMedia('(pointer: coarse)').matches")
+        ctx.close()
+        if not touch:
+            fails.append('a viewport listed in mobile_viewports does not emulate a touch device')
+        browser.close()
+    return fails, 'ran'
+
+
 def main() -> int:
     ok = merge_findings.self_test() == 0
-    for name, fn in (('run_audit.py: template grouping without landmarks', template_checks),
+    for name, fn in (('render_report.py: --color never', render_checks),
+                     ('run_audit.py: named states in the check matrix', state_matrix_checks),
+                     ('validate_audit.py: critical-path priority, affects_step and untestable surfaces', rating_checks),
+                     ('normalize.py/merge_findings.py: one zoom-disabled candidate', zoom_merge_checks),
+                     ('run_audit.py: template grouping without landmarks', template_checks),
                      ('validate_audit.py: blocked_requests, agent basis and partial probes', validator_checks),
                      ('normalize.py: a partial keyboard probe', normalize_partial_checks),
                      ('run_audit.py: crawl order across URL patterns', crawl_order_checks)):
@@ -252,6 +417,10 @@ def main() -> int:
     fails, how = scroll_checks()
     ok &= not fails
     print(f"self-test {'passed' if not fails else 'FAILED'}: inner scroll panels ({how})" + ''.join(f'\n  - {f}' for f in fails))
+    fails, how = browser_probe_checks()
+    ok &= not fails
+    print(f"self-test {'passed' if not fails else 'FAILED'}: language script, blank canvas, no Tab stops, touch viewport ({how})"
+          + ''.join(f'\n  - {f}' for f in fails))
     fails, how = keyboard_checks()
     ok &= not fails
     print(f"self-test {'passed' if not fails else 'FAILED'}: keyboard probe press limit and partial status ({how})"

@@ -222,7 +222,7 @@ wcag-auditor-skill/
   examples/audit.example.json
 ```
 
-## As built (v1.1.0)
+## As built (v1.1.0, updated to v1.5.0)
 
 Differences from the draft above, and decisions made while building:
 
@@ -430,3 +430,32 @@ Differences from the draft above, and decisions made while building:
   - Not done here: speculative connections (`preconnect`, `dns-prefetch`) that request interception
     can't see need a host-resolver guard in the shared browser harness; listed error pages still
     block probe-based passes.
+- **Found on a FastAPI app serving a hand-written static front end with a full-page canvas player,
+  fixed (v1.5.0, schema 1.4)**:
+  - `render_report.py --color never` still coloured everything after the Tools section: a loop
+    variable shadowed the colour flag. Renamed; the self-test renders the example with
+    `--color never` and counts escapes.
+  - A page with no Tab stops (an intro overlay listening on `window`) was a `partial` keyboard
+    probe ("0 of 0 elements not reached"). It now stops as `no_tab_stops` and is `ran`.
+  - Named states never entered the check matrix, so a state's partial keyboard probe left
+    completeness at 1.0 and confidence high. `run_audit.check_matrix` adds rows with `state` for
+    each state's engines and own probes (planned states that never ran are `blocked`).
+  - The language probe read Latin stop words only: Cyrillic text under `lang="en"` gave no
+    candidate. It now also counts letters per script and compares the dominant script with the
+    `lang` subtag's script (`language.mismatch`).
+  - A full-page `<canvas>` that was never painted made every contrast candidate an unknown
+    background. A canvas that reads blank (`toDataURL`, no drawing context created) is looked
+    through and the estimate's basis says so; a painted canvas stays unknown.
+  - The zoom-disabled viewport meta came out as three candidates (axe `meta-viewport` with the
+    text-lost pattern, the resize probe on `document`, an HTMLCS 1.4.10 message). Results about the
+    viewport meta now share one component and the `1.4.4-zoom-disabled` pattern.
+  - Rubric conflict: the agent-judgment P1 cap lowered a confirmed critical-path blocker. Now an
+    agent finding that blocks a critical path is P0 when it has a `basis` or a candidate; without
+    either the cap stays. `critical_path.affects_step: false` (with a `reason`) records a step
+    finding that is not raised. `metadata.untestable_surfaces` keeps overall confidence below high
+    when the main surface couldn't be tested.
+  - `mobile_viewports` emulates a touch phone (`is_mobile`, `has_touch`) for the listed viewports.
+  - The example run predates state check rows and was not re-captured; its candidates regenerate
+    unchanged and the report (schema 1.0) validates as before.
+  - Not done: a pointer-only full-viewport element with a `window` listener is still `cantTell`
+    (needs a press-and-watch probe), and 3.1.2 (language of parts) has no automated check.

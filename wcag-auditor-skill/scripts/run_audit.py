@@ -22,6 +22,10 @@ Config (JSON):
                        longer than long_lived_seconds (4), don't hold it open; events names them.
     wcag_version       "2.2" (default), "2.1" or "2.0";  level "AA" (default), "A" or "AAA"
     viewports          ["1280x800", "320x640"] (default)
+    mobile_viewports   viewports (from "viewports") audited as a phone: touch events, a coarse pointer, mobile
+                       layout (Playwright is_mobile and has_touch), e.g. ["390x844"]; "mobile_user_agent" sets
+                       its user agent. Without it every viewport is desktop Chromium, so touch-only controls
+                       are not exercised. run.json records mobile_viewports.
     engines            ["axe-core", "ibm-equal-access", "htmlcs"] (+ "vnu" if Java and the jar are available)
     probes             default: all of keyboard, focus_visible, reflow, text_spacing, resize_text,
                        target_size, hover_focus, motion, a11y_tree, language, media
@@ -280,6 +284,7 @@ class Runner:
         self.version = cfg.get('wcag_version', '2.2')
         self.level = cfg.get('level', 'AA')
         self.viewports = cfg.get('viewports') or ['1280x800', '320x640']
+        self.mobile_viewports = [v for v in (cfg.get('mobile_viewports') or []) if v in self.viewports]
         self.probes = cfg.get('probes') or ALL_PROBES
         self.rate = float(cfg.get('rate_limit_seconds', 1.0))
         self.allow_post = bool(cfg.get('allow_form_submission', False))
@@ -354,10 +359,16 @@ class Runner:
 
     def new_context(self, browser, vp: str, reduced_motion: str = 'no-preference', scale: float = 1):
         w, h = parse_vp(vp)
+        # a viewport listed in mobile_viewports emulates a phone: touch events, a coarse pointer and mobile layout
+        # (meta viewport honoured), so touch-only controls and (pointer: coarse) styles are what gets audited
+        mobile = vp in self.mobile_viewports
+        extra = {'is_mobile': True, 'has_touch': True} if mobile else {}
+        if mobile and self.cfg.get('mobile_user_agent'):
+            extra['user_agent'] = self.cfg['mobile_user_agent']
         ctx = browser.new_context(viewport={'width': w, 'height': h}, device_scale_factor=scale,
                                   reduced_motion=reduced_motion, storage_state=self.storage_state,
-                                  user_agent=None, ignore_https_errors=False, bypass_csp=self.bypass_csp,
-                                  service_workers=self.cfg.get('service_workers', 'block'))
+                                  ignore_https_errors=False, bypass_csp=self.bypass_csp,
+                                  service_workers=self.cfg.get('service_workers', 'block'), **extra)
         if self._session_script:
             ctx.add_init_script(script=self._session_script)
         ctx.route('**/*', self.guard)
@@ -673,6 +684,10 @@ class Runner:
         unreached = [f for f in focusable if f['xpath'] not in seen]
         # A traversal cut short by the press limit while it still had elements to reach measured only the start of
         # the Tab order: what it did not reach is not evidence of anything, so the probe is partial, not ran.
+        # A page with no Tab stop at all (nothing focusable, and Tab never focused anything) was fully traversed: the
+        # absence of stops is the evidence (2.1.1), not a probe cut short.
+        if stopped == 'press_limit' and not moves and not focusable:
+            stopped = 'no_tab_stops'
         partial = stopped == 'press_limit' and (bool(unreached) or len(moves) - last_new < 15)
         hover_only = [] if trap or start == 'active_element' else self.hover_only_menus(page, seen)
         pointer_only = targets['pointer_only'][:50]
@@ -1220,6 +1235,48 @@ class Runner:
         return out
 
 
+def check_matrix(sample: list[dict], pages: list[dict], viewports: list[str], probes: list[str], required: list[str],
+                 states_cfg: list[dict] | None = None) -> list[dict]:
+    """One row per planned check, for evidence completeness: page x viewport x required engine or applicable probe,
+    plus every named state's engines and its own probes (rows with a `state`). A state's probe that was cut short or
+    errored counts against completeness and confidence like one on the initial page."""
+    by_page = {p.get('page'): p for p in pages}
+    by_url = {}
+    for st in states_cfg or []:
+        by_url.setdefault(urldefrag(st.get('url', ''))[0], []).append(st)
+    checks = []
+    for s in sample:
+        pg = by_page.get(s['id']) or {}
+        for vp in viewports:
+            narrow = parse_vp(vp)[0] < 600
+            vc = (pg.get('viewports') or {}).get(vp)
+            blocked = 'blocked' if (pg.get('blocked') or pg.get('error') or s['reason'] == 'unreachable' or not vc or vc.get('error')) else None
+            for name in required:
+                checks.append({'page': s['id'], 'viewport': vp, 'kind': 'engine', 'name': name,
+                               'status': blocked or vc['engines'].get(name, 'not_run')})
+            for probe in probes:
+                if (probe in DESKTOP_ONLY and narrow) or (probe in NARROW_ONLY and not narrow):
+                    continue
+                checks.append({'page': s['id'], 'viewport': vp, 'kind': 'probe', 'name': probe,
+                               'status': blocked or vc['probes'].get(probe, 'not_run')})
+            # named states: those that ran are in vc['states']; planned ones that never did are blocked
+            done = {x.get('name'): x for x in ((vc or {}).get('states') or [])}
+            planned = [st for st in by_url.get(urldefrag(s.get('url') or '')[0], [])
+                       if (st.get('viewport') == vp) or (not st.get('viewport') and vp == viewports[0])]
+            names = list(dict.fromkeys([st['name'] for st in planned] + list(done)))
+            for name in names:
+                x = done.get(name) or {}
+                st_cfg = next((st for st in planned if st['name'] == name), {})
+                failed = 'blocked' if (blocked or x.get('error') or name not in done) else None
+                for eng in required:
+                    checks.append({'page': s['id'], 'viewport': vp, 'state': name, 'kind': 'engine', 'name': eng,
+                                   'status': failed or (x.get('engines') or {}).get(eng, 'not_run')})
+                for probe in list(dict.fromkeys(list(st_cfg.get('probes') or []) + list((x.get('probes') or {})))):
+                    checks.append({'page': s['id'], 'viewport': vp, 'state': name, 'kind': 'probe', 'name': probe,
+                                   'status': failed or x['probes'].get(probe, 'not_run')})
+    return checks
+
+
 def main() -> int:
     sys.stdout.reconfigure(errors='replace')
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1233,6 +1290,9 @@ def main() -> int:
     targets = cfg.get('targets') or []
     if not targets and not cfg.get('sitemap'):
         ap.error('config needs targets or sitemap')
+    stray = [v for v in cfg.get('mobile_viewports') or [] if v not in (cfg.get('viewports') or ['1280x800', '320x640'])]
+    if stray:
+        ap.error(f'mobile_viewports {stray} are not in viewports; list them in both')
     if not all(is_loopback(u) for u in targets + ([cfg['sitemap']] if cfg.get('sitemap') else [])) and not cfg.get('authorised_by'):
         print('Refusing: a non-loopback target needs "authorised_by" in the config (who confirmed you may test it).', file=sys.stderr)
         return 2
@@ -1280,25 +1340,11 @@ def main() -> int:
     # one row per planned check (page x viewport x required engine or applicable probe), for evidence completeness
     lock = {e['name']: e for e in fetch_engines.load_lock()['engines']}
     required = [n for n in ENGINE_NAMES if lock[n]['required']]
-    by_page = {p.get('page'): p for p in pages}
-    checks = []
-    for s in sample:
-        pg = by_page.get(s['id']) or {}
-        for vp in r.viewports:
-            narrow = parse_vp(vp)[0] < 600
-            vc = (pg.get('viewports') or {}).get(vp)
-            blocked = 'blocked' if (pg.get('blocked') or pg.get('error') or s['reason'] == 'unreachable' or not vc or vc.get('error')) else None
-            for name in required:
-                checks.append({'page': s['id'], 'viewport': vp, 'kind': 'engine', 'name': name,
-                               'status': blocked or vc['engines'].get(name, 'not_run')})
-            for probe in r.probes:
-                if (probe in DESKTOP_ONLY and narrow) or (probe in NARROW_ONLY and not narrow):
-                    continue
-                checks.append({'page': s['id'], 'viewport': vp, 'kind': 'probe', 'name': probe,
-                               'status': blocked or vc['probes'].get(probe, 'not_run')})
+    checks = check_matrix(sample, pages, r.viewports, r.probes, required, cfg.get('states') or [])
     run = {'tool': 'run_audit.py', 'started_at': started, 'finished_at': now(), 'config': safe_cfg, 'checks': checks,
            'wcag_version': r.version, 'level': r.level, 'browser': {'name': 'chromium', 'version': browser_version},
            'playwright': pw_version, 'engines': r.engine_status, 'probes': r.probes, 'viewports': r.viewports,
+           'mobile_viewports': r.mobile_viewports,
            'sample': [{k: s.get(k) for k in ('id', 'url', 'final_url', 'title', 'template', 'template_key', 'reason', 'error', 'captcha')} for s in sample],
            'unsampled': getattr(r, 'unsampled', []), 'pages': pages, 'blocked_requests': r.blocked, 'events': r.events,
            'authorised_by': cfg.get('authorised_by') or ('loopback target' if all(is_loopback(u) for u in targets) else None),

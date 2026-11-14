@@ -35,7 +35,9 @@ states; only 3.1.1), `partial` (automation finds some failures but never proves 
    describe how an SC fails, not the SC itself: an unnamed functional image is Critical, alt text
    that isn't equivalent is Moderate, both under 1.1.1.
 2. **Critical path: one level up** when the finding is on a critical-path step and affects what
-   the step needs (the booking form's fields, not the site logo on that page). Conformance
+   the step needs (the booking form's fields, not the site logo on that page). A finding on the
+   step that does not affect it keeps `critical_path` with `affects_step: false` and a `reason`:
+   no raise, and it can't block the path. Conformance
    requirement 3 (complete processes) means one failed step fails the whole process.
 3. **Non-interference: Critical**, whatever the pattern says.
 4. **Deviate only with a reason.** `severity_override_reason` explains why the default doesn't fit
@@ -63,12 +65,17 @@ most confident finding that fails it.
 
 | Band | Score | Floors and caps |
 |---|---|---|
-| **P0** | >= 24 | Also any finding with `blocks_critical_path` |
-| **P1** | >= 12 | Critical findings are at least P1; agent-judgment findings are at most P1 |
+| **P0** | >= 24 | Also any finding with `blocks_critical_path` (see below for agent judgment) |
+| **P1** | >= 12 | Critical findings are at least P1; agent-judgment findings are at most P1, except one that blocks a critical path and has a `basis` or a candidate |
 | **P2** | >= 6 | Serious findings are at least P2 |
 | **P3** | < 6 | |
 
 Rank by band, then score, then severity, then confidence.
+
+When the two rules meet, `blocks_critical_path` wins for an agent-judgment finding that can be
+re-checked (a source `basis` re-read with `--repo`, or a tool's needs-review candidate it rests
+on): a confirmed blocker is P0 whoever confirmed it. An agent-judgment blocker with neither stays
+P1.
 
 Examples: a critical component on every page (4 x 3 x 2 = 24) is P0; a serious site-wide component
 (18) is P1; a keyboard trap on one booking step (4, floor P1) is P0 because it blocks the path; a
@@ -91,8 +98,12 @@ sampled page x viewport x required engine and applicable probe). Blocked pages a
 engines count as planned and not ran, and so does a `partial` probe (the keyboard traversal
 stopped at its press limit before a full pass).
 
+Named states add rows (with `state`): their engines and their own probes count like the initial
+page's.
+
 `overall_confidence`: `high` when completeness >= 0.9, all three required engines ran and an
-assisted review was done and no check is `partial`; `medium` when completeness >= 0.6; otherwise
+assisted review was done, no check is `partial` and `metadata.untestable_surfaces` is empty (a
+page's main surface, such as a canvas app that never loaded, could not be tested); `medium` when completeness >= 0.6; otherwise
 `low`. Every partial probe is named in `limitations` as partial.
 
 ## Triage

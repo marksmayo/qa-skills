@@ -145,9 +145,29 @@
     const at = stack.findIndex(n => n === el || el.contains(n));
     for (const n of stack.slice(at < 0 ? 0 : at + 1)) {
       if (el.contains(n) || n.contains(el)) continue;
+      if (n.localName === 'canvas' && blankCanvas(n)) { lastBlank = { xpath: xpath(n), selector: cssPath(n) }; continue; }
       if (n.matches('img,video,canvas,picture,svg,object,embed')) return { tag: n.localName, xpath: xpath(n), selector: cssPath(n) };
     }
     return null;
+  }
+
+  // A canvas with no pixels painted (zero-sized, or every pixel transparent when read) shows the background behind
+  // it, so it is not an image background. Read with toDataURL, which never creates a drawing context; a tainted
+  // canvas throws and counts as painted. A WebGL canvas that does not preserve its drawing buffer can also read
+  // blank, so the estimate's basis says a blank canvas was looked through.
+  // Not cached: a canvas painted after the first read must count as painted.
+  let lastBlank = null;  // the blank canvas the last mediaBehind() looked through
+  function blankCanvas(c) {
+    let blank = false;
+    try {
+      if (!c.width || !c.height) blank = true;
+      else {
+        const ref = document.createElement('canvas');
+        ref.width = c.width; ref.height = c.height;
+        blank = c.toDataURL() === ref.toDataURL();
+      }
+    } catch (e) { blank = false; }
+    return blank;
   }
 
   function contrastContext(el) {
@@ -163,11 +183,12 @@
       if (alpha > 0 && !imgOn) overlays.push(s.backgroundColor);  // translucent layers in front of the image
     }
     let media = null;
+    lastBlank = null;
     try { media = mediaBehind(el); } catch (e) { media = null; }
     return { fg: cs.color, font_px: parseFloat(cs.fontSize), font_weight: Number(cs.fontWeight) || 400,
              bg_image_on: imgOn ? { xpath: xpath(imgOn), sig: sig(imgOn), selector: cssPath(imgOn) } : null,
              bg_image: image, bg_color: bgColor || 'rgb(255, 255, 255)', opaque_first: opaqueFirst, overlays: overlays.slice(0, 6),
-             media_behind: media, visually_hidden: visuallyHidden(el) };
+             media_behind: media, blank_canvas_behind: lastBlank, visually_hidden: visuallyHidden(el) };
   }
 
   function describe(el) {
@@ -321,6 +342,21 @@
     it: ['il', 'di', 'che', 'per', 'una', 'sono', 'con', 'non', 'della', 'gli', 'nel', 'questo', 'alla', 'anche', 'noi'],
     nl: ['de', 'het', 'een', 'en', 'van', 'ik', 'je', 'dat', 'niet', 'voor', 'met', 'zijn', 'wij', 'ons', 'uw'],
     pt: ['o', 'que', 'não', 'uma', 'os', 'para', 'com', 'você', 'por', 'mais', 'dos', 'como', 'mas', 'nosso', 'seu'],
+  };
+
+  // letters per script for the language probe; the order matters only for overlapping ranges (none here)
+  const SCRIPTS = [
+    ['Latin', /[A-Za-zÀ-ɏ]/], ['Cyrillic', /[Ѐ-ӿ]/], ['Greek', /[Ͱ-Ͽ]/],
+    ['Arabic', /[؀-ۿݐ-ݿ]/], ['Hebrew', /[֐-׿]/], ['Devanagari', /[ऀ-ॿ]/],
+    ['Thai', /[฀-๿]/], ['Hangul', /[가-힯ᄀ-ᇿ]/], ['Kana', /[぀-ヿ]/],
+    ['Han', /[一-鿿㐀-䶿]/], ['Armenian', /[԰-֏]/], ['Georgian', /[Ⴀ-ჿ]/],
+  ];
+  const LANG_SCRIPT = {
+    ru: 'Cyrillic', uk: 'Cyrillic', be: 'Cyrillic', bg: 'Cyrillic', mk: 'Cyrillic', kk: 'Cyrillic',
+    ky: 'Cyrillic', mn: 'Cyrillic', tg: 'Cyrillic', el: 'Greek', ar: 'Arabic', fa: 'Arabic', ur: 'Arabic', ps: 'Arabic',
+    // languages written in more than one script (sr, az, uz) are left out: they never give a mismatch
+    he: 'Hebrew', yi: 'Hebrew', hi: 'Devanagari', mr: 'Devanagari', ne: 'Devanagari', th: 'Thai', ko: 'Hangul',
+    ja: 'Han', zh: 'Han', hy: 'Armenian', ka: 'Georgian',
   };
 
   window.__qa = {
@@ -598,7 +634,26 @@
       const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
       const [top, second] = ranked;
       const detected = top[1] >= 20 && top[1] >= 2 * second[1] ? top[0] : null;
-      return { lang, valid, words: words.length, detected, counts };
+      // Script census: the stop words above only read Latin-script languages. Count letters per script and compare
+      // the dominant one with the script the lang subtag is written in (Cyrillic text under lang="en").
+      const text = (document.body && document.body.innerText) || '';
+      const letters = {};
+      let total = 0;
+      for (const ch of text) {
+        let s = null;
+        for (const [name, re] of SCRIPTS) { if (re.test(ch)) { s = name; break; } }
+        if (!s) continue;
+        letters[s] = (letters[s] || 0) + 1; total++;
+      }
+      const dom = Object.entries(letters).sort((a, b) => b[1] - a[1])[0];
+      const sub = lang ? lang.trim().split('-')[0].toLowerCase() : null;
+      const expected = sub ? (LANG_SCRIPT[sub] || (['sr', 'az', 'uz', 'tk'].includes(sub) ? null : 'Latin')) : null;
+      const share = dom && total ? Math.round(100 * dom[1] / total) / 100 : null;
+      const script = { dominant: dom && total >= 40 && share >= 0.6 ? dom[0] : null, share, letters: total, expected,
+                       counts: letters };
+      script.mismatch = !!(script.dominant && expected && script.dominant !== expected &&
+                           !(sub === 'ja' && script.dominant === 'Kana'));
+      return { lang, valid, words: words.length, detected, counts, script };
     },
   };
 })();
