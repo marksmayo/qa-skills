@@ -25,18 +25,18 @@ included router is computed, e.g. a loop over routers). A router included twice 
 `response_classes` lists the response classes a handler declares (`response_class=`) or builds
 (`StreamingResponse(...)`, Flask `send_file`), so a caller can compare them with the documented media type.
 WebSocket routes are left out unless scan_python(..., websockets=True).
-A route registered inside an `if` (or included by an include_router call inside one) carries `conditional`
+A route registered inside an `if` (or included by an include_router call inside one) carries `condition`
 ('if args.debug (server.py:28)'; nested ones joined with ' and '); a route with typed parameters carries `params` ([{name, converter,
 multi_segment}]) and, for `{x:path}` or Flask `<path:x>`, `catch_all: true` (it matches several segments).
 
 Static and mounted apps (result['static_mounts'], result['app_mounts']): `X.mount('/', StaticFiles(directory=
 'dist', html=True))`, Starlette `Mount('/static', app=StaticFiles(...))` and a Flask app's explicit
 `static_folder` (served at static_url_path) are static mounts {path, directory, html, name, file, line,
-framework, conditional?}; any other application mounted with X.mount(path, app) is an app mount.
+framework, condition?}; any other application mounted with X.mount(path, app) is an app mount.
 result['mounts'] lists both in one shape: {path, file, line, app ('StaticFiles' or the mounted app's name),
-static, directory, conditional (None when unconditional)}.
+static, directory, condition (None when unconditional)}.
 Middleware (result['middleware']): add_middleware(Cls) / Middleware(Cls) classes and @X.middleware,
-before_request and after_request functions, each with its `conditional` when registered under an `if`.
+before_request and after_request functions, each with its `condition` when registered under an `if`.
 `python py_routes.py --self-test` checks these idioms.
 
 Triggers (result['triggers']): Azure Functions non-HTTP triggers (`@app.blob_trigger(path=...)`,
@@ -562,7 +562,7 @@ class Project:
                                        'framework': fw, 'function': fn_name,
                                        'mount': status if lit else 'dynamic',
                                        **({'router_prefix': prefix} if prefix else {}),
-                                       **({'conditional': cond} if cond else {}),
+                                       **({'condition': cond} if cond else {}),
                                        **({'params': params} if any(p['converter'] != 'str' for p in params) else {}),
                                        **({'catch_all': True} if any(p['multi_segment'] for p in params) else {}),
                                        **({'response_classes': responses} if responses else {})})
@@ -580,13 +580,13 @@ class Project:
         """{static_mounts, app_mounts, middleware}. static_mounts: a StaticFiles app mounted with `X.mount(path,
         StaticFiles(directory=...))` or `Mount(path, app=StaticFiles(...))`, and a Flask app's explicit
         static_folder (served at static_url_path, default /<folder>): {path, directory, literal, html, name, file,
-        line, framework, conditional?}. app_mounts: any other application mounted with X.mount(path, app).
+        line, framework, condition?}. app_mounts: any other application mounted with X.mount(path, app).
         middleware: add_middleware(Cls) / Middleware(Cls) classes and @X.middleware / before_request functions."""
         static, apps, mw = [], [], []
         for m in self.modules.values():
             for node in ast.walk(m.tree):
                 cond = m.cond.get(id(node))
-                extra = {'conditional': cond} if cond else {}
+                extra = {'condition': cond} if cond else {}
                 if isinstance(node, ast.Call):
                     fname = _name(node.func)
                     is_mount = (isinstance(node.func, ast.Attribute) and fname == 'mount') or fname == 'Mount'
@@ -634,9 +634,9 @@ class Project:
                                        'line': d.lineno, **extra})
         key = lambda x: (x['file'], x['line'])   # noqa: E731
         mounts = [{'path': x['path'], 'file': x['file'], 'line': x['line'], 'app': 'StaticFiles', 'static': True,
-                   'directory': x['directory'], 'conditional': x.get('conditional')} for x in static] + \
+                   'directory': x['directory'], 'condition': x.get('condition')} for x in static] + \
                  [{'path': x['path'], 'file': x['file'], 'line': x['line'], 'app': x['app'], 'static': False,
-                   'directory': None, 'conditional': x.get('conditional')} for x in apps]
+                   'directory': None, 'condition': x.get('condition')} for x in apps]
         return {'static_mounts': sorted(static, key=key), 'app_mounts': sorted(apps, key=key),
                 'mounts': sorted(mounts, key=key), 'middleware': sorted(mw, key=key)}
 
@@ -1032,21 +1032,21 @@ def self_test() -> int:
     checks.append(('Flask <path:name> is a multi-segment catch-all', r.get('catch_all') is True, r))
     r = routes.get(('GET', '/debug/state')) or {}
     checks.append(('a route registered inside `if args.debug:` is conditional on it',
-                   r.get('conditional') == 'if args.debug (server.py:28)', r))
+                   r.get('condition') == 'if args.debug (server.py:28)', r))
     checks.append(('an unconditional route has no condition',
-                   'conditional' not in (routes.get(('GET', '/items/{item_id:int}')) or {'conditional': 1}), None))
+                   'condition' not in (routes.get(('GET', '/items/{item_id:int}')) or {'condition': 1}), None))
     mw = {m.get('name'): m for m in res.get('middleware') or []}
     checks.append(('middleware is listed: add_middleware under its condition, and @app.middleware functions',
-                   (mw.get('BasicAuthMiddleware') or {}).get('conditional') == 'if args.login (server.py:13)'
+                   (mw.get('BasicAuthMiddleware') or {}).get('condition') == 'if args.login (server.py:13)'
                    and (mw.get('add_cache_headers') or {}).get('kind') == 'function', mw))
     mounts = {(x.get('file'), x.get('path')): x for x in res.get('mounts') or []}
     want = {('server.py', '/'): {'app': 'StaticFiles', 'static': True, 'directory': 'dist'},
             ('server.py', '/tiles'): {'app': 'tiles_app', 'static': False, 'directory': None},
             ('server.py', '/static'): {'app': 'StaticFiles', 'static': True, 'directory': 'public'},
             ('site.py', '/'): {'app': 'StaticFiles', 'static': True, 'directory': 'www'}}
-    checks.append(('mounts lists every mount as {path, file, line, app, static, directory, conditional}',
+    checks.append(('mounts lists every mount as {path, file, line, app, static, directory, condition}',
                    set(mounts) == set(want) and all(all(mounts[k].get(f) == v for f, v in w.items())
-                                                    and 'line' in mounts[k] and 'conditional' in mounts[k]
+                                                    and 'line' in mounts[k] and 'condition' in mounts[k]
                                                     for k, w in want.items()), mounts))
     failed = 0
     for name, ok, extra in checks:

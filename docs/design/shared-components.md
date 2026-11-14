@@ -284,8 +284,8 @@ Found by running the skills on a FastAPI server that serves a committed, hand-wr
   reason, and generated JavaScript anywhere is `generated`.
 - **`py_routes.py`** returns `static_mounts` (`app.mount(path, StaticFiles(directory=...))`,
   Starlette `Mount`, a Flask `static_folder`), `app_mounts`, both again in one `mounts` list
-  (`{path, file, line, app, static, directory, conditional}`), and `middleware`; routes registered
-  under `if` carry `conditional` (`if args.debug (server.py:28)`), and `{path:path}` / `<path:x>` routes carry `params` and
+  (`{path, file, line, app, static, directory, condition}`), and `middleware`; routes registered
+  under `if` carry `condition` (`if args.debug (server.py:28)`), and `{path:path}` / `<path:x>` routes carry `params` and
   `catch_all`. `python py_routes.py --self-test` checks them.
 - **`browser_harness.py`**: Playwright routing turns the HTTP cache off, so `metadata()['http_cache']`
   says `disabled`; `http_cache: 'keep'` (Chromium) guards each page through its own CDP `Fetch`
