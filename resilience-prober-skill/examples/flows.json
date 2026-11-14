@@ -8,7 +8,8 @@
   "indicators": {"boundary_selectors": [".route-error"]},
   "flows": [
     {"name": "track", "critical_path": true, "steps": [
-      {"name": "open orders", "actions": [{"goto": "#orders"}], "done": "a.track"},
+      {"name": "open orders", "actions": [{"goto": "#orders"}], "done": "a.track",
+       "optional_endpoints": ["**/api/notices", "**/api/recommendations"]},
       {"name": "open tracking", "actions": [{"click": "a.track"}], "done": ".status"}]},
     {"name": "address", "critical_path": true, "write": true, "steps": [
       {"name": "open form", "actions": [{"goto": "#address"}], "done": "#street"},

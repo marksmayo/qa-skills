@@ -1,7 +1,7 @@
 ---
 name: resilience-prober
 description: Check how a running web app behaves when what it depends on goes wrong - slow or failing APIs, rate limits, expired sessions, hung requests, dropped connections, going offline, malformed payloads, one dependency down, flapping endpoints and failed script chunks. Each fault is injected in the browser only (Playwright routing), on a chosen step of a real user flow, after a clean baseline, with the expected outcome written before the run. Records what the user sees and loses - crashes, blank screens, endless spinners, silent failures, misleading empty states, lost input, no way to recover, retry storms - with screenshots, request logs and a standalone repro script. Never calls an app resilient.
-version: 1.2.0
+version: 1.3.0
 ---
 
 # Resilience prober
@@ -48,7 +48,8 @@ Native apps belong to the mobile app auditor.
 
 | Input | Default | Notes |
 |---|---|---|
-| `flows` | required | `flows.json`: site, app root, flows with named steps (actions, a `done` selector, `input`, `write`), `critical_path` |
+| `flows` | required | `flows.json`: site, app root, flows with named steps (actions, a `done` selector, `input`, `write`), `critical_path`. A step may add `done_not` (selectors or `text=` that must be absent for the step to count as done) and `optional_endpoints` (globs for background widgets the step does not need) |
+| `reload_after_recovery` | true | After recovery, reload and run the flow to the step again (reads under a failing or static-asset fault; writes are never sent again), recording requests to the endpoint and the Cache Storage entries; `false` turns it off |
 | `scenarios` | required | Explicit `{flow, step, endpoint, fault, method?, headers?, resource_type?, from?}` or `{"auto": {"endpoints": {...}, "faults": [...]}}` |
 | `faults` | `data/faults.json` standard set | Latency, server errors, rate limits, auth expiry, timeouts, connection, offline, payload, partial, flapping, static assets |
 | `budgets` | 10 s message, 30 s spinner | `data/indicators.json` |
@@ -84,13 +85,19 @@ the baselines before spending the scenarios: a flow whose baseline fails makes i
 3. **Run.** Baselines twice, then each scenario twice (reproduced or only observed). Faults on a flow's
    first step are in place before the page loads. Recovery uses the app's own retry control (an
    accessible name matching retry, try again, reload) or the step's actions again, never a reload; a
-   step that only types (type-ahead) is recovered by re-sending the field's value (`refill_input`).
+   step that only types (type-ahead) is recovered by re-sending the field's value (`refill_input`). A
+   step whose only action is a navigation cannot be repeated without reloading, so its recovery is
+   `reload` (not tried) and a `recovery_not_tried` note, never `recovered`. Then the page is reloaded
+   with the fault gone and the flow run to the step again: a step that makes no request to the endpoint
+   after the reload, when the server never answered it well in the run, replays a failure the app stored
+   (`persisted_failure`: Cache Storage, IndexedDB, localStorage).
 4. **Classify.** Effects per run, merged by root cause (one effect at one step and endpoint across
    faults; no recovery across a step's endpoints; retry storms per endpoint), rated by `RUBRIC.md`.
 5. **Triage.** `build_report.py` fills everything the run decides (scope, metadata, baseline, scenarios,
    coverage, unreachable, ratings, evidence, headline counts and confidence, provable limitations) and
    writes a guarded repro script per promoted candidate. Replace every `TODO`: promote, keep for
-   review, or dismiss with a checkable reason (an optional background widget left empty, an optimistic
+   review, or dismiss with a checkable reason (anything left in `needs_review` keeps the headline
+   confidence at medium at best; emptying it is what lets it reach high) (an optional background widget left empty, an optimistic
    update that rolls back with a message). For each finding write the title, the actual behaviour
    against the expected, the user impact, a fix (a timeout, an error state, keeping input, honouring
    Retry-After, a chunk retry), a verification step, and check the repro script.
@@ -100,6 +107,22 @@ the baselines before spending the scenarios: a flow whose baseline fails makes i
 python scripts/validate_resilience.py <run>/resilience_report.json --run <run>/run.json --scenarios <run>/scenarios.json --candidates <run>/candidates.json
 python scripts/render_report.py <run>/resilience_report.json [--brief]
 ```
+
+**A step's `done` must prove the data arrived, not only that the UI moved on.** An app that shows its
+"ready" text whether or not the download succeeded makes every server-error scenario look passed. A
+failing fault on a read whose step still completed, with no error shown, is a `misleading_state`
+(`shown_as_done`) unless the step lists the endpoint in `optional_endpoints`; give such steps a
+`done_not` (the app's error text) or a `done` only real data can produce. When the run cannot judge
+something the agent can document (stand-in data for a binary download, a canvas screen with no text),
+add `confidence_caps: [{"cap": "medium" | "low", "reason": ...}]`: it lowers the headline confidence,
+never raises it.
+
+A step whose baseline already shows under 20 visible characters (a canvas, a video) cannot be judged
+blank or crashed by its text: such runs give a `baseline_blank` note to check against the screenshots,
+and a screen with a visible video, canvas or large image (`media_visible`) is never `blank_screen`. A page
+error counts toward a crash only when it is new against the baseline and the app root emptied where the
+baseline's root had text. A static-asset fault that leaves the step incomplete is a `chunk_failure` even
+when the static HTML stays.
 
 Edge cases: service workers are blocked in scenarios (they would answer before routing); GraphQL needs
 faults matched on the operation name; WebSockets can be closed but not faked; third-party scripts are
@@ -135,7 +158,8 @@ writes were allowed, blocked requests, runs per scenario), `baseline` (per flow:
 broken flow the failed step, what it showed and screenshots), `scenarios[]` (with expected outcome,
 status `ran | untested | errored | not_triggered`, reason, effects, screenshots), `findings[]` (effect,
 impact, likelihood, reach, score, priority, confidence, floors, endpoints, faults, scenarios, expected,
-actual, user impact, evidence, repro, fix, verification), `notes[]` (`console_only`, `document_fault`, `recovery_not_tried`), `coverage` (per
+actual, user impact, evidence, repro, fix, verification), `notes[]` (`console_only`, `document_fault`, `recovery_not_tried`,
+`baseline_blank`), `confidence_caps[]` (optional: `{cap, reason}`), `coverage` (per
 fault group: ran, untested, errored, not_triggered), `unreachable[]`, `headline`, `needs_review[]`,
 `triage[]`, `limitations[]`. `run.json` keeps each matching request with its query (sensitive values
 redacted), whether the injector answered or held it, and its response time.
@@ -150,5 +174,5 @@ the plan. Findings match their candidates, cite runs that triggered the fault, c
 that ran with screenshots and request logs, and have repro scripts. A P0 is reproduced. Retry storms
 carry counts and timings; lost input carries lengths and hashes only. Console-only items are never
 findings. Coverage, the headline and confidence (low when under half the scenarios ran, a critical
-baseline failed, or scenarios ran once) are recomputed, and no summary, limitation or finding claims
+baseline failed, or scenarios ran once; lowered by any `confidence_caps`) are recomputed, and no summary, limitation or finding claims
 resilience, production readiness or graceful recovery from every failure.

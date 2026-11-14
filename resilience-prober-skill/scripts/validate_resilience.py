@@ -20,7 +20,8 @@ Fails when:
   * a retry_storm has no request counts, or a lost_input has no before and after lengths and hashes (or
     contains raw text);
   * coverage counts don't match the scenario list, or the headline counts or confidence differ (confidence
-    is low when under half the scenarios ran, a critical-path baseline failed, or scenarios ran once);
+    is low when under half the scenarios ran, a critical-path baseline failed, or scenarios ran once; a
+    `confidence_caps` entry with a stated reason lowers it, never raises it);
   * the summary, a limitation or a finding's title or actual text makes an absolute claim (resilient,
     handles all failures, recovers gracefully from every failure, production ready, bulletproof ...);
   * a candidate is missing from triage or triaged twice, a needs_review triage isn't in needs_review, or a
@@ -209,7 +210,7 @@ def main() -> int:
     exp = {'priority_counts': dict(Counter(f['priority'] for f in rep['findings'])),
            'flows_with_p0': sorted({f['flow'] for f in rep['findings'] if f['priority'] == 'P0'}),
            'scenarios_run': sum(s['status'] == 'ran' for s in rep['scenarios']), 'scenarios_planned': len(rep['scenarios']),
-           'overall_confidence': confidence(run, plan, statuses, rep['findings'], rep['needs_review'])}
+           'overall_confidence': confidence(run, plan, statuses, rep['findings'], rep['needs_review'], rep.get('confidence_caps'))}
     for k, v in exp.items():
         if hl[k] != v:
             if a.write_summary:

@@ -30,7 +30,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from classify import derive_baselines  # noqa: E402
 
-SKILL_VERSION = '1.2.0'
+SKILL_VERSION = '1.3.0'
 TODO = 'TODO: '
 
 
@@ -65,7 +65,18 @@ def faults_split(plan: dict, statuses: dict) -> tuple[list[str], list[str]]:
     return ran, sorted({s['fault'] for s in plan['scenarios']} - set(ran))
 
 
-def confidence(run: dict, plan: dict, statuses: dict, findings: list[dict], needs_review: list) -> str:
+def confidence(run: dict, plan: dict, statuses: dict, findings: list[dict], needs_review: list, caps: list | None = None) -> str:
+    """The headline confidence from the run, lowered (never raised) by the report's `confidence_caps`: reasons the agent
+    documents that the run cannot measure (stand-in data, an effect the classifier cannot see)."""
+    got = _confidence(run, plan, statuses, findings, needs_review)
+    order = ['low', 'medium', 'high']
+    for c in caps or []:
+        if order.index(c['cap']) < order.index(got):
+            got = c['cap']
+    return got
+
+
+def _confidence(run: dict, plan: dict, statuses: dict, findings: list[dict], needs_review: list) -> str:
     planned = len(plan['scenarios'])
     ran = sum(1 for v in statuses.values() if v == 'ran')
     crit_broken = any(b['status'] != 'passed' and b.get('critical_path') for b in run['baselines'].values())

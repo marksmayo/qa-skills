@@ -167,10 +167,155 @@ def test_surrogates(tmp: Path) -> None:
         check('clip in node leaves no lone surrogate', r.stdout == 'ok', r.stdout + r.stderr[-200:])
 
 
+def _one_step(tmp: Path, ob: dict, *, fault='http_500', group='server_error', base_ob: dict | None = None, completed=False,
+              recovered=True, actions=None, step_extra=None, target_extra=None, page_errors=None, endpoint='**/api/data*',
+              requests=None) -> dict:
+    """One flow with a single step under a fault, classified."""
+    step = {'name': 'load', 'actions': actions or [{'click': '#go'}], 'done': '.ready', **(step_extra or {})}
+    flows = {'site': 'http://127.0.0.1:9/', 'flows': [{'name': 'main', 'critical_path': True, 'steps': [
+        {'name': 'open', 'actions': [{'goto': '/'}], 'done': 'h1'}, step]}]}
+    base = [{'name': 'open', 'observed': observed()}, {'name': 'load', 'observed': base_ob or observed()}]
+    req = {'method': 'GET', 't_ms': 300, 'url': 'http://127.0.0.1:9/api/data.bin', 'injected': True, 'fault_action': 'fulfill',
+           'status': 500, 'ms': 2, 'retry_after': None, 'phase': 'fault'}
+    runs = []
+    for i in (1, 2):
+        t = dict(target_step('load', ob, recovered=recovered, error_shown=False, completed=completed), **(target_extra or {}))
+        r = scenario_run(f'run{i}', [{'name': 'open', 'completed': True, 'error': None, 'observed': observed()}, t],
+                         requests if requests is not None else [req])
+        r['page_errors'] = list(page_errors or [])
+        runs.append(r)
+    return classify(tmp, flows, [scen('S01', 'main', 'load', endpoint, fault, group)], {'S01': runs}, {'main': base})
+
+
+def test_read_shown_as_done(tmp: Path) -> None:
+    """A failing fault on a read, no error shown, and the step's `done` appeared anyway: the failure was shown as success."""
+    c = _one_step(tmp, observed(), completed=True)
+    effs = [k['effect'] for k in c['candidates']]
+    check('read completed under a 500 with no error: misleading_state (shown as done)', 'misleading_state' in effs and
+          any(e['measure'].get('shown_as_done') for k in c['candidates'] if k['effect'] == 'misleading_state' for e in k['evidence']),
+          f'candidates {effs}')
+    c = _one_step(tmp, observed(), completed=True, step_extra={'optional_endpoints': ['**/api/data*']})
+    effs = [k['effect'] for k in c['candidates']]
+    check('read completed under a fault on an optional endpoint: not misleading_state', 'misleading_state' not in effs, f'candidates {effs}')
+
+
+def test_done_not(tmp: Path) -> None:
+    import run_resilience as rr
+
+    class Loc:
+        def __init__(self, vis):
+            self.first = self
+            self.vis = vis
+
+        def is_visible(self):
+            return self.vis
+
+    class Page:
+        def __init__(self, visible):
+            self.visible = visible
+
+        def locator(self, sel):
+            return Loc(sel in self.visible)
+
+        def wait_for_selector(self, sel, timeout=0, state='visible'):
+            if sel not in self.visible:
+                raise TimeoutError(sel)
+
+    step = {'done': 'text=Click to continue', 'done_not': ['text=Error 500']}
+    try:
+        both = rr.step_done(Page({'text=Click to continue', 'text=Error 500'}), step, 1)
+        only = rr.step_done(Page({'text=Click to continue'}), step, 1)
+    except AttributeError as e:
+        check('done_not: a step is not done while a done_not selector shows', False, f'{e}')
+        return
+    check('done_not: a step is not done while a done_not selector shows', both is False and only is True, f'both {both}, only {only}')
+
+
+def test_persisted_failure(tmp: Path) -> None:
+    """After the fault is removed and the page reloaded, the step made no request to the endpoint and never got a good
+    answer: the app stored the failure (Cache Storage, IndexedDB, localStorage)."""
+    reload = {'completed': False, 'endpoint_requests': 0, 'ok_responses': 0,
+              'cache_storage': [{'cache': 'data-v1', 'entries': 1, 'urls': ['http://127.0.0.1:9/api/data.bin'], 'statuses': [500]}]}
+    c = _one_step(tmp, observed(), completed=True, target_extra={'reload': reload})
+    effs = [k['effect'] for k in c['candidates']]
+    check('failure cached and replayed after a reload: persisted_failure', 'persisted_failure' in effs, f'candidates {effs}')
+    ok_reload = dict(reload, endpoint_requests=1, ok_responses=1, completed=True)
+    c = _one_step(tmp, observed(), completed=True, target_extra={'reload': ok_reload})
+    effs = [k['effect'] for k in c['candidates']]
+    check('reload fetched the endpoint again and got a good answer: no persisted_failure', 'persisted_failure' not in effs,
+          f'candidates {effs}')
+    import run_resilience as rr
+    check('the runner reloads after recovery for failing faults by default', getattr(rr, 'reload_check', None) is not None and
+          rr.reload_check({}, {'group': 'server_error'}) and not rr.reload_check({}, {'group': 'latency'})
+          and not rr.reload_check({'reload_after_recovery': False}, {'group': 'server_error'}), 'no reload_check helper')
+
+
+def test_blank_baseline(tmp: Path) -> None:
+    """A step whose baseline already shows under 20 characters (a canvas game, a video) is not a blank screen or crash."""
+    blank = observed(body_len=0, root_len=0, text='', controls=[])
+    c = _one_step(tmp, blank, base_ob=blank, page_errors=['CompileError: wasm validation failed'])
+    effs = [k['effect'] for k in c['candidates']]
+    check('baseline already blank: no crash_b1, crash_b2 or blank_screen', not {'crash_b1', 'crash_b2', 'blank_screen'} & set(effs),
+          f'candidates {effs}')
+    check('baseline already blank: a baseline_blank note', any(n['kind'] == 'baseline_blank' for n in c['notes']),
+          f'notes {[n["kind"] for n in c["notes"]]}')
+    video = observed(body_len=14, root_len=14, text='Downloading...', media_visible=True)
+    c = _one_step(tmp, video, fault='hang', group='timeout')
+    effs = [k['effect'] for k in c['candidates']]
+    check('a full-screen video with 14 characters of text: not blank_screen', 'blank_screen' not in effs, f'candidates {effs}')
+    no_root = observed(root_len=0, root_text='')
+    c = _one_step(tmp, observed(root_len=0, root_text=''), base_ob=no_root, page_errors=['ReferenceError: x is not defined'],
+                  completed=True, fault='asset_abort', group='static_asset')
+    effs = [k['effect'] for k in c['candidates']]
+    check('a page error with an empty root that was empty in the baseline too: not a crash', not {'crash_b1', 'crash_b2'} & set(effs),
+          f'candidates {effs}')
+
+
+def test_static_asset_incomplete(tmp: Path) -> None:
+    """A script that failed to load left the step incomplete although the static HTML stayed: chunk_failure, not a note."""
+    c = _one_step(tmp, observed(body_len=513, root_len=513), fault='asset_abort', group='static_asset', completed=False)
+    effs = [k['effect'] for k in c['candidates']]
+    check('static asset aborted, step incomplete, page text kept: chunk_failure', 'chunk_failure' in effs, f'candidates {effs}')
+
+
+def test_goto_recovery(tmp: Path) -> None:
+    """Repeating a step whose only action is a goto is a reload: recovery not tried, never `recovered`."""
+    import run_resilience as rr
+    kind = getattr(rr, 'recovery_kind', None)
+    check('goto-only step: recovery kind is reload', kind is not None and kind({'actions': [{'goto': '/'}]}) == 'reload'
+          and kind({'actions': [{'click': '#go'}]}) == 'repeat_step', 'no recovery_kind helper')
+    c = _one_step(tmp, observed(), fault='asset_abort', group='static_asset', completed=False, recovered=True,
+                  actions=[{'goto': '/game'}])
+    check('goto-only step that "recovered" by navigating again: a recovery_not_tried note',
+          any(n['kind'] == 'recovery_not_tried' for n in c['notes']), f'notes {[n["kind"] for n in c["notes"]]}')
+
+
+def test_confidence_cap(tmp: Path) -> None:
+    """A documented reason the agent gives (stand-in data, effects the classifier cannot measure) may lower the
+    headline confidence; it never raises it."""
+    ex = SKILL / 'examples'
+    rep = json.loads((ex / 'resilience_report.example.json').read_text(encoding='utf-8'))
+    rep['confidence_caps'] = [{'cap': 'low', 'reason': 'the data package was a synthetic stand-in, so the last step cannot be judged'}]
+    rep['headline']['overall_confidence'] = 'low'
+    out = tmp / 'report.json'
+    out.write_text(json.dumps(rep), encoding='utf-8')
+    args = ['--run', str(ex / 'run' / 'run.json'), '--scenarios', str(ex / 'run' / 'scenarios.json'),
+            '--candidates', str(ex / 'run' / 'candidates.json')]
+    p = subprocess.run([sys.executable, str(HERE / 'validate_resilience.py'), str(out), *args], capture_output=True, text=True,
+                       encoding='utf-8')
+    check('a confidence cap with a reason lowers the headline confidence', p.returncode == 0, (p.stdout.strip().splitlines() or [''])[-1])
+    rep['confidence_caps'] = [{'cap': 'low', 'reason': 'x'}]
+    out.write_text(json.dumps(rep), encoding='utf-8')
+    p = subprocess.run([sys.executable, str(HERE / 'validate_resilience.py'), str(out), *args], capture_output=True, text=True,
+                       encoding='utf-8')
+    check('a confidence cap without a real reason is rejected', p.returncode == 1, (p.stdout.strip().splitlines() or [''])[-1])
+
+
 def main() -> int:
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
-    for t in (test_document_fault, test_storm, test_fill_only_recovery, test_surrogates):
+    for t in (test_document_fault, test_storm, test_fill_only_recovery, test_surrogates, test_read_shown_as_done, test_done_not,
+              test_persisted_failure, test_blank_baseline, test_static_asset_incomplete, test_goto_recovery, test_confidence_cap):
         with tempfile.TemporaryDirectory() as d:
             try:
                 t(Path(d))

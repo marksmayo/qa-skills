@@ -892,6 +892,7 @@
      "run": "run1",
      "measure": {
       "app_root_chars": 0,
+      "step_completed": true,
       "request": {
        "method": "GET",
        "t_ms": 1726,
