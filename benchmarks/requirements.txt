@@ -1,0 +1,3 @@
+# Only needed to run the performance benchmarks in this directory; the skills themselves stay stdlib only.
+pytest>=8
+pytest-codspeed>=4

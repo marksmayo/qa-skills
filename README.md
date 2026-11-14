@@ -1,5 +1,7 @@
 # qa-skills
 
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/marksmayo/qa-skills?utm_source=badge)
+
 A collection of agent skills for QA processes, designed to be vendor-neutral and portable across Claude Code, OpenAI Codex, Gemini CLI, and other coding agents. Skills are plain Markdown, JSON, and dependency-free Python — no installs required, except Playwright for Python for scripts that drive a real browser (the WCAG auditor needs it; elsewhere it is optional). Skills that drive external analysers (Semgrep, Bandit, gitleaks and the like) use them when they are installed and record them as not run when they aren't.
 
 ## Skills
@@ -67,6 +69,18 @@ Some files are shared between skills (for example the Journey Markdown format an
 test-convention detector and the JUnit results parser). The
 canonical copy lives in `shared/` and each skill carries an identical copy so it stays
 self-contained. `python tools/check_shared.py` checks the copies; `--fix` syncs them.
+
+## Benchmarks
+
+`benchmarks/` holds performance benchmarks for the shared scripts and the heavier skill scanners
+(diff parsing, Journey Markdown, route discovery, PNG decoding, CVSS scoring, pitfall scans), run on
+the example fixtures in this repository. They need pytest and pytest-codspeed, which the skills
+themselves do not; CI runs them on every push and pull request with [CodSpeed](https://codspeed.io).
+
+```
+pip install -r benchmarks/requirements.txt
+pytest benchmarks --codspeed
+```
 
 ## License
 
