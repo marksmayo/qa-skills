@@ -366,3 +366,45 @@ these gaps. What changed:
 - **Not built:** cross-parameter rules and pattern-based string synthesis in the generator, a
   deliberate rate-limit conformance burst, and checking that an agent contract issue's `location`
   exists in the contract. The examples' runs predate sizes and items; they validate unchanged.
+
+## As built (v1.4.0): gaps found on a FastAPI server with a static front end
+
+A run against a FastAPI server that serves a committed, hand-written front end from a `StaticFiles`
+mount, proxies a catch-all path to an upstream, sits behind a Basic-auth middleware and has a PHP
+front controller as its alternative server.
+
+- **Schema checks by media type.** `send_cases.py` parses JSON only for `application/json`, `+json`
+  and wildcards; a `text/*` body is checked as a string against a string schema (`cantTell`
+  against another schema); a binary body is `not_applicable`. An HTML page documented
+  `text/html` `{type: string}` no longer fails as "not valid JSON".
+- **Skeleton media types and statuses.** `handler_map.py --skeleton` reads response classes,
+  `media_type=`, `status_code=` (including `status.HTTP_410_GONE`), the decorator's
+  `response_class=` and `status_code=`, `raise HTTPException(...)`, Flask's `abort()`; a return of
+  a helper it can't follow (directly or through a variable) is `*/*`, not JSON. Form and file
+  parameters give a form or multipart body; every method of a multi-method handler gets an
+  operationId suffix; the title comes from `pyproject.toml` or `package.json`.
+- **Mounts, catch-alls, conditional routers, middleware.** `app.mount(path, StaticFiles(...))`
+  (or a sub-app) is a handler with `kind: mount`; a `{name:path}` route records `catch_all`, and
+  documented paths under either are not `missing_handler`. A router included under an `if` is
+  `conditional` (`x-conditional` in the skeleton). `add_middleware` classes are listed
+  (`x-middleware`; a `basicAuth` scheme when the name says Basic). The skill reads these with its
+  own ast pass; when the shared `py_routes.py` reports mounts or a route's `conditional`, those
+  fields are preferred.
+- **Catch-all paths on the wire.** `load_contract.py` carries `x-path-allows-slash` or
+  `allowReserved` as `allow_slash`; the sender keeps such a value's slashes unencoded (`%2F` is
+  refused by Apache and nginx defaults) and the generator adds a two-segment boundary value. It
+  never sends an empty path parameter (another route, not a `minLength` violation), and a
+  `minLength == maxLength` bound gives one boundary case.
+- **Unread languages.** handler_map names PHP front controllers and `.htaccess` rewrites in
+  `unread_handlers`, counts server files in other languages in `unread_languages`, warns on
+  stderr, and lists the directories it did not enter (`pruned_dirs`).
+- **Auth.** `--basic-env USER_VAR:PASS_VAR` sends HTTP Basic credentials (the password and the
+  encoded header are scrubbed); the liveness probe carries the configured credentials.
+- **Accept and loader noise.** Requests send the documented media types in `Accept`; the loader no
+  longer flags `missing_response_schema` for file, image or `*/*` bodies, or for OPTIONS answers.
+- **Merge and report.** Regression sketches assert the documented media types for the status (or
+  no body), and one assert per missing header. `skipped_write` makes the evidence `partial`. The
+  operations table marks a failed check with no finding behind it `FAIL*`. `--write-summary`
+  fills computed headline fields a draft left empty.
+- **Not built:** reading the PHP routes themselves, and the middleware's exemptions (which paths
+  it lets through without credentials).

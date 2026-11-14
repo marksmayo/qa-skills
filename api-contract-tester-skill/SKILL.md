@@ -1,7 +1,7 @@
 ---
 name: api-contract-tester
 description: Check that a running HTTP API behaves the way its contract says. Read an OpenAPI 3.0/3.1 document or a GraphQL schema, generate requests from it (documented examples, boundary values, one-violation negatives, a seeded random sample, and requests without credentials), send them to a test instance in safe mode, and check every response for undocumented status codes, server errors, wrong content types, schema violations, missing headers, invalid input accepted, valid input rejected and auth not enforced. Every finding has a saved, redacted request and response and is re-sent once to separate repeatable from flaky. With a previous contract it also rates the breaking changes between versions. Uses Schemathesis and oasdiff when installed; works with the standard library alone. No findings never means the API conforms.
-version: 1.3.0
+version: 1.4.0
 ---
 
 # API contract tester
@@ -54,7 +54,7 @@ rate them with CVSS. It writes no tests by default; each finding carries a regre
 | `contract` | required | OpenAPI 3.0/3.1 (JSON or YAML) or GraphQL SDL, as a file or URL. Swagger 2.0 needs Schemathesis to convert it; otherwise `not_assessed` |
 | `base_url` | required | The test instance |
 | `authorised_by` | required for non-loopback | Who authorised testing this host |
-| `auth` | none | A bearer token, API key or session cookie in an environment variable (`--bearer-env`, `--api-key-env`, `--cookie-env`) |
+| `auth` | none | A bearer token, API key, session cookie or HTTP Basic user and password in environment variables (`--bearer-env`, `--api-key-env`, `--cookie-env`, `--basic-env USER_VAR:PASS_VAR`); the liveness probe is sent with them |
 | `auth_required` | none | Operations the contract leaves unsecured that need credentials (`--auth-required`, agent judgment from the handlers) |
 | `request_budget` | 5000 | `--max-requests` per attempt, `--path-budget PREFIX=N` per path prefix (for app rate limits) |
 | `liveness_probe` | first parameterless GET | `--probe` path and `--probe-expect` statuses; use a health endpoint when there is one |
@@ -125,9 +125,17 @@ python scripts/load_contract.py <run>/openapi.derived.json --out <run>/contract.
 
 Without `--contract`, handler_map lists the handlers and compares nothing; `--skeleton` writes an
 OpenAPI 3.1 file with every handler's path and method, path parameters typed from converters
-(`<int:id>` is an integer), query parameters from `request.args.get(name, default, type=int)` (or
-FastAPI parameters), JSON or HTML responses (`jsonify` against `render_template`) and statuses from
-`return ..., 201`, marked `x-contract-provenance: derived`. `--only /api/` keeps the API surface of
+(`<int:id>` is an integer; a FastAPI `{name:path}` or Flask `<path:name>` catch-all is marked
+`x-path-allows-slash`), query parameters from `request.args.get(name, default, type=int)` (or
+FastAPI parameters), a form or multipart body from `Form()`/`File()` parameters, and each status
+with the media types it is answered in: the response class (`HTMLResponse`, `FileResponse`,
+`JSONResponse`, ...), its `media_type=` and `status_code=`, the decorator's `response_class=` and
+`status_code=`, `raise HTTPException(404)`, Flask's `abort(404)` and `return ..., 201`. A return of a
+helper the reader can't follow (a proxy, a stream from another module) is `*/*`, not JSON. A
+`StaticFiles` (or sub-application) mount becomes one `GET <mount>/{file}` operation (`x-mount`), a
+router included under an `if` is marked `x-conditional` (it exists only when the flag is set), and
+an auth middleware is listed in `x-middleware` (a `basicAuth` scheme when its name says Basic:
+check its exemptions). The whole file is marked `x-contract-provenance: derived`. `--only /api/` keeps the API surface of
 a site that also serves pages. Fill in the response schemas from the code and the prose
 documentation, so the run checks something. The loader records `provenance` (also settable with
 `--provenance published|generated|derived`); copy it into `scope.contract.provenance`. A derived or
@@ -155,7 +163,10 @@ The plan lists every operation as `planned`, `excluded`, `skipped_write` or `ski
 the coverage denominator. Cases per operation, in order: the documented example; boundaries (each
 bound and enum value); negatives (one violation at a time); a seeded random sample; and the
 example without credentials for secured operations. A sample the contract says is invalid is never
-sent labelled valid. GraphQL: each query field with every enum value and a few values per scalar
+sent labelled valid. A path parameter is never sent empty (`/{asset}` with an empty asset is another
+route, not a `minLength` violation), and a catch-all path parameter (`allow_slash`, from
+`x-path-allows-slash` or `allowReserved`) also gets a two-segment boundary value, sent with its
+slashes unencoded. GraphQL: each query field with every enum value and a few values per scalar
 argument, plus a query missing each required argument.
 
 ### 3. Check tooling
@@ -196,8 +207,9 @@ python scripts/send_cases.py <run>/contract.json <run>/cases.json --base-url htt
 python scripts/send_cases.py ... --out <run>/run.2.json --resume <run>/run.json     # finish a stopped run
 ```
 
-It probes first and stops if the instance is down: the probe can't connect or misses
-`--probe-expect` (default: any status below 500). Without `--probe` it uses the first parameterless
+It probes first, with the configured credentials, and stops if the instance is down: the probe
+can't connect or misses `--probe-expect` (default: any status below 500).
+Each request's `Accept` names the operation's documented media types. Without `--probe` it uses the first parameterless
 GET operation, and a 5xx from that alone doesn't mark the target down (it is an API answer, sent as
 a case). A 429 is retried after its `Retry-After` up to `--max-retries-429` times when the wait is
 at most `--max-retry-after` seconds; when it persists, `--on-429 stop-run` (default) stops the run
@@ -211,7 +223,7 @@ if the sender aborts, it still writes the partial run.json. List every earlier a
 | `status_documented` | A 2xx/3xx/4xx status isn't in the operation's responses and there's no `default` (5xx is `server_error`'s) |
 | `server_error` | Any 5xx |
 | `content_type` | The `Content-Type` isn't one documented for that status |
-| `schema_conformance` | The body doesn't validate against the response schema (3.0 or 3.1 dialect); `cantTell` when it uses a keyword the stdlib checker doesn't support and nothing else failed |
+| `schema_conformance` | The body doesn't validate against the response schema (3.0 or 3.1 dialect); `cantTell` when it uses a keyword the stdlib checker doesn't support and nothing else failed. Bodies are read by media type: JSON and `+json` are parsed; a `text/*` body is checked as a string against a string schema; a binary body (a file, an image) is `not_applicable`, with only its `Content-Type` checked |
 | `required_headers` | A documented required header is missing |
 | `negative_accepted` | A request that violates the request schema got a 2xx |
 | `positive_rejected` | A documented example got a 4xx other than 401, 403 or 429 |
@@ -277,8 +289,16 @@ is parsed, not pattern-matched: decorators in docstrings don't count, and FastAP
 prefixes (also on subclasses), `include_router(prefix=...)` and Flask blueprint prefixes are
 applied. `unresolved_mounts` counts handlers whose router was never seen being included, or whose
 prefix is computed. Express `app.use` mounts are not resolved: use `--contract-prefix` when the
-contract's paths lack a prefix the code has, `--handler-prefix` when the code's lack one. Copy its
-summary and issues into the report's `handler_check`. They are review leads, not findings: a
+contract's paths lack a prefix the code has, `--handler-prefix` when the code's lack one. A mount
+(`app.mount('/', StaticFiles(directory='dist'))`) is listed as a handler with `kind: mount`, and a
+`{name:path}` route records `catch_all`: documented paths under either are not `missing_handler`.
+Routes included under an `if` record `conditional`. Files this tool can't read are named, never
+dropped silently: `unread_languages` counts PHP, Go, Ruby, Java and other server files,
+`unread_handlers` lists PHP front controllers (routing on `$_SERVER['REQUEST_URI']`) and
+`.htaccess` rewrite rules, and a warning goes to stderr; say in `limitations` that routes there were
+not compared. `pruned_dirs` lists the directories not entered (dependencies, build output, caches).
+Copy its summary and issues into the report's `handler_check` (`source` is the `tool` value,
+`handler_map.py`). They are review leads, not findings: a
 handler registered through a wrapper can be missed. Coverage is still the contract's operations;
 say in `limitations` how many handlers the contract doesn't document. For a contract generated
 from the handlers, read step 1 first: this check can't disagree with it.

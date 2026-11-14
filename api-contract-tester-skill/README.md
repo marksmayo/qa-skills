@@ -89,6 +89,15 @@ python scripts/handler_map.py . --out run/handlers.json --skeleton run/openapi.d
 python scripts/load_contract.py run/openapi.derived.json --out run/contract.json      # records provenance: derived
 ```
 
+The skeleton reads each handler's statuses and media types (response classes, `media_type=`,
+`status_code=`, `raise HTTPException(404)`), marks `{name:path}` catch-alls `x-path-allows-slash`,
+lists a `StaticFiles` mount as one `GET /{file}` operation and a router included under an `if` as
+`x-conditional`. PHP front controllers and `.htaccess` rewrites are listed in `unread_handlers`
+with a warning, not read.
+
+An app behind HTTP Basic auth: `--basic-env APP_USER:APP_PASS` (two environment variables; the
+password and the encoded header are redacted, and the liveness probe carries them too).
+
 On Git Bash for Windows, a command-line path starting with `/` is rewritten into a Windows path:
 write paths without the leading slash (as above) or set `MSYS_NO_PATHCONV=1`.
 
@@ -133,8 +142,10 @@ and excerpt that `--repo` re-reads).
   request and path budgets, a 429 policy and resumable runs
 - `scripts/handler_map.py`: static contract-vs-handler comparison (`--self-test` checks it on fixtures); without a
   contract it lists the handlers, and `--skeleton` derives an OpenAPI contract from them (marked derived)
-- `scripts/self_test.py`: checks the derived contract, response sizes, vacuous passes and the provenance cap
-  against a loopback server it starts itself
+- `scripts/self_test.py`: checks the derived contract (media types, error statuses, mounts, catch-alls,
+  conditional routers, unread PHP), response sizes, vacuous passes, schema checks by media type, Basic auth and
+  the probe's credentials, the generator's path parameters, the regression sketches, the provenance cap and
+  skipped writes in evidence completeness, against a loopback server it starts itself
 - `scripts/py_routes.py`: Flask, FastAPI and Azure Functions routes read with `ast`, with router and
   blueprint prefixes resolved (a shared file, the same in the journey mapper, security auditor and test suite
   evaluator; the canonical copy is `shared/scripts/py_routes.py` in the repository)
