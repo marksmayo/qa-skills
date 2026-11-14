@@ -1,7 +1,7 @@
 ---
 name: risk-based-test-planner
 description: Write a test plan for a release, sprint or change with effort spread by risk = likelihood x impact. Likelihood comes from git history (churn, fix commits, Jira bugs), complexity, the change in scope and test weakness; impact from journey criticality, money, access, personal-data, credential, destructive and public-API surfaces, and reach. Reads a changesets monorepo's release base and pending changesets, and flags breaking changes. Every factor cites its evidence and missing evidence is not_assessed, never low risk. It reads other skills' reports (journey maps, security, crash, WCAG and flaky reports) as far as their own confidence goes, allocates 90-minute sessions against a budget, names the skill or test type for each risk, and lists every area it does not test with the reason and residual risk. Never claims a release is safe.
-version: 1.4.0
+version: 1.5.0
 ---
 
 # Risk-based test planner
@@ -125,8 +125,25 @@ npm wrapper, a bundled driver), which become areas of their own. Other code unde
 A nested `go.mod` is split the same way. More generally, a root manifest (`go.mod`,
 `Cargo.toml`, `pyproject.toml`, `setup.py`, `pom.xml`, `build.gradle`) is a package: when the
 code outside the nested packages is most of the source, it is scored by the main-source rule
-beside them, never called root tooling. If most files of the repository's dominant language
-still end up outside every area, `score_risk.py` warns loudly; give `--areas` before planning.
+beside them, never called root tooling. If most files, or most lines, of the repository's
+dominant language still end up outside every area, `score_risk.py` warns loudly; give `--areas`
+before planning.
+
+**A root web app module is product code.** A module at the repository root that creates the web
+app (`Flask(__name__)`, `FastAPI()`, `express()`, ...) or that a launch command names (`gunicorn
+app:app` in a `Procfile`, `app.yaml`, `fly.toml` or `Dockerfile`) is its own area, with the
+`templates/` and `static/` directories beside it, whatever the main source directory is (a
+`scripts/` folder of one-off tools may hold more files). `area_basis` names it and why.
+
+**Templates, styles and data count.** Server-rendered templates (Jinja, Django, Handlebars, ...),
+stylesheets and data records the app loads (JSON, CSV, YAML inside a directory, never a manifest
+or a file at the root) count for their area's churn, defects and change in scope (the evidence
+says how many changed lines were in them), but not for complexity, surfaces or test weakness,
+which read code. An area holding only such files (an explicit `--areas` entry for `templates/` or
+a data directory) is kept, with those three factors `not_assessed`; with no journey map or usage
+it has no impact evidence, so its risk is null and a warning names it: judge its impact in the
+plan. Changed templates, styles or data that no area holds are named in a warning by directory
+(a 5,000-file data tree is one line): add them to `--areas`.
 
 **Languages.** `risk.json` records `language_coverage` from the shared language census
 (vendored, submodule and embedded third-party trees left out). Go, Rust, Python, JS/TS, Java,
@@ -170,7 +187,8 @@ as `diff_scope.py`'s classification across the skills.)
   migrations outside an area, and, in the default layout, root tooling and scripts outside the
   workspace packages and the main source tree (`scripts/`, `.github/scripts/`). Those get a
   warning with their count: root tooling and scripts decide what ships, so add them to
-  `--areas` when the release depends on them. Files the history window didn't touch are still in
+  `--areas` when the release depends on them. A root module that runs the app is never in this
+  list (see above). Files the history window didn't touch are still in
   every list (`mine_history.py` adds every tracked file with zero counts).
 - **Tests** count for an area when they import one of its files (imports are resolved to files,
   through relative paths and tsconfig/jsconfig/vite/webpack aliases; a top-level `src/*` area

@@ -81,7 +81,7 @@
       "score": 5,
       "label": "destroys data",
       "patterns": [
-        "\\b(delete|purge|drop|erase|wipe)(_\\w+)?\\s*\\(",
+        "\\b(?!drop_duplicates\\b)(delete|purge|drop|erase|wipe)(_\\w+)?\\s*\\((?![^)\\n]*\\b(?:columns|axis)\\s*=)",
         "\\b(delete|purge|erase|wipe)(?-i:[A-Z])\\w*\\s*\\(",
         "\\btruncate_(table|tables|all|db|database|collection|data|records|rows)\\w*\\s*\\(|\\btruncate(?-i:(Table|Tables|All|Db|Database|Collection|Data|Records|Rows))\\w*\\s*\\(",
         "\\.(deleteMany|destroy)\\s*\\("

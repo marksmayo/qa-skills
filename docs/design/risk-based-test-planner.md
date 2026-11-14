@@ -1,6 +1,6 @@
 # Design: `risk-based-test-planner-skill`
 
-Status: Built (v1.4.0), see "As built" at the end. Build order: 13.
+Status: Built (v1.5.0), see "As built" at the end. Build order: 13.
 
 ## Mission
 
@@ -452,3 +452,21 @@ Where the build differs from the design above, and what the example showed.
 - Not changed: GitHub issues as defect history (needs path mapping), a CLI reach proxy, a `--repo`
   re-read of judged surface reasons, and `--brief` length. The example's areas, scores and plans
   are unchanged; `risk.json` gained `language_coverage` and `release.json` the new fields.
+- **v1.5.0: a Flask and Jinja site with a large data tree.** Red/green checks in
+  `score_risk.py --self-test` (`web_app_checks`: a synthetic recipe site with a root `app.py`,
+  templates, a stylesheet, 30 JSON records and twelve small scripts; and new surface idioms).
+  - **Root app module**: a root module that creates the web app or that a launch command
+    (`gunicorn app:app` in a Procfile, app.yaml, fly.toml, Dockerfile) names is its own area with
+    the `templates/` and `static/` beside it; it was excluded as root tooling while `scripts/`
+    became the only area. The loud-fail rule weighs lines as well as files.
+  - **Templates, styles and data**: they count for churn, defects and change in scope (the
+    evidence says how many lines); explicit areas holding only them are kept (they vanished),
+    with complexity, surface and test weakness `not_assessed` and a warning when they have no
+    impact evidence; changed ones in no area are named by directory.
+  - **Surfaces**: pandas `drop_duplicates(`, `.drop(columns=...)` and `.drop(..., axis=...)` are no
+    longer destructive (`data/surfaces.json`).
+  - Not done: journey-mapper's P1-as-highest scale (planner scores P0 = 5), a note when one fix
+    commit drives most areas' defects, a "not shipped" notion for operator scripts, the renderer's
+    `base None` line with no release tag, and naming the real cause in the surface-only warning.
+    The sample repository's scores are unchanged (no templates, styles or data, no root app), so
+    both plans validate as they are.

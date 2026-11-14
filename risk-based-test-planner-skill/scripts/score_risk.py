@@ -16,7 +16,15 @@ middleware/proxy, and lib/, components/ and the other source directories split b
 main source directory (the top-level directory holding the most source files, followed down
 while one subdirectory holds nearly all of it), with container directories such as modules/ and
 common/ split again. --areas gives them explicitly as {"areas": [{"id": ..., "paths": [...]}]}.
-Test, generated, vendored, tool-configuration and docs files are not areas. Source files no area
+A root module that creates a web app (Flask(__name__), FastAPI(), express(), the module a
+gunicorn/uvicorn command in a Procfile, app.yaml or Dockerfile names) is product code: it is its
+own area, with the templates/ and static/ directories beside it, never root tooling.
+Test, generated, vendored, tool-configuration and docs files are not areas. Templates, styles and
+data records in an area (ASSET_EXT; data only inside a directory, never a manifest) count for its
+churn, defects and change in scope, but not for complexity, surfaces or test weakness; an area
+holding only such files (an explicit --areas entry for templates/ or a data directory) is kept,
+with those three factors not_assessed. Changed templates, styles or data in no area are named in a
+warning. Source files no area
 covers are scored as the area "unassigned" and named in a warning, never dropped; every other code
 file outside the areas (docs, configuration, generated, fixtures, root tooling and scripts) is
 listed in excluded with its reason, and root tooling gets a warning. A directory named e2e, test,
@@ -74,6 +82,21 @@ UI_EXT = {'.tsx', '.jsx', '.vue', '.svelte'}
 STDLIB = set(getattr(sys, 'stdlib_module_names', ())) | {'__future__'}
 CODE_EXT = {'.py', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.java', '.kt', '.go', '.cs', '.swift', '.dart', '.rb', '.php',
             '.scala', '.rs', '.vue', '.svelte', '.sql', '.m', '.mm', '.h', '.c', '.cc', '.cpp', '.hpp'}
+# Product files that are not code: server-rendered templates, styles, and data records the app loads. They count for
+# churn and change in scope, not for complexity, surfaces or test weakness.
+TEMPLATE_STYLE_EXT = {'.html', '.htm', '.jinja', '.jinja2', '.j2', '.njk', '.hbs', '.handlebars', '.mustache', '.ejs', '.twig',
+                      '.liquid', '.css', '.scss', '.sass', '.less'}
+DATA_EXT = {'.json', '.csv', '.tsv', '.yaml', '.yml', '.xml', '.ndjson', '.jsonl', '.geojson'}
+ASSET_EXT = TEMPLATE_STYLE_EXT | DATA_EXT
+NOT_DATA_NAME = re.compile(r'^(package(-lock)?\.json|composer\.json|[tj]sconfig.*\.json|\.[\w.-]*rc(\.\w+)?|.*\.lock|'
+                           r'renovate\.json|vercel\.json|netlify\.toml|app\.json|manifest\.json|.*-lock\.ya?ml|'
+                           r'docker-compose.*\.ya?ml|pnpm-workspace\.yaml|codecov\.ya?ml|mkdocs\.ya?ml)$', re.I)
+CONFIG_DIRS = {'.github', '.gitlab', '.circleci', '.vscode', '.idea', '.devcontainer', 'config', 'configs', '.config'}
+ROOT_APP_PY = re.compile(r'\b(?:Flask|Quart|FastAPI|Starlette|Sanic|Litestar|Bottle)\s*\(|\bfalcon\.(?:App|API)\s*\(|'
+                         r'\bweb\.Application\s*\(|\bget_(?:wsgi|asgi)_application\s*\(')
+ROOT_APP_JS = re.compile(r'\bexpress\s*\(\s*\)|\bcreateServer\s*\(|\bnew\s+(?:Hono|Koa)\s*\(|\bfastify\s*\(')
+LAUNCH_FILES = ('Procfile', 'app.yaml', 'app.yml', 'fly.toml', 'render.yaml', 'Dockerfile', 'gunicorn.conf.py', 'Makefile')
+LAUNCH_CMD = re.compile(r'\b(?:gunicorn|uvicorn|hypercorn|waitress-serve|daphne|granian)\b[^\n]*?\b([A-Za-z_][\w.]*):([A-Za-z_]\w*)')
 
 
 # ---------------------------------------------------------------- shared arithmetic (the validator imports these)
@@ -358,6 +381,50 @@ def is_area_code(f: str) -> bool:
             and not dir_names(f) & DOC_DIRS)
 
 
+def is_area_asset(f: str) -> bool:
+    """A template, style or data record that belongs to its area's product (not a test, docs, tool configuration or a
+    manifest). Data counts only inside a directory: a JSON or YAML file at the root is repository configuration."""
+    p = PurePosixPath(f)
+    sfx = p.suffix.lower()
+    if sfx not in ASSET_EXT or is_test(f) or dir_names(f) & (DOC_DIRS | CONFIG_DIRS) or 'node_modules' in p.parts:
+        return False
+    if sfx in DATA_EXT:
+        return '/' in f and not NOT_DATA_NAME.match(p.name) and not CONFIG_NAME.match(p.name)
+    return True
+
+
+def root_app_modules(root: Path, files: list[str]) -> dict[str, str]:
+    """{root-level module: why it is the deployed app}: a module at the repository root that creates a web app
+    (Flask(__name__), FastAPI(), express() ...), or that a launch command (gunicorn app:app in a Procfile, app.yaml,
+    fly.toml or Dockerfile) names. Such a file is product code, not root tooling."""
+    out: dict[str, str] = {}
+    fileset = set(files)
+    for f in files:
+        if '/' in f or PurePosixPath(f).name not in LAUNCH_FILES:
+            continue
+        try:
+            text = (root / f).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        for m in LAUNCH_CMD.finditer(text):
+            mod = m.group(1).replace('.', '/') + '.py'
+            if mod in fileset:
+                out.setdefault(mod, f'{f} runs it ({m.group(0).strip()[:60]})')
+    for f in files:
+        sfx = PurePosixPath(f).suffix
+        if '/' in f or f in out or sfx not in ('.py', '.js', '.mjs', '.cjs', '.ts') or is_test(f):
+            continue
+        try:
+            text = (root / f).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        rx = ROOT_APP_PY if sfx == '.py' else ROOT_APP_JS
+        m = rx.search(code_view(text, sfx))
+        if m:
+            out[f] = f'creates the web app ({m.group(0).strip()} at line {text.count(chr(10), 0, m.start()) + 1})'
+    return out
+
+
 def prefix_token(stem: str) -> str:
     return re.split(r'[-_.]|(?<=[a-z0-9])(?=[A-Z])', stem)[0].lower() or stem.lower()
 
@@ -468,6 +535,20 @@ def module_areas(d: str, source: list[str], label: str) -> list[dict]:
 def define_areas(root: Path, files: list[str], explicit: Path | None) -> tuple[list[dict], str]:
     if explicit:
         return json.loads(explicit.read_text(encoding='utf-8'))['areas'], 'explicit (--areas)'
+    areas, basis = default_areas(root, files)
+    # a root module that creates (or is launched as) the web app is product code: its own area, with the templates/ and
+    # static/ directories beside it, never root tooling
+    apps = {f: why for f, why in root_app_modules(root, files).items() if area_of(f, areas) is None}
+    for f, why in sorted(apps.items()):
+        extra = [d for d in ('templates', 'static') if any(x.startswith(d + '/') for x in files)
+                 and area_of(next(x for x in files if x.startswith(d + '/')), areas) is None]
+        areas.append({'id': f, 'paths': [f] + extra})
+    if apps:
+        basis += '; root app module(s): ' + '; '.join(f'{f} ({why})' for f, why in sorted(apps.items()))
+    return areas, basis
+
+
+def default_areas(root: Path, files: list[str]) -> tuple[list[dict], str]:
     det = detect_conventions.Detector(root, 50_000).run(None)
     all_source = [f for f in files if is_area_code(f)]
     pkgs = sorted({a['root'] for a in det['areas'] if a['root'] != '.'})
@@ -1297,19 +1378,23 @@ def uncovered_language(files: list[str], owner: dict, cx: dict, root: Path, area
     by_lang: dict[str, list[int]] = {}
     for f in files:
         sfx = PurePosixPath(f).suffix
-        if sfx in CODE_EXT and not is_test(f) and cx.get(f, {}).get('loc', 0) > 0 and \
+        loc = cx.get(f, {}).get('loc', 0)
+        if sfx in CODE_EXT and not is_test(f) and loc > 0 and \
                 diff_scope.classify(f, '', False, root)[0] not in ('generated', 'vendored'):
-            acc = by_lang.setdefault(sfx, [0, 0])
+            acc = by_lang.setdefault(sfx, [0, 0, 0, 0])
             acc[0] += 1
             acc[1] += 1 if owner.get(f) is not None else 0
+            acc[2] += loc
+            acc[3] += loc if owner.get(f) is not None else 0
     if not by_lang:
         return None
-    dominant = max(sorted(by_lang), key=lambda k: by_lang[k][0])
-    total, inside = by_lang[dominant]
-    if total >= 5 and inside < total / 2:
-        return (f'the dominant language\'s code is not in the areas: {total - inside} of {total} {dominant} file(s) are '
-                f'outside every area (area basis: {area_basis}); the ranking does not cover the product code, so give '
-                '--areas before building a plan')
+    dominant = max(sorted(by_lang), key=lambda k: by_lang[k][2])
+    total, inside, total_loc, inside_loc = by_lang[dominant]
+    # by files or by lines: one large module outside the areas (an app.py beside many small scripts) is most of the code
+    if (total >= 5 and inside < total / 2) or (total_loc >= 200 and inside_loc < total_loc / 2):
+        return (f'the dominant language\'s code is not in the areas: {total - inside} of {total} {dominant} file(s), '
+                f'{total_loc - inside_loc} of {total_loc} lines, are outside every area (area basis: {area_basis}); the '
+                'ranking does not cover the product code, so give --areas before building a plan')
     return None
 
 
@@ -1371,6 +1456,17 @@ def score(args) -> dict:
             reason = OUTSIDE_REASON
         outside.append({'path': f, 'reason': reason})
     excluded += outside
+    # Templates, styles and data records the scope changed that no area holds count nowhere: name them, by directory.
+    loose: dict[str, int] = {}
+    for sf in (scope or {}).get('files', []):
+        sp = sf['path']
+        if is_area_asset(sp) and area_of(sp, areas) is None:
+            top = sp.split('/')[0] + '/' if '/' in sp else sp
+            loose[top] = loose.get(top, 0) + 1
+    if loose:
+        warnings.append(f'{sum(loose.values())} template, style or data file(s) changed in the scope are in no area and '
+                        'count nowhere: ' + ', '.join(f'{d} ({n})' for d, n in sorted(loose.items(), key=lambda x: -x[1])[:8])
+                        + '; add them to --areas to score their churn and change')
     tooling = [e['path'] for e in outside if e['reason'] == OUTSIDE_REASON]
     if tooling:
         warnings.append(f'{len(tooling)} code file(s) outside the workspace packages and the main source tree are not scored '
@@ -1455,21 +1551,23 @@ def score(args) -> dict:
     raw = {}
     for a in areas:
         mine = [f for f in files if owner[f] == a['id'] and is_area_code(f) and f not in excluded_paths]
-        mine_set = set(mine)
-        h = [hist['files'][f] for f in mine]
-        added_in_scope = [f for f in mine if scope_files.get(f, {}).get('status') == 'added']
-        novel = bool(mine) and len(added_in_scope) == len(mine)
+        assets = [f for f in files if owner[f] == a['id'] and is_area_asset(f) and f not in excluded_paths]
+        every = mine + assets                      # history and scope count templates, styles and data too
+        mine_set = set(every)
+        h = [hist['files'][f] for f in every]
+        added_in_scope = [f for f in every if scope_files.get(f, {}).get('status') == 'added']
+        novel = bool(every) and len(added_in_scope) == len(every)
         loc = sum(cx.get(f, {}).get('loc', 0) for f in mine)
         branches = sum(cx.get(f, {}).get('branches', 0) for f in mine)
         code_files = [f for f in mine if cx.get(f, {}).get('loc', 0) > 0]
         test_loc = sum(cx.get(t, {}).get('loc', 0) for t in tests[a['id']])
-        scope_lines = sum(scope_files[f]['lines_added'] + scope_files[f]['lines_deleted'] for f in mine if f in scope_files)
+        scope_lines = sum(scope_files[f]['lines_added'] + scope_files[f]['lines_deleted'] for f in every if f in scope_files)
         fix_shas = sorted({s for x in h for s in x['fix_commits']})
         commit_keys = {k for s in fix_shas if s in commits for k in commits[s]['keys']}
         area_bugs = [t for t in bugs if a['id'].lower() in {x.lower() for x in (t.get('components') or []) + (t.get('labels') or [])}
                      and t['key'] not in commit_keys]
         raw[a['id']] = {
-            'files': mine, 'novel': novel, 'loc': loc, 'branches': branches,
+            'files': mine, 'assets': assets, 'novel': novel, 'loc': loc, 'branches': branches,
             'churn': sum(x['lines_added'] + x['lines_deleted'] for x in h),
             'commits': len({c['sha'] for c in hist['commits'] if not c['formatting'] and any(fl['path'] in mine_set for fl in c['files'])}),
             'authors': sorted({au for x in h for au in x['authors']}),
@@ -1484,14 +1582,18 @@ def score(args) -> dict:
     # A package with a breaking pending changeset (major, or a "Breaking" note) flags the areas of it the scope changed;
     # when the scope changed none of them (or there is no scope), every area of the package.
     changed_pkgs = {n for r in raw.values() if r['scope_lines'] for n in r['packages']}
-    live = [k for k in raw if raw[k]['files']]
-    vals = lambda key, only=None: [raw[k][key] for k in live if (only is None or only(k))]  # noqa: E731
+    live = [k for k in raw if raw[k]['files'] or raw[k]['assets']]
+    coded = [k for k in live if raw[k]['code_files']]
+    vals = lambda key, only=None, among=None: [raw[k][key] for k in (among or live) if (only is None or only(k))]  # noqa: E731
     hist_ok = not hist['shallow']
     out_areas = []
     for a in areas:
         r = raw[a['id']]
-        if not r['files']:
+        if not r['files'] and not r['assets']:
             continue
+        no_code = not r['code_files']
+        NO_CODE = (f'no code files: {len(r["assets"])} template, style or data file(s) only' if r['assets']
+                   else 'no code with lines')
         f = {}
         if not hist_ok:
             na = {'score': None, 'status': 'not_assessed', 'evidence': ['shallow clone: fetch more history (git fetch --unshallow)']}
@@ -1512,15 +1614,21 @@ def score(args) -> dict:
                                          + (f' and {len(r["bugs"])} bug ticket(s) by component or label' if r['bugs'] else '')]
                                         + r['fix_subjects'][:8] + r['bugs'][:5] +
                                         ([f'linked issues: {", ".join(r["keys"])}'] if r['keys'] else [])}
-        f['complexity'] = {'score': pct_score(r['branch_density'], vals('branch_density')), 'status': 'assessed',
-                           'evidence': [f'{r["branches"]} branches in {len(r["code_files"])} file(s), {r["branch_density"]} per file; '
-                                        f'{r["loc"]} lines of code (complexity.py)']}
+        if no_code and r['assets']:
+            f['complexity'] = {'score': None, 'status': 'not_assessed', 'evidence': [NO_CODE + '; complexity reads code']}
+        else:
+            f['complexity'] = {'score': pct_score(r['branch_density'], vals('branch_density', among=coded or live)),
+                               'status': 'assessed',
+                               'evidence': [f'{r["branches"]} branches in {len(r["code_files"])} file(s), {r["branch_density"]} per file; '
+                                            f'{r["loc"]} lines of code (complexity.py)']}
         if scope is not None:
             pct = pct_score(r['scope_lines'], vals('scope_lines'))
             cap = scope_cap(r['scope_lines'])
+            in_assets = sum(scope_files[x]['lines_added'] + scope_files[x]['lines_deleted'] for x in r['assets'] if x in scope_files)
             f['change_in_scope'] = {'score': min(pct, cap), 'status': 'assessed',
                                     'command': (scope.get('source') or {}).get('command') or 'diff_scope.py',
                                     'evidence': [f'{r["scope_lines"]} lines changed in the scope diff'
+                                                 + (f' ({in_assets} in templates, styles or data)' if in_assets else '')
                                                  + (f' (percentile {pct}, capped at {cap} for a change this size)' if cap < pct else '')]}
         else:
             f['change_in_scope'] = {'score': None, 'status': 'not_assessed', 'evidence': ['no scope diff given']}
@@ -1539,7 +1647,9 @@ def score(args) -> dict:
         for c in r['breaking_commits'][:5]:
             f['change_in_scope']['evidence'].append(f'breaking commit {c.get("sha", "")[:12]} {c.get("subject", "")[:100]}')
             breaking = True
-        if not r['tests']:
+        if no_code and r['assets']:
+            tw, tev = None, [NO_CODE + '; its tests are those of the code that renders or loads it']
+        elif not r['tests']:
             tw, tev = 5, ['no test imports this area' + (f' ({len(flaky_skipped)} flaky test file(s) not counted)' if flaky_skipped else '')]
         else:
             ratio = r['test_loc'] / r['loc'] if r['loc'] else 1
@@ -1557,7 +1667,7 @@ def score(args) -> dict:
                       if len(r['code_files']) > len(cov_files) else '')] + tev
             f['test_weakness'] = {'score': tw, 'status': 'assessed', 'command': 'go test -coverprofile', 'evidence': tev}
         else:
-            f['test_weakness'] = {'score': tw, 'status': 'assessed', 'evidence': tev}
+            f['test_weakness'] = {'score': tw, 'status': 'assessed' if tw is not None else 'not_assessed', 'evidence': tev}
         linked = [j for j in journeys if a['id'] in j['areas']]
         # A partial journey map (run scoped to some domains, or items declared out_of_scope) says nothing about the
         # areas it didn't map: those are not_assessed, not "no journey". An area the map did reach stays assessed.
@@ -1573,8 +1683,12 @@ def score(args) -> dict:
             f['journey_criticality'] = {'score': None, 'status': 'not_assessed', 'evidence': [partial_note]}
         else:
             f['journey_criticality'] = {'score': None, 'status': 'not_assessed', 'evidence': ['no journey map: run journey-mapper']}
-        s, classes, sev = surface_scan(root, r['files'], entries)
-        f['surface'] = {'score': s, 'status': 'assessed', 'evidence': sev}
+        if no_code and r['assets']:
+            classes = []
+            f['surface'] = {'score': None, 'status': 'not_assessed', 'evidence': [NO_CODE + '; surface patterns read code']}
+        else:
+            s, classes, sev = surface_scan(root, r['files'], entries)
+            f['surface'] = {'score': s, 'status': 'assessed', 'evidence': sev}
         if usage and a['id'] in usage.get('areas', {}):
             share = usage['areas'][a['id']]
             f['reach'] = {'score': 5 if share >= 0.5 else 4 if share >= 0.25 else 3 if share >= 0.1 else 2 if share >= 0.02 else 1,
@@ -1602,6 +1716,7 @@ def score(args) -> dict:
                     findings.append(fnd)
         flags = (['novel'] if r['novel'] else []) + (['breaking_change'] if breaking else []) + finding_flags(findings)
         area = {'id': a['id'], 'paths': a['paths'], 'files': len(r['files']),
+                **({'asset_files': len(r['assets'])} if r['assets'] else {}),
                 'journeys': [j['id'] for j in linked], 'surfaces': classes, 'flags': flags, 'open_findings': findings,
                 'tests': r['tests'], 'factors': {k: f[k] for k in list(LIKELIHOOD) + list(IMPACT)}}
         area.update(recompute(area))
@@ -1613,6 +1728,11 @@ def score(args) -> dict:
                         + (f' +{len(ui) - 6}' if len(ui) > 6 else '') + ') rests on surface patterns alone, so a page that '
                         'drives an important flow can rank Low; run journey-mapper (or give --usage) before trusting the UI '
                         'ranking, and say so in the plan')
+    blind = [a['id'] for a in out_areas if a['impact'] is None]
+    if blind:
+        warnings.append(f'{len(blind)} area(s) hold only templates, styles or data and have no impact evidence (surface '
+                        f'patterns read code): {", ".join(blind[:6])}; their band is Low only for want of evidence, so give '
+                        'a journey map or --usage, or judge their impact in the plan')
     if out_areas and all(a['factors'][k]['status'] == 'not_assessed' for a in out_areas for k in ('journey_criticality', 'reach')):
         warnings.append(SURFACE_ONLY_WARNING)
     rel_meta = None
@@ -1723,6 +1843,12 @@ SELF_TEST_CASES = [
     ('.go', 'func (d *Driver) wipeData(bundle string) error {', ['destructive']),
     ('.py', 'cur.execute("DELETE FROM sessions WHERE id = %s", (sid,))', ['destructive']),
     ('.py', 'x = 1  # DELETE FROM is never run here', []),
+    # pandas reshaping: a new DataFrame without some rows or columns, nothing stored is destroyed
+    ('.py', "df = df.drop_duplicates(subset=['code'])", []),
+    ('.py', 'rows = frame.dropna()', []),
+    ('.py', "slim = df.drop(columns=['notes'])", []),
+    ('.py', 'df.drop(labels, axis=1, inplace=True)', []),
+    ('.py', 'drop_table(conn, "sessions")', ['destructive']),
 ]
 
 
@@ -1764,7 +1890,7 @@ def self_test() -> int:
         PRODUCT_DIRS.clear()
         PRODUCT_DIRS.update(saved)
         tmp.cleanup()
-    checks = go_layout_checks()
+    checks = go_layout_checks() + web_app_checks()
     bad += [name for name, ok in checks if not ok]
     for b in bad:
         print('FAIL ' + b)
@@ -1852,6 +1978,107 @@ def go_layout_checks() -> list[tuple[str, bool]]:
             out.append(('coverage 75% scores test weakness 2, 30% scores 4', coverage_score(0.75) == 2 and coverage_score(0.30) == 4))
         except Exception as e:                       # a missing function is a failed check, not a crash
             out.append((f'Go layout checks raised {type(e).__name__}: {e}', False))
+        finally:
+            PRODUCT_DIRS.clear()
+            PRODUCT_DIRS.update(saved[0])
+            if 'RUNNER_DIRS' in globals():
+                RUNNER_DIRS.clear()
+                RUNNER_DIRS.update(saved[1])
+    return out
+
+
+def web_app_checks() -> list[tuple[str, bool]]:
+    """A synthetic server-rendered recipe site: a root app.py that creates a Flask app, Jinja templates and a
+    stylesheet beside it, a directory of JSON recipe records the app loads, and more (but smaller) one-off scripts
+    in scripts/ than there are app modules. The root app module must be an area (not root tooling), template and
+    data changes must count as change in scope, and explicit areas holding only templates or data must be kept."""
+    import tempfile
+    out: list[tuple[str, bool]] = []
+    saved = (set(PRODUCT_DIRS), set(RUNNER_DIRS) if 'RUNNER_DIRS' in globals() else set())
+    app = ('from flask import Flask, render_template\n\napp = Flask(__name__)\n\n\n'
+           + ''.join(f'@app.route("/r{i}")\ndef recipe_{i}():\n    if {i} > 2:\n        return render_template("recipe.html")\n'
+                     f'    return render_template("index.html")\n\n\n' for i in range(40)))
+    layout = {'app.py': app, 'templates/index.html': '<h1>Recipes</h1>\n' * 5,
+              'templates/recipe.html': '{% extends "index.html" %}\n' * 5, 'static/site.css': 'body { margin: 0; }\n',
+              'tests/test_app.py': 'from app import app\n\n\ndef test_index():\n    assert app\n',
+              'requirements.txt': 'flask\n', 'Procfile': 'web: gunicorn app:app\n'}
+    layout.update({f'scripts/fix_{i}.py': f'print({i})\n' for i in range(12)})
+    layout.update({f'recipes/r{i}.json': f'{{"id": {i}}}\n' for i in range(30)})
+    changed = {'templates/recipe.html': 20, 'recipes/r1.json': 4, 'recipes/r2.json': 4, 'app.py': 6, 'static/site.css': 2}
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        for rel, text in layout.items():
+            p = root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text, encoding='utf-8')
+        files = sorted(layout)
+        hist = {'repo': 'recipes', 'head': 'abc123', 'shallow': False, 'notes': [], 'command': 'git log',
+                'window': {'days': 180, 'from': '2026-05-01', 'to': '2026-11-01', 'head_date': '2026-11-01'},
+                'excluded_formatting': [], 'summary': {'commits': 2, 'fix_commits': 1, 'formatting_commits': 0},
+                'commits': [{'sha': 'c1', 'date': '2026-10-01', 'author': 'A', 'subject': 'Fix recipe page', 'fix': True,
+                             'keys': [], 'formatting': False,
+                             'files': [{'path': p, 'added': n, 'deleted': 0} for p, n in changed.items()]},
+                            {'sha': 'c2', 'date': '2026-09-01', 'author': 'B', 'subject': 'Add scripts', 'fix': False,
+                             'keys': [], 'formatting': False,
+                             'files': [{'path': f'scripts/fix_{i}.py', 'added': 1, 'deleted': 0} for i in range(12)]}],
+                'files': {f: {'commits': 0, 'lines_added': 0, 'lines_deleted': 0, 'authors': [], 'fix_commits': [],
+                              'formatting_commits': [], 'first_commit': '2026-01-01'} for f in files}}
+        for p, n in changed.items():
+            hist['files'][p].update(commits=1, lines_added=n, authors=['A'], fix_commits=['c1'])
+        for i in range(12):
+            hist['files'][f'scripts/fix_{i}.py'].update(commits=1, lines_added=1, authors=['B'])
+        cx = {'files': {f: {'loc': len(layout[f].splitlines()), 'branches': layout[f].count('if '), 'method': 'ast'}
+                        for f in files if f.endswith('.py')}}
+        scope = {'source': {'kind': 'git', 'base_ref': 'v1', 'command': 'git diff'},
+                 'files': [{'path': p, 'status': 'modified', 'kind': 'source', 'lines_added': n, 'lines_deleted': 0}
+                           for p, n in changed.items()]}
+        for name, data in (('history.json', hist), ('complexity.json', cx), ('scope.json', scope)):
+            (root / '_in').mkdir(exist_ok=True)
+            (root / '_in' / name).write_text(json.dumps(data), encoding='utf-8')
+        (root / '_in' / 'areas.json').write_text(json.dumps({'areas': [
+            {'id': 'web', 'paths': ['app.py']}, {'id': 'templates', 'paths': ['templates', 'static']},
+            {'id': 'recipes data', 'paths': ['recipes']}, {'id': 'scripts', 'paths': ['scripts']}]}), encoding='utf-8')
+
+        def run(areas: bool) -> dict:
+            ns = argparse.Namespace(repo=root, history=root / '_in' / 'history.json', complexity=root / '_in' / 'complexity.json',
+                                    scope=root / '_in' / 'scope.json', journeys=None, input=[], usage=None,
+                                    areas=(root / '_in' / 'areas.json') if areas else None, defects=None, finding_area=[],
+                                    release=None, coverage=[])
+            return score(ns)
+        try:
+            PRODUCT_DIRS.clear()
+            set_runner_dirs(root, files)
+            res = run(False)
+            ids = [a['id'] for a in res['areas']]
+            excl = [e['path'] for e in res['excluded']]
+            out.append((f'a root module that creates the web app is an area, not root tooling (areas {ids}, excluded '
+                        f'{[e for e in excl if not e.startswith("recipes")][:4]})', 'app.py' not in excl
+                        and any('app.py' in area_paths for area_paths in (a['paths'] for a in res['areas']))))
+            web = next((a for a in res['areas'] if 'app.py' in a['paths']), None)
+            cis = (web or {}).get('factors', {}).get('change_in_scope', {}).get('evidence', [''])[0]
+            out.append((f'template and stylesheet changes beside the app count in its change in scope (got {cis!r})',
+                        cis.startswith('28 lines')))
+            warned = [w for w in res['warnings'] if 'recipes/' in w]
+            out.append((f'changed data files in no area are named in a warning (got {res["warnings"]})', bool(warned)))
+            res = run(True)
+            got = {a['id']: a for a in res['areas']}
+            out.append((f'explicit areas holding only templates or data are kept (got {sorted(got)})',
+                        {'templates', 'recipes data'} <= set(got)))
+            data_cis = got.get('recipes data', {}).get('factors', {}).get('change_in_scope', {}).get('evidence', [''])[0]
+            out.append((f'a data area\'s change in scope counts its changed records (got {data_cis!r})', data_cis.startswith('8 lines')))
+            tpl = got.get('templates', {}).get('factors', {})
+            out.append((f'a template-only area has complexity not_assessed, not a score from zero code (got '
+                        f'{tpl.get("complexity")})', tpl.get('complexity', {}).get('status') == 'not_assessed'))
+            out.append((f'areas with no impact evidence are named in a warning (got {res["warnings"]})',
+                        any('no impact evidence' in w and 'templates' in w for w in res['warnings'])))
+            files6 = [f'pkg/m{i}.py' for i in range(6)]
+            w = uncovered_language(files6 + ['engine.py'], {f: 'pkg' for f in files6} | {'engine.py': None},
+                                   {f: {'loc': 5} for f in files6} | {'engine.py': {'loc': 2000}}, root, 'main source')
+            out.append((f'loud warning when most of the dominant language\'s lines are outside every area (got {w!r})',
+                        bool(w) and 'line' in w))
+        except Exception as e:                       # a missing function is a failed check, not a crash
+            import traceback
+            out.append((f'web app checks raised {type(e).__name__}: {e} {traceback.format_exc()[-600:]}', False))
         finally:
             PRODUCT_DIRS.clear()
             PRODUCT_DIRS.update(saved[0])

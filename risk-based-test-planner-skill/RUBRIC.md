@@ -35,7 +35,10 @@ The `not_assessed` cases:
   domains, or with `out_of_scope` / `not_mapped_this_run` orphans) and doesn't map the area;
 - reach without usage data or a journey map, or without usage data when a partial map doesn't
   map the area;
-- change in scope without a scope diff.
+- change in scope without a scope diff;
+- complexity, surface and test weakness for an area holding only templates, styles or data
+  (no code files): those factors read code. Its churn, defects and change in scope are assessed
+  from those files.
 
 ## Risk (computed)
 
@@ -113,7 +116,10 @@ flag is set exactly when a finding is critical or high at a confidence its repor
 Source files no area covers are scored as the `unassigned` area; they are never dropped. Every
 other code file outside the areas (docs and examples, tool configuration, generated or vendored
 code, fixtures and migrations outside an area, root tooling and scripts outside the workspace
-packages) is listed in `excluded` with its reason, and root tooling also gets a warning.
+packages) is listed in `excluded` with its reason, and root tooling also gets a warning. A root
+module that creates or is launched as the web app is an area of its own (with `templates/` and
+`static/` beside it), never root tooling. Templates, styles and data records inside an area count
+for churn, defects and change in scope; changed ones in no area are named in a warning.
 
 A directory named `e2e`, `test`, `tests` or `spec` is test code unless it is a product package:
 it holds a package manifest and a `src/` directory, or a `package.json` declaring `main`,
