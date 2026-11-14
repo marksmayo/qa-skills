@@ -109,6 +109,11 @@ unreached by your tracing, use orphan `no_user_path_found` or `needs_review`, no
 | `partial` | Some steps or variants are exercised, or the path is exercised without asserting its outcomes |
 | `none` | No test exercises the journey. Unit tests of components used by the journey don't count |
 
+A test-client test (`kind: http-client`: Flask's or Django's test client, supertest) that requests
+the journey's pages or endpoints and asserts the response text or status exercises those steps at
+the HTTP level. It can make a journey `partial`, never `automated`: it runs no browser script,
+clicks nothing and follows no client-side navigation.
+
 What counts as asserting an Expect:
 
 - A navigation wait (`waitForURL`, `toHaveURL`, `cy.url().should`) asserts an Expect only when

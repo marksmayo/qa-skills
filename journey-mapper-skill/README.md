@@ -55,11 +55,19 @@ python scripts/render_report.py journeys/journey_map.json             # [--brief
 excerpts that don't match) and checks each journey's tests exist. Use it on every real run; the
 bundled example describes a fictional repository, so it is validated without `--repo`. The
 validator warns when a journey covers an item whose file its evidence never cites, or when a
-map-level open question repeats a journey's; `--strict` makes those warnings errors.
+map-level open question repeats a journey's; `--strict` makes those warnings errors. When several
+items share a file (every Flask view in `app.py`), the check is per item: the journey must cite a
+line between the item's line and the next item's. `python scripts/validate_journey_map.py
+--self-test` runs negative cases (a `not_automatable` entry written as a string is reported, not
+a crash).
 
 `python scripts/extract_surface.py --self-test` runs the extractor on a small built-in
 multi-service repository (FastAPI routers with prefixes, a docstring with decorators, an Azure
-Functions app, an argparse CLI and a React Router SPA) and checks what it finds.
+Functions app, an argparse CLI and a React Router SPA) and a server-rendered Flask site (views
+that render Jinja templates, a JSON API under `/api/`, a directory of 250 data files that must
+not be walked, and Python Playwright, Selenium and test-client tests), and checks what it finds.
+`--exclude <dir>` (repeatable) skips a directory; directories of hundreds of data files are
+skipped without it and listed in `stats.skipped_data_dirs`.
 
 For an SPA with its API in another repository, put both under one parent directory, cite files as
 `<repo>/<path>`, and validate with `--repo <parent>`.

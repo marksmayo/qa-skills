@@ -1,7 +1,7 @@
 ---
 name: journey-mapper
 description: Map the user journeys of an application by reading its codebase (web, mobile and API), and write them as prioritised, evidence-linked Journey Markdown files ready to be turned into automated tests. Accounts for every route, screen, endpoint, entry point and goal event it finds, reports coverage honestly, and never presents behaviour inferred from code as intended behaviour.
-version: 1.2.0
+version: 1.3.0
 ---
 
 # Journey Mapper
@@ -142,6 +142,14 @@ repository. Details worth knowing:
   `include_router(..., prefix=...)` above it; Flask paths include the blueprint's `url_prefix`. A
   note says when a router was never seen being included (a prefix may be missing) or when part of
   a path is computed. `context.python_mounts` lists includes through variables or loops.
+- **Server-rendered pages** (Flask): a view whose function calls `render_template(...)` is a
+  web **route** (detector `flask-view`) with its `methods`, `view` and the `template` it renders,
+  not an API endpoint; JSON views stay endpoints. `context.templates` lists every server-side
+  template (`.html` under a `templates/` directory, `.jinja`, `.j2`) with the routes that render
+  it, its links (`href="/..."` and `url_for('view')`, resolved to paths), forms (action, method),
+  `fetch()` calls and the templates it extends or includes, each by line: these are the
+  navigation and API-call edges for Step 3. Django views and computed template names are not
+  followed; trace them by hand.
 - **Client-side routes** (React Router, Vue Router, Angular) are joined to their parents:
   `children` arrays, nested `<Route>` elements, and a component's own `<Routes>` mounted by a
   splat route in another file (`/shop/*` rendering `<ShopModule/>` makes its `cakes` route
@@ -155,13 +163,23 @@ repository. Details worth knowing:
   blob), cover it from that journey, or orphan it as `not_user_facing`. Operator command lines
   are journeys for an operator persona when they change what users see.
 - **Domains** on routes and endpoints are proposals from the first path segment (`/api/orders/:id`
-  becomes `orders`), prefixed with the service in multi-service repositories. Correct them during
-  review: they decide what `out_of_scope` may hold.
+  becomes `orders`), prefixed with the service in multi-service repositories. In an app that serves
+  pages and a JSON API under `/api/`, the API's endpoints share the domain `api`; files served at
+  the site root (`/robots.txt`, `/sitemap.xml`) get `site-files`. Correct them during review: they
+  decide what `out_of_scope` may hold.
+- **Data directories are not walked.** JSON files are opened only by name (`package.json`,
+  `host.json`, `function.json`, `tsconfig`/`jsconfig`, `openapi*`/`swagger*`), and a directory
+  holding 200 or more files, at least 90% of them data files (JSON, CSV, XML, YAML, ...) and none
+  code, is skipped and listed in `stats.skipped_data_dirs`. Pass `--exclude <dir>` (repeatable) to
+  skip any other directory.
 - **Success messages** (`toast.success('Order placed')`, `setSuccessMessage(...)`) are reported
   as low-confidence goals with detector `success-message`. Confirm each marks completion.
 - **Test-only surface** (`/test-support/...`, Sentry example pages) carries a note. Confirm it,
   then orphan it as `not_user_facing`.
-- **Context:** `flags`, `tests` (e2e files and the URLs they visit), `unit_tests` (how many unit
+- **Context:** `flags`, `tests` (test files and the URLs they visit, by `kind`: `browser` for
+  Playwright, Cypress, WebdriverIO, Selenium and Python Playwright tests; `http-client` for tests
+  that request a URL through a framework test client, such as Flask's `client.get('/x')` or
+  supertest, and assert the response), `unit_tests` (how many unit
   and component test files and cases exist, and their runners: not journey tests, so they never
   make a journey `automated`), `services`, `guards` (each Next.js
   `middleware.ts`/`proxy.ts`: its `matcher` values, lists of path prefixes such as
@@ -252,7 +270,8 @@ are never reassigned to a different journey.
 ## Step 6: Match existing tests
 
 Use `context.tests` from the extractor (visited URLs), plus your own reading of the e2e and UI
-test suites. Match tests to journeys by route, screen, selectors, API calls and test titles. Set:
+test suites. A `http-client` test exercises a page or endpoint at the HTTP level: it can make a
+journey `partial`, never `automated` (RUBRIC section 6). Match tests to journeys by route, screen, selectors, API calls and test titles. Set:
 
 - `automated`: existing tests exercise every step and assert every Expect of the main path.
 - `partial`: some steps or variants are exercised, or steps run without their outcomes being

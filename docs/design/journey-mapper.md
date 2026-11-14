@@ -157,6 +157,18 @@ Version 1.2.0, after a run on a React Router SPA with a separate multi-service F
   its evidence cites, and when a map-level open question repeats a journey's. The renderer and
   `coverage.md` list each open question once.
 - `extract_surface.py --self-test` checks the extractor against a built-in sample repository.
+- Server-rendered Flask sites (1.3.0): a view that calls `render_template` is a web route with its
+  template; `context.templates` lists each template's links (`url_for` resolved to paths), forms,
+  `fetch()` calls and extends/includes by line. `/api/*` endpoints of an app that also serves
+  pages share the domain `api`; root files (`/robots.txt`) are `site-files`. `context.tests`
+  entries have a `kind`: `browser` (now including Python Playwright and Selenium) or
+  `http-client` (framework test clients; at most `partial` per RUBRIC section 6).
+- Data trees (1.3.0): JSON is opened only by name, and a directory of 200+ files that are at least
+  90% data and hold no code is pruned before it is walked (`stats.skipped_data_dirs`, `--exclude`).
+  A site with thousands of JSON records took minutes to extract before this.
+- The validator checks padded coverage per item when several items share a file (a span runs to
+  the next item's line), reports entries of the wrong shape instead of crashing, and has a
+  `--self-test`.
 
 ```text
 journey-mapper-skill/

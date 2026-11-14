@@ -9,7 +9,7 @@ verify it. Anything the extractor can't see must be added by the agent with sour
     python extract_surface.py /path/to/repo --out surface.json [--goal-wrapper trackEvent2]
 """
 from __future__ import annotations
-import argparse, bisect, json, os, re, sys, tempfile
+import argparse, ast, bisect, json, os, re, sys, tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,6 +31,31 @@ TEST_NAME_RE = re.compile(r'(\.(test|spec|e2e|cy)\.[a-z]+$)|(^test_.*\.py$)|(_te
                           r'|(Tests?\.(kt|java|swift|cs)$)|(UITests?\.swift$)', re.I)
 MAX_BYTES = 1_000_000
 PREFIX = {'route': 'R', 'screen': 'S', 'endpoint': 'E', 'entry_point': 'N', 'goal': 'G'}
+# JSON matters only by name (manifests, configs, OpenAPI documents): any other .json is data and is never opened
+JSON_NAME = re.compile(r'^(package|host|function|(?:ts|js)config[.\w-]*|(?:openapi|swagger)[.\w-]*)\.json$', re.I)
+# a data directory: at least DATA_DIR_MIN files directly inside it, at least 90% of them data files and none code.
+# It is pruned before it is walked (a directory of thousands of JSON records is not user-facing surface) and listed
+# in stats.skipped_data_dirs; --exclude DIR prunes any other directory.
+DATA_DIR_MIN = 200
+DATA_EXT = {'.json', '.geojson', '.topojson', '.csv', '.tsv', '.xml', '.ndjson', '.jsonl', '.txt', '.yaml', '.yml',
+            '.parquet', '.avro', '.dat', '.xls', '.xlsx', '.gz', '.zip', '.pbf', '.sqlite', '.db'}
+CODE_EXT = {'.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.vue', '.svelte', '.py', '.rb', '.go', '.java', '.kt', '.swift',
+            '.dart', '.cs', '.php', '.html', '.htm'}
+# server-side templates: .html under a templates/ directory (Flask, Django, Jinja's default) or a Jinja extension
+TEMPLATE_EXT = {'.jinja', '.jinja2', '.j2'}
+TPL_LINK = re.compile(r'''<a\b[^>]*?\bhref\s*=\s*["'](/[^"'#]*|\{\{\s*url_for\([^"']*["'][\w.]+["'][^}]*\}\})["']''', re.I)
+TPL_FORM = re.compile(r'''<form\b([^>]*)>''', re.I)
+TPL_ACTION = re.compile(r'''\baction\s*=\s*["']([^"']*)["']''', re.I)
+TPL_METHOD = re.compile(r'''\bmethod\s*=\s*["']?(\w+)''', re.I)
+TPL_FETCH = re.compile(r'''\b(?:fetch|axios\.(?:get|post|put|patch|delete)|\$\.(?:get|post|getJSON|ajax))\(\s*["'`](/[^"'`$]*)''')
+TPL_URL_FOR = re.compile(r'''url_for\(\s*["']([\w.]+)["']''')
+TPL_EXTENDS = re.compile(r'''\{%-?\s*(extends|include|import|from)\s+["']([^"']+)["']''')
+RENDER_CALLS = {'render_template', 'render_template_string', 'stream_template'}   # Flask/Quart views that render a page
+FILE_CALLS = {'send_from_directory', 'send_file', 'send_static_file'}
+PY_BROWSER = re.compile(r'\b(sync_playwright|async_playwright|from\s+playwright\b|import\s+playwright\b|selenium\b|'
+                        r'webdriver\.(?:Chrome|Firefox|Edge|Safari|Remote)\b|splinter\b)')
+HTTP_CLIENT_CALL = re.compile(r'''\b(?:client|test_client\(\)|request\(\s*app\s*\)|api_client|self\.client)\s*\.\s*'''
+                              r'''(get|post|put|patch|delete|head|options)\(\s*f?["'`](/[^"'`]*)''')
 
 FRAMEWORK_DEPS = {
     'next': 'nextjs', 'nuxt': 'nuxt', '@sveltejs/kit': 'sveltekit', '@remix-run/react': 'remix',
@@ -128,6 +153,7 @@ VISIT_PATTERNS = [
     ('generic', re.compile(r'\.navigateTo\(\s*' + Q + r'([^"\'`]+)' + Q)),
     ('detox', re.compile(r'device\.openURL\(\{\s*url\s*:\s*' + Q + r'([^"\'`]+)' + Q)),
     ('maestro', re.compile(r'^\s*-?\s*openLink\s*:\s*(\S+)', re.M)),
+    ('selenium', re.compile(r'\b(?:driver|browser|wd)\.get\(\s*' + Q + r'([^"\'`]+)' + Q)),
 ]
 TEST_CASE = re.compile(r'\b(?:test|it|scenario)\(\s*' + Q)
 PY_TEST_CASE = re.compile(r'^[ \t]*(?:async\s+)?def\s+test_\w*\(', re.M)
@@ -167,19 +193,32 @@ def domain_hint(name: str) -> str | None:
     path = name.split(' ', 1)[1] if re.match(r'^[A-Z|]+ ', name) else name
     if not path.startswith('/'):
         return None
+    last = path.rstrip('/').rsplit('/', 1)[-1]
+    if re.search(r'\.(txt|xml|json|ico|png|webmanifest|html?)$', last, re.I) and path.count('/') == 1:
+        return 'site-files'   # /robots.txt, /sitemap.xml, /<token>.txt: files served at the site root
     segs = [s for s in path.split('/') if s and not s.startswith((':', '*', '{', '<', '['))]
+    first = segs[0].lower() if segs else None
     while segs and (segs[0].lower() in API_PREFIX_SEGMENTS or re.fullmatch(r'v\d+', segs[0], re.I)):
         segs = segs[1:]
     if not segs:
-        return 'home' if path.strip('/') == '' else None
+        if path.strip('/') == '':
+            return 'home'
+        return first if first in API_PREFIX_SEGMENTS else None   # `/api` itself (an API index or docs page)
     slug = re.sub(r'[^a-z0-9]+', '-', segs[0].lower()).strip('-')
     return slug or None
 
 
 class Extractor:
-    def __init__(self, root: Path, max_files: int, goal_wrappers=()):
+    def __init__(self, root: Path, max_files: int, goal_wrappers=(), exclude=()):
         self.root = root
         self.max_files = max_files
+        self.exclude = {e.replace('\\', '/').strip('/') for e in exclude if e.strip('/')}
+        self.skipped_data_dirs: list[dict] = []
+        self.skipped_data_files = 0              # .json files not opened: only manifests and configs matter by name
+        self.template_files: dict[str, str] = {}  # server-side templates (Jinja/Django), read after the walk
+        self.rendered_by: dict[str, list[str]] = {}   # template path -> page routes whose view renders it
+        self.py_trees: dict[str, object] = {}
+        self.view_paths: dict[str, list[str]] = {}
         self.items: list[dict] = []
         self.flags: list[dict] = []
         self.tests: list[dict] = []
@@ -242,6 +281,28 @@ class Extractor:
     def line_of(offsets, pos):
         return bisect.bisect_right(offsets, pos) + 1
 
+    def data_dir(self, d: Path, rel: str) -> tuple[str, int] | None:
+        """(why, files directly inside) when directory d is not walked (a --exclude, or a data directory), else None."""
+        try:
+            entries = list(os.scandir(d))
+        except OSError:
+            return None
+        files = [e.name for e in entries if e.is_file()]
+        if rel in self.exclude:
+            return 'excluded by --exclude', len(files)
+        if len(files) < DATA_DIR_MIN:
+            return None
+        exts = [os.path.splitext(n)[1].lower() for n in files]
+        data = sum(1 for x in exts if x in DATA_EXT)
+        if data >= 0.9 * len(files) and not any(x in CODE_EXT for x in exts):
+            return f'a data directory ({data} data files of {len(files)}, no code)', len(files)
+        return None
+
+    @staticmethod
+    def is_template(p: Path) -> bool:
+        ext = p.suffix.lower()
+        return ext in TEMPLATE_EXT or (ext in ('.html', '.htm') and 'templates' in p.parts[:-1])
+
     def walk(self):
         stack = [self.root]
         while stack:
@@ -253,8 +314,16 @@ class Extractor:
             for p in entries:
                 if p.is_dir():
                     if p.name not in SKIP_DIRS and not p.name.endswith(('.xcassets', '.framework')):
-                        stack.append(p)
-                elif p.suffix.lower() in SOURCE_EXT or p.name in ('routes.rb', 'Gemfile', 'go.mod', 'pubspec.yaml') \
+                        rel = self.rel(p)
+                        why = self.data_dir(p, rel)
+                        if why:
+                            self.skipped_data_dirs.append({'path': rel, 'files': why[1], 'reason': why[0]})
+                        else:
+                            stack.append(p)
+                elif p.suffix.lower() == '.json' and not JSON_NAME.match(p.name):
+                    self.skipped_data_files += 1
+                elif p.suffix.lower() in SOURCE_EXT or self.is_template(p) \
+                        or p.name in ('routes.rb', 'Gemfile', 'go.mod', 'pubspec.yaml') \
                         or p.name.startswith(('build.gradle', 'requirements')) or p.suffix in ('.csproj', '.toml'):
                     if self.files_scanned >= self.max_files:
                         self.truncated = True
@@ -701,6 +770,8 @@ class Extractor:
         """Flask, FastAPI and Azure Functions routes (with router and blueprint prefixes), function triggers
         and command lines, read with ast so decorators inside docstrings never count."""
         res = scan_python(self.py_files, self.host_files)
+        pages: dict[tuple, dict] = {}   # (path, file, line) -> the page a view renders, with its methods
+        self.view_paths: dict[str, list[str]] = {}   # view function name -> paths (for url_for links in templates)
         for r in res['routes']:
             path = self.root / r['file']
             note = None
@@ -709,10 +780,35 @@ class Extractor:
                         'missing from the path')
             elif r['mount'] == 'dynamic':
                 note = 'part of the path or its prefix is computed; check the full path by hand'
+            self.frameworks.add(r['framework'])
+            if r.get('function'):
+                self.view_paths.setdefault(r['function'], []).append(r['path'])
+            view = self.view_output(r) if r['framework'] == 'flask' else None
+            if view and view[0] == 'page':
+                # a view that renders an HTML template is a page a person visits, not an API endpoint
+                key = (r['path'], r['file'], r['line'])
+                if key not in pages:
+                    pages[key] = {'path': r['path'], 'file': path, 'line': r['line'], 'methods': [], 'template': view[1],
+                                  'framework': r['framework'], 'confidence': 'high' if r['mount'] == 'resolved' else 'medium',
+                                  'note': note, 'function': r.get('function')}
+                pages[key]['methods'].append(r['method'])
+                continue
             self.add('endpoint', f"{r['method']} {r['path']}", path, r['line'], f"{r['framework']}-route",
                      'high' if r['mount'] == 'resolved' else 'medium', r['framework'], 'api',
                      **({'note': note} if note else {}))
-            self.frameworks.add(r['framework'])
+        for p in pages.values():
+            tpl = self.template_path(p['template'], self.rel(p['file'])) if p['template'] else None
+            extra = {'methods': p['methods'], 'view': p['function']}
+            if p['template']:
+                extra['template'] = tpl or p['template']
+            if p['template'] and not tpl:
+                extra['note'] = f"renders template {p['template']}, which was not found under a templates/ directory"
+            elif p['note']:
+                extra['note'] = p['note']
+            self.add('route', p['path'], p['file'], p['line'], f"{p['framework']}-view", p['confidence'], p['framework'],
+                     'web', **extra)
+            if tpl:
+                self.rendered_by.setdefault(tpl, []).append(p['path'])
         for t in res['triggers']:
             detail = t.get('path') or t.get('schedule') or t.get('queue_name') or t.get('topic_name') or t.get('event_hub_name')
             self.add_trigger(t['trigger'], t['function'], detail, self.root / t['file'], t['line'], t['framework'])
@@ -736,6 +832,82 @@ class Extractor:
                 self.add('endpoint', f'{m.group(1).upper()} {m.group(2)}', path, self.line_of(offsets, m.start()),
                          'fastapi-route-text', 'low', 'fastapi', 'api',
                          note='file did not parse; read as text, so router prefixes are not applied')
+
+    def view_output(self, r: dict) -> tuple[str, str | None] | None:
+        """('page', template) when the view function behind a route renders an HTML template (render_template,
+        stream_template, render_template_string), ('file', None) when it sends a file; None otherwise (JSON, redirects,
+        anything else stays an endpoint). Read with ast: the function named by the route, defined at its decorator."""
+        tree = self.py_trees.get(r['file'])
+        if tree is None:
+            try:
+                tree = ast.parse(self.py_files.get(r['file'], ''))
+            except (SyntaxError, ValueError):
+                tree = False
+            self.py_trees[r['file']] = tree
+        if not tree:
+            return None
+        fns = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+               and n.name == r.get('function')]
+        fn = next((n for n in fns if any(d.lineno == r['line'] for d in n.decorator_list)), fns[0] if len(fns) == 1 else None)
+        if fn is None:
+            return None
+        sends_file = False
+        for node in ast.walk(fn):
+            if not isinstance(node, ast.Call):
+                continue
+            f = node.func
+            name = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else None
+            if name in RENDER_CALLS:
+                arg = node.args[0] if node.args else None
+                if name == 'render_template_string':
+                    return 'page', None
+                tpl = arg.value if isinstance(arg, ast.Constant) and isinstance(arg.value, str) else None
+                return 'page', tpl
+            if name in FILE_CALLS:
+                sends_file = True
+        return ('file', None) if sends_file else None
+
+    def template_path(self, name: str, view_file: str) -> str | None:
+        """The repository path of template `name` rendered from view_file: <dir>/templates/<name> in the view's
+        directory or the nearest one above it, else any templates/ directory that holds it."""
+        cands = [t for t in self.template_files if t == f'templates/{name}' or t.endswith(f'/templates/{name}')]
+        if not cands:
+            return None
+        parts = Path(view_file).parts[:-1]
+        for i in range(len(parts), -1, -1):
+            want = '/'.join(parts[:i] + ('templates', name))
+            if want in cands:
+                return want
+        return sorted(cands, key=len)[0]
+
+    def scan_templates(self) -> list[dict]:
+        """Server-side templates: the views that render them, the links, forms and fetch() calls they hold (the
+        navigation and API-call edges of a server-rendered site) and the templates they extend or include."""
+        out = []
+        for rel, text in sorted(self.template_files.items()):
+            offsets = [i for i, c in enumerate(text) if c == '\n']
+            L = lambda pos: self.line_of(offsets, pos)
+            links = []
+            for m in TPL_LINK.finditer(text):
+                url = m.group(1)
+                uf = TPL_URL_FOR.search(url)
+                entry = {'url': url, 'line': L(m.start())}
+                if uf:
+                    entry['view'] = uf.group(1)
+                    paths = self.view_paths.get(uf.group(1).split('.')[-1])
+                    if paths:
+                        entry['paths'] = sorted(set(paths))
+                links.append(entry)
+            forms = []
+            for m in TPL_FORM.finditer(text):
+                act, meth = TPL_ACTION.search(m.group(1)), TPL_METHOD.search(m.group(1))
+                forms.append({'action': act.group(1) if act else '', 'method': (meth.group(1) if meth else 'get').lower(),
+                              'line': L(m.start())})
+            fetches = [{'url': m.group(1), 'line': L(m.start())} for m in TPL_FETCH.finditer(text)]
+            uses = [{'kind': m.group(1), 'template': m.group(2), 'line': L(m.start())} for m in TPL_EXTENDS.finditer(text)]
+            out.append({'file': rel, 'rendered_by': sorted(set(self.rendered_by.get(rel, []))), 'links': links,
+                        'forms': forms, 'fetches': fetches, 'uses': uses})
+        return out
 
     def scan_client_routes(self):
         consts = Constants()
@@ -806,13 +978,24 @@ class Extractor:
             for m in rx.finditer(text):
                 visits.append(m.group(1)); kinds.add(kind)
         rel = self.rel(path)
+        is_py = path.suffix == '.py'
+        cases = len(PY_TEST_CASE.findall(text)) if is_py else len(TEST_CASE.findall(text))
         e2e_dir = any(p.lower() in ('e2e', 'cypress', 'playwright', 'androidtest', 'uitests', 'integration_test',
                                     '.maestro', 'maestro') for p in Path(rel).parts[:-1])
-        if visits or e2e_dir or path.name.endswith(('UITests.swift', 'UITest.swift')):
-            self.tests.append({'file': rel, 'framework_hint': sorted(kinds) or None,
-                               'visits': sorted(set(visits)), 'test_cases': len(TEST_CASE.findall(text))})
+        py_browser = is_py and PY_BROWSER.search(text)
+        if py_browser:
+            kinds |= {k for k in ('playwright', 'selenium') if k in text}
+        if visits or e2e_dir or py_browser or path.name.endswith(('UITests.swift', 'UITest.swift')):
+            self.tests.append({'file': rel, 'kind': 'browser', 'framework_hint': sorted(kinds) or None,
+                               'visits': sorted(set(visits)), 'test_cases': cases})
+            return
+        client = [m.group(2) for m in HTTP_CLIENT_CALL.finditer(text)]
+        if client and TEST_NAME_RE.search(path.name):
+            # requests a page or endpoint through the framework's test client (Flask/Django test client, supertest)
+            # and asserts the response: journey evidence at the HTTP level, not a browser test (RUBRIC section 6)
+            self.tests.append({'file': rel, 'kind': 'http-client', 'framework_hint': ['test-client'],
+                               'visits': sorted(set(client)), 'test_cases': cases})
         elif path.suffix in ('.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.py') and TEST_NAME_RE.search(path.name):
-            cases = len(PY_TEST_CASE.findall(text)) if path.suffix == '.py' else len(TEST_CASE.findall(text))
             self.unit_tests['files'] += 1
             self.unit_tests['test_cases'] += cases
 
@@ -854,6 +1037,9 @@ class Extractor:
             except OSError:
                 continue
             rel_parts = Path(self.rel(path)).parts
+            if self.is_template(path):
+                self.template_files[self.rel(path)] = text   # read after the walk, with the views that render them
+                continue
             self.detect_project(path, text)
             if self.is_test(rel_parts, path.name):
                 self.scan_test(path, text)
@@ -867,10 +1053,12 @@ class Extractor:
             self.file_route(path, list(rel_parts), deps, text)
             self.scan_content(path, text, deps)
         self.scan_python_project()
+        self.templates = self.scan_templates()
         self.scan_client_routes()
         self.wrappers = self.resolve_wrappers()
         fw = self.frameworks
         if any(i['platform'] == 'cli' for i in self.items if i.get('platform')): self.platforms.add('cli')
+        if any(i.get('platform') == 'web' for i in self.items): self.platforms.add('web')
         if fw & WEB_FW: self.platforms.add('web')
         if fw & {'react-native', 'expo-router', 'react-navigation', 'flutter'}: self.platforms |= {'ios', 'android'}
         if 'android' in fw: self.platforms.add('android')
@@ -886,12 +1074,17 @@ class Extractor:
                 seen.add(key); unique.append(it)
         labels = {kind: self.service_labels([i for i in unique if i['kind'] == kind])
                   for kind in ('route', 'screen', 'endpoint')}
+        # an app that serves pages and a JSON API under /api/: the API is one domain, not one per resource
+        page_roots = {self.app_root(i['file']) for i in unique if i['kind'] == 'route' and i.get('platform') == 'web'}
         for it in unique:
             service = labels.get(it['kind'], {}).get(self.app_root(it['file'])) if labels.get(it['kind']) else None
             if service:
                 it['service'] = service
             if it['kind'] in ('route', 'screen', 'endpoint'):
                 dom = domain_hint(it['name'])
+                if it['kind'] == 'endpoint' and re.match(r'^[A-Z|]+ /api(/|$)', it['name']) \
+                        and self.app_root(it['file']) in page_roots:
+                    dom = 'api'
                 slug = re.sub(r'[^a-z0-9]+', '-', service.lower()).strip('-') if service else None
                 if slug:
                     dom = f'{slug}-{dom}' if dom and dom != slug else slug
@@ -919,9 +1112,12 @@ class Extractor:
                                                'not journey tests: count them, but match journeys to e2e tests '
                                                '(context.tests).'},
                         'services': sorted({it['service'] for it in unique if it.get('service')}),
-                        'python_mounts': self.py_notes},
+                        'python_mounts': self.py_notes,
+                        'templates': getattr(self, 'templates', [])},
             'stats': {'files_scanned': self.files_scanned, 'truncated': self.truncated,
-                      'counts': {k: len(v) for k, v in surface.items()}},
+                      'counts': {k: len(v) for k, v in surface.items()},
+                      'skipped_data_dirs': self.skipped_data_dirs,
+                      'skipped_data_files': self.skipped_data_files},
             'limitations': [
                 'Heuristic extraction: verify every item. Client routes are joined through nested route objects, '
                 '<Route> elements and splat mounts in other files, and constant paths from plain object literals are '
@@ -940,7 +1136,19 @@ class Extractor:
                 'the agent must confirm what each one does.',
                 'Goal events passed as constants or variables (e.g. EVENTS.SIGNUP) are not resolved; tracking '
                 'wrappers are followed only when they forward their first parameter (see context.goal_wrappers).',
-                'The domain on each item is a proposal from its path prefix; correct it during review.',
+                'The domain on each item is a proposal from its path prefix; correct it during review. In an app that '
+                'serves pages and a JSON API under /api/, the API endpoints share the domain "api"; files served at the '
+                'site root (/robots.txt, /sitemap.xml) are "site-files".',
+                'Flask views that render a template (render_template, stream_template) are web routes with the template '
+                'they render; context.templates lists each server-side template (.html under templates/, .jinja, .j2) '
+                'with its links, forms, fetch() calls and the templates it extends or includes: the navigation and '
+                'API-call edges of a server-rendered site. Django views and computed template names are not followed.',
+                'context.tests lists browser tests (kind "browser": Playwright, Cypress, Selenium, Python Playwright) '
+                'and test-client tests (kind "http-client": a framework test client requesting a URL and asserting the '
+                'response) with the URLs they visit.',
+                'JSON files are opened only by name (package.json, host.json, function.json, tsconfig/jsconfig, '
+                'openapi*/swagger*); directories of hundreds of data files with no code are not walked '
+                '(stats.skipped_data_dirs).',
                 'Import aliases are reported (context.path_aliases) but imports are not resolved.',
             ],
         }
@@ -1016,6 +1224,80 @@ SELF_TEST_WANT = {
 }
 
 
+# a server-rendered Flask site (a ferry timetable): views that render Jinja templates are pages, /api/* returns JSON,
+# a data directory of timetable JSON files is not code, and Python browser and test-client tests are journey evidence
+SELF_TEST_FLASK = {
+    'requirements.txt': 'flask==3.1.0\npytest==8.3.0\n',
+    'app.py': "from flask import Flask, jsonify, render_template, request\n\napp = Flask(__name__)\n\n\n"
+              "@app.route('/')\ndef index():\n    return render_template('index.html')\n\n\n"
+              "@app.route('/route/<slug>')\ndef route_detail(slug):\n    return render_template('route.html', slug=slug)\n\n\n"
+              "@app.route('/search', methods=['GET', 'POST'])\ndef search():\n    q = request.args.get('q', '')\n"
+              "    return render_template('search.html', q=q)\n\n\n"
+              "@app.route('/api/routes')\ndef api_routes():\n    return jsonify([])\n\n\n"
+              "@app.route('/api/routes/<slug>')\ndef api_route(slug):\n    return jsonify({})\n\n\n"
+              "@app.route('/robots.txt')\ndef robots():\n    return app.send_static_file('robots.txt')\n",
+    'templates/base.html': '<!doctype html>\n<html><body>\n<nav><a href="/">Home</a></nav>\n'
+                           '{% block content %}{% endblock %}\n</body></html>\n',
+    'templates/index.html': '{% extends "base.html" %}\n{% block content %}\n{% for r in routes %}\n'
+                            '<a href="/route/{{ r.slug }}">{{ r.name }}</a>\n{% endfor %}\n'
+                            '<form action="/search" method="get"><input name="q"></form>\n'
+                            "<script>\nfetch('/api/routes?q=' + q).then(r => r.json());\n</script>\n{% endblock %}\n",
+    'templates/route.html': '{% extends "base.html" %}\n{% block content %}<h1>{{ slug }}</h1>{% endblock %}\n',
+    'templates/search.html': '{% extends "base.html" %}\n{% block content %}{{ q }}{% endblock %}\n',
+    'static/site.json': '{"name": "Ferry timetable"}\n',
+    'tests/test_browser.py': 'from playwright.sync_api import sync_playwright\n\n\ndef test_route_page():\n'
+                             '    with sync_playwright() as p:\n        page = p.chromium.launch().new_page()\n'
+                             "        page.goto('http://127.0.0.1:5000/route/north')\n",
+    'tests/test_search_selenium.py': 'from selenium import webdriver\n\n\ndef test_search():\n'
+                                     '    driver = webdriver.Chrome()\n'
+                                     "    driver.get('http://127.0.0.1:5000/search?q=north')\n",
+    'tests/test_views.py': 'from app import app\n\n\ndef test_route_detail():\n    client = app.test_client()\n'
+                           "    resp = client.get('/route/north')\n    assert b'north' in resp.data\n",
+}
+SELF_TEST_FLASK.update({f'timetables/sailing_{n:03d}.json': '{"id": %d}\n' % n for n in range(250)})
+
+
+def self_test_flask(problems: list[str]) -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'ferry'
+        for rel, text in SELF_TEST_FLASK.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        data = Extractor(root.resolve(), 1000).run()
+        excl = Extractor(root.resolve(), 1000, exclude=['templates']).run()['stats']['skipped_data_dirs']
+    if [(x['path'], x['reason']) for x in excl if x['path'] == 'templates'] != [('templates', 'excluded by --exclude')]:
+        problems.append(f'--exclude: {excl}')
+    s, ctx, st = data['surface'], data['context'], data['stats']
+    routes = {i['name']: i for i in s['routes']}
+    if set(routes) != {'/', '/route/<slug>', '/search'} or any(r.get('platform') != 'web' for r in routes.values()):
+        problems.append(f"flask pages: want routes /, /route/<slug>, /search on web, got "
+                        f"{[(i['name'], i.get('platform')) for i in s['routes']]}")
+    elif routes['/'].get('template') != 'templates/index.html':
+        problems.append(f"flask pages: / should record its template templates/index.html, got {routes['/'].get('template')}")
+    eps = {i['name']: i.get('domain') for i in s['endpoints']}
+    if eps.get('GET /api/routes') != 'api' or eps.get('GET /api/routes/<slug>') != 'api' or \
+            eps.get('GET /robots.txt') != 'site-files' or \
+            any(n.endswith((' /', ' /search', '/route/<slug>')) for n in eps):
+        problems.append(f'flask endpoints and their domains: {eps}')
+    if 'web' not in data['platforms']:
+        problems.append(f"flask platforms: {data['platforms']}")
+    tpl = {t['file']: t for t in ctx.get('templates') or []}
+    idx = tpl.get('templates/index.html') or {}
+    if not ({l['url'] for l in idx.get('links') or []} >= {'/route/{{ r.slug }}'}
+            and [f['action'] for f in idx.get('forms') or []] == ['/search']
+            and [f['url'] for f in idx.get('fetches') or []] == ['/api/routes?q='] and idx.get('rendered_by') == ['/']):
+        problems.append(f'flask templates: {idx}')
+    kinds = {t['file']: (t.get('kind'), t.get('visits')) for t in ctx['tests']}
+    want = {'tests/test_browser.py': ('browser', ['http://127.0.0.1:5000/route/north']),
+            'tests/test_search_selenium.py': ('browser', ['http://127.0.0.1:5000/search?q=north']),
+            'tests/test_views.py': ('http-client', ['/route/north'])}
+    if kinds != want:
+        problems.append(f'flask tests: want {want}, got {kinds}')
+    skipped = st.get('skipped_data_dirs') or []
+    if [(x['path'], x['files']) for x in skipped] != [('timetables', 250)] or st['files_scanned'] > 20:
+        problems.append(f"data tree: skipped {skipped}, files scanned {st['files_scanned']}")
+
+
 def self_test() -> int:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d) / 'bakery'
@@ -1042,6 +1324,7 @@ def self_test() -> int:
         problems.append(f"e2e tests: {data['context']['tests']}")
     if 'cli' not in data['platforms'] or data['context']['services'] != ['orders', 'stock', 'stock-functions-watcher']:
         problems.append(f"platforms {data['platforms']}, services {data['context']['services']}")
+    self_test_flask(problems)
     for p in problems:
         print('FAIL', p)
     if problems:
@@ -1059,6 +1342,9 @@ def main() -> int:
     ap.add_argument('repo', type=Path)
     ap.add_argument('--out', type=Path, help='write JSON here instead of stdout')
     ap.add_argument('--max-files', type=int, default=20000)
+    ap.add_argument('--exclude', action='append', default=[], metavar='DIR',
+                    help='repository-relative directory not to walk (repeatable); directories of hundreds of data files '
+                         '(JSON, CSV, ...) with no code are skipped without it and listed in stats.skipped_data_dirs')
     ap.add_argument('--goal-wrapper', action='append', default=[], metavar='NAME',
                     help='name of a function that sends analytics events (its first argument is the event name); '
                          'repeatable, comma-separated lists allowed. Wrappers that forward their first parameter to a '
@@ -1068,17 +1354,22 @@ def main() -> int:
     if not root.is_dir():
         print(f'Not a directory: {root}', file=sys.stderr); return 2
     wrappers = [w for arg in args.goal_wrapper for w in arg.split(',')]
-    data = Extractor(root, args.max_files, wrappers).run()
+    data = Extractor(root, args.max_files, wrappers, args.exclude).run()
     text = json.dumps(data, indent=2, ensure_ascii=False)
     if args.out:
         args.out.write_text(text + '\n', encoding='utf-8')
         c = data['stats']['counts']
         print(f"Wrote {args.out}: {c['routes']} routes, {c['screens']} screens, {c['endpoints']} endpoints, "
-              f"{c['entry_points']} entry points, {c['goals']} goals, {len(data['context']['tests'])} e2e test files "
+              f"{c['entry_points']} entry points, {c['goals']} goals, "
+              f"{sum(1 for t in data['context']['tests'] if t.get('kind') == 'browser')} e2e test files, "
+              f"{sum(1 for t in data['context']['tests'] if t.get('kind') == 'http-client')} test-client files "
               f"and {data['context']['unit_tests']['files']} unit test files "
               f"({data['stats']['files_scanned']} files scanned{', TRUNCATED' if data['stats']['truncated'] else ''}); "
               f"{len(data['context']['guards'])} guard files, {len(data['context']['layouts'])} layouts, "
+              f"{len(data['context']['templates'])} server templates, "
               f"{len(data['context']['goal_wrappers'])} tracking wrappers")
+        for s in data['stats']['skipped_data_dirs']:
+            print(f"  skipped {s['path']}/ ({s['files']} files): {s['reason']}")
     else:
         print(text)
     return 0
