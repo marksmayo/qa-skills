@@ -76,6 +76,13 @@ def main() -> int:
     w(P('## Tools', BOLD))
     for t in meta['tools']:
         w(f"- {t['name']} {t['version']} ({t['license']}): {P(t['status'], TOOL_STYLE[t['status']])}" + (f" - {t['reason']}" if t['reason'] else ''))
+    cut = {}
+    for c in meta['checks']:
+        if c['status'] == 'partial':
+            cut.setdefault(c['name'], []).append(f"{c['page']} {c['viewport']}")
+    for name, where in sorted(cut.items()):
+        w(P(f"- {name} probe partial (stopped before a full pass) on {len(where)} check(s): {', '.join(where[:6])}"
+            + (' ...' if len(where) > 6 else ''), YELLOW))
     w('')
     w(P('## Findings', BOLD))
     if not d['findings']:

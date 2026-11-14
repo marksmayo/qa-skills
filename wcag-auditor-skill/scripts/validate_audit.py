@@ -150,7 +150,9 @@ def completeness(checks: list[dict]) -> float:
 def overall_confidence(d: dict, comp: float) -> str:
     engines = {t['name']: t['status'] for t in d['metadata']['tools']}
     all_engines = all(engines.get(e) == 'ran' for e in REQUIRED_ENGINES)
-    if comp >= 0.9 and all_engines and d['assisted_review']['scs_reviewed']:
+    # a probe cut short (partial: the keyboard probe stopped at its press limit) measured only part of the page
+    partial = any(c['status'] == 'partial' for c in d['metadata']['checks'])
+    if comp >= 0.9 and all_engines and d['assisted_review']['scs_reviewed'] and not partial:
         return 'high'
     return 'medium' if comp >= 0.6 else 'low'
 
@@ -245,6 +247,13 @@ def check(d: dict, run_dir: Path | None, cands: dict | None, repo: Path | None =
     for t in meta['tools']:
         if t['status'] != 'ran' and not t['reason'].strip():
             e.append(f'metadata.tools: {t["name"]} is {t["status"]} without a reason')
+    cut_short = sorted({c['name'] for c in meta['checks'] if c['status'] == 'partial'})
+    for name in cut_short:
+        words = (name.split('_')[0],) + (('keyboard',) if name == 'focus_visible' else ())  # measured during the keyboard probe
+        if not any(any(w in l.lower() for w in words) and 'partial' in l.lower() for l in d['limitations']):
+            rows = [c for c in meta['checks'] if c['name'] == name and c['status'] == 'partial']
+            e.append(f'limitations: the {name} probe was partial on {len(rows)} check(s) ({rows[0]["page"]} {rows[0]["viewport"]}); '
+                     'say it was partial and what it did not measure')
     pages = {p['id']: p for p in meta['sample']}
     if len(pages) != len(meta['sample']):
         e.append('metadata.sample: duplicate page ids')

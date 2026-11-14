@@ -1,7 +1,7 @@
 ---
 name: wcag-auditor
 description: Audit live web pages against WCAG (2.2 AA by default) without needing the source code. Runs three open-source engines inside a real browser (axe-core, IBM Equal Access, HTML_CodeSniffer), adds keyboard, focus, reflow, text-spacing, zoom, target-size, hover, motion, language and media probes, merges and de-duplicates the results by component, maps every issue to a success criterion, rates severity with a published rubric, and gives every SC at the target level an EARL outcome. Untested criteria become a manual test plan. The report never says the site conforms.
-version: 1.3.0
+version: 1.4.0
 ---
 
 # WCAG Auditor
@@ -59,7 +59,11 @@ What sets this apart from running one checker:
    silently. Pages therefore run with the CSP bypassed (`bypass_csp`, default true; it changes
    nothing for real users), every injection is checked, and one that didn't take makes that engine
    or probe `errored`, never "ran, nothing found". An SC passed on probe evidence needs its probe to
-   have run on every planned check (the validator enforces it with `--run`).
+   have run on every planned check (the validator enforces it with `--run`). A probe cut short
+   (`partial`: the keyboard traversal stopped at its press limit) is not "ran": it lowers evidence
+   completeness, keeps overall confidence below high, blocks probe-based passes and must be named
+   in `limitations` as partial. When a large focus- or hover-opened menu dominates the Tab order,
+   add a state that closes it, or raise `keyboard.max_presses`, so the rest of the page is measured.
 
 ## Inputs
 
@@ -73,6 +77,8 @@ What sets this apart from running one checker:
 | `viewports` | `1280x800`, `320x640` | 320 px also covers 1.4.10 Reflow |
 | `max_pages` | 25 | Sampling cap for crawled and sitemap pages; listed targets are always audited |
 | `crawl.max_loads` | 4 x `max_pages` | Most pages the crawl loads; it stops sooner once `max_pages` templates are found or `max_pages` loads in a row add no new template |
+| `crawl.per_pattern` | 2 | Pages of one URL shape (`/region/*`, numbers and query values as placeholders) the crawl loads while links of an unseen shape wait, so a menu of hundreds of links of one shape on every page doesn't take every load before the footer's pages; `run.json` `crawl.patterns` counts the loads per shape |
+| `keyboard.max_presses` | 2000 | Hard cap on Tab presses per keyboard traversal. The budget starts at 3 per visible focusable element (+20, at most 400) and grows by 20 each time a press reaches a new element, so a menu that focus reveals (hundreds of links) doesn't end the traversal early |
 | `settle_seconds` | 10 | Most time spent waiting for each load to settle (network quiet for 500 ms, then a quiet DOM). Event streams, websockets, long-poll and hot-reload requests, and any request open longer than `long_lived_seconds` (4), don't hold it open; `events` names them |
 | `random_sample` | 0.1 | Share of the remaining crawled pages added at random (seeded); `0` adds none |
 | `third_party` | `block` | Every request to a host that isn't loopback, a target's host or in `allowed_hosts` is aborted and logged. Third-party content (embeds, fonts, widgets from other hosts) is then absent: say so in `limitations`, or let a host through |
@@ -122,7 +128,8 @@ sharing a template), one page per template not yet covered, and about 10% more o
 random (seeded). Each page records how it entered the sample (`critical_path`, `listed`,
 `structured`, `random`, or `unreachable`). Check the sample makes sense before the full run; add
 targets for templates the crawl missed. A plan-only run records every engine as `not_run` with the
-reason "plan only": that is expected, not a failure. Responses that aren't HTML (a linked `.txt`,
+reason "plan only": that is expected, not a failure. The crawl loads at most `crawl.per_pattern` pages of one URL shape
+while links of an unseen shape wait (listed targets always come first). Responses that aren't HTML (a linked `.txt`,
 XML or JSON file) are skipped, not sampled; `run.json` lists them under `crawl.skipped_non_html`
 with why the crawl stopped.
 
@@ -142,7 +149,7 @@ so the audited page is never reloaded under later probes.
 
 | Probe | SCs | What it measures |
 |---|---|---|
-| `keyboard` | 2.1.1, 2.1.2, 2.4.3 | Tab order from the top of the document (an invisible starting point focused at the start of the body; nothing is clicked, so the first Tab reaches a skip link even under a fixed header); traps (no new element for 15 presses, then Shift+Tab and Escape tried); clickable elements that aren't focusable, with their click listeners; menu links that only `:hover` reveals and no key opens (focus, ArrowDown, and Enter and Space unless the control follows a link or submits a form). Clickable heading text whose heading holds a focusable `#` anchor link is not reported; a clickable element with a focusable sibling link or button is needs review, not failed. In a named state with a modal open and focus inside it, Tab starts from the focused element and only the modal's controls are expected (`start: active_element`) |
+| `keyboard` | 2.1.1, 2.1.2, 2.4.3 | Tab order from the top of the document (an invisible starting point focused at the start of the body; nothing is clicked, so the first Tab reaches a skip link even under a fixed header); traps (no new element for 15 presses, then Shift+Tab and Escape tried); clickable elements that aren't focusable, with their click listeners; menu links that only `:hover` reveals and no key opens (focus, ArrowDown, and Enter and Space unless the control follows a link or submits a form). Clickable heading text whose heading holds a focusable `#` anchor link is not reported; a clickable element with a focusable sibling link or button is needs review, not failed. In a named state with a modal open and focus inside it, Tab starts from the focused element and only the modal's controls are expected (`start: active_element`). A traversal that hits its press limit (`keyboard.max_presses`) before a full pass is `partial`, with a reason: its stops are evidence, what it never reached is not reported as unreachable, and the keyboard and focus checks count as not run |
 | `focus_visible` | 2.4.7, 2.4.11, 2.4.12 | Pixels changed around each element when focused; whether fixed or sticky content covers it (a fixed header that contains the focused control doesn't count); focus guards (`data-*focus-guard`, 0 x 0 `aria-hidden` sentinels) are not measured |
 | `reflow` | 1.4.10 | Horizontal scrolling at 320 px and the element causing it (tables, video and other two-dimensional content flagged as possibly exempt); content past the viewport on a page that can't scroll sideways (cut off: `reflow.clipped`, failed), or cut off by an ancestor with overflow hidden (needs review) |
 | `text_spacing` | 1.4.12 | Text clipped once the WCAG spacing overrides are applied (visually hidden `.sr-only` text excluded); the overrides are read back, and a refused stylesheet makes the probe `errored` |
@@ -272,7 +279,7 @@ the `manual_test_plan` with concrete steps and pages.
 
 ### 10. Report, validate and render
 
-Write `audit.json` (described by `schemas/audit.schema.json`; its `schema_version` is `"1.2"`; `"1.0"` and `"1.1"` reports still validate). Copy
+Write `audit.json` (described by `schemas/audit.schema.json`; its `schema_version` is `"1.3"`; `"1.0"` to `"1.2"` reports still validate; 1.3 adds the check status `partial`). Copy
 `metadata.blocked_requests` from `run.json` as it is recorded there (a list of URLs) or as its count;
 `--run` checks it either way next
 to the run directory, then:

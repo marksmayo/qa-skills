@@ -88,10 +88,12 @@ with `not_established` it must say conformance is not established.
 
 `evidence_completeness` = checks that ran / checks planned, over `run.json` `checks` (each
 sampled page x viewport x required engine and applicable probe). Blocked pages and missing
-engines count as planned and not ran.
+engines count as planned and not ran, and so does a `partial` probe (the keyboard traversal
+stopped at its press limit before a full pass).
 
 `overall_confidence`: `high` when completeness >= 0.9, all three required engines ran and an
-assisted review was done; `medium` when completeness >= 0.6; otherwise `low`.
+assisted review was done and no check is `partial`; `medium` when completeness >= 0.6; otherwise
+`low`. Every partial probe is named in `limitations` as partial.
 
 ## Triage
 
@@ -151,7 +153,8 @@ duplicate these results.
 ## Reviewer checklist
 
 - [ ] Authorisation recorded; sample covers every template and critical-path step.
-- [ ] Every engine and probe is ran, not_run or errored with a reason; missing ones in limitations.
+- [ ] Every engine and probe is ran, partial, not_run or errored with a reason; missing and partial
+      ones in limitations.
 - [ ] Every candidate triaged with checkable reasons; cantTell never counted as failed.
 - [ ] Each finding: SC, failure pattern, severity with rationale, confidence, sources, instances
       with screenshots, who is affected, fix and a verification step.

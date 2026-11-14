@@ -13,6 +13,10 @@ Config (JSON):
                        The crawl prints each page it loads, loads at most max_loads (default 4 x max_pages) and
                        stops sooner once max_pages templates are found or max_pages loads in a row add none.
                        Non-HTML responses (a linked .txt, XML or JSON file) are skipped, not sampled.
+                       "per_pattern": 2 loads at most that many pages of one URL shape (/region/*) while
+                       links of an unseen shape wait; run.json crawl.patterns counts loads per shape.
+    keyboard           {"max_presses": 2000}: hard cap on Tab presses per traversal (the budget grows while
+                       presses keep reaching new elements); a traversal stopped by it is "partial".
     settle_seconds     10: most time spent settling each load (network quiet 500 ms, then a quiet DOM).
                        Event streams, websockets, long-poll and hot-reload requests, and any request open
                        longer than long_lived_seconds (4), don't hold it open; events names them.
@@ -68,7 +72,7 @@ Writes <out>/run.json (metadata, sample, per-page checks, mode, bypass_csp, cons
 from __future__ import annotations
 import argparse, hashlib, ipaddress, json, os, random, re, shutil, struct, subprocess, sys, time, zlib
 from pathlib import Path
-from urllib.parse import urljoin, urlparse, urldefrag
+from urllib.parse import parse_qsl, urljoin, urlparse, urldefrag
 import urllib.request
 
 HERE = Path(__file__).resolve().parent
@@ -80,6 +84,10 @@ ALL_PROBES = ['keyboard', 'focus_visible', 'reflow', 'text_spacing', 'resize_tex
               'hover_focus', 'motion', 'a11y_tree', 'language', 'media']
 DESKTOP_ONLY = {'resize_text', 'hover_focus', 'motion', 'a11y_tree', 'language', 'media'}
 NARROW_ONLY = {'reflow'}
+# The keyboard probe starts with a budget of 3 presses per visible focusable element (+20, at most 400) and gives
+# itself 20 more presses each time a press reaches an element it has not seen (a menu that :focus-within reveals
+# adds its links to the Tab order only once focus enters it), up to this hard cap ("keyboard": {"max_presses": N}).
+KEYBOARD_MAX_PRESSES = 2000
 ENGINE_NAMES = ['axe-core', 'ibm-equal-access', 'htmlcs', 'vnu']
 AXE_TAGS = {'2.0': ['wcag2a', 'wcag2aa', 'wcag2aaa'], '2.1': ['wcag2a', 'wcag2aa', 'wcag2aaa', 'wcag21a', 'wcag21aa'],
             '2.2': ['wcag2a', 'wcag2aa', 'wcag2aaa', 'wcag21a', 'wcag21aa', 'wcag22aa']}
@@ -118,6 +126,36 @@ def url_pattern(u: str) -> str:
     path = re.sub(r'/\d+(?=/|$)', '/{n}', path)
     path = re.sub(r'/[0-9a-f]{8,}(?=/|$)', '/{id}', path)
     return path
+
+
+# The crawl loads at most this many pages of one URL shape (crawl_pattern) while pages of an unseen shape wait in the
+# queue: a menu of hundreds of /region/<name> links repeated on every page would otherwise take every load before the
+# footer's /privacy or /contact is reached. "crawl": {"per_pattern": N} changes it.
+CRAWL_PER_PATTERN = 2
+
+
+def crawl_pattern(u: str) -> str:
+    """The URL's shape for crawl ordering: numeric and id-like segments, the last segment of a path two or more
+    segments deep, and query values become placeholders (/region/alder and /region/birch share /region/*)."""
+    p = urlparse(u)
+    segs = [s for s in (p.path or '/').split('/') if s]
+    segs = ['{n}' if s.isdigit() else ('{id}' if re.fullmatch(r'[0-9a-f]{8,}', s) else s) for s in segs]
+    if len(segs) >= 2:
+        segs[-1] = '*'
+    keys = '&'.join(sorted({k for k, _ in parse_qsl(p.query, keep_blank_values=True)}))
+    return '/' + '/'.join(segs) + (('?' + keys) if keys else '')
+
+
+def crawl_pick(queue: list[str], loaded: dict[str, int], per_pattern: int = CRAWL_PER_PATTERN, must=()) -> int:
+    """Index of the next URL to load: a listed target first, then the first URL whose shape has been loaded fewer
+    than per_pattern times, else the head of the queue (every shape is saturated: plain breadth-first order)."""
+    for i, u in enumerate(queue):
+        if u in must:
+            return i
+    for i, u in enumerate(queue):
+        if loaded.get(crawl_pattern(u), 0) < per_pattern:
+            return i
+    return 0
 
 
 def _distinct(parts) -> str:
@@ -556,7 +594,9 @@ class Runner:
         if start == 'active_element':
             # only the modal's own controls are expected to be reachable while it is open
             focusable = [f for f in focusable if (f.get('xpath') or '').startswith(modal['xpath'] + '/')]
-        limit = min(400, 3 * len(focusable) + 20)
+        hard_cap = max(1, int((self.cfg.get('keyboard') or {}).get('max_presses', KEYBOARD_MAX_PRESSES)))
+        limit = min(hard_cap, 400, 3 * len(focusable) + 20)
+        presses, stopped = 0, None
         started = start == 'active_element'
         stops, moves, trap = [], [], None
         seen: set[str] = set()
@@ -572,7 +612,13 @@ class Runner:
                     pending = info
                 stops.append(info); moves.append(info['xpath']); seen.add(info['xpath'])
                 last_new = 1
-        for i in range(limit):
+        while True:
+            if presses >= limit:
+                stopped = 'press_limit'
+                break
+            presses += 1
+            if presses % 100 == 0:
+                print(f'  [keyboard {pid}] {presses} presses, {len(seen)} elements reached', file=sys.stderr, flush=True)
             page.keyboard.press('Tab')
             page.wait_for_timeout(60)
             if not started:
@@ -586,6 +632,7 @@ class Runner:
                 pending = None
             if info is None:
                 if stops:
+                    stopped = 'left_document'
                     break  # left the document: one full pass
                 continue
             if measure:
@@ -594,10 +641,13 @@ class Runner:
             stops.append(info)
             moves.append(info['xpath'])
             if len(stops) > 1 and info['xpath'] == stops[0]['xpath']:
+                stopped = 'wrapped'
                 break  # wrapped round to the first stop
             if info['xpath'] not in seen:
                 seen.add(info['xpath'])
                 last_new = len(moves)
+                # still finding new elements (content that focus reveals): keep going, up to the hard cap
+                limit = max(limit, min(hard_cap, presses + 20))
             if len(moves) - last_new >= 15 and len(seen) < len(focusable):
                 recent = moves[-15:]
                 if measure and pending:
@@ -614,12 +664,16 @@ class Runner:
                     trap['screenshot'] = shot.name
                 elif escaped == 'Shift+Tab':
                     trap = None  # Shift+Tab leaves it: a cycle, not a trap
+                stopped = 'trap' if trap else 'cycle'
                 break
         if measure and pending:
             self.finish_indicator(page, pending)
         for s in stops:
             s.pop('_shot', None)
         unreached = [f for f in focusable if f['xpath'] not in seen]
+        # A traversal cut short by the press limit while it still had elements to reach measured only the start of
+        # the Tab order: what it did not reach is not evidence of anything, so the probe is partial, not ran.
+        partial = stopped == 'press_limit' and (bool(unreached) or len(moves) - last_new < 15)
         hover_only = [] if trap or start == 'active_element' else self.hover_only_menus(page, seen)
         pointer_only = targets['pointer_only'][:50]
         self.add_listeners(page, pointer_only)
@@ -633,7 +687,14 @@ class Runner:
         if start == 'active_element':
             skip = None  # not measured: the traversal started inside the modal
             pointer_only = [p for p in pointer_only if (p.get('xpath') or '').startswith(modal['xpath'] + '/')]
-        return {'presses': len(moves), 'stops': stops, 'focusable_count': len(focusable), 'unreached': unreached[:50],
+        status = {}
+        if partial:
+            status = {'status': 'partial',
+                      'reason': (f'Tab traversal stopped at the press limit ({presses} presses; max_presses {hard_cap}) before a '
+                                 f'full pass: {len(unreached)} of {len(focusable)} focusable elements not reached, so Tab order, '
+                                 'focus visibility and focus obscuring past that point were not measured')}
+        return {**status, 'presses': len(moves), 'tab_presses': presses, 'press_limit': limit, 'stopped': stopped,
+                'stops': stops, 'focusable_count': len(focusable), 'unreached': unreached[:50],
                 'pointer_only': pointer_only, 'trap': trap, 'positive_tabindex': positive, 'jumps': jumps[:20],
                 'skip_link_first': skip, 'hover_only': hover_only, 'start': start,
                 **({'modal': {k: modal.get(k) for k in ('xpath', 'selector', 'html')}} if modal else {})}
@@ -917,6 +978,8 @@ class Runner:
         must = {urldefrag(u)[0] for u in targets + cp_urls}
         templates: set[str] = set()
         since_new, stopped = 0, 'queue empty'
+        per_pattern = int((crawl or {}).get('per_pattern', CRAWL_PER_PATTERN))
+        shapes: dict[str, int] = {}
         while queue:
             if len(found) >= limit:
                 stopped = f'load limit ({limit}) reached'
@@ -928,10 +991,11 @@ class Runner:
                 if since_new >= max_pages:
                     stopped = f'no new template in the last {since_new} pages'
                     break
-            url = queue.pop(0)
+            url = queue.pop(crawl_pick(queue, shapes, per_pattern, must - seen) if crawl else 0)
             if url in seen:
                 continue
             seen.add(url)
+            shapes[crawl_pattern(url)] = shapes.get(crawl_pattern(url), 0) + 1
             print(f'[crawl {len(found) + 1}/{limit}] {url}', file=sys.stderr, flush=True)
             nav = self.goto(page, url)
             if not nav['ok']:
@@ -955,6 +1019,8 @@ class Runner:
         ctx.close()
         self.crawl_info = {'loaded': len(found) + len(self.skipped_non_html), 'limit': limit, 'templates': len(templates),
                            'stopped': stopped if crawl else 'no crawl: listed targets only',
+                           **({'per_pattern': per_pattern,
+                               'patterns': dict(sorted(shapes.items(), key=lambda x: (-x[1], x[0]))[:30])} if crawl else {}),
                            'skipped_non_html': self.skipped_non_html[:50]}
         print(f'[crawl] {self.crawl_info["loaded"]} loaded, {len(templates)} template(s); stopped: {self.crawl_info["stopped"]}',
               file=sys.stderr, flush=True)

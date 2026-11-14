@@ -414,3 +414,19 @@ Differences from the draft above, and decisions made while building:
     not re-captured: its candidates regenerate unchanged and the report validates as before.
   - Not done: a probe for single-key shortcuts (2.1.4), pressing Enter/Space on the selected item, and
     an event for short-interval polling; those still need the agent to read the script.
+- **Found on a server-rendered Python site with a navigation menu of a few hundred links, fixed (v1.4.0)**:
+  - The keyboard probe's press budget (3 per visible focusable element) ignored the links a
+    `:focus-within` menu adds to the Tab order once focus enters it, so the traversal ended inside the
+    menu and reported the rest of the page as unreachable. The budget now grows by 20 presses each time
+    a press reaches a new element, up to `keyboard.max_presses` (2000).
+  - A traversal that still stops at its limit was counted as `ran`. It is now `partial` with a reason
+    (schema 1.3 adds the check status): normalize.py keeps its stops but not its unreached list,
+    completeness counts it as not run, confidence can't be high, probe-based passes are refused, and
+    the validator wants it named in `limitations`.
+  - The crawl followed a menu of one URL shape in document order and spent every load on it. It now
+    loads at most `crawl.per_pattern` (2) pages of a shape while links of an unseen shape wait.
+  - `self_test.py` covers all three (the keyboard check drives Chromium on a synthetic page). The
+    example run was not re-captured; its items regenerate unchanged and the report validates.
+  - Not done here: speculative connections (`preconnect`, `dns-prefetch`) that request interception
+    can't see need a host-resolver guard in the shared browser harness; listed error pages still
+    block probe-based passes.

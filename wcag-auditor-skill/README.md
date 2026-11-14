@@ -21,7 +21,7 @@ It doesn't bluff about the result:
   raised on critical paths, and always Critical for the non-interference criteria.
 - Agent judgment (alt-text quality, colour-only errors) is labelled as such and never rated high
   confidence.
-- Every engine and probe is recorded as ran, not run or errored, and the validator checks the
+- Every engine and probe is recorded as ran, partial, not run or errored, and the validator checks the
   report against the run's own records. Pages run with their CSP bypassed so the engines and probes
   can be injected, every injection is checked, and a probe that couldn't apply its overrides is
   errored, never a silent pass.

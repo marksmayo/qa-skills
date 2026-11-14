@@ -8,7 +8,7 @@
   "required": ["schema_version", "skill", "generated_at", "scope", "metadata", "headline", "sc_results", "findings",
                "advisories", "needs_review", "triage", "manual_test_plan", "assisted_review", "limitations", "files_written"],
   "properties": {
-    "schema_version": {"enum": ["1.0", "1.1", "1.2"]},
+    "schema_version": {"enum": ["1.0", "1.1", "1.2", "1.3"]},
     "skill": {"type": "object", "additionalProperties": false, "required": ["name", "version"],
       "properties": {"name": {"const": "wcag-auditor"}, "version": {"type": "string"}}},
     "generated_at": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T"},
@@ -85,7 +85,7 @@
                      "title": {"type": ["string", "null"]}, "note": {"type": "string"}}},
     "check": {"type": "object", "additionalProperties": false, "required": ["page", "viewport", "kind", "name", "status"],
       "properties": {"page": {"type": "string"}, "viewport": {"type": "string"}, "kind": {"enum": ["engine", "probe"]},
-                     "name": {"type": "string"}, "status": {"enum": ["ran", "not_run", "errored", "blocked"]}}},
+                     "name": {"type": "string"}, "status": {"enum": ["ran", "partial", "not_run", "errored", "blocked"]}}},
     "source": {"type": "object", "additionalProperties": false, "required": ["tool", "version", "rule_id", "act_rules"],
       "properties": {"tool": {"type": "string"}, "version": {"type": ["string", "null"]}, "rule_id": {"type": "string"},
                      "act_rules": {"type": "array", "items": {"type": "string"}}, "outcome": {"enum": ["failed", "cantTell"]}}},

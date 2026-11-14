@@ -185,7 +185,8 @@ class Norm:
 
     def probes(self, rec, p):
         k = p.get('keyboard')
-        if k and k.get('status') == 'ran':
+        # partial: the traversal stopped at its press limit; its stops are evidence, what it never reached is not
+        if k and k.get('status') in ('ran', 'partial'):
             self.checked(['2.1.1', '2.1.2', '2.4.3'], len(k['stops']))
             if k.get('trap'):
                 t = k['trap']
@@ -195,7 +196,7 @@ class Norm:
                 self.probe(rec, 'keyboard.trap', outcome, el=t.get('container'), message=msg,
                            data={'elements': t['elements'], 'after_presses': t['after_presses'],
                                  'unreached_after_trap': len(k['unreached'])}, screenshot=t.get('screenshot'))
-            else:
+            elif k.get('status') == 'ran':
                 for u in k['unreached']:
                     self.probe(rec, 'keyboard.unreachable', 'cantTell', el=u, message='Focusable element was never reached by Tab')
             for hm in k.get('hover_only') or []:
