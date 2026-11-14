@@ -3,7 +3,7 @@
 
     python send_cases.py contract.json cases.json --base-url http://127.0.0.1:8140 --out run/run.json
         [--exchanges run/exchanges] [--rate 5] [--bearer-env NAME] [--api-key-env NAME --api-key-header X-Api-Key]
-        [--cookie-env NAME] [--authorised-by WHO] [--allow-writes --confirm-non-production] [--production-host HOST ...]
+        [--cookie-env NAME] [--basic-env USER_VAR:PASS_VAR] [--authorised-by WHO] [--allow-writes --confirm-non-production] [--production-host HOST ...]
         [--probe api/health --probe-expect 200] [--graphql-path /graphql] [--no-resend]
         [--max-requests N] [--path-budget /api/appointments=15 ...] [--max-retries-429 N] [--max-retry-after S]
         [--on-429 stop-run|stop-path] [--resume run/run.attempt1.json]
@@ -25,7 +25,7 @@ Safety (enforced here, re-checked by the validator):
     requests are counted in `requests_sent`. If the sender aborts, the partial run.json is still written.
   * The liveness probe is --probe (leading slash optional; Git Bash rewrites a leading "/" unless
     MSYS_NO_PATHCONV=1, and a rewritten path is refused). The run is `down` when the probe can't connect
-    or misses --probe-expect (default: any status below 500). Without --probe the first parameterless GET
+    or misses --probe-expect (default: any status below 500). The probe is sent with the configured credentials. Without --probe the first parameterless GET
     operation is used, and its 5xx alone doesn't mark the target down: it is an API answer, checked as a case.
   * Before anything is written to disk, credentials are redacted: Authorization, Cookie, Set-Cookie,
     the API-key header or query parameter, any parameter named like token/secret/password/key/sig, and
@@ -35,6 +35,12 @@ Safety (enforced here, re-checked by the validator):
     --max-response-bytes; a larger Content-Length is taken as the size, otherwise body_bytes_lower_bound)
     and items (the length of a collection body: a top-level array, or the one array of a page wrapper).
     --max-response-bytes N adds the advisory response_size check: a 2xx body over N bytes fails it.
+
+Bodies are read by media type: application/json and +json bodies are parsed as JSON and checked against the
+schema; a text/* body is checked as a string against a string schema (cantTell against any other schema); a
+binary body (application/octet-stream, image/*, ...) gets not_applicable for schema_conformance, with only its
+Content-Type checked. A path parameter marked allow_slash (x-path-allows-slash or allowReserved, e.g. FastAPI's
+{name:path}) keeps its slashes unencoded. Accept names the operation's documented media types.
 
 Checks per response: status_documented (4xx/3xx/2xx not in responses and no default; 5xx is left to
 server_error), server_error, content_type, schema_conformance (passed/failed/cantTell), required_headers,
@@ -241,6 +247,47 @@ def media_matches(actual: str, documented: str) -> bool:
     return False
 
 
+def is_json_media(mt: str) -> bool:
+    """application/json, any +json type (problem+json, hal+json) and a wildcard, which a JSON body may answer."""
+    mt = (mt or '').lower()
+    return mt in ('application/json', '*/*', 'application/*', '') or mt.endswith('+json') or mt.endswith('/json')
+
+
+def check_non_json(raw: bytes, mt: str, schema: dict, root: dict, dialect: str) -> dict:
+    """schema_conformance for a body that is not JSON: text is checked as a string against a string schema;
+    a binary body (or a schema that is not about a string) can't be checked here."""
+    s = schema
+    while isinstance(s, dict) and '$ref' in s:
+        s = jl.resolve(s['$ref'], root)
+    typ = s.get('type') if isinstance(s, dict) else None
+    textual = mt.startswith('text/') or mt.endswith('+xml') or mt in ('application/xml', 'application/javascript',
+                                                                      'application/x-www-form-urlencoded')
+    if not textual:
+        return {'result': 'not_applicable', 'detail': f'{mt or "untyped"} body: not parsed as JSON; only its media type is checked'}
+    if typ not in (None, 'string') and not (isinstance(typ, list) and 'string' in typ):
+        return {'result': 'cantTell', 'detail': f'a {mt} body against a {typ} schema: not checked'}
+    try:
+        text = raw.decode('utf-8')
+    except UnicodeDecodeError:
+        return {'result': 'failed', 'detail': f'the {mt} body is not valid UTF-8 text'}
+    errs = jl.errors(text, schema, root, dialect)
+    if errs:
+        return {'result': 'failed', 'detail': f'{mt} body: ' + '; '.join(errs[:3]), 'errors': errs[:20]}
+    return {'result': 'passed', 'detail': f'{mt} body checked as text'}
+
+
+def accept_header(op: dict | None) -> str:
+    """Accept: the media types the operation documents (2xx first), so a negotiating server answers as documented."""
+    if not op:
+        return 'application/json'
+    seen: list[str] = []
+    for st in sorted(op.get('responses') or {}, key=lambda k: (not str(k).startswith('2'), str(k))):
+        for mt in ((op['responses'][st] or {}).get('content') or {}):
+            if mt not in seen:
+                seen.append(mt)
+    return ', '.join(seen) or '*/*'
+
+
 def find_response(op: dict, status: int):
     r = op['responses']
     for key in (str(status), f'{str(status)[0]}XX', f'{str(status)[0]}xx', 'default'):
@@ -384,10 +431,14 @@ def check_rest(case: dict, op: dict, contract: dict, status: int, headers: dict,
                                    {'result': 'failed', 'detail': f'Content-Type {ct or "missing"}; documented {sorted(documented)}'})
             schema_mt = match or next((m for m in documented if 'json' in m), None)
             schema = documented.get(schema_mt) if schema_mt else None
+            # how to read the body: by the media type it came with when that is documented, else by the documented one
+            body_mt = ct if match and ct else (schema_mt or '')
             if schema is None:
                 res['schema_conformance'] = {'result': 'not_applicable', 'detail': 'no schema documented'}
             elif len(raw) > MAX_BODY:  # only the first 2 MB were kept: the body can't be parsed, which says nothing about it
                 res['schema_conformance'] = {'result': 'cantTell', 'detail': 'the body is over 2 MB and was not read whole'}
+            elif not is_json_media(body_mt):
+                res['schema_conformance'] = check_non_json(raw, body_mt, schema, root, dialect)
             else:
                 try:
                     body = json.loads(raw.decode('utf-8')) if raw else None
@@ -492,8 +543,10 @@ def build_url(base: str, case: dict, op: dict | None, graphql_path: str) -> str:
     if req.get('graphql'):
         return base.rstrip('/') + graphql_path
     path = op['path']
+    slash = {p['name'] for p in op.get('parameters') or [] if p.get('in') == 'path' and p.get('allow_slash')}
     for k, v in req['path_params'].items():
-        path = path.replace('{' + k + '}', urllib.parse.quote(str(v), safe=''))
+        # a catch-all ({name:path}, allowReserved) keeps its slashes: %2F is refused by Apache and nginx defaults
+        path = path.replace('{' + k + '}', urllib.parse.quote(str(v), safe='/' if k in slash else ''))
     q = urllib.parse.urlencode(req['query']) if req['query'] else ''
     return base.rstrip('/') + path + ('?' + q if q else '')
 
@@ -512,6 +565,8 @@ def main() -> int:
     ap.add_argument('--api-key-header')
     ap.add_argument('--api-key-query')
     ap.add_argument('--cookie-env', help='env var holding a Cookie header value (session cookie auth)')
+    ap.add_argument('--basic-env', metavar='USER_VAR:PASS_VAR',
+                    help='HTTP Basic auth from two env vars (the user name and the password); both are redacted')
     ap.add_argument('--authorised-by')
     ap.add_argument('--allow-writes', action='store_true')
     ap.add_argument('--confirm-non-production', action='store_true')
@@ -559,7 +614,16 @@ def main() -> int:
     if a.allow_writes and not writes_ok:
         print('error: --allow-writes needs --authorised-by, --confirm-non-production and a host not in --production-host', file=sys.stderr)
         return 2
-    secret_envs = [e for e in (a.bearer_env, a.api_key_env, a.cookie_env) if e]
+    basic_user_env = basic_pass_env = None
+    if a.basic_env:
+        if ':' not in a.basic_env:
+            print('error: --basic-env takes USER_VAR:PASS_VAR (two environment variable names)', file=sys.stderr)
+            return 2
+        basic_user_env, basic_pass_env = a.basic_env.split(':', 1)
+        if not os.environ.get(basic_user_env):
+            print(f'error: environment variable {basic_user_env} is empty', file=sys.stderr)
+            return 2
+    secret_envs = [e for e in (a.bearer_env, a.api_key_env, a.cookie_env, basic_pass_env) if e]
     secrets = [os.environ.get(e, '') for e in secret_envs]
     for e, v in zip(secret_envs, secrets):
         if not v:
@@ -585,6 +649,11 @@ def main() -> int:
             auth_headers[a.api_key_header or 'X-API-Key'] = os.environ[a.api_key_env]
     if a.cookie_env:
         auth_headers['Cookie'] = os.environ[a.cookie_env]
+    if a.basic_env:
+        import base64
+        token = base64.b64encode(f'{os.environ[basic_user_env]}:{os.environ[basic_pass_env]}'.encode()).decode()
+        auth_headers['Authorization'] = f'Basic {token}'
+        secrets.append(token)   # scrubbed wherever it appears, like the password itself
     ops = {o['operation_id']: o for o in contract['operations']}
     ex_dir = a.exchanges or a.out.parent / 'exchanges'
     ex_dir.mkdir(parents=True, exist_ok=True)
@@ -600,6 +669,8 @@ def main() -> int:
                       **({'max_response_bytes': a.max_response_bytes} if a.max_response_bytes else {})}}
     if a.cookie_env:
         run['auth'] = 'cookie'
+    elif a.basic_env:
+        run['auth'] = 'basic'
 
     rel = lambda p: p.relative_to(a.out.parent).as_posix() if p and p.is_relative_to(a.out.parent) else (p.as_posix() if p else None)  # noqa: E731
 
@@ -621,12 +692,16 @@ def main() -> int:
             probe_path = None
     try:
         if probe_path is not None:
-            st, rh, raw, el = s.request('GET', a.base_url.rstrip('/') + probe_path, {}, None)
+            # the probe carries the credentials: with app-wide auth an unauthenticated probe would read 401 as "down"
+            probe_url = a.base_url.rstrip('/') + probe_path
+            if auth_query:
+                probe_url += ('&' if '?' in probe_url else '?') + urllib.parse.urlencode(auth_query)
+            st, rh, raw, el = s.request('GET', probe_url, dict(auth_headers), None)
         else:
             st, rh, raw, el = s.request('POST', a.base_url.rstrip('/') + a.graphql_path, {'Content-Type': 'application/json', **auth_headers},
                                         json.dumps({'query': '{ __typename }'}).encode())
         run['probe'] = {'path': probe_path or a.graphql_path, 'status': st, 'elapsed_ms': el, 'expect': a.probe_expect,
-                        'default': default_probe}
+                        'default': default_probe, **({'with_credentials': True} if auth_headers or auth_query else {})}
         if not expect_ok(st, a.probe_expect):
             if default_probe and st >= 500 and probe_path is not None and probe_path != '/':
                 # the default probe is an API operation; its 5xx doesn't prove the target is down (the
@@ -668,7 +743,7 @@ def main() -> int:
         if 'body' in req:
             headers['Content-Type'] = req.get('media_type') or 'application/json'
             body_bytes = json.dumps(req['body']).encode() if req['body'] is not None else b''
-        headers.setdefault('Accept', 'application/json')
+        headers.setdefault('Accept', 'application/json' if req.get('graphql') else accept_header(op))
         st, rh, raw, el = s.request(req['method'], url, headers, body_bytes)
         size, size_complete = s.size
         checker = check_graphql if req.get('graphql') else check_rest

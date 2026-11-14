@@ -278,6 +278,11 @@ class Builder:
                 vals = [(f'minimum {s[k]}' if k == 'minimum' else f'maximum {s[k]}', s[k]) for k in ('minimum', 'maximum') if k in s]
             elif stype(s) == 'string':
                 vals = [(f'length {s[k]}', 'x' * s[k]) for k in ('minLength', 'maxLength') if k in s and s[k] > 0 and not s.get('format')]
+                if len(vals) == 2 and vals[0][1] == vals[1][1]:
+                    vals = vals[:1]          # minLength == maxLength: one boundary, not the same case twice
+            if p['in'] == 'path' and p.get('allow_slash') and stype(s) in ('string', 'any'):
+                seg = str(params['path'].get(p['name']) or 'sample')
+                vals.append(('two path segments (catch-all)', f'nested/{seg}'))
             for d, v in vals:
                 if p['in'] in ('path', 'query', 'header') and json.dumps(v) != json.dumps(params[p['in']].get(p['name'])):
                     q = copy.deepcopy(params)
@@ -299,6 +304,8 @@ class Builder:
             for d, v in negatives(p['schema'], self.root):
                 if p['in'] in ('query', 'path', 'header') and isinstance(v, (int, float)) and stype(resolve(p['schema'], self.root)) == 'string':
                     continue  # every query value is a string on the wire; a number isn't a type error there
+                if p['in'] == 'path' and as_param(v) == '':
+                    continue  # an empty path segment is another route (or none), not a minLength violation of this one
                 q = copy.deepcopy(params)
                 q[p['in']][p['name']] = v
                 self.add('negative', False, f'{p["name"]}: {d}', q, body)

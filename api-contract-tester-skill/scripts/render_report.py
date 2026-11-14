@@ -109,10 +109,21 @@ def main() -> int:
     out += ['', P('## Operations', BOLD), '',
             '| Operation | Status | Cases | ' + ' | '.join(CHECK_ABBR.values()) + ' |',
             '|---|---|---|' + '---|' * len(CHECK_ABBR)]
+    # a failed check with no finding behind it: every candidate for it was dismissed (or awaits review) in triage
+    found = {(oid, f['check']) for f in d['findings'] for oid in f['operation_ids']}
+    starred = False
     for o in d['operations']:
-        cells = [P(MARK[o['checks'][k]], CHECK_STYLE[o['checks'][k]]) for k in CHECK_ABBR]
+        cells = []
+        for k in CHECK_ABBR:
+            v = o['checks'][k]
+            mark = MARK[v]
+            if v == 'failed' and (o['operation_id'], k) not in found:
+                mark, starred = 'FAIL*', True
+            cells.append(P(mark, CHECK_STYLE[v]))
         out.append(f'| {o["method"]} {o["path"]} ({o["operation_id"]}) | {o["status"]} | {o["cases_sent"]} | ' + ' | '.join(cells) + ' |')
-    out += ['', 'ok passed, FAIL failed, ? could not be evaluated (cantTell), - not applicable, . untested.']
+    out += ['', 'ok passed, FAIL failed, ? could not be evaluated (cantTell), - not applicable, . untested.' +
+            (' FAIL* failed, but no finding stands behind it: its candidates were dismissed or need review (see triage).'
+             if starred else '')]
     if d['findings']:
         out += ['', P('## Findings', BOLD)]
     for f in d['findings']:

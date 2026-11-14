@@ -9,6 +9,7 @@
 Output (contract.json):
     {kind: openapi|graphql|swagger2, version, title, api_version, dialect, source, sha256, yaml_parser,
      operations[{operation_id, method, path, tags, line, write, security[], parameters[], request_body,
+                 (a path parameter with x-path-allows-slash or allowReserved gets allow_slash: true),
                  responses{status: {content{media_type: schema|null}, headers{name: {required, schema}}}}}],
      issues[{id, kind, location, line, message}], root}
 
@@ -17,7 +18,8 @@ checked against it with jsonschema_lite.py. A Swagger 2.0 document is not conver
 Schemathesis); kind is swagger2 and every operation is not_assessed.
 
 Contract issues are problems in the contract itself, not in the API: a missing operationId, a 2xx
-response without a schema or with an empty one ({}, which every body matches), an example that doesn't match its own schema, a keyword the checker
+response without a schema or with an empty one ({}, which every body matches; a file, image or */* body
+and the body-less answers of HEAD and OPTIONS are not flagged), an example that doesn't match its own schema, a keyword the checker
 can't evaluate, an unresolved $ref, an OpenAPI contract in which no operation requires security
 (auth_enforced can't be evaluated), or a GraphQL schema served by the API that differs from the SDL.
 
@@ -35,6 +37,13 @@ import yaml_lite  # noqa: E402
 
 METHODS = ('get', 'put', 'post', 'delete', 'patch', 'head', 'options', 'trace')
 WRITE_METHODS = {'put', 'post', 'delete', 'patch', 'mutation'}
+
+
+def opaque_media(mt: str) -> bool:
+    """A media type whose body a JSON Schema does not describe (a file, an image, any type)."""
+    mt = mt.lower()
+    return mt in ('*/*', 'application/octet-stream', 'application/pdf', 'application/zip', 'application/wasm') \
+        or mt.split('/')[0] in ('image', 'video', 'audio', 'font')
 
 
 def read_source(src: str) -> tuple[bytes, str]:
@@ -167,7 +176,10 @@ def load_openapi(doc: dict, text: str, issues: list) -> list[dict]:
                 if p.get('name'):
                     params[(p['name'], p.get('in'))] = p
             parameters = [{'name': p['name'], 'in': p.get('in'), 'required': bool(p.get('required') or p.get('in') == 'path'),
-                           'schema': p.get('schema') or {}, 'examples': _examples(p) or _examples(p.get('schema') or {})}
+                           'schema': p.get('schema') or {}, 'examples': _examples(p) or _examples(p.get('schema') or {}),
+                           # a catch-all path parameter ({name:path}): its value may hold slashes, sent unencoded
+                           **({'allow_slash': True} if p.get('in') == 'path' and (p.get('x-path-allows-slash')
+                                                                                  or p.get('allowReserved')) else {})}
                           for p in params.values()]
             body = None
             if op.get('requestBody'):
@@ -185,11 +197,13 @@ def load_openapi(doc: dict, text: str, issues: list) -> list[dict]:
                     h = deref(h, doc, issues, f'{where}.responses.{status}.headers.{hn}')
                     headers[hn] = {'required': bool(h.get('required')), 'schema': h.get('schema') or {}}
                 responses[status] = {'content': content, 'headers': headers}
-                if status.startswith('2') and status != '204' and method != 'head':
+                if status.startswith('2') and status != '204' and method not in ('head', 'options'):
                     if not content:
                         issues.append({'kind': 'missing_response_schema', 'location': f'{where}.responses.{status}',
                                        'message': f'{oid} {status} documents no content, so its body can\'t be checked'})
                     for mt, s in content.items():
+                        if s is None and opaque_media(mt):
+                            continue   # a file or any-type body: there is no schema to give it
                         if s is None:
                             issues.append({'kind': 'missing_response_schema', 'location': f'{where}.responses.{status}.{mt}',
                                            'message': f'{oid} {status} {mt} has no schema'})

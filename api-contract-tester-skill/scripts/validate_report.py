@@ -87,7 +87,7 @@ def headline_expected(rep: dict, ops: list, coverage: dict, diff_changes: list, 
         completeness = 'none'
     elif run['status'] != 'complete':
         completeness = 'incomplete'
-    elif outage or coverage['untested'] or coverage['skipped_auth'] or any(v == 'cantTell' for o in ops for v in o['checks'].values()) \
+    elif outage or coverage['untested'] or coverage['skipped_auth'] or coverage['skipped_write'] or any(v == 'cantTell' for o in ops for v in o['checks'].values()) \
             or any(t['status'] == 'errored' for t in rep['metadata']['tools']):
         completeness = 'partial'
     else:
@@ -281,6 +281,17 @@ def main() -> int:
     errs: list[str] = []
     warns: list[str] = []
     schema = load(HERE.parent / 'schemas' / 'api_contract_report.schema.json')
+    if a.write_summary and isinstance(rep.get('headline'), dict):
+        # a draft may leave the computed fields out or empty ({}): give them a well-formed stand-in so the schema
+        # check passes, and the computed values below replace every one of them
+        hl0 = rep['headline']
+        blank = {'verdict': 'not_established', 'flaky_findings': 0, 'evidence_completeness': 'none', 'overall_confidence': 'low',
+                 'severity_counts': dict.fromkeys(('Critical', 'High', 'Medium', 'Low'), 0),
+                 'breaking_change_counts': dict.fromkeys(('breaking', 'potentially_breaking', 'compatible'), 0),
+                 'operation_coverage': dict.fromkeys(('total', 'exercised', 'excluded', 'skipped_write', 'skipped_auth', 'untested'), 0)}
+        for k, v in blank.items():
+            if schema_check.errors(hl0.get(k), schema['properties']['headline']['properties'][k], root=schema):
+                hl0[k] = v
     errs += [f'schema: {e}' for e in schema_check.errors(rep, schema)]
     if errs:
         print('\n'.join(errs))

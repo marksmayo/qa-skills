@@ -274,9 +274,21 @@ def sketch(g: dict, ops: dict, exchanges: dict, contract: dict) -> str:
     elif c == 'positive_rejected':
         lines.append('    assert 200 <= resp.status < 300')
     elif c == 'content_type':
-        lines.append("    assert resp.headers['Content-Type'].split(';')[0] == 'application/json'")
+        # assert what the contract documents for that status, not JSON: the fix may be a text or file response
+        responses = op.get('responses') or {}
+        st = str(inst.get('status', ''))
+        key = next((k for k in (st, f'{st[:1]}XX', f'{st[:1]}xx', 'default') if k in responses), None)
+        types = sorted(((responses.get(key) or {}).get('content') or {})) if key else []
+        if key and not types:
+            lines.append(f'    assert not resp.body  # {key} documents no content')
+        elif types:
+            lines.append(f"    assert resp.headers['Content-Type'].split(';')[0].strip() in {types!r}")
+        else:
+            lines.append(f'    assert str(resp.status) in {documented!r}  # status {st} is not documented')
     elif c == 'required_headers':
-        lines.append(f'    assert {g["cause"].replace("missing ", "")!r} in resp.headers')
+        missing = g['cause'].split('missing ', 1)[-1]
+        for name in [x.strip() for x in missing.split(',') if x.strip()]:
+            lines.append(f'    assert {name!r} in resp.headers')
     elif c in ('schema_conformance', 'graphql_errors'):
         lines.append('    assert not contract_errors(resp)  # validate the body against the response schema')
     return '\n'.join(lines)
