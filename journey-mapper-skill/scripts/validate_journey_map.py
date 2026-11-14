@@ -7,9 +7,13 @@ file and line (missing files, lines past the end, blank lines, excerpts that don
 that each journey's tests exist. Prints every problem, not just the first.
 
 Warnings (errors with --strict): a journey covers a surface item whose file none of the journey's
-evidence cites (padded coverage), or a map-level open question repeats a journey's question.
+evidence cites, or whose file it cites only outside the item's own lines when several items share the
+file (a single-file app: each handler runs from its line to the next item's line), which is padded
+coverage; or a map-level open question repeats a journey's question. Entries of the wrong shape (a
+not_automatable entry written as a "step N: reason" string) are reported, never a crash.
 
-    python validate_journey_map.py journeys/journey_map.json [--repo <repository root>] [--strict]"""
+    python validate_journey_map.py journeys/journey_map.json [--repo <repository root>] [--strict]
+    python validate_journey_map.py --self-test"""
 from __future__ import annotations
 import argparse, json, re, sys
 from pathlib import Path
@@ -82,17 +86,59 @@ def cited_files(j: dict) -> set[str]:
     return {f for f in files if f}
 
 
+def cited_lines(j: dict) -> dict[str, set[int]]:
+    out: dict[str, set[int]] = {}
+    groups = [s.get('evidence') for s in j.get('steps') or [] if isinstance(s, dict)]
+    groups += [v.get('evidence') for v in j.get('variants') or [] if isinstance(v, dict)]
+    groups.append(j.get('evidence'))
+    for evs in groups:
+        for ev in evs or []:
+            if isinstance(ev, dict) and ev.get('file') and isinstance(ev.get('line'), int):
+                out.setdefault(ev['file'], set()).add(ev['line'])
+    return out
+
+
+def item_spans(items: dict) -> dict[str, tuple[int, float]]:
+    """Each located route, screen, endpoint or entry point's line span in its file: from its line to the next such
+    item's line in the same file (the rest of the file for the last). A single-file app (every handler in app.py)
+    is then checked per handler, not per file."""
+    by_file: dict[str, list[tuple[int, str]]] = {}
+    for sid, it in items.items():
+        if it.get('kind') in ('route', 'screen', 'endpoint', 'entry_point') and it.get('file') \
+                and isinstance(it.get('line'), int) and it['line'] > 1:
+            by_file.setdefault(it['file'], []).append((it['line'], sid))
+    spans: dict[str, tuple[int, float]] = {}
+    for rows in by_file.values():
+        if len(rows) < 2:
+            continue
+        starts = sorted({ln for ln, _ in rows})
+        for ln, sid in rows:
+            later = [x for x in starts if x > ln]
+            spans[sid] = (ln, later[0] if later else float('inf'))
+    return spans
+
+
 def warnings_for(d: dict) -> list[str]:
     """Problems worth a person's look that don't make the map invalid (errors with --strict)."""
     warns: list[str] = []
-    items = {it.get('id'): it for bucket in BUCKETS for it in (d.get('surface') or {}).get(bucket) or []}
+    items = {it.get('id'): it for bucket in BUCKETS for it in (d.get('surface') or {}).get(bucket) or []
+             if isinstance(it, dict)}
+    spans = item_spans(items)
     for j in d.get('journeys') or []:
         files = cited_files(j)
+        lines = cited_lines(j)
         for c in j.get('covers') or []:
             it = items.get(c)
             if it and it.get('file') and it['file'] not in files:
                 warns.append(f'journey {j.get("id")} covers {c} ({it.get("name")}), but no evidence in the journey cites '
                              f'{it["file"]}; cite the line where the journey reaches it, or drop it from covers')
+            elif it and c in spans and it['file'] in lines:
+                lo, hi = spans[c]
+                if not any(lo <= ln < hi for ln in lines[it['file']]):
+                    upto = 'the end of the file' if hi == float('inf') else f'line {hi}, the next item'
+                    warns.append(f'journey {j.get("id")} covers {c} ({it.get("name")}, {it["file"]}:{lo}), but its evidence '
+                                 f'cites {it["file"]} only outside that item\'s lines ({lo} up to {upto}); cite the line '
+                                 f'where the journey reaches it, or drop it from covers')
     journey_qs = {norm_q(q) for j in d.get('journeys') or [] for q in j.get('open_questions') or []}
     for q in d.get('open_questions') or []:
         if norm_q(q.get('question', '')) in journey_qs:
@@ -176,12 +222,16 @@ def check(d: dict, repo: Repo | None = None) -> list[str]:
         steps = j.get('steps') or []
         if not steps: e(f'{w}: no steps')
         for n, s in enumerate(steps, 1):
+            if not isinstance(s, dict):
+                e(f'{w} step {n}: must be an object with action, expect and evidence, not {type(s).__name__}'); continue
             if not s.get('action'): e(f'{w} step {n}: action missing')
             if not s.get('expect'): e(f'{w} step {n}: expect missing (every step needs an observable outcome)')
             if not s.get('evidence'): e(f'{w} step {n}: no code evidence')
             for ev in s.get('evidence') or []: evidence_ok(ev, f'{w} step {n}')
         vids: set[str] = set()
         for v in j.get('variants') or []:
+            if not isinstance(v, dict):
+                e(f'{w}: each variant must be an object with id, from_step, name and expect, not {type(v).__name__}'); continue
             vid = v.get('id', '?')
             if not re.match(r'^V\d+$', str(vid)): e(f'{w}: variant id {vid!r} must look like V1')
             if vid in vids: e(f'{w}: duplicate variant {vid}')
@@ -191,6 +241,10 @@ def check(d: dict, repo: Repo | None = None) -> list[str]:
             if not v.get('name') or not v.get('expect'): e(f'{w} {vid}: name and expect are required')
             for ev in v.get('evidence') or []: evidence_ok(ev, f'{w} {vid}')
         for na in j.get('not_automatable') or []:
+            if not isinstance(na, dict):
+                e(f'{w}: each not_automatable entry must be an object {{"target": "step N" | "Vn", "reason": ...}}, '
+                  f'not {type(na).__name__} {str(na)[:60]!r} (the Markdown "step N: reason" form belongs in the .md file)')
+                continue
             m = TARGET_RE.match(str(na.get('target', '')))
             if not m: e(f'{w}: not_automatable target must be "step N" or "Vn"'); continue
             if m.group(2) and not 1 <= int(m.group(2)) <= len(steps): e(f'{w}: not_automatable refers to unknown {m.group(1)}')
@@ -201,6 +255,8 @@ def check(d: dict, repo: Repo | None = None) -> list[str]:
     cov = d['coverage']
     orphan_ids, unreachable_ids = set(), set()
     for o in cov.get('orphans') or []:
+        if not isinstance(o, dict):
+            e(f'coverage.orphans: each entry must be an object with item and reason, not {type(o).__name__}'); continue
         if o.get('item') not in surface_ids: e(f'orphan refers to unknown surface item {o.get("item")}')
         if o.get('reason') not in ORPHAN_REASONS: e(f'orphan {o.get("item")}: reason must be one of {sorted(ORPHAN_REASONS)}')
         if o.get('item') in orphan_ids: e(f'orphan {o.get("item")} is listed twice')
@@ -222,6 +278,8 @@ def check(d: dict, repo: Repo | None = None) -> list[str]:
         if o.get('reason') == 'needs_review' and not o.get('note'):
             e(f'orphan {o.get("item")}: needs_review needs a note saying what a person must decide')
     for u in cov.get('unreachable') or []:
+        if not isinstance(u, dict):
+            e(f'coverage.unreachable: each entry must be an object with item, reason and evidence, not {type(u).__name__}'); continue
         if u.get('item') not in surface_ids: e(f'unreachable refers to unknown surface item {u.get("item")}')
         if u.get('reason') not in UNREACHABLE_REASONS: e(f'unreachable {u.get("item")}: reason must be one of {sorted(UNREACHABLE_REASONS)}')
         evidence_ok(u.get('evidence'), f'unreachable {u.get("item")}')
@@ -259,7 +317,51 @@ def check(d: dict, repo: Repo | None = None) -> list[str]:
     return errs
 
 
+def self_test() -> int:
+    """Negative cases on a copy of the shipped example: each must be reported, never crash the validator."""
+    import copy
+    example = Path(__file__).resolve().parent.parent / 'examples' / 'journeys' / 'journey_map.json'
+    base = json.loads(example.read_text(encoding='utf-8'))
+    checks = []
+
+    def run(d):
+        try:
+            return check(d, None), None
+        except Exception as exc:   # a crash is a failed check: the validator must report, not raise
+            return None, f'{type(exc).__name__}: {exc}'
+
+    errs, crash = run(copy.deepcopy(base))
+    checks.append(('the shipped example is valid', crash is None and not errs, crash or errs))
+    d = copy.deepcopy(base)
+    d['journeys'][0]['not_automatable'] = ['step 1: needs a real card']   # the Markdown form, not an object
+    errs, crash = run(d)
+    checks.append(('a not_automatable entry written as a string is reported, not a crash',
+                   crash is None and any('not_automatable' in x and 'object' in x for x in errs or []), crash or errs))
+    # a single-file app: two handlers in app.py; the journey cites a line of the first handler only, so covering the
+    # second is padding even though the file is cited
+    d = copy.deepcopy(base)
+    d['surface']['endpoints'] += [
+        {'id': 'E-901', 'kind': 'endpoint', 'name': 'GET /ferries', 'file': 'app.py', 'line': 10, 'detector': 'flask-route',
+         'confidence': 'high', 'source': 'extractor'},
+        {'id': 'E-902', 'kind': 'endpoint', 'name': 'GET /ferries/<slug>', 'file': 'app.py', 'line': 40,
+         'detector': 'flask-route', 'confidence': 'high', 'source': 'extractor'}]
+    j = d['journeys'][0]
+    j['covers'] = list(j['covers']) + ['E-901', 'E-902']
+    j['steps'][0]['evidence'] = list(j['steps'][0]['evidence']) + [{'file': 'app.py', 'line': 12}]
+    warns = warnings_for(d)
+    checks.append(('covering a handler of a cited file whose own lines no evidence cites is padded coverage',
+                   any('E-902' in w for w in warns) and not any('E-901' in w for w in warns), warns))
+    failed = 0
+    for name, ok, extra in checks:
+        failed += not ok
+        print(f"{'PASS' if ok else 'FAIL'} {name}" + ('' if ok else f'  [{extra}]'))
+    print(f'{failed} failed' if failed else 'ALL PASS')
+    return 1 if failed else 0
+
+
 def main() -> int:
+    if '--self-test' in sys.argv[1:]:
+        return self_test()
     ap = argparse.ArgumentParser(description='Validate a journey_map.json.')
     ap.add_argument('journey_map', type=Path)
     ap.add_argument('--repo', type=Path, help='repository root: re-read every cited file and line, and check test paths exist')
