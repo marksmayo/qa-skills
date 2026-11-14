@@ -647,10 +647,42 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
             if not any(abs(round(b, places) - claimed) < 1e-9 for b in bounds):
                 errs.append(f"summary.headline: upper bound {m.group(1)}% matches no Wilson upper bound of the runs "
                             '(compute it with stats.py; 0 of n has upper bound stats.py 0 n)')
+    errs += headline_priority_errors(d['summary'].get('headline', ''), d['summary'].get('by_priority') or {})
     return errs, warns
 
 
-PLACEHOLDER = re.compile(r'\b(?:placeholder|todo|tbd|tbc|fixme|lorem ipsum|xxx)\b|^\W*$', re.I)
+NUMBER_WORDS = {'no': 0, 'zero': 0, 'none': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+                'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10}
+PRIORITY_IN_TEXT = re.compile(r'\b(?:(\d+|no|zero|one|two|three|four|five|six|seven|eight|nine|ten)\s+)?P([0-3])s?\b',
+                              re.I)
+LIST_JOIN = re.compile(r'^\s*(?:,|/|or|and|nor|,\s*or|,\s*and)\s*$', re.I)
+
+
+def headline_priority_errors(headline: str, by_priority: dict) -> list[str]:
+    """Priority labels the headline names must agree with the computed ranking: a bare label (\"ranks P2\") needs at
+    least one flake of that priority, a counted one (\"2 P1 flakes\", \"no P0\") needs exactly that many. A count
+    carries across a list (\"no P0 or P1\")."""
+    errs, prev_end, prev_n = [], None, None
+    for m in PRIORITY_IN_TEXT.finditer(headline):
+        label = 'P' + m.group(2)
+        q = m.group(1)
+        if q is not None:
+            n = int(q) if q.isdigit() else NUMBER_WORDS[q.lower()]
+        elif prev_end is not None and LIST_JOIN.match(headline[prev_end:m.start()]):
+            n = prev_n
+        else:
+            n = None
+        have = int(by_priority.get(label, 0))
+        if n is None and not have:
+            errs.append(f'summary.headline: names {label}, but no flake is ranked {label} (computed: '
+                        + ', '.join(f'{k} {v}' for k, v in sorted(by_priority.items())) + ')')
+        elif n is not None and n != have:
+            errs.append(f'summary.headline: says {n} {label}, but {have} flake(s) are ranked {label}')
+        prev_end, prev_n = m.end(), n
+    return errs
+
+
+PLACEHOLDER =re.compile(r'\b(?:placeholder|todo|tbd|tbc|fixme|lorem ipsum|xxx)\b|^\W*$', re.I)
 UPPER_BOUND = re.compile(r'upper (?:bound|limit|end)[^0-9%.]{0,40}?(\d+(?:\.\d+)?)\s*%', re.I)
 
 
@@ -816,6 +848,22 @@ def self_test() -> int:
         platform(rep, runs)
         rep['consistently_failing'] = []
     run('a platform-dependent failure must be listed', platform_unlisted, False, 'platform')
+
+    def headline_priority(text):
+        def mutate(rep, runs):
+            rep['summary']['headline'] = text
+        return mutate
+    run('a headline naming the computed priority is valid',
+        headline_priority('1 of 2 tests passed and failed on the same code across 3 runs; the flake ranks P3.'), True)
+    run('a headline counting priorities as computed is valid',
+        headline_priority('1 of 2 tests flaked across 3 runs: 1 P3 flake, no P0 or P1.'), True)
+    run('a headline naming a priority no flake has is an error',
+        headline_priority('1 of 2 tests passed and failed on the same code across 3 runs; the flake ranks P2.'),
+        False, 'P2')
+    run('a headline miscounting a priority is an error',
+        headline_priority('1 of 2 tests flaked across 3 runs: 2 P3 flakes.'), False, 'P3')
+    run('a headline saying no flake has a priority that one has is an error',
+        headline_priority('1 of 2 tests flaked across 3 runs, no P3 flakes.'), False, 'P3')
 
     if fails:
         print('validate_flaky_report self-test FAILED:\n  - ' + '\n  - '.join(fails))
