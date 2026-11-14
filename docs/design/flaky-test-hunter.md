@@ -1,6 +1,6 @@
 # Design: `flaky-test-hunter-skill`
 
-Status: Built (v1.4.0), see "As built" at the end. Build order: 8.
+Status: Built (v1.5.0), see "As built" at the end. Build order: 8.
 
 ## Mission
 
@@ -405,4 +405,27 @@ Agreed with the user before the build.
     Go case its `_test.go` file (a smell in any `_test.go` of that package links) and folds parents
     into their subtests. `net_guard_proxy.py` (a refusing loopback proxy and an isolated home) is
     the network and home recipe for Go. Still not fixed: `run_tests.py` does not record `platform`
-    on a run (add it by hand), and there is no `race` flag (use `--runner-args -race`).
+    on a run (add it by hand), and there is no `race` flag (use `--runner-args=-race`).
+- **Found on a server-rendered Flask site (v1.5.0)** (pytest with `addopts = -v`, a data directory
+  of thousands of JSON files and a data-validation suite parametrised into hundreds of thousands
+  of cases):
+  - **Headline priorities checked.** The validator now checks every priority label the headline
+    names: a bare "ranks P2" needs a P2 flake, a counted "2 P1 flakes" or "no P0" must equal the
+    computed `by_priority` (a count carries across "no P0 or P1").
+  - **Smells** (`data/pitfalls.json` 1.6.0): `real-network-session` (an HTTP verb on a session
+    when the file creates a `requests.Session`, `httpx.Client` or `aiohttp.ClientSession`, so an
+    ORM `db.session.get` is not matched), `wall-time-assertion` (Python and JS: an assertion that
+    elapsed seconds stay under a budget) and `mtime-vs-wall-clock` (Python and JS: a file
+    modification time read in a test file that also reads the wall clock, one lead per test). Smells may carry
+    `requires_in_file` and `once_per_test`.
+  - **pytest collection settings.** `scan_pitfalls.py` reads `testpaths` and `python_files`; a
+    `*_test.py` root script outside them gets only the source checks and is listed under
+    `pytest_collection.not_collected`.
+  - **Guidance.** Suites too big to run once (sample the data checks, record the scope), tests
+    that skip themselves after a guard refusal (count them in limitations), clock-skew flakes
+    whose moved-clock rate overstates the real race, and `--runner-args=-race` written with `=`.
+  - **Left to the shared files:** `run_tests.py` collection under `addopts = -v` (reorder and
+    isolate) and recording a failed collection as an errored run, hashing the tree once per
+    invocation, `--tests-file` resolved against `--cwd`; `net_guard.py` guarding DNS and naming
+    the test id; `clock_shift.py` moving `os.stat` times. Not changed: `repeat_suspects` stays
+    outside the normal rate (one configuration), and the clock-skew rate is not capped.

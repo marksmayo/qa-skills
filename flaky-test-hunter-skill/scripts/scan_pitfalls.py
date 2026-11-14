@@ -56,6 +56,71 @@ def files(root: Path):
             yield Path(dirpath) / f
 
 
+def _split_ini_list(value) -> list[str]:
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    return [v for v in re.split(r'[\s,]+', str(value or '')) if v]
+
+
+def pytest_collection(root: Path) -> dict:
+    """pytest's own collection settings at the repo root (pytest.ini, pyproject.toml, tox.ini, setup.cfg, in pytest's
+    order): {'config': file, 'testpaths': [...], 'python_files': [...]}, or {} when no pytest section is found."""
+    import configparser
+    for name, section in (('pytest.ini', 'pytest'), ('pyproject.toml', None), ('tox.ini', 'pytest'),
+                          ('setup.cfg', 'tool:pytest')):
+        p = root / name
+        if not p.is_file():
+            continue
+        try:
+            if section is None:
+                import tomllib
+                opts = ((tomllib.loads(p.read_text(encoding='utf-8')).get('tool') or {}).get('pytest') or {}
+                        ).get('ini_options')
+                if opts is None:
+                    continue
+            else:
+                cp = configparser.ConfigParser(interpolation=None)
+                cp.read_string(p.read_text(encoding='utf-8', errors='replace'))
+                if not cp.has_section(section):
+                    if name == 'pytest.ini':      # an empty pytest.ini still marks the rootdir
+                        return {'config': name, 'testpaths': [], 'python_files': []}
+                    continue
+                opts = dict(cp.items(section))
+        except (OSError, ValueError, configparser.Error, ImportError):
+            continue
+        return {'config': name,
+                'testpaths': [t.strip('/').replace('\\', '/') for t in _split_ini_list(opts.get('testpaths'))
+                              if t.strip('/') not in ('', '.')],
+                'python_files': _split_ini_list(opts.get('python_files'))}
+    return {}
+
+
+def collection_excluded(root: Path, all_files: list[Path] | None = None, data: dict | None = None) -> list[str]:
+    """Python files the test-name patterns call tests but pytest's configuration never collects: outside every
+    `testpaths` entry, or (with no testpaths) named outside `python_files` and not inside a test directory. A root
+    script named *_test.py is then product tooling, not a test, and gets only the source-scope checks."""
+    import fnmatch
+    cfg = pytest_collection(root)
+    if not cfg or not (cfg['testpaths'] or cfg['python_files']):
+        return []
+    data = data or json.loads(DATA.read_text(encoding='utf-8'))
+    test_rx = [re.compile(p) for p in data['test_file_patterns']]
+    out = []
+    for p in all_files if all_files is not None else files(root):
+        if p.suffix != '.py':
+            continue
+        rel = p.relative_to(root).as_posix()
+        if not any(rx.search(rel) for rx in test_rx):
+            continue
+        if cfg['testpaths']:
+            if not any(rel == t or rel.startswith(t + '/') for t in cfg['testpaths']):
+                out.append(rel)
+        elif not (p.name == 'conftest.py' or any(fnmatch.fnmatch(p.name, g) for g in cfg['python_files'])
+                  or re.search(r'(^|/)tests?/', rel)):
+            out.append(rel)
+    return sorted(out)
+
+
 def enclosing_test(lines: list[str], i: int, js: bool) -> str | None:
     """The test the line sits in. For JS/TS, the describe chain and title joined with ' > '."""
     for j in range(i, -1, -1):
@@ -141,13 +206,15 @@ def scan(root: Path, data: dict) -> list[dict]:
     smells = [{**s, 'rx': re.compile(s['pattern']),
                'prev_rx': re.compile(s['skip_if_prev']) if s.get('skip_if_prev') else None,
                'next_rx': re.compile(s['skip_if_next']) if s.get('skip_if_next') else None,
-               'mit_rx': re.compile(s['mitigated_by']) if s.get('mitigated_by') else None}
+               'mit_rx': re.compile(s['mitigated_by']) if s.get('mitigated_by') else None,
+               'req_rx': re.compile(s['requires_in_file']) if s.get('requires_in_file') else None}
               for s in data['smells'] if s.get('scope') not in ('thread_setup', 'reload_target', 'module_let', *GO_SCOPES)]
     module_let = [s for s in data['smells'] if s.get('scope') == 'module_let']
     go_body = {s['scope']: s for s in data['smells'] if s.get('scope') in GO_SCOPES}
     project = [s for s in data['smells'] if s.get('scope') == 'thread_setup']
     reload_targets = [s for s in data['smells'] if s.get('scope') == 'reload_target']
     all_files = list(files(root))
+    not_collected = set(collection_excluded(root, all_files, data))
     setups, pools = setup_files(root, all_files)
     texts: dict[str, list[str]] = {}
 
@@ -178,11 +245,11 @@ def scan(root: Path, data: dict) -> list[dict]:
         if not lang:
             continue
         rel = p.relative_to(root).as_posix()
-        is_test = any(rx.search(rel) for rx in test_rx)
+        is_test = any(rx.search(rel) for rx in test_rx) and rel not in not_collected
         lines = read(p)
         if lines is None:
             continue
-        local_mit = {}
+        local_mit, has_req, once = {}, {}, set()
         for i, line in enumerate(lines):
             s = line.strip()
             if s.startswith(('#', '//', '*', '/*')):
@@ -194,6 +261,11 @@ def scan(root: Path, data: dict) -> list[dict]:
                     continue
                 if not sm['rx'].search(line):
                     continue
+                if sm['req_rx'] is not None:
+                    if sm['id'] not in has_req:
+                        has_req[sm['id']] = first_match(sm['req_rx'], lines) is not None
+                    if not has_req[sm['id']]:
+                        continue
                 if sm['prev_rx'] is not None:
                     prev = next((lines[k] for k in range(i - 1, -1, -1) if lines[k].strip()), '')
                     if sm['prev_rx'].search(prev):
@@ -212,10 +284,14 @@ def scan(root: Path, data: dict) -> list[dict]:
                         n = first_match(sm['mit_rx'], lines)
                         local_mit[sm['id']] = f'{sm["mitigation"]} in this file (line {n})' if n else None
                     mitigation = global_mit.get(sm['id']) or local_mit[sm['id']]
+                test = enclosing_test(lines, i, lang in JS_LANGS) if is_test else None
+                if sm.get('once_per_test'):
+                    if (sm['id'], test) in once:
+                        continue          # one lead per test: the first read is enough to point at it
+                    once.add((sm['id'], test))
                 out.append({'id': f'SM-{len(out) + 1}', 'smell': sm['id'], 'file': rel, 'line': i + 1,
                             'excerpt': s[:160], 'cause': sm['cause'], 'message': sm['message'], 'fix': sm['fix'],
-                            'test': enclosing_test(lines, i, lang in JS_LANGS) if is_test else None,
-                            'in_test_file': is_test, 'mitigation': mitigation})
+                            'test': test, 'in_test_file': is_test, 'mitigation': mitigation})
         if is_test and lang == 'go' and go_body:
             for scope, line, test, name in go_body_hits(lines):
                 sm = go_body.get(scope)
@@ -535,6 +611,35 @@ func TestStub(t *testing.T) {
 """
 
 
+PY_SAMPLES = {
+    'pytest.ini': '[pytest]\naddopts = -v\ntestpaths = tests\npython_files = test_*.py\n',
+    'tests/test_links.py': (
+        'import requests\n\n\nclass TestLinks:\n    def setup_method(self):\n'
+        '        self.session = requests.Session()\n\n    def test_head(self):\n'
+        '        r = self.session.head(self.url, timeout=5)\n        assert r.status_code < 400\n'),
+    'tests/test_db.py': (
+        'from app import db, User\n\n\ndef test_lookup():\n    user = db.session.get(User, 1)\n'
+        '    db.session.delete(user)\n    assert user\n'),
+    'tests/test_speed.py': (
+        'import time\n\n\ndef test_page_is_fast(client):\n    start = time.time()\n    client.get("/")\n'
+        '    load_time = time.time() - start\n    assert load_time < 2.0\n\n\n'
+        'def test_budget_unittest(self):\n    elapsed = time.perf_counter() - self.t0\n'
+        '    self.assertLess(elapsed, 0.5)\n\n\ndef test_count():\n    assert len(items) < 3\n'),
+    'tests/test_mtime.py': (
+        'import os\nfrom datetime import datetime\n\n\ndef test_modified_today(tmp_path):\n'
+        '    p = tmp_path / "a.txt"\n    p.write_text("x")\n'
+        '    modified = datetime.fromtimestamp(os.path.getmtime(p))\n'
+        '    assert modified.date() == datetime.now().date()\n\n\n'
+        'def test_formatted_mtime(tmp_path):\n    p = tmp_path / "b.txt"\n    p.write_text("x")\n'
+        '    assert last_modified_day(p) == datetime.now().strftime("%Y-%m-%d")\n\n\n'
+        'def test_last_modified_formats(tmp_path):\n    p = tmp_path / "c.txt"\n    p.write_text("x")\n'
+        '    day = last_modified_day(p)\n    stamp = last_modified_stamp(p)\n'
+        '    assert stamp.startswith(day)\n'),
+    'perf_test.py': 'import requests\n\n\ndef test_live():\n    requests.get(URL)\n',
+    'tools/load_test.py': 'import time\n\n\ndef test_soak():\n    time.sleep(1)\n',
+}
+
+
 def self_test() -> int:
     data = json.loads(DATA.read_text(encoding='utf-8'))
     ok = True
@@ -608,6 +713,33 @@ def self_test() -> int:
         lines.append(f"go pack: {'ok' if good else 'FAILED, missing ' + str(sorted(want - got)) + ', extra ' + str(sorted(got - want))}")
         ok = ok and good
 
+    # 5) Python: a requests.Session verb is a network call (an ORM session is not), a wall-time budget assertion,
+    #    a file mtime compared with the wall clock, and pytest's own collection config decides what is a test file.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for rel, text in PY_SAMPLES.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        hits = scan(root, data)
+        got = {(h['smell'], h['file'], h['test']) for h in hits}
+        want = {('real-network-session', 'tests/test_links.py', 'test_head'),
+                ('wall-time-assertion', 'tests/test_speed.py', 'test_page_is_fast'),
+                ('wall-time-assertion', 'tests/test_speed.py', 'test_budget_unittest'),
+                ('mtime-vs-wall-clock', 'tests/test_mtime.py', 'test_modified_today'),
+                ('mtime-vs-wall-clock', 'tests/test_mtime.py', 'test_formatted_mtime'),
+                ('mtime-vs-wall-clock', 'tests/test_mtime.py', 'test_last_modified_formats')}
+        unwanted = {h for h in got if h[1] in ('tests/test_db.py', 'perf_test.py', 'tools/load_test.py')
+                    or h[0] in ('real-network-session', 'wall-time-assertion', 'mtime-vs-wall-clock') and h not in want}
+        # one lead per test, at a read (never the def line that names the test after the helper)
+        per_test = [h for h in hits if h['smell'] == 'mtime-vs-wall-clock' and h['test'] == 'test_last_modified_formats']
+        unwanted |= {('mtime-vs-wall-clock x' + str(len(per_test)), h['file'], h['excerpt']) for h in per_test
+                     if len(per_test) != 1 or h['excerpt'].startswith('def ')}
+        excluded = collection_excluded(root)
+        good = want <= got and not unwanted and excluded == ['perf_test.py', 'tools/load_test.py']
+        lines.append('python session/wall-time/mtime smells and pytest collection: ' + (
+            'ok' if good else f'FAILED, missing {sorted(want - got)}, unwanted {sorted(unwanted)}, excluded {excluded}'))
+        ok = ok and good
+
     print('self-test ' + ('passed' if ok else 'FAILED') + ':\n  ' + '\n  '.join(lines),
           file=sys.stderr)
     return 0 if ok else 1
@@ -628,6 +760,9 @@ def main(argv=None) -> int:
     root = args.repo.resolve()
     hits = scan(root, data)
     result = {'pitfalls_version': data['version'], 'smells': hits}
+    cfg = pytest_collection(root)
+    if cfg:
+        result['pytest_collection'] = {**cfg, 'not_collected': collection_excluded(root, None, data)}
     text = json.dumps(result, indent=2, ensure_ascii=False) + '\n'
     if args.out:
         args.out.write_text(text, encoding='utf-8')

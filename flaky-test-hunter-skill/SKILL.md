@@ -1,7 +1,7 @@
 ---
 name: flaky-test-hunter
 description: Find tests that pass and fail on the same code, show why with experiments, and propose a fix for each. Reruns the suite under controlled variations (repeats, reversed and shuffled order, isolation, hash seeds, parallel workers, time zone, clock, locale, CPU load), bisects order-dependent failures to their polluter, reports every rate as failures/runs with a 95% Wilson interval, separates flakes from tests that simply fail, and ranks flakes by rate, CI gate and what they hide. Never calls a test or suite "not flaky"; never proposes a retry as the fix; never changes product code.
-version: 1.4.0
+version: 1.5.0
 ---
 
 # Flaky test hunter
@@ -82,7 +82,16 @@ python scripts/scan_pitfalls.py <repo> --out <scratch>/smells.json
 ```
 
 Note which variations the runner supports and which plugins are installed (pytest-xdist,
-pytest-randomly). Don't install anything without asking; a variation you can't apply is
+pytest-randomly).
+
+`scan_pitfalls.py` reads pytest's own collection settings (`testpaths`, `python_files` in
+`pytest.ini`, `pyproject.toml`, `tox.ini` or `setup.cfg`): a root script named `*_test.py` that pytest
+never collects gets only the source checks, and `smells.json` lists such files under
+`pytest_collection.not_collected`. Python smells include an HTTP verb on a `requests`/`httpx`/`aiohttp`
+session the file creates (`real-network-session`), an assertion on elapsed seconds
+(`wall-time-assertion`, load-sensitive: confirm it with a `--cpu-load` variation), and a file
+modification time read in a test file that also reads the wall clock (`mtime-vs-wall-clock`: two
+clocks that disagree across midnight, a month end or a moved test clock). Don't install anything without asking; a variation you can't apply is
 `not_run` with the reason.
 
 CI configuration is the source of truth for how the suites run: `detect_conventions.py` reads
@@ -142,7 +151,8 @@ build failure on that platform).
 - `--tests <id>` reruns one test: the id becomes its package plus `-run '^TestX$/^sub$'`. Ids from
   several packages in one run are refused; use `--isolate` (one run per id) for those.
 - `-shuffle=N` is applied with `--order shuffle --seed N`. Race runs go through
-  `--runner-args "-race"` and are their own variation (`race`, not `parallel`); `-race` needs cgo,
+  `--runner-args=-race` (write it with `=`: argparse reads a separate value that starts with `-` as
+  an option and refuses it) and are their own variation (`race`, not `parallel`); `-race` needs cgo,
   so on a host without a C compiler it has to run elsewhere (record which platform). A wrapper such
   as `wsl.exe` or `sh -c` (`--preset custom`) re-parses arguments, so `|`, `(` and `\` in a `-run`
   pattern need quoting again or the run errors.
@@ -191,6 +201,16 @@ $R --repeat 20 --minutes 60 --label repeat --run-prefix N        # suspects only
 Suspects are tests that failed once, tests history says flaked, and tests with a static smell. For
 a slow suite, repeat only the suspects and say how many tests were never repeated.
 
+**Suites too big to run once in the budget.** When `--collect-only` shows far more cases than the
+budget allows (a data-validation suite parametrised over thousands of data files, one case per file
+and check), don't start a whole-suite baseline you cannot finish. Count cases per file
+(`pytest --collect-only -q` and group by file), and separate the code tests from the data checks
+(a parametrised test whose ids are data file names or records). Run the code tests in full, and the
+data checks as a recorded sample: the same few files per data test, named with `--tests`. Record
+the scope in `limitations` ("N of M collected cases run; the rest are per-file data checks of K
+tests, sampled ...") and in `metadata.budget.stopped_early` when the plan was cut. Never call the
+unrun cases not flaky: they are `not_run`.
+
 Use the repo's own test command, not just the preset's default. If `npm test` sets `TZ=...`, adds
 `--configLoader native` or other flags (`detect_conventions.py` shows the resolved script), use
 `--npm-script test` or pass the same with `--runner-args` and `--env`, or tests that depend on them fail every run and look like real
@@ -218,7 +238,7 @@ other). Typical commands:
 | Clock (`clock`) | Python: `--env PYTHONPATH=<path to plugins/> "PYTEST_ADDOPTS=-p clock_shift" TDA_CLOCK_DATE=2026-11-10` (or `TDA_CLOCK_SHIFT=-1d`); Node: `--env "NODE_OPTIONS=--import=<file URL of plugins/clock_shift.mjs>" TDA_CLOCK_SHIFT=-1d`; against the same tests without it |
 | Locale | `--locale tr_TR.UTF-8`, `--locale de_DE.UTF-8` |
 | Load | `--cpu-load 20` (busy sibling processes) against the same tests without load |
-| Race (`race`) | Go `--runner-args "-race"`, a sanitizer build elsewhere; against the same tests without it |
+| Race (`race`) | Go `--runner-args=-race`, a sanitizer build elsewhere; against the same tests without it |
 | Platform (`platform`) | The same code on a second OS, each run recording `platform` (below) |
 
 **Two platforms, one code hash.** Runs of the same code on two operating systems can share one
@@ -251,7 +271,10 @@ lock or cache file by `Date.now() - mtimeMs` stays consistent; `clock_shift.py` 
 services keep the real clock, so lock, cache or row ages computed against them look far in the
 past or the future under a shifted clock. A test that fails only under the shift for that reason
 shows skew sensitivity between two clocks, not a date bug: say which clocks disagree in the
-flake's experiment.
+flake's experiment. Such a shift makes the failure certain (3/3), so the worst rate ranks the
+flake far above what the real race (a write just before midnight) gives in normal runs: say so
+in the flake's `experiment.result`, quote the normal rate beside it, and propose a fix that pins
+one clock (`os.utime` the file, or derive the expected date from the file time).
 
 **Network guard.** Run every suite with the network guard so a test that reaches the internet is
 refused and logged instead of passing or failing on the network: `plugins/net_guard.cjs` for Node
@@ -260,7 +283,10 @@ QA_NET_GUARD_LOG=<scratch>/net_guard.log`, reaching Vitest and Jest workers) and
 `plugins/net_guard.py` for pytest (`PYTHONPATH` to `plugins/`, `PYTEST_ADDOPTS=-p net_guard`).
 Check the log has a `net_guard: loaded` line per process, or the guard was not on. Each refusal
 names the host and the calling file and line (`from <file>:<line>`), so it can be tied to a test:
-a test refused the network is `external_dependency`, never a pass. Loopback is allowed.
+a test refused the network is `external_dependency`, never a pass. Loopback is allowed. A test that
+catches the refused connection and calls `pytest.skip` drops out of every count: grep the JUnit
+skip messages for the refusal, count those tests, and list them in `limitations` as
+"skipped after the guard refused the network", never as passes.
 
 Time zones: give IANA names. Node reads them on every platform; Python on Windows can't, so
 `run_tests.py` turns them into fixed offsets for Python runs only, and the run's notes say so.
@@ -383,7 +409,9 @@ python scripts/render_report.py <scratch>/flaky_report.json [--brief]
 
 `--write-summary` computes every test's counts, intervals and status from the runs, each flake's
 score and priority, and the summary counts. An "upper bound N%" in the headline must be a Wilson
-upper bound of the runs (`python scripts/stats.py 0 21` gives 0/21); the validator checks it. `--repo` checks that every proposed fix applies cleanly to the repository's files, so generate
+upper bound of the runs (`python scripts/stats.py 0 21` gives 0/21); the validator checks it, and
+checks every priority label the headline names ("ranks P2", "2 P1 flakes", "no P0") against the
+computed ranking. `--repo` checks that every proposed fix applies cleanly to the repository's files, so generate
 diffs from real edits (`git diff`, `difflib`) rather than writing them by hand. Fix every error
 rather than editing those by hand.
 Show the rendered report:
