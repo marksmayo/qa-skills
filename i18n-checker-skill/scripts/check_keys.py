@@ -25,7 +25,8 @@ import icu_lite  # noqa: E402
 
 CODE_EXT = {'web': ('.js', '.mjs', '.ts', '.tsx', '.jsx', '.vue', '.svelte', '.html', '.htm'),
             'android': ('.kt', '.java', '.xml'), 'ios': ('.swift', '.m', '.mm')}
-SKIP = {'node_modules', '.git', 'dist', 'build', 'vendor', '__pycache__'}
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import repo_walk  # noqa: E402
 DYNAMIC = re.compile(r"""\b(?:t|\$t|i18n\.t|translate|formatMessage)\s*\(\s*(?:['"]([\w.-]+\.)['"]\s*\+|`([\w.-]+\.)\$\{)""")
 
 
@@ -33,10 +34,10 @@ def platform(fmt: str) -> str:
     return 'android' if fmt == 'android' else 'ios' if fmt in ('strings', 'stringsdict', 'xcstrings') else 'web'
 
 
-def code_text(repo: Path, plat: str) -> str:
+def code_text(repo: Path, plat: str, include=()) -> str:
     chunks = []
-    for p in repo.rglob('*'):
-        if p.is_file() and p.suffix in CODE_EXT[plat] and not (set(p.relative_to(repo).parts) & SKIP):
+    for p in repo_walk.walk(repo, include)[0]:     # dist/ is code unless the repository builds it
+        if p.suffix in CODE_EXT[plat]:
             rel = p.relative_to(repo).as_posix()
             if '/locales/' in f'/{rel}' or re.search(r'(^|/)values[^/]*/', rel):
                 continue
@@ -114,9 +115,13 @@ def check_set(name: str, s: dict, entries: dict, plurals: dict, source_locale: s
     return out
 
 
-def unused(name: str, s: dict, entries: dict, repo: Path) -> tuple[list[dict], dict]:
+def unused(name: str, s: dict, entries: dict, repo: Path, include=()) -> tuple[list[dict], dict]:
     plat = platform(s['format'])
-    code = code_text(repo, plat)
+    if s['format'] == 'js-object':
+        # the keys sit in the same code that would use them, so every key looks used: not assessed, never "none unused"
+        return [], {'set': name, 'status': 'not_assessed',
+                    'reason': 'messages are an object in JS code; its keys appear in that code, so use cannot be told apart'}
+    code = code_text(repo, plat, include)
     if not code.strip():
         return [], {'set': name, 'status': 'not_assessed', 'reason': f'no {plat} code in the repository to search'}
     prefixes = {m.group(1) or m.group(2) for m in DYNAMIC.finditer(code)}
@@ -149,7 +154,7 @@ def main() -> int:
     findings, unused_status = [], []
     for name, s in res['sets'].items():
         findings += check_set(name, s, res['entries'][name], plurals, res['source_locale'])
-        u, st = unused(name, s, res['entries'][name], a.repo)
+        u, st = unused(name, s, res['entries'][name], a.repo, res.get('include') or [])
         findings += u
         unused_status.append(st)
     for d in res['duplicates']:

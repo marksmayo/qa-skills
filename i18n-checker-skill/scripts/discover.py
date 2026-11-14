@@ -11,8 +11,17 @@ The source locale is --source-locale, else `en` when present, else the locale wi
 library is detected from package.json dependencies and imports (i18next, react-intl/FormatJS, vue-i18n,
 angular, gettext), Android or iOS resources.
 
+JS/TS message objects are read too (format `js-object`): a literal object of strings assigned to a translations-like
+name (`const translations = {en: {...}, ru: {...}}` is one set with locales en and ru, set name `<file>:<name>`), or the
+default export of a locale-named module (`locales/de.js`). Values that aren't string literals are counted, not guessed.
+A locale-named .js/.ts file with no such object (a generated asset manifest, glue code) is listed in `not_parsed`.
+
+dist/, build/ and out/ are skipped only when the repository builds them (a build script, a bundler config, a
+tsconfig outDir or a .gitignore entry); a committed, hand-written front end in dist/ is scanned. Every skipped
+directory is recorded in `skipped_dirs` ({dir, reason, files}) and on stderr; --include DIR scans it anyway.
+
 Output: {source_locale, library, sets{name: {format, source_locale, locales{code: {files, keys}}}},
-entries{set: {locale: [entry]}}, duplicates[], not_parsed[]}.
+entries{set: {locale: [entry]}}, duplicates[], not_parsed[], skipped_dirs[], files_seen}.
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -21,8 +30,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import parse_resources as pr  # noqa: E402
+import repo_walk  # noqa: E402
 
-SKIP = {'node_modules', '.git', 'dist', 'build', 'vendor', '__pycache__', 'Pods'}
+JS_EXT = ('.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx')
+JS_MAX_BYTES = 5_000_000
 LOC = r'([a-z]{2,3}(?:[-_][A-Za-z]{2,4})?)'
 LIBS = [('i18next', r'i18next|react-i18next'), ('formatjs', r'react-intl|@formatjs'), ('vue-i18n', r'vue-i18n'),
         ('angular', r'@angular/localize|ngx-translate'), ('lingui', r'@lingui')]
@@ -59,6 +70,44 @@ def classify(p: Path, repo: Path) -> tuple[str, str, str] | None:
     return None
 
 
+def js_objects(p: Path, repo: Path, sets: dict, entries: dict, not_parsed: list) -> None:
+    """Read the message objects of one JS/TS file into sets and entries; list a locale-named file with none."""
+    rel = p.relative_to(repo).as_posix()
+    stem = p.name.split('.')[0]
+    named = pr.is_locale_name(stem, p.parent.relative_to(repo).as_posix())
+    try:
+        if p.stat().st_size > JS_MAX_BYTES:
+            if named:
+                not_parsed.append({'file': rel, 'reason': f'locale-named {p.suffix} file over {JS_MAX_BYTES // 1_000_000} MB; not read'})
+            return
+        text = p.read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return
+    found = pr.find_message_objects(text, stem, p.parent.relative_to(repo).as_posix())
+    if not found:
+        if named:
+            not_parsed.append({'file': rel, 'reason': f'locale-named {p.suffix} file with no literal message object '
+                                                      '(generated data, glue code or messages built at runtime); check it by hand'})
+        return
+    for obj in found:
+        multi = None not in obj['locales'] and len(obj['locales']) >= 2 and not named
+        set_name = f'{rel}:{obj["name"]}' if multi else (p.parent.relative_to(repo).as_posix() or '.')
+        for loc, o in obj['locales'].items():
+            if loc is None:
+                not_parsed.append({'file': rel, 'reason': f'message object {obj["name"]} (line {obj["line"]}) has no locale: '
+                                                          'neither its keys nor the file name are locale codes'})
+                continue
+            es = pr.js_entries(o, rel)
+            entries.setdefault(set_name, {}).setdefault(loc, []).extend(es)
+            s = sets.setdefault(set_name, {'format': 'js-object', 'locales': {}})
+            files = s['locales'].setdefault(loc, {'files': [], 'keys': 0})['files']
+            if rel not in files:
+                files.append(rel)
+        if obj['skipped']:
+            not_parsed.append({'file': rel, 'reason': f'{obj["skipped"]} value(s) in {obj["name"]} (line {obj["line"]}) are not '
+                                                      'string literals (functions, spreads, computed); not read'})
+
+
 def library(repo: Path, formats: set[str]) -> str:
     pkg = repo / 'package.json'
     deps = ''
@@ -83,12 +132,17 @@ def main() -> int:
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--source-locale')
     ap.add_argument('--locales')
+    ap.add_argument('--include', action='append', default=[], metavar='DIR',
+                    help='scan a directory that would be skipped as build output (repeatable)')
     a = ap.parse_args()
     sets: dict[str, dict] = {}
     entries: dict[str, dict[str, list]] = {}
     dups, not_parsed = [], []
-    for p in sorted(a.repo.rglob('*')):
-        if not p.is_file() or set(p.relative_to(a.repo).parts) & SKIP:
+    walked, skipped = repo_walk.walk(a.repo, a.include)
+    repo_walk.report_skipped(skipped, 'discover.py')
+    for p in walked:
+        if p.suffix in JS_EXT:
+            js_objects(p, a.repo, sets, entries, not_parsed)
             continue
         c = classify(p, a.repo)
         if not c:
@@ -132,11 +186,16 @@ def main() -> int:
         if s['source_locale'] in ('default', 'template'):
             s['source_is'] = overall_source
     out = {'repo': a.repo.as_posix(), 'source_locale': overall_source, 'library': library(a.repo, {s['format'] for s in sets.values()}),
-           'sets': sets, 'entries': entries, 'duplicates': dups, 'not_parsed': not_parsed}
+           'sets': sets, 'entries': entries, 'duplicates': dups, 'not_parsed': not_parsed,
+           'skipped_dirs': skipped, 'files_seen': len(walked), 'include': list(a.include)}
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(out, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
     print(f'{sum(len(s["locales"]) for s in sets.values())} locale file set(s) in {len(sets)} set(s); source {overall_source}; '
           f'library {out["library"]} -> {a.out}', file=sys.stderr)
+    if not sets:
+        print('discover.py: WARNING no translation resources were found or parsed' +
+              (f'; {len(not_parsed)} file(s) look like resources but were not parsed (not_parsed)' if not_parsed else '') +
+              ': key checks have nothing to check, so report them as not assessed, never as clean', file=sys.stderr)
     return 0
 
 

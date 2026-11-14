@@ -185,7 +185,7 @@ Agreed with the user before the build.
 2. **Translation memory or machine-translation comparison?** No: it would send text to an outside service.
 3. **Which RTL locale?** Arabic first, with Hebrew as a second check.
 
-## As built (v1.0.0)
+## As built (v1.0.0, updated to v1.1.0)
 
 Where the build differs from the design above, and what the example showed.
 
@@ -213,3 +213,35 @@ Where the build differs from the design above, and what the example showed.
   (script-filled placeholder text), 1 needs review (de "Newsletter"); Hebrew not run (no resources).
   The pseudo-locale fitted the tab bar; real German text overflowed it.
 - **Testing:** 16 of 16 seeded report violations are caught.
+- **Found on a FastAPI app serving a hand-written static front end from a committed `dist/`, fixed
+  (v1.1.0)**:
+  - `discover.py`, `scan_code.py` and `check_keys.py` skipped `dist/` and `build/` by name, so a served,
+    hand-written front end was never read and the report said "none detected, complete, high".
+    `scripts/repo_walk.py` prunes before descending and treats `dist/`, `build/`, `out/` as build output
+    only when the repository builds them (build script, bundler config, tsconfig `outDir`,
+    `.gitignore`); skipped directories go to `skipped_dirs` and stderr, and `--include DIR` scans one.
+  - JS message objects (`const translations = {en: {...}, ru: {...}}`, a locale-named module's default
+    export) are read without running code (format `js-object`, set `<file>:<name>`); values that aren't
+    string literals are counted in `not_parsed`; unused keys of such a set are not assessed. A
+    locale-named `.js` file (ISO 639-1 stem) with no message object is listed in `not_parsed`.
+  - Hard-coded HTML text in any script counts (it was `[A-Za-z]{2}` only).
+  - Validator: evidence is partial when no set was parsed, the code scan read nothing
+    (`candidates.inputs.code_files_scanned`, from merge) or the pseudo run was a text walk; with
+    nothing analysed the verdict is `not_assessed` (new) and confidence low. A more cautious headline
+    is accepted (the honest partial/medium report was rejected before). Agent findings
+    (`source: "agent"`, `candidate_id: null`, `basis` re-read with `--repo`) are allowed, never high.
+  - Runtime: locale runs flag `<html lang>` naming another language and text left exactly as the
+    source showed it (`compare_to_source`); overlap uses line boxes (`getClientRects`), so wrapped
+    inline links no longer overlap the text after them; placeholders and button values are measured
+    for truncation; the text-walk pseudo run records `untranslated_check: not_assessed`; without a
+    resource pattern only `locales` (or locales in `--resources`) render, so `rtl_locales` alone no
+    longer renders the source as RTL; `blocked_requests` and request counts are recorded.
+  - `merge_findings.py` counts locales a runtime render served as shipped. `fetch_cldr.py --check`
+    hashes with line endings normalised (a CRLF checkout reported a mismatch). The renderer no longer
+    prints empty "RTL ." and "Key coverage: ." values.
+  - `scripts/self_test.py` (new) covers each of these on synthetic repositories. The example's static
+    outputs were regenerated (new fields only: `skipped_dirs`, `files_seen`, `include`,
+    `files_scanned`, `inputs`); candidates, keys, patch and report are unchanged; the runtime run was
+    not re-captured.
+  - Not done: the JSX/Vue/DOM hard-coded patterns in `data/hardcoded-patterns.json` still start at a
+    Latin capital; no pseudo-locale for JS message objects (the text walk is used and reported).

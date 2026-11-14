@@ -96,8 +96,11 @@ def main() -> int:
     code = json.loads(a.code.read_text(encoding='utf-8'))
     rt = json.loads(a.runtime.read_text(encoding='utf-8')) if a.runtime else None
     repo = a.repo or Path(res['repo'])
-    shipped = sorted({(res['source_locale'] if l in ('default', 'template') else l) for s in res['sets'].values() for l in s['locales']}
-                     - {res['source_locale']})
+    # shipped: every locale with resources, and every locale a runtime render served (a site that switches with ?lang=
+    # from messages the static steps couldn't read still ships that locale)
+    rendered = {r['locale'] for r in (rt or {}).get('runs', []) if r.get('ok') and r.get('mode') in ('locale', 'rtl')}
+    shipped = sorted(({(res['source_locale'] if l in ('default', 'template') else l) for s in res['sets'].values() for l in s['locales']}
+                      | rendered) - {res['source_locale']})
     cands: list[dict] = []
     # static key findings
     grouped: dict[tuple, dict] = {}
@@ -137,6 +140,10 @@ def main() -> int:
                 elif f['kind'] == 'raw_placeholder':
                     target = next((c for c in cands if c['kind'] == 'placeholder_mismatch' and r['locale'] in c['locales'] and
                                    any(v and p in v for v in c.get('values', []) for p in f['measure']['placeholders'])), None)
+                elif f['kind'] == 'untranslated' and 'outside_pseudo' not in f['measure']:
+                    # a real locale run: text left as the source showed it (or the html lang attribute)
+                    target = next((c for c in cands if c['kind'] == 'hardcoded_string' and c.get('text') and f['text']
+                                   and c['text'] == ' '.join(f['text'].split())), None)
                 elif f['kind'] == 'untranslated':
                     out = f['measure']['outside_pseudo']
                     if f['measure']['partly_translated']:
@@ -193,8 +200,14 @@ def main() -> int:
     patch = proposed_patch(res, keys, repo) if a.patch else None
     if a.patch and patch:
         a.patch.write_text(patch['text'], encoding='utf-8')
+    skipped = {s['dir']: s for s in (res.get('skipped_dirs') or []) + (code.get('skipped_dirs') or [])}
     out = {'source_locale': res['source_locale'], 'shipped_locales': shipped, 'candidates': cands,
-           'proposed_patch': {'path': a.patch.name, 'keys_added': patch['keys_added'], 'applied': False} if patch else None}
+           'proposed_patch': {'path': a.patch.name, 'keys_added': patch['keys_added'], 'applied': False} if patch else None,
+           # what the static steps read, so the validator can tell "nothing found" from "nothing analysed"
+           'inputs': {'resource_sets': len(res['sets']), 'resource_files_not_parsed': len(res.get('not_parsed') or []),
+                      'code_files_scanned': code.get('files_scanned'),
+                      'runtime_runs': sum(1 for r in (rt or {}).get('runs', []) if r.get('ok')) if rt else None,
+                      'skipped_dirs': [skipped[k] for k in sorted(skipped)]}}
     a.out.write_text(json.dumps(out, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
     print(f'{len(cands)} candidate(s) -> {a.out}', file=sys.stderr)
     return 0

@@ -29,6 +29,11 @@ def sha(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
 
+def file_sha(path: Path) -> str:
+    """The hash of a subset file with line endings normalised, so a CRLF checkout (core.autocrlf) matches the lock."""
+    return sha(path.read_bytes().replace(b'\r\n', b'\n'))
+
+
 def get(url: str) -> bytes:
     req = urllib.request.Request(url, headers={'User-Agent': 'qa-skills-i18n-checker/1.0 (+fetch_cldr.py)'})
     with urllib.request.urlopen(req, timeout=60) as r:
@@ -81,7 +86,7 @@ def main() -> int:
         if not lock:
             print('error: no data/cldr.lock.json; run --rebuild --version X first', file=sys.stderr)
             return 1
-        bad = [f for f, h in lock['subsets'].items() if not (DATA / f).exists() or sha((DATA / f).read_bytes()) != h]
+        bad = [f for f, h in lock['subsets'].items() if not (DATA / f).exists() or file_sha(DATA / f) != h]
         print(json.dumps({'cldr_version': lock['version'], 'subsets': list(lock['subsets']), 'status': 'ready' if not bad else 'mismatch',
                           'mismatched': bad}, indent=1))
         return 1 if bad else 0
