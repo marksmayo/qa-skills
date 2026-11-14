@@ -22,8 +22,14 @@ The test code is appended to --test-file (created if missing) in a scratch copy 
 <dir>, and only the named test is run: once on the original code, then once per mutant with the
 mutant's lines swapped in (after checking the file still holds the mutant's original text). The
 verdict per mutant is "kills" (original passed, mutant failed), "does_not_kill" (both passed),
-or "fails_on_original" (the new test is wrong). Timeouts on the mutant are recorded as such,
-never as kills.
+"fails_on_original" (the new test failed on the original: it is wrong), "original_not_run" (the
+new test never ran on the original code: a timeout, or collection failed; inconclusive, and the
+mutants are not run), "timeout" (the mutant run timed out) or "runtime_error" (the test never ran on
+the mutant, e.g. the mutant breaks collection; never does_not_kill). Only "kills" counts as a kill.
+
+--timeout defaults to the measured per-mutant timeout of the cited mutants' engines in mutants.json
+(engines[].timeout_s, from a run that imported the app), and never less than 60 s; give it when the
+repository's import is slow and no engine measured it. The timeout used is recorded as timeout_s.
 
 --in-place (write_tests: true) also appends the test to the real repository file and runs it
 there on the original code; mutants are still only ever applied in the scratch copy. Proofs are
@@ -153,6 +159,10 @@ def prove_go(args, repo: Path, run_dir: Path, by_id: dict, code: str, env: dict,
         src = scratch / f'{mid}.go'
         shutil.copyfile(repo / m['file'], src)
         apply_mutant(scratch, {**m, 'file': src.name})
+        if original['test_status'] not in ('passed', 'failed'):
+            results.append({'mutant_id': mid, 'engine': m['engine'], 'run': None, 'verdict': 'original_not_run'})
+            print(f'{mid:>5} {m["file"]}:{m["line"]} original_not_run')
+            continue
         res = go({**test_overlay, str((repo / m['file']).resolve()): str(src)}, mid)
         if original['test_status'] != 'passed':
             verdict = 'fails_on_original'
@@ -160,14 +170,31 @@ def prove_go(args, repo: Path, run_dir: Path, by_id: dict, code: str, env: dict,
             verdict = 'kills'
         elif res['test_status'] == 'build_failed':
             verdict = 'not_viable'          # the mutant does not compile: never a kill
-        elif res['test_status'] == 'timeout':
-            verdict = 'timeout'
         else:
-            verdict = 'does_not_kill'
+            verdict = mutant_verdict(res['test_status'])
         results.append({'mutant_id': mid, 'engine': m['engine'], 'run': res, 'verdict': verdict})
         print(f'{mid:>5} {m["file"]}:{m["line"]} {verdict}')
     shutil.rmtree(scratch, ignore_errors=True)
     return original, results
+
+
+def mutant_verdict(status: str) -> str:
+    """The verdict for a mutant run once the new test passed on the original. Only a failing test is a kill;
+    a test that never ran on the mutant (collection broke, no result) is a runtime_error, never does_not_kill."""
+    if status in ('failed', 'error'):
+        return 'kills'
+    if status == 'timeout':
+        return 'timeout'
+    if status == 'passed':
+        return 'does_not_kill'
+    return 'runtime_error'
+
+
+def default_timeout(data: dict, mutant_ids: list[str]) -> float:
+    """The cited mutants' engines' measured per-mutant timeout (mutants.json engines[].timeout_s), at least 60 s."""
+    engines = {m['engine'] for m in data.get('mutants', []) if m['id'] in mutant_ids}
+    measured = [e.get('timeout_s') for e in data.get('engines') or [] if e.get('name') in engines]
+    return max([60.0] + [float(t) for t in measured if isinstance(t, (int, float))])
 
 
 def name_pattern(test_name: str) -> str:
@@ -301,7 +328,8 @@ def main(argv=None) -> int:
     ap.add_argument('--run-dir', type=Path, required=True)
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--in-place', action='store_true', help='write_tests: also add the test to the repository file')
-    ap.add_argument('--timeout', type=float, default=60.0)
+    ap.add_argument('--timeout', type=float,
+                    help="seconds per test run (default: the engines' measured timeout_s in mutants.json, at least 60)")
     ap.add_argument('--runner', choices=['pytest', 'vitest', 'jest', 'go'],
                     help='default: vitest for a JS/TS test file, go for *_test.go, pytest for .py')
     ap.add_argument('--env', nargs='+', action='append', default=[], metavar='K=V',
@@ -322,6 +350,8 @@ def main(argv=None) -> int:
     missing = [i for i in args.mutant if i not in by_id]
     if missing:
         raise SystemExit(f'unknown mutant id(s): {", ".join(missing)}')
+    if args.timeout is None:
+        args.timeout = default_timeout(data, args.mutant)
     code = args.test_code.read_text(encoding='utf-8')
     test_id = f'{args.test_file}::{args.test_name}'
     pycache = run_dir / '_pycache'
@@ -360,6 +390,11 @@ def main(argv=None) -> int:
     results = []
     for mid in args.mutant:
         m = by_id[mid]
+        if original['test_status'] not in ('passed', 'failed', 'error'):
+            # the new test never ran on the original (timeout, collection error): nothing a mutant run could prove
+            results.append({'mutant_id': mid, 'engine': m['engine'], 'run': None, 'verdict': 'original_not_run'})
+            print(f'{mid:>5} {m["file"]}:{m["line"]} original_not_run')
+            continue
         apply_mutant(work, m)
         try:
             res = go(work, run_dir / f'proof-{mid}.xml')
@@ -367,12 +402,8 @@ def main(argv=None) -> int:
             (work / m['file']).write_bytes(pristine[mid])
         if original['test_status'] != 'passed':
             verdict = 'fails_on_original'
-        elif res['test_status'] in ('failed', 'error'):
-            verdict = 'kills'
-        elif res['test_status'] == 'timeout':
-            verdict = 'timeout'
         else:
-            verdict = 'does_not_kill'
+            verdict = mutant_verdict(res['test_status'])
         results.append({'mutant_id': mid, 'engine': m['engine'], 'run': res, 'verdict': verdict})
         print(f'{mid:>5} {m["file"]}:{m["line"]} {verdict}')
     after = run_tests.tree_snapshot(repo, {run_dir})
@@ -389,7 +420,7 @@ def store_proof(args, test_id: str, code: str, original: dict, results: list[dic
     store['proofs'].append({
         'id': pid, 'finding': args.finding, 'gap': args.gap, 'test_id': test_id, 'test_file': args.test_file, 'test_code': code.strip('\n'),
         'test_code_sha256': hashlib.sha256(code.strip('\n').encode('utf-8')).hexdigest(),
-        'applied_to': 'repo' if args.in_place else 'scratch', 'original_run': original, 'mutants': results,
+        'applied_to': 'repo' if args.in_place else 'scratch', 'timeout_s': args.timeout, 'original_run': original, 'mutants': results,
         'repo_files_changed': changed, 'proved_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')})
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(store, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')

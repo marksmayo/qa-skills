@@ -386,9 +386,143 @@ def case_prove_kill_unsupported(tmp: Path) -> None:
     assert not (tmp / 'run').exists() or not any((tmp / 'run').iterdir()), 'wrote a scratch copy before refusing'
 
 
+# A tiny Python package ("tea shop prices") whose rate table is loaded once, while conftest is imported:
+# the table's lines run only during collection, never inside a test (a cached loader, data built in conftest).
+PY_PRICES = '''_CACHE = {}
+
+
+def load_rates():
+    if 'rates' not in _CACHE:
+        _CACHE['rates'] = {'tea': 3, 'cake': 5}
+    return _CACHE['rates']
+
+
+def price(item, qty):
+    total = load_rates()[item] * qty
+    if qty >= 10:
+        total = total - 1
+    return total
+'''
+PY_CONFTEST = 'from shop.prices import load_rates\n\nRATES = load_rates()\n'
+PY_TEST = '''from shop.prices import price
+
+
+def test_tea():
+    assert price('tea', 2) == 6
+
+
+def test_cake_bulk():
+    assert price('cake', 10) == 49
+'''
+RATES_LINE = next(i for i, l in enumerate(PY_PRICES.splitlines(), 1) if "_CACHE['rates'] = {" in l)
+
+
+def py_shop(root: Path, conftest: str = PY_CONFTEST, slow_s: float = 0) -> Path:
+    (root / 'shop').mkdir(parents=True)
+    (root / 'tests').mkdir()
+    (root / 'pytest.ini').write_text('[pytest]\npythonpath = .\ntestpaths = tests\n', encoding='utf-8')
+    (root / 'shop' / '__init__.py').write_text('', encoding='utf-8')
+    (root / 'shop' / 'prices.py').write_text(PY_PRICES, encoding='utf-8')
+    (root / 'tests' / 'conftest.py').write_text(conftest, encoding='utf-8')
+    (root / 'tests' / 'test_prices.py').write_text(PY_TEST, encoding='utf-8')
+    if slow_s:
+        # a slow test that never touches the scoped file: it makes one whole-suite run long
+        (root / 'tests' / 'test_slow.py').write_text(
+            f'import time\n\n\ndef test_slow_report():\n    time.sleep({slow_s})\n', encoding='utf-8')
+    return root
+
+
+def case_builtin_import_time_coverage(tmp: Path) -> None:
+    """A function that runs only while conftest is imported (a cached loader) is covered by the tests that use
+    the file, not reported no_coverage: its mutants run and the tests that depend on the loaded data kill them."""
+    repo = py_shop(tmp / 'repo')
+    n = len(PY_PRICES.splitlines())
+    scope = write_json(tmp / 'scope.json', scope_for({'shop/prices.py': [[1, n]]}))
+    res = run('builtin_mutator.py', '--repo', repo, '--scope', scope, '--run-dir', tmp / 'run', '--minutes', '5')
+    assert res.returncode == 0, res.stdout[-800:] + res.stderr[-800:]
+    out = json.loads((tmp / 'run' / 'builtin.json').read_text(encoding='utf-8'))
+    on_rates = [m for m in out['mutants'] if m['line'] == RATES_LINE]
+    assert on_rates, 'no mutants on the rate table line'
+    bad = [(m['id'], m['status']) for m in on_rates if m['status'] == 'no_coverage']
+    assert not bad, f'lines run at import (collection) reported no_coverage: {bad}'
+    assert any(m['status'] == 'killed' for m in on_rates), [(m['id'], m['status']) for m in on_rates]
+    assert all('import' in m.get('note', '') for m in on_rates), [m.get('note') for m in on_rates]
+
+
+def case_builtin_budget_uses_covering_tests(tmp: Path) -> None:
+    """The budget is not spent as if every mutant ran the whole --tests selection: a slow test that never
+    touches the scoped file must not sample out mutants that only run two fast tests; the plan is printed."""
+    repo = py_shop(tmp / 'repo', slow_s=6)
+    n = len(PY_PRICES.splitlines())
+    scope = write_json(tmp / 'scope.json', scope_for({'shop/prices.py': [[10, n]]}))
+    res = run('builtin_mutator.py', '--repo', repo, '--scope', scope, '--run-dir', tmp / 'run', '--minutes', '0.75')
+    assert res.returncode == 0, res.stdout[-800:] + res.stderr[-800:]
+    out = json.loads((tmp / 'run' / 'builtin.json').read_text(encoding='utf-8'))
+    unrun = [(m['id'], m.get('note')) for m in out['mutants'] if m['status'] == 'not_run']
+    assert not unrun, f'{len(unrun)} mutants left unrun with budget to spare: {unrun[:4]}'
+    assert 'plan:' in res.stdout, res.stdout[:600]
+
+
+def py_mutants(tmp: Path, mutated: str, timeout_s: float | None = None) -> Path:
+    original = PY_PRICES.splitlines()[RATES_LINE - 1]
+    return write_json(tmp / 'mutants.json', {
+        'engines': [{'name': 'builtin', 'timeout_s': timeout_s}],
+        'mutants': [{'id': 'B1', 'engine': 'builtin', 'file': 'shop/prices.py', 'line': RATES_LINE,
+                     'end_line': RATES_LINE, 'original': original, 'mutated': mutated}]})
+
+
+PROOF_TEST = "def test_tea_rate():\n    from shop.prices import load_rates\n    assert load_rates()['tea'] == 3\n"
+
+
+def prove_py(tmp: Path, repo: Path, muts: Path, *extra) -> tuple[subprocess.CompletedProcess, dict]:
+    code = tmp / 'new_test.py'
+    code.write_text(PROOF_TEST, encoding='utf-8')
+    res = run('prove_kill.py', '--repo', repo, '--mutants', muts, '--mutant', 'B1', '--test-file',
+              'tests/test_prices.py', '--test-code', code, '--test-name', 'test_tea_rate', '--run-dir', tmp / 'run',
+              '--out', tmp / 'proofs.json', *extra)
+    assert (tmp / 'proofs.json').exists(), res.stdout[-800:] + res.stderr[-800:]
+    return res, json.loads((tmp / 'proofs.json').read_text(encoding='utf-8'))['proofs'][0]
+
+
+def case_prove_kill_original_timeout(tmp: Path) -> None:
+    """When the new test times out on the original code (a slow app import), the proof is inconclusive
+    (original_not_run), never "fails_on_original": the test never ran."""
+    repo = py_shop(tmp / 'repo', conftest='import time\n\ntime.sleep(4)\n' + PY_CONFTEST)
+    muts = py_mutants(tmp, "        _CACHE['rates'] = {'tea': 4, 'cake': 5}")
+    res, p = prove_py(tmp, repo, muts, '--timeout', '1.5')
+    assert p['original_run']['test_status'] == 'timeout', p['original_run']
+    verdict = p['mutants'][0]['verdict']
+    assert verdict == 'original_not_run', f'original timeout recorded as {verdict}'
+    assert res.returncode != 0
+
+
+def case_prove_kill_default_timeout(tmp: Path) -> None:
+    """Without --timeout, the proof uses the engine's measured per-mutant timeout from mutants.json (never less
+    than 60 s), so a repository whose import is slow is not cut off at a fixed 60 s."""
+    repo = py_shop(tmp / 'repo')
+    muts = py_mutants(tmp, "        _CACHE['rates'] = {'tea': 4, 'cake': 5}", timeout_s=150.0)
+    res, p = prove_py(tmp, repo, muts)
+    assert p.get('timeout_s') == 150.0, f"timeout_s {p.get('timeout_s')}"
+    assert p['mutants'][0]['verdict'] == 'kills', p['mutants'][0]
+
+
+def case_prove_kill_collection_error(tmp: Path) -> None:
+    """A mutant that breaks collection (conftest raises while importing) never ran the new test: the verdict is
+    runtime_error, never does_not_kill."""
+    repo = py_shop(tmp / 'repo')
+    muts = py_mutants(tmp, "        _CACHE[''] = {'tea': 3, 'cake': 5}")
+    res, p = prove_py(tmp, repo, muts, '--timeout', '120')
+    assert p['original_run']['test_status'] == 'passed', p['original_run']
+    r = p['mutants'][0]
+    assert r['run']['test_status'] == 'not_run', r['run']
+    assert r['verdict'] == 'runtime_error', f"collection error on the mutant recorded as {r['verdict']}"
+
+
 CASES = [case_builtin_go_engine, case_builtin_unsupported_language, case_ranges_go_only, case_mte_engine_label,
          case_gremlins_operators, case_duplicate_mutants_merged, case_proximity_go, case_proximity_unparsed,
-         case_completeness_external_engine, case_prove_kill_go, case_prove_kill_unsupported]
+         case_completeness_external_engine, case_prove_kill_go, case_prove_kill_unsupported,
+         case_builtin_import_time_coverage, case_builtin_budget_uses_covering_tests, case_prove_kill_original_timeout,
+         case_prove_kill_default_timeout, case_prove_kill_collection_error]
 
 
 def main(argv=None) -> int:

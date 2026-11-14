@@ -30,12 +30,20 @@ tests that need services. --pytest-args is added to every run too (one quoted st
    installed wheel), the run stops, because no mutant could ever be seen by the tests.
 3. Runs: for each mutant, writes the mutated file, runs only the tests that executed that line
    (every test that touched the file, for a module-level line), and restores the original bytes.
+   A line inside a function that ran only while modules were imported (test collection: data
+   loaded in conftest or at module import, a cached loader, an app factory run at import) is
+   covered by every test that touched the file (or, when none did, every test the coverage run
+   saw): any of them may depend on what that code built. Such mutants carry a note saying so.
    pytest exit 0 = survived, 1 = killed (the first failing test is recorded), a timeout =
    timeout, any other exit or no parsed results = runtime_error, a mutant that doesn't compile =
    compile_error. A mutant on a line no test ran is no_coverage and isn't run. The per-mutant
    timeout is --timeout-factor times one untraced run of the suite, at least --min-timeout.
-4. Budget: when the estimate exceeds --minutes, mutants are sampled evenly across operators and
-   files; the skipped ones are recorded.
+4. Budget: mutants run in an order that interleaves operators and files (round-robin, seeded),
+   so any prefix of the run is an even sample; the run keeps going while --minutes remain and
+   records the ones it did not reach as not_run ("budget exhausted"). Before the loop it prints
+   the plan, estimating each mutant from the share of the suite's tests that cover it (a mutant
+   runs only its covering tests, with -x), not from a whole-suite run. --max-mutants caps the
+   count (the rest are "sampled out by --max-mutants"). Progress lines are flushed as they go.
 
 The working tree is hashed before and after (caches skipped). Originals are backed up in
 <dir>/backup before each write; --restore puts them back after a crash. Bytecode is redirected
@@ -342,15 +350,26 @@ def run_coverage(repo: Path, run_dir: Path, scoped: list[str], env: dict, timeou
     return cov, took
 
 
-def covering(cov: dict, m: dict, module_level: bool) -> list[str]:
+IMPORT_NOTE = ('line ran only while modules were imported (test collection), never inside a test; covered by '
+               'every test that touched the file, since any of them may depend on what it built')
+
+
+def covering(cov: dict, m: dict, module_level: bool) -> tuple[list[str], bool]:
+    """(covering tests, ran only at import). A line that ran only under "<import>" is covered by every test
+    that touched its file (every test the coverage run saw, when none did): a module-level statement, or a
+    function called while conftest or a module was imported (cached loaders, data built at collection)."""
     lines = cov['lines'].get(m['file'], {})
     tests = set()
     for n in range(m['line'], m['end_line'] + 1):
         tests.update(lines.get(str(n), []))
-    if module_level and tests <= {'<import>'}:
+    at_import = tests == {'<import>'}
+    if tests <= {'<import>'} and (module_level or at_import):
         tests = {t for ts in lines.values() for t in ts}
+        tests.discard('<import>')
+        if not tests and at_import:
+            tests = {t for f in cov['lines'].values() for ts in f.values() for t in ts}
     tests.discard('<import>')
-    return sorted(tests)
+    return sorted(tests), at_import and not module_level
 
 
 def function_lines(text: str) -> list[tuple[int, int]]:
@@ -359,7 +378,8 @@ def function_lines(text: str) -> list[tuple[int, int]]:
 
 
 def sample(mutants: list[dict], keep: int, seed: int) -> list[dict]:
-    """Round-robin across (operator, file) groups so every operator and file stays represented."""
+    """Round-robin across (operator, file) groups so every operator and file stays represented. The list is
+    in run order: any prefix of it is itself an even sample."""
     groups: dict[tuple, list[dict]] = {}
     for m in mutants:
         groups.setdefault((m['operator'], m['file']), []).append(m)
@@ -371,7 +391,7 @@ def sample(mutants: list[dict], keep: int, seed: int) -> list[dict]:
         for k in keys:
             if groups[k] and len(out) < keep:
                 out.append(groups[k].pop())
-    return sorted(out, key=lambda m: int(m['id'][1:]))
+    return out
 
 
 def restore(run_dir: Path, repo: Path) -> int:
@@ -481,7 +501,7 @@ def main(argv=None) -> int:
     selection = [*extra, *args.tests]
     cov, cov_s = run_coverage(repo, run_dir, scoped, env, timeout=max(600, int(args.minutes * 60)), selection=selection)
     (run_dir / 'coverage.json').write_text(json.dumps(cov, indent=1) + '\n', encoding='utf-8')
-    print(f'coverage: {len(scoped)} file(s), {cov_s:.1f}s, pytest exit {cov["exit_code"]}')
+    print(f'coverage: {len(scoped)} file(s), {cov_s:.1f}s, pytest exit {cov["exit_code"]}', flush=True)
     shadowed = {f: i['other_copies'] for f, i in cov['imports'].items() if not i['loaded'] and i['other_copies']}
     if shadowed:
         raise SystemExit('the tests imported another copy of the scoped code, so no mutant here could be seen: ' +
@@ -506,15 +526,23 @@ def main(argv=None) -> int:
     funcs = {f: function_lines((repo / f).read_text(encoding='utf-8')) for f in scoped}
     for m in mutants:
         module_level = not any(a <= m['line'] <= b for a, b in funcs[m['file']])
-        m['covering_tests'] = covering(cov, m, module_level)
+        m['covering_tests'], at_import = covering(cov, m, module_level)
         m['module_level'] = module_level
+        if at_import and m['covering_tests']:
+            m['note'] = IMPORT_NOTE
     runnable = [m for m in mutants if m['covering_tests']]
-    est_each = max(0.5, plain_s)
-    keep = int(args.minutes * 60 / est_each)
+    # run order: round-robin over operators and files, so stopping at the deadline still leaves an even sample
+    order = sample(runnable, len(runnable), args.seed)
     if args.max_mutants is not None:
-        keep = min(keep, args.max_mutants)
-    chosen = runnable if keep >= len(runnable) else sample(runnable, keep, args.seed)
-    chosen_ids = {m['id'] for m in chosen}
+        order = order[:args.max_mutants]
+    order_ids = {m['id'] for m in order}
+    # estimate: a mutant runs only its covering tests (with -x), so its cost is roughly the share of the suite's
+    # tests it runs, plus a start-up cost; the budget is spent by the clock, not by this estimate
+    all_tests = {t for f in cov['lines'].values() for ts in f.values() for t in ts} - {'<import>'}
+    est = sum(min(plain_s, 1.0 + plain_s * len(m['covering_tests']) / max(1, len(all_tests))) for m in order)
+    print(f'plan: {len(order)} of {len(runnable)} runnable mutants ({len(mutants)} generated), est. '
+          f'{est / 60:.1f} min of a {args.minutes:g} min budget; whole-suite run {plain_s:.1f}s, '
+          f'timeout {timeout:.0f}s per mutant', flush=True)
     backup = run_dir / 'backup'
     deadline = time.monotonic() + args.minutes * 60
     junit_dir = run_dir / '_junit_builtin'
@@ -524,25 +552,31 @@ def main(argv=None) -> int:
         (backup / f).parent.mkdir(parents=True, exist_ok=True)
         (backup / f).write_bytes(data)
     kw = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' else {'start_new_session': True}
+    texts = {m['id']: m.pop('_text') for m in mutants}
+    attempted = 0
+
+    def add_note(m: dict, note: str) -> None:
+        m['note'] = m['note'] + '; ' + note if m.get('note') else note
+
+    for m in mutants:
+        if not m['covering_tests']:
+            m['status'] = 'no_coverage'
+        elif m['id'] not in order_ids:
+            m['status'] = 'not_run'
+            add_note(m, 'sampled out by --max-mutants')
     try:
-        for m in mutants:
-            text = m.pop('_text')
-            if not m['covering_tests']:
-                m['status'] = 'no_coverage'
-                continue
-            if m['id'] not in chosen_ids:
-                m['status'] = 'not_run'
-                m['note'] = 'sampled out by the budget'
-                continue
+        for m in order:
+            text = texts[m['id']]
             if time.monotonic() > deadline:
                 m['status'] = 'not_run'
-                m['note'] = 'budget exhausted'
+                add_note(m, 'budget exhausted')
                 continue
+            attempted += 1
             try:
                 compile(text, m['file'], 'exec')
             except SyntaxError as exc:
                 m['status'] = 'compile_error'
-                m['note'] = str(exc)
+                add_note(m, str(exc))
                 continue
             target = repo / m['file']
             junit = junit_dir / f'{m["id"]}.xml'
@@ -574,10 +608,10 @@ def main(argv=None) -> int:
                 m['killed_by'] = failed[0]
             else:
                 m['status'] = 'runtime_error'
-                m['note'] = run_tests.redact_home(out.decode('utf-8', 'replace')[-400:])
+                add_note(m, run_tests.redact_home(out.decode('utf-8', 'replace')[-400:]))
             if junit.exists():
                 junit.unlink()
-            print(f'{m["id"]:>5} {m["file"]}:{m["line"]} {m["operator"]:<22} {m["status"]}')
+            print(f'{m["id"]:>5} {m["file"]}:{m["line"]} {m["operator"]:<22} {m["status"]}', flush=True)
     finally:
         for f, data in originals.items():
             if (repo / f).read_bytes() != data:
@@ -598,8 +632,8 @@ def main(argv=None) -> int:
            'ids': 'position', 'tests': args.tests, 'pytest_args': extra,
            'started_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'files': files,
            'timeout_s': round(timeout, 1), 'suite_duration_s': round(plain_s, 3), 'coverage_duration_s': round(cov_s, 3),
-           'sampled': {'generated': len(mutants), 'runnable': len(runnable), 'chosen': len(chosen),
-                       'skipped': len(runnable) - len(chosen), 'seed': args.seed},
+           'sampled': {'generated': len(mutants), 'runnable': len(runnable), 'chosen': attempted,
+                       'skipped': len(runnable) - attempted, 'seed': args.seed},
            'tree': {'before': hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(),
                     'after': hashlib.sha256(json.dumps(after, sort_keys=True).encode()).hexdigest(),
                     'changed': changed},

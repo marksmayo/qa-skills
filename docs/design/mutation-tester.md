@@ -1,6 +1,6 @@
 # Design: `mutation-tester-skill`
 
-Status: Built (v1.4.0), see "As built" at the end. Build order: 9.
+Status: Built (v1.5.0), see "As built" at the end. Build order: 9.
 
 ## Mission
 
@@ -387,3 +387,19 @@ Agreed with the user before the build.
     completeness, which also averages in the share of ranked findings backed by a proof, so a
     run where the skill's engine or prover did not run is never 1.0. The example is unchanged
     (both engines are the skill's, every ranked finding is proved) and validates.
+- **v1.5.0: slow imports and the budget.** A review on a Flask app whose import loads a large data
+  tree, with red/green cases in `scripts/self_test.py` (a synthetic "tea shop" package whose rate
+  table is loaded while conftest is imported).
+  - **Import-time coverage** (`builtin_import_time_coverage`): a function line that ran only under
+    `<import>` (collection) is covered by every test that touched its file, with a note; it was
+    `no_coverage` although tests depended on the data it built.
+  - **Budget** (`builtin_budget_uses_covering_tests`): mutants run in a round-robin order over
+    operators and files until `--minutes` is spent, instead of a sample sized as if every mutant
+    ran the whole `--tests` selection; the plan (count, estimate from the covering-test share) is
+    printed first and progress lines are flushed. `sampled.chosen` is the number attempted.
+  - **Proofs** (`prove_kill_original_timeout`, `prove_kill_default_timeout`,
+    `prove_kill_collection_error`): `--timeout` defaults to the engines' measured `timeout_s` in
+    `mutants.json` (at least 60 s) and is recorded on the proof; a test that never ran on the
+    original is `original_not_run` (was `fails_on_original`) and its mutants are not run; a test
+    that never ran on a mutant (collection broke) is `runtime_error` (was `does_not_kill`). The
+    validator still accepts only `kills`. The example is unchanged and validates.

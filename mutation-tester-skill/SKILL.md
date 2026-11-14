@@ -1,7 +1,7 @@
 ---
 name: mutation-tester
 description: Run mutation testing on the code that changed (or a path you name) and turn the surviving mutants into a short, ranked list of weak assertions and missing cases, each naming the test that should have caught it and the assertion or input that would. Uses the repo's own mutation tool when it is configured, the standard open-source tool otherwise (from a scratch config, never added to the repo), and a stdlib AST engine for Python as a fallback. Every score is shown with its counts and scope; equivalent mutants need a checkable reason; timeouts and errors are never counted as kills; no-coverage mutants are coverage gaps, not weak assertions. Never claims code is "well tested".
-version: 1.4.0
+version: 1.5.0
 ---
 
 # Mutation tester
@@ -72,7 +72,7 @@ Output:
 | Scope | `changed` | `changed` (vs `base_ref`, or a diff file), a path, or `all` (only when asked: hours on real code) |
 | Base ref | merge base with `main` | |
 | Engine | auto | Force a tool, or `builtin` for the Python fallback |
-| Budget | 30 minutes | Mutants are sampled evenly across operators and files when they won't fit; the sample is recorded |
+| Budget | 30 minutes | Mutants run in an order interleaving operators and files, so a run cut off by the clock is still an even sample; the ones not reached are recorded |
 | Critical paths | none | Functions or files on journey-mapper P0/P1 steps; they get criticality 3 |
 | `write_tests` | false | |
 
@@ -276,6 +276,21 @@ The builtin engine also writes `coverage.json` (per-test line coverage). Run it 
 `--coverage-only` when another engine does the mutating, so mutants on unexecuted lines can be
 classified. The per-mutant timeout is 3 times one untraced suite run, at least 10 seconds.
 
+- **Lines run at import.** Code that runs only while modules are imported (a conftest that loads
+  data at import, a cached loader, an app factory) runs during collection, never inside a test.
+  The engine records such lines under `<import>` and treats them as covered by every test that
+  touched the file (every test it saw, when none did), with a note on the mutant; they are not
+  `no_coverage`. Expect those mutants to be killed (or survive) by tests far from the line.
+- **Budget.** Before the loop the engine prints its plan: how many mutants, and an estimate from
+  the share of the suite's tests that cover each one (a mutant runs only its covering tests,
+  with `-x`). It then runs mutants in an interleaved order until `--minutes` is spent, so a short
+  budget still gives an even sample and an over-estimate never leaves budget unused. Keep
+  crawl-everything tests (a test that renders every page) out of `--tests`: they dominate the
+  coverage run, which traces every line.
+- **Templates.** The engine mutates Python only. When the change also edits Jinja or Django
+  templates, list them in the scope's exclusions as "not mutated: template", and check survivors
+  whose values flow into a template (a context variable the template branches on) by reading it.
+
 ## Step 5: Normalise
 
 ```bash
@@ -351,6 +366,16 @@ finding's `proof_ids` empty.
 The new test runs on the original code (must pass) and on each mutant (must fail), in a scratch
 copy. Prove every ranked suggestion you can; cite the proof ids on the finding or gap. With
 `write_tests: true`, add `--in-place` and list the test file in `files_changed`.
+
+Each run gets `--timeout` seconds; by default the cited mutants' engines' measured per-mutant
+timeout from `mutants.json` (`engines[].timeout_s`), never less than 60 s, recorded on the proof as
+`timeout_s`. An app whose import loads a large data tree may need more: give `--timeout`. The
+verdicts: `kills` (passed on the original, failed on the mutant), `does_not_kill` (passed on
+both), `fails_on_original` (the new test is wrong), `original_not_run` (the test never ran on the
+original, a timeout or a collection error: inconclusive, the mutants are not run; raise
+`--timeout` or read the kept log), `timeout` and `runtime_error` (the test never ran on the
+mutant, for example a mutant that breaks collection), and `not_viable` (a Go mutant that does not
+build). Only `kills` backs a suggestion; never call a suggestion wrong on `original_not_run`.
 
 ## Step 8: Validate and report
 
