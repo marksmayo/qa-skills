@@ -75,11 +75,15 @@ python scripts/render_report.py run/report.json [--brief]
 python scripts/self_test.py   # feature scan of HTML in Go string constants, capture snapshot fields, compare and validator checks
 ```
 
+A server-rendered site (Flask or Django with Jinja templates named `.html`, Rails, Laravel) is scanned through
+its templates and stylesheets (`language_coverage.status: server_rendered`). Data directories of hundreds of
+JSON or CSV files are skipped (`skipped.data_dirs`); `--exclude DIR` leaves out any other folder.
+
 Static only (no browser): the feature scan, then a candidates file with every engine `not_run`, and a
 report with `run_status: "not_run"`, validated without `--runs`:
 
 ```bash
-python scripts/feature_scan.py --repo . --out run/features.json [--built-css dist/assets]
+python scripts/feature_scan.py --repo . --out run/features.json [--built-css dist/assets] [--exclude archive]
 python scripts/compare_engines.py --static-only --features run/features.json [--targets targets.json] --out run/candidates.json
 python scripts/validate_report.py run/report.json --candidates run/candidates.json --features run/features.json [--targets targets.json]
 ```

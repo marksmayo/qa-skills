@@ -38,7 +38,9 @@ Also fails when:
 
 --write-summary fills the computed headline fields (severity_counts, flaky_count, checks, evidence_completeness,
 overall_confidence), so a draft may leave them out: placeholders are set before the schema check and overwritten.
-The schema is checked first and a schema error stops before any screenshot is decoded.
+The schema is checked first and a schema error stops before any screenshot is decoded; then every check of the report
+itself (wording, triage, scope, headline) runs, and any error there is reported before the candidates are recomputed from
+the screenshots (minutes on a large run), so a wording fix is checked in seconds.
 
 Checks planned (headline.checks.planned) count runs: the (page or state, viewport) pairs runs.json records as "planned" (capture.py writes them,
 honouring per-page and per-state viewports), or the same pairs from --targets (which must then agree), or, for an
@@ -132,16 +134,6 @@ def main() -> int:
     except FileNotFoundError:
         caniuse = None
         print('warning: caniuse data not in the cache; usage shares are not rechecked')
-    critical = {r['page'] for r in runs['runs'] if r.get('critical_path')}
-    n_shots = sum(1 for r in runs['runs'] if r.get('screenshot'))
-    if n_shots:
-        print(f'schema valid; recomputing the candidates from {n_shots} screenshot(s)...', file=sys.stderr, flush=True)
-    diffs, flaky, dismissed = ce.compare(runs, run_dir, cands_doc['reference'], a.jobs)
-    fresh = ce.candidates(diffs, dismissed, runs, caniuse, features, critical)
-    if caniuse is not None and json.dumps(fresh, sort_keys=True) != json.dumps(cands_doc['candidates'], sort_keys=True):
-        errs.append('candidates.json does not follow from runs.json (and the feature scan); rerun compare_engines.py')
-    if flaky != cands_doc['flaky']:
-        errs.append('the flaky list does not follow from runs.json')
     if rep['flaky'] != cands_doc['flaky']:
         errs.append('flaky differs from candidates.json')
     if rep['dismissed_automatically'] != len(cands_doc['dismissed_automatically']):
@@ -339,6 +331,23 @@ def main() -> int:
         if re.search(r'\bsafari\b', sentence, re.I) and not re.search(r'\bnot\b|\bisn.t\b|\bwasn.t\b|untested', sentence, re.I):
             errs.append(f'headline.summary mentions Safari as if it was tested: "{sentence[:120]}"')
 
+    if errs:
+        # the report's own checks failed: say so now, before minutes of screenshot decoding, so the fix-and-validate loop
+        # stays fast; the candidates are recomputed once these pass
+        print('\n'.join(errs))
+        print(f'INVALID: {len(errs)} error(s); the candidates were not yet recomputed from the screenshots (fix these, then '
+              'validate again)')
+        return 1
+    critical = {r['page'] for r in runs['runs'] if r.get('critical_path')}
+    n_shots = sum(1 for r in runs['runs'] if r.get('screenshot'))
+    if n_shots:
+        print(f'report checks passed; recomputing the candidates from {n_shots} screenshot(s)...', file=sys.stderr, flush=True)
+    diffs, flaky, dismissed = ce.compare(runs, run_dir, cands_doc['reference'], a.jobs)
+    fresh = ce.candidates(diffs, dismissed, runs, caniuse, features, critical)
+    if caniuse is not None and json.dumps(fresh, sort_keys=True) != json.dumps(cands_doc['candidates'], sort_keys=True):
+        errs.append('candidates.json does not follow from runs.json (and the feature scan); rerun compare_engines.py')
+    if flaky != cands_doc['flaky']:
+        errs.append('the flaky list does not follow from runs.json')
     if a.write_summary and not errs:
         a.report.write_text(json.dumps(rep, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
         print(f'headline written to {a.report}')

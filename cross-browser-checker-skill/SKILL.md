@@ -1,7 +1,7 @@
 ---
 name: cross-browser-checker
 description: Run the same pages, states and journeys in Playwright's Chromium, Firefox and WebKit, three times each, and report where they behave differently - script errors, failing steps, content that isn't rendered, missing elements, input fallbacks, layout and network differences - keeping only differences that repeat in every run and listing the rest as flaky. With a repository, also scan CSS, JavaScript and HTML for features the project's browserslist targets don't all support (web-features and caniuse data, pinned and hash-checked), and link them to the runtime differences they explain. Never says "compatible", and never treats WebKit as Safari.
-version: 1.4.0
+version: 1.5.0
 ---
 
 # Cross-browser checker
@@ -172,6 +172,22 @@ so scan a rendered page instead (copy it outside the repository and pass that fo
 `features.json` lists what was left out under `skipped`; look at it when a finding you expected is
 missing.
 
+Server-rendered sites (a Flask or Django app rendering Jinja or Django templates named `.html`, Rails,
+Laravel) are supported: their templates and stylesheets are the browser code, and they are scanned like
+any page. When the repository is mostly Python, Ruby or PHP and the scanned markup includes templates
+(HTML under `templates/`, `views/`, `layouts/` or `partials/`, or with `{% %}`, `{{ }}`, `<% %>` or
+`@extends`), `language_coverage.status` is `server_rendered`: it names the templates scanned, lists HTML
+outside the template and static folders (`markup_outside_templates`, a stale rendered page or an old
+build's output, which may not be served: check before reporting a use in one), and writes no language
+limitation, because the server-side code is not browser code. `scanned_files` lists every file read
+(count, and up to 300 paths).
+
+Data directories are pruned before they are walked: a directory holding at least 200 files of which at
+least 90% are data files (`.json`, `.geojson`, `.csv`, `.tsv`, `.xml`, `.ndjson`, `.jsonl`, `.txt`,
+`.yaml`, `.parquet`, `.avro`) and none code or markup is listed in `skipped.data_dirs` with its file
+count. `--exclude DIR` (repeatable, repository-relative) leaves out any other directory, such as an
+archive of old builds (`skipped.excluded`).
+
 JavaScript APIs, not syntax: a build transpiles syntax for its targets but doesn't polyfill APIs, so
 the scan looks for APIs that newer targets have and older ones don't (`structuredClone`, `.at(-1)`,
 `findLast`, `toSorted`, `Object.hasOwn`, `Object.groupBy`, the new `Set` methods,
@@ -224,7 +240,15 @@ another element covers (`occluded`: an overlay or sticky panel lies over it) and
 the automation scrolled by a different amount in each engine (moved by exactly that offset) are
 dismissed automatically and counted, with reasons in `candidates.json`. A layout difference of one element (by
 its signature, such as a shared header or footer) on several pages is one candidate: `pages` lists
-them and reach counts them. Text whose computed font family differs between engines in every run
+them and reach counts them. Repeated siblings are one component: `:nth-of-type(N)` and `:nth-child(N)`
+are taken out of the grouping key, so 40 cards with the same undecoded image are one candidate, whose
+`elements` lists them. A cause seen at several viewports is one candidate too (`viewports`), and every
+candidate counts the raw differences it stands for (`occurrences`). Console messages are compared one
+message at a time (without the source position), so one message on many pages is one candidate. A
+console message for an HTTP error response ("Failed to load resource: the server responded with a
+status of 400") logged in one engine only is dismissed when every run of both engines recorded that
+response status (`http_errors`, written by capture.py): the request failed alike, only the logging
+differs (Firefox does not log fetch() error responses). Text whose computed font family differs between engines in every run
 (a control that doesn't inherit the page font is drawn in the engine's own default face) is one
 `font_family_differs` difference per pair of families, listing its elements; Playwright WebKit on
 Windows draws such text in a serif face (`webkit-windows-serif-controls`), so that one goes to needs
@@ -233,7 +257,12 @@ flaky entry or dismissal), `candidates.json` carries a `self_check` line saying 
 boxes were compared and how many were identical: open one screenshot pair per engine and confirm the
 pages really rendered alike before reporting no differences. Each screenshot is decoded once, in
 parallel (`--jobs`, default up to 4; the validator takes the same option). Candidates matching a known
-engine-build limitation carry its id in `build_limitations`. Ratings follow `RUBRIC.md`.
+engine-build limitation carry its id in `build_limitations`, and so do the candidates that follow from an
+undecoded image with a known limitation on the same page and engine (the `<img>` an error handler hides, the
+fallback it shows beside it, a box resized around it): their detail says which image. Flag emoji are drawn
+as letters by Chromium and WebKit on Windows and as colour flags by Firefox (`windows-flag-emoji`), and
+Windows WebKit may draw default-face controls in MS Shell Dlg rather than a serif
+(`webkit-windows-serif-controls`). Ratings follow `RUBRIC.md`.
 
 ### 5. Triage and write
 

@@ -372,3 +372,34 @@ Where the build differs from the design above, and what the example showed.
     before this have no `font`, `occluded` or `scrollers`, so the example's candidates are unchanged.
   - Not done: patterns for `user-select` and `scrollIntoView` options, asking for targets when there is
     no browserslist, and SKILL guidance for a generated one-file-per-run page.
+- **v1.5.0** (a server-rendered Python site: Flask routes rendering Jinja templates named `.html`, one
+  stylesheet, a data directory of thousands of JSON files, repeated cards with AVIF logos, Windows):
+  - *A Flask site was called "NOT a feature scan"*: the census counted Python as the dominant, unanalysed
+    language although every template and the stylesheet had been scanned, and the validator then made the
+    report carry that sentence. `feature_scan.py` now marks a mostly Python, Ruby or PHP repository whose
+    scanned markup includes templates as `language_coverage.status: server_rendered`, names the templates
+    and the HTML outside the template and static folders (a stale rendered page), and writes no language
+    limitation. A Go or Rust tool with no templates keeps the loud warning. `scanned_files` lists every
+    file read.
+  - *Data trees*: a directory of 200 or more files, 90% or more of them data files and none code or
+    markup, is pruned before it is walked and listed in `skipped.data_dirs`; `--exclude DIR` leaves out any
+    other directory.
+  - *110 candidates from one cause*: repeated cards (`:nth-of-type(N)` signatures), two viewports and
+    three follow-on subkinds made one undecoded AVIF logo 110 candidates. The grouping key now drops
+    `:nth-of-type`/`:nth-child`, merges viewports (`viewports`, `occurrences`, `elements`), compares
+    console messages one at a time across pages, and candidates that follow from an undecoded image with
+    a known build limitation (the hidden `<img>`, the fallback shown beside it, a resized box) inherit
+    its limitation, so they go to review instead of reading as real WebKit differences.
+  - *Firefox's silence about a 400*: capture records `http_errors` (responses of 400 or more) per run, and
+    a "Failed to load resource ... status of N" message logged by one engine only is dismissed when every
+    run of both engines received that status.
+  - *Build limitations*: `webkit-windows-serif-controls` also matches MS Shell Dlg; `windows-flag-emoji`
+    covers flags drawn as letters by Chromium and WebKit on Windows (matched on the element's text).
+  - *Validator loop*: every check of the report itself now runs before the screenshots are decoded, and
+    an error there is reported without decoding, so a wording fix is checked in seconds, not minutes.
+  - The example's candidates gained `viewports` and `occurrences` (same five candidates, same triage);
+    its features gained `scanned_files`. `self_test.py` covers each change with synthetic fixtures.
+  - Not done: speculative connections (`<link rel=preconnect>`, `dns-prefetch`) bypass Playwright's
+    request interception, so the shared harness's third-party block does not stop them; that needs the
+    shared `browser_harness.py` to launch engines with a resolver rule or a dead proxy with a loopback
+    bypass when third parties are blocked.

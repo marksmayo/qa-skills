@@ -47,7 +47,10 @@ ignoring a 2 px border) is under 40% of the reference's in every run, and the re
   Playwright WebKit as the nearest proxy, not because it is Safari.
 - **Reach:** pages: 1, 2, or 3 for three or more (states of one page count once). A layout
   difference of one element (by its signature, such as a shared header) on several pages is one
-  candidate, and reach counts its pages; other differences are one candidate per page.
+  candidate, and reach counts its pages; so is an undecoded image of one component and one console
+  message on several pages. Repeated siblings (`:nth-of-type(N)`, `:nth-child(N)`) are one element, and
+  the viewports a cause shows at are one candidate (`viewports`, `occurrences`); other differences are
+  one candidate per page.
 - P0 ≥ 24, P1 ≥ 12, P2 ≥ 6, otherwise P3. A failing step on a critical-path state is at least P1.
 
 ## Feature findings
