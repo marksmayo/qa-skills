@@ -75,7 +75,7 @@ Hashing a big tree: the hash is cached in `<runs.json dir>/.qa-code-hash-cache.j
 file's size and mtime; when the listing, sizes and mtimes all match (and no file changed within
 seconds of the cache being written), the stored hash is reused without reading a file
 (`code_hash_basis.cache`: hit or miss). The value is the same either way. Data trees in the hashed
-tree (50+ data files, no source) are listed in `code_hash_basis.data_trees` with a `hint`;
+tree (200+ data files, no source) are listed in `code_hash_basis.data_trees` with a `hint`;
 `--hash-exclude DIR` (repeatable) leaves one out, recorded in `code_hash_basis.excluded`.
 
 The repository's pytest addopts: ids for reordered and isolated runs are collected by a generated
@@ -287,7 +287,7 @@ DATA_EXT = {'.json', '.jsonl', '.ndjson', '.geojson', '.csv', '.tsv', '.yaml', '
             '.avro', '.xlsx', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg'}
 SOURCE_HINT_EXT = {'.py', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.go', '.rs', '.java', '.kt', '.cs', '.rb',
                    '.php', '.swift', '.c', '.cc', '.cpp', '.h'}
-DATA_TREE_MIN = 50
+DATA_TREE_MIN = 200
 
 
 def data_trees(rels) -> list[dict]:
@@ -463,11 +463,28 @@ def iter_files(root: Path, extra_skip: set[Path] | None = None, errors: list[str
                 yield here / f
 
 
+_SNAP_CACHE: dict[str, tuple[int, int, int, str]] = {}   # path -> (size, mtime_ns, taken_ns, digest)
+
+
 def tree_snapshot(root: Path, skip: set[Path]) -> dict[str, str]:
+    """{relative path: SHA-256} of every file under root (skip directories left out). Within one process a file
+    whose size and mtime are unchanged since an earlier snapshot (and was not modified within seconds of it) keeps
+    its digest without being read again, so a before/after pair over a big data tree reads it once."""
+    global HASH_READS
     out = {}
     for p in iter_files(root, skip):
+        key = long_path(p)
         try:
-            out[p.relative_to(root).as_posix()] = hashlib.sha256(read_bytes(p)).hexdigest()
+            st = os.stat(key)
+            prev = _SNAP_CACHE.get(key)
+            if prev and prev[0] == st.st_size and prev[1] == st.st_mtime_ns and st.st_mtime_ns < prev[2] - RACY_NS:
+                digest = prev[3]
+            else:
+                HASH_READS += 1
+                taken = time.time_ns()
+                digest = hashlib.sha256(read_bytes(p)).hexdigest()
+                _SNAP_CACHE[key] = (st.st_size, st.st_mtime_ns, taken, digest)
+            out[p.relative_to(root).as_posix()] = digest
         except OSError:
             pass
     return out
@@ -1380,8 +1397,9 @@ def pytest_self_checks() -> list:
             '@pytest.mark.parametrize("n", [1, 2, 3])\ndef test_portions(n):\n    assert n\n\n\n'
             '@pytest.mark.slow\ndef test_slow():\n    assert 1\n', encoding='utf-8')
         (root / 'recipes').mkdir()
-        for i in range(60):
+        for i in range(210):
             (root / 'recipes' / f'r{i:02d}.json').write_text('{"name": "soup"}', encoding='utf-8')
+        (root / 'ids.txt').write_text('tests/test_menu.py::test_two\n', encoding='utf-8')
         old = time.time() - 60   # files written a minute ago, so the cache's racy-mtime guard does not apply
         for p in root.rglob('*'):
             os.utime(p, (old, old))
@@ -1412,6 +1430,18 @@ def pytest_self_checks() -> list:
         checks.append(('a requested test the run did not run (deselected by addopts) is recorded, never lost silently',
                        run.get('tests_not_run') == ['tests/test_menu.py::test_slow'] and
                        any('not run' in n for n in run.get('notes', [])), (code, run.get('tests_not_run'))))
+        code = call(base + ['--tests-file', 'ids.txt'])
+        data, run, cases = last_run()
+        checks.append(('a relative --tests-file is read from --cwd', code == 0 and [c['name'] for c in cases] == ['test_two'],
+                       (code, [c['id'] for c in cases])))
+        try:
+            main(base + ['--tests-file', 'absent.txt'])
+            missing_file = 'accepted'
+        except SystemExit as e:
+            missing_file = e.code
+        except Exception as e:   # noqa: BLE001
+            missing_file = repr(e)
+        checks.append(('a missing --tests-file is an argument error, not a traceback', missing_file == 2, missing_file))
         n_runs = len(data['runs'])
         code = call(base + ['--order', 'shuffle', '--tests', 'tests/test_absent.py'])
         data, run, cases = last_run()
@@ -1442,7 +1472,7 @@ def pytest_self_checks() -> list:
                        (run.get('variation') or {}).get('env', {}).get('QA_SKILLS_SAMPLE_FLAG') == 'on', run.get('variation')))
         (root / 'tests' / 'test_slow_suite.py').write_text(
             'import time\nimport pytest\n\n\n@pytest.mark.parametrize("n", range(40))\ndef test_wait(n):\n'
-            '    time.sleep(0.1)\n', encoding='utf-8')
+            '    time.sleep(0.25)\n', encoding='utf-8')
         code = call(base + ['--tests', 'tests/test_slow_suite.py', '--timebox-min', '0.08', '--out', str(out.parent / 'tb.json')])
         tb = json.loads((out.parent / 'tb.json').read_text(encoding='utf-8')) if (out.parent / 'tb.json').exists() else {'runs': [{}], 'cases': []}
         run = tb['runs'][-1] if tb['runs'] else {}
@@ -1451,6 +1481,20 @@ def pytest_self_checks() -> list:
                        code == 0 and run.get('run_status') == 'partial' and not run.get('errored')
                        and 0 < len(tb['cases']) < 40 and box.get('not_run', 0) > 0
                        and len(tb['cases']) + box['not_run'] == 40, (code, run.get('run_status'), box, len(tb['cases']))))
+    with tempfile.TemporaryDirectory() as d:   # tree_snapshot (mutation and --check-tree) re-reads only changed files
+        root = Path(d)
+        for i in range(60):
+            (root / f'r{i:02d}.json').write_text('{"a": 1}', encoding='utf-8')
+        old = time.time() - 60
+        for p in root.iterdir():
+            os.utime(p, (old, old))
+        first = tree_snapshot(root, set())
+        HASH_READS = 0
+        (root / 'r01.json').write_text('{"a": 2}', encoding='utf-8')
+        second = tree_snapshot(root, set())
+        checks.append(('a second tree snapshot in one process reads only the files whose size or mtime changed',
+                       HASH_READS == 1 and [k for k in first if first[k] != second.get(k)] == ['r01.json'],
+                       (HASH_READS, len(first))))
     coverage_core = globals().get('coverage_core') or (lambda *a: ({}, 'no coverage_core'))
     env, note = coverage_core(['python', '-m', 'pytest', '--cov=shop', '--cov-context=test'], {}, Path('.'), (3, 14))
     checks.append(('pytest-cov on Python 3.12+ runs with COVERAGE_CORE=ctrace, and the run says why',
@@ -1604,8 +1648,13 @@ def main(argv=None) -> int:
     junit_dir = (args.junit_dir or args.out.parent / 'junit').resolve()
     junit_dir.mkdir(parents=True, exist_ok=True)
 
-    tests = list(args.tests) + ([l.strip() for l in args.tests_file.read_text(encoding='utf-8').splitlines() if l.strip()]
-                                if args.tests_file else [])
+    listed = []
+    if args.tests_file:   # a relative path is taken from --cwd (where the ids it lists are relative to), then the cwd
+        tf = next((p for p in (cwd / args.tests_file, args.tests_file) if p.is_file()), None)
+        if tf is None:
+            ap.error(f'--tests-file {args.tests_file}: no such file (relative paths are taken from --cwd)')
+        listed = [l.strip() for l in tf.read_text(encoding='utf-8').splitlines() if l.strip()]
+    tests = list(args.tests) + listed
     if args.id_prefix:   # ids recorded with --repo-root carry the package path; the runner wants them without it
         tests = [t[len(args.id_prefix) + 1:] if t.startswith(args.id_prefix + '/') else t for t in tests]
     env = dict(os.environ)
