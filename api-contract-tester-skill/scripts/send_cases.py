@@ -31,12 +31,17 @@ Safety (enforced here, re-checked by the validator):
     the API-key header or query parameter, any parameter named like token/secret/password/key/sig, and
     body fields the schema marks format: password or writeOnly. Every occurrence of a configured secret
     value is replaced too. Bodies over 2 MB are truncated, keeping the full body's SHA-256.
+  * Every result records body_bytes (the rest of a large body is counted, not kept, up to 16 MB or
+    --max-response-bytes; a larger Content-Length is taken as the size, otherwise body_bytes_lower_bound)
+    and items (the length of a collection body: a top-level array, or the one array of a page wrapper).
+    --max-response-bytes N adds the advisory response_size check: a 2xx body over N bytes fails it.
 
 Checks per response: status_documented (4xx/3xx/2xx not in responses and no default; 5xx is left to
 server_error), server_error, content_type, schema_conformance (passed/failed/cantTell), required_headers,
 negative_accepted (an invalid request got 2xx), positive_rejected (a documented example got a 4xx other
-than 401/403/429), auth_enforced (no credentials, 2xx), graphql_errors. Each failing case is sent once
-more; a check that doesn't fail again is not repeatable (flaky).
+than 401/403/429), auth_enforced (no credentials, 2xx), graphql_errors, and response_size with
+--max-response-bytes. A body too large to read whole is cantTell for schema_conformance. Each failing
+case is sent once more; a check that doesn't fail again is not repeatable (flaky).
 
 Only exchanges with a failed check are saved, as exchanges/<case>.json and <case>.resend.json (the
 case id made filesystem-safe). --cookie-env sends a Cookie header (session auth); it is redacted like
@@ -52,6 +57,7 @@ import jsonschema_lite as jl  # noqa: E402
 
 SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS'}
 MAX_BODY = 2 * 1024 * 1024
+MEASURE_CAP = 16 * 1024 * 1024  # a body past MAX_BODY is counted (not kept) up to here, or --max-response-bytes
 REDACTED = '[REDACTED]'
 SENSITIVE_HEADERS = {'authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'x-api-key', 'api-key', 'x-auth-token'}
 SENSITIVE_NAME = re.compile(r'(token|secret|passw|api[-_]?key|apikey|signature|^sig$|session)', re.I)
@@ -108,6 +114,28 @@ class Sender:
         self.limited: str | None = None
         self.budget_used = {p: 0 for p in getattr(a, 'budgets', {})}
         self.opener = urllib.request.build_opener(NoRedirect)
+        self.size = (0, True)
+
+    def read_body(self, resp, headers: dict) -> bytes:
+        """The first MAX_BODY + 1 bytes (what the checks and the saved exchange use). The rest is counted, not kept,
+        up to the measuring cap, so `self.size` is the real body size: (bytes, complete). A Content-Length larger
+        than what was read is taken as the size; with no Content-Length, a body past the cap is a lower bound."""
+        raw = resp.read(MAX_BODY + 1)
+        total, complete = len(raw), True
+        if len(raw) > MAX_BODY:
+            cap = max(MEASURE_CAP, (self.a.max_response_bytes or 0) + 1)
+            while total <= cap:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                total += len(chunk)
+            else:
+                complete = False
+        cl = next((v for k, v in headers.items() if k.lower() == 'content-length'), None)
+        if cl and str(cl).isdigit() and int(cl) >= total:
+            total, complete = int(cl), True
+        self.size = (total, complete)
+        return raw
 
     def request(self, method: str, url: str, headers: dict, body: bytes | None):
         """Send one request, retrying a 429 up to --max-retries-429 times when its Retry-After is at most
@@ -129,9 +157,11 @@ class Sender:
                     self.budget_used[prefix] += 1
             try:
                 with self.opener.open(req, timeout=self.a.timeout) as r:
-                    status, rh, raw = r.status, dict(r.headers.items()), r.read(MAX_BODY + 1)
+                    status, rh = r.status, dict(r.headers.items())
+                    raw = self.read_body(r, rh)
             except urllib.error.HTTPError as e:
-                status, rh, raw = e.code, dict(e.headers.items()), e.read(MAX_BODY + 1)
+                status, rh = e.code, dict(e.headers.items())
+                raw = self.read_body(e, rh)
             elapsed = round((time.monotonic() - t0) * 1000)
             if status != 429:
                 return status, rh, raw, elapsed
@@ -273,6 +303,26 @@ def redact_url(url: str, api_key_query: str | None) -> str:
     return urllib.parse.urlunsplit(u._replace(query=urllib.parse.urlencode(q, safe='[]')))
 
 
+def collection_items(raw: bytes) -> int | None:
+    """How many items a collection body holds: the length of a top-level array, or of the one array in an object
+    whose other values are numbers, booleans or null (a page wrapper such as {"data": [...], "total": 0}).
+    None when the body isn't a collection (or isn't JSON, or was too large to read whole)."""
+    if not raw or len(raw) > MAX_BODY:
+        return None
+    try:
+        body = json.loads(raw.decode('utf-8'))
+    except (UnicodeDecodeError, ValueError):
+        return None
+    if isinstance(body, list):
+        return len(body)
+    if isinstance(body, dict):
+        lists = [v for v in body.values() if isinstance(v, list)]
+        rest = [v for v in body.values() if not isinstance(v, list)]
+        if len(lists) == 1 and all(v is None or isinstance(v, (int, float, bool)) for v in rest):
+            return len(lists[0])
+    return None
+
+
 def body_record(raw: bytes) -> dict:
     full_sha = hashlib.sha256(raw[:MAX_BODY + 1]).hexdigest()
     truncated = len(raw) > MAX_BODY
@@ -336,6 +386,8 @@ def check_rest(case: dict, op: dict, contract: dict, status: int, headers: dict,
             schema = documented.get(schema_mt) if schema_mt else None
             if schema is None:
                 res['schema_conformance'] = {'result': 'not_applicable', 'detail': 'no schema documented'}
+            elif len(raw) > MAX_BODY:  # only the first 2 MB were kept: the body can't be parsed, which says nothing about it
+                res['schema_conformance'] = {'result': 'cantTell', 'detail': 'the body is over 2 MB and was not read whole'}
             else:
                 try:
                     body = json.loads(raw.decode('utf-8')) if raw else None
@@ -479,6 +531,9 @@ def main() -> int:
                     help='when a 429 persists: stop the whole run, or stop only that path (its budget prefix, else its '
                          'operation path) and carry on with the rest')
     ap.add_argument('--resume', type=Path, help='an earlier run.json of the same cases: answered cases are reused, not re-sent')
+    ap.add_argument('--max-response-bytes', type=int, default=None, metavar='N',
+                    help='advisory response_size check: a 2xx body over N bytes fails it (sizes are recorded either way; '
+                         'a large body is counted, not kept, and reading stops past N)')
     a = ap.parse_args()
 
     try:
@@ -541,7 +596,8 @@ def main() -> int:
            'secret_env': secret_envs, 'started_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'probe': None,
            'status': 'complete', 'results': [], 'blocked': [],
            'limits': {'max_requests': a.max_requests, 'path_budgets': a.budgets, 'max_retries_429': a.max_retries_429,
-                      'max_retry_after': a.max_retry_after, 'on_429': a.on_429}}
+                      'max_retry_after': a.max_retry_after, 'on_429': a.on_429,
+                      **({'max_response_bytes': a.max_response_bytes} if a.max_response_bytes else {})}}
     if a.cookie_env:
         run['auth'] = 'cookie'
 
@@ -614,8 +670,13 @@ def main() -> int:
             body_bytes = json.dumps(req['body']).encode() if req['body'] is not None else b''
         headers.setdefault('Accept', 'application/json')
         st, rh, raw, el = s.request(req['method'], url, headers, body_bytes)
+        size, size_complete = s.size
         checker = check_graphql if req.get('graphql') else check_rest
         checks = checker(case, op, contract, st, rh, raw)
+        if a.max_response_bytes and 200 <= st < 300:
+            checks['response_size'] = ({'result': 'failed', 'detail': f'{size} bytes{"" if size_complete else " or more"}, over '
+                                                                      f'--max-response-bytes {a.max_response_bytes}'}
+                                       if size > a.max_response_bytes else {'result': 'passed', 'detail': f'{size} bytes'})
         failed = sorted(c for c, r in checks.items() if r['result'] == 'failed')
         exchange = None
         if failed:
@@ -632,12 +693,15 @@ def main() -> int:
                       'description': case['description'], 'sent_with_credentials': case['auth'],
                       'request': {'method': req['method'], 'url': redact_url(url, a.api_key_query),
                                   'headers': redact_headers(headers, a.api_key_header), 'body': req_body if 'body' in req else None},
-                      'response': {'status': st, 'headers': redact_headers(rh, a.api_key_header), 'body': resp},
+                      'response': {'status': st, 'headers': redact_headers(rh, a.api_key_header), 'body': resp,
+                                   'body_bytes': size, **({} if size_complete else {'body_bytes_lower_bound': True})},
                       'elapsed_ms': el, 'failed_checks': failed}
             record = scrub(record, secrets)
             exchange = (ex_dir / f'{safe_id(case["id"])}{suffix}.json')
             exchange.write_text(json.dumps(record, indent=2) + '\n', encoding='utf-8')
-        return st, el, checks, failed, exchange
+        sizes = {'body_bytes': size, **({} if size_complete else {'body_bytes_lower_bound': True}),
+                 'items': collection_items(raw)}
+        return st, el, checks, failed, exchange, sizes
 
     def reuse(r: dict) -> dict:
         """A result from --resume, with its exchange files copied next to this run."""
@@ -685,11 +749,11 @@ def main() -> int:
                     run['blocked'].append({'case_id': case['id'], 'reason': f'not sent: path budget for {over} '
                                                                            f'({a.budgets[over]} requests) would be exceeded'})
                     continue
-                st, el, checks, failed, ex = send(case)
+                st, el, checks, failed, ex, sizes = send(case)
                 run['results'].append({'case_id': case['id'], 'operation_id': case['operation_id'], 'kind': case['kind'],
                                        'valid': case['valid'], 'method': case['request']['method'], 'write': is_write(case),
-                                       'status': st, 'elapsed_ms': el, 'checks': checks, 'failed': failed, 'exchange': rel(ex),
-                                       'resend': None})
+                                       'status': st, 'elapsed_ms': el, **sizes, 'checks': checks, 'failed': failed,
+                                       'exchange': rel(ex), 'resend': None})
                 if s.limited:
                     if a.on_429 == 'stop-path':
                         stopped_scopes[scope] = s.limited
@@ -702,7 +766,7 @@ def main() -> int:
                         continue
                     if scope_of(by_id[r['case_id']]) in stopped_scopes:
                         continue
-                    st, el, checks, failed, ex = send(by_id[r['case_id']], '.resend')
+                    st, el, checks, failed, ex, _ = send(by_id[r['case_id']], '.resend')
                     r['resend'] = {'status': st, 'failed': failed, 'exchange': rel(ex),
                                    'repeated': {c: c in failed for c in r['failed']}}
                     if s.limited:

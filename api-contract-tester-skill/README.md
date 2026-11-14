@@ -63,13 +63,13 @@ breaking changes.
 python scripts/load_contract.py openapi.yaml --out run/contract.json
 python scripts/gen_cases.py run/contract.json --out run/cases.json --seed 1611 --auth-configured
 python scripts/run_schemathesis.py openapi.yaml --base-url http://127.0.0.1:8140 --out run/schemathesis.json --seed 1611 --bearer-env API_TOKEN
-python scripts/send_cases.py run/contract.json run/cases.json --base-url http://127.0.0.1:8140 --out run/run.json --bearer-env API_TOKEN
+python scripts/send_cases.py run/contract.json run/cases.json --base-url http://127.0.0.1:8140 --out run/run.json --bearer-env API_TOKEN   [--max-response-bytes 1000000]   # advisory response_size check; every result records body_bytes and items
 python scripts/load_contract.py openapi.previous.yaml --out run/contract.prev.json
 python scripts/spec_diff.py run/contract.prev.json run/contract.json --out run/diff.json
 python scripts/merge_findings.py run/contract.json run/cases.json run/run.json --diff run/diff.json --schemathesis run/schemathesis.json --out run/candidates.json
-python scripts/handler_map.py . --contract run/contract.json --out run/handlers.json
+python scripts/handler_map.py . --contract run/contract.json --out run/handlers.json [--only /api/]
 python scripts/validate_report.py run/report.json --run run/run.json --candidates run/candidates.json --contract run/contract.json --cases run/cases.json --diff run/diff.json --handlers run/handlers.json --repo .
-python scripts/render_report.py run/report.json [--brief] [--sarif findings.sarif --contract run/contract.json]
+python scripts/render_report.py run/report.json [--brief] [--color auto|always|never] [--sarif findings.sarif --contract run/contract.json]
 ```
 
 Against a deployed target with app-level rate limits and session auth:
@@ -78,6 +78,15 @@ Against a deployed target with app-level rate limits and session auth:
 python scripts/send_cases.py run/contract.json run/cases.json --base-url https://staging.example.com --out run/run.json \
   --authorised-by "who" --cookie-env SESSION_COOKIE --rate 1 --probe api/health --probe-expect 200 \
   --path-budget api/appointments=15 --max-requests 150 --max-retries-429 0 --on-429 stop-path
+```
+
+An API with no contract (a hand-written Flask or Express API): derive one from the handlers, fill in
+its response schemas, and report it as derived (overall confidence at most medium, named in
+limitations):
+
+```bash
+python scripts/handler_map.py . --out run/handlers.json --skeleton run/openapi.derived.json --only /api/
+python scripts/load_contract.py run/openapi.derived.json --out run/contract.json      # records provenance: derived
 ```
 
 On Git Bash for Windows, a command-line path starting with `/` is rewritten into a Windows path:
@@ -104,6 +113,7 @@ python scripts/validate_report.py examples/report.example.json --run examples/ru
 python scripts/validate_report.py examples/report.static.example.json --contract examples/run/contract.json --cases examples/run/cases.json --diff examples/run/diff.json --repo examples/clinic-api
 python scripts/render_report.py examples/report.example.json
 python scripts/handler_map.py --self-test
+python scripts/self_test.py
 ```
 
 `examples/report.static.example.json` is the same contract reported without a run. It also
@@ -121,7 +131,10 @@ and excerpt that `--repo` re-reads).
 - `scripts/gen_cases.py`: plan and case generator (examples, boundaries, negatives, seeded random, no-auth)
 - `scripts/send_cases.py`: rate-limited sender in safe mode, with checks, redaction, exchanges and re-sends,
   request and path budgets, a 429 policy and resumable runs
-- `scripts/handler_map.py`: static contract-vs-handler comparison (`--self-test` checks it on fixtures)
+- `scripts/handler_map.py`: static contract-vs-handler comparison (`--self-test` checks it on fixtures); without a
+  contract it lists the handlers, and `--skeleton` derives an OpenAPI contract from them (marked derived)
+- `scripts/self_test.py`: checks the derived contract, response sizes, vacuous passes and the provenance cap
+  against a loopback server it starts itself
 - `scripts/py_routes.py`: Flask, FastAPI and Azure Functions routes read with `ast`, with router and
   blueprint prefixes resolved (a shared file, the same in the journey mapper, security auditor and test suite
   evaluator; the canonical copy is `shared/scripts/py_routes.py` in the repository)

@@ -1,7 +1,7 @@
 ---
 name: api-contract-tester
 description: Check that a running HTTP API behaves the way its contract says. Read an OpenAPI 3.0/3.1 document or a GraphQL schema, generate requests from it (documented examples, boundary values, one-violation negatives, a seeded random sample, and requests without credentials), send them to a test instance in safe mode, and check every response for undocumented status codes, server errors, wrong content types, schema violations, missing headers, invalid input accepted, valid input rejected and auth not enforced. Every finding has a saved, redacted request and response and is re-sent once to separate repeatable from flaky. With a previous contract it also rates the breaking changes between versions. Uses Schemathesis and oasdiff when installed; works with the standard library alone. No findings never means the API conforms.
-version: 1.2.0
+version: 1.3.0
 ---
 
 # API contract tester
@@ -115,6 +115,25 @@ Say so in `limitations`, and spend the static effort where generated contracts g
   `AwareDatetime`) and, when the repository has recorded payloads (frontend fixtures, mocks, saved
   responses), checking a few against the contract's schemas with `jsonschema_lite.py`.
 
+**No contract at all** (a hand-written Flask or Express API documented only in prose): derive one
+from the handlers, and mark it derived.
+
+```bash
+python scripts/handler_map.py <repo> --out <run>/handlers.json --skeleton <run>/openapi.derived.json [--only /api/]
+python scripts/load_contract.py <run>/openapi.derived.json --out <run>/contract.json     # provenance: derived
+```
+
+Without `--contract`, handler_map lists the handlers and compares nothing; `--skeleton` writes an
+OpenAPI 3.1 file with every handler's path and method, path parameters typed from converters
+(`<int:id>` is an integer), query parameters from `request.args.get(name, default, type=int)` (or
+FastAPI parameters), JSON or HTML responses (`jsonify` against `render_template`) and statuses from
+`return ..., 201`, marked `x-contract-provenance: derived`. `--only /api/` keeps the API surface of
+a site that also serves pages. Fill in the response schemas from the code and the prose
+documentation, so the run checks something. The loader records `provenance` (also settable with
+`--provenance published|generated|derived`); copy it into `scope.contract.provenance`. A derived or
+generated contract caps overall confidence at medium, and the validator requires `limitations`
+to say so: bounds and shapes written from the same handlers mostly cannot fail.
+
 Record what you find by reading as contract issues with `"source": "agent"` and a `basis` (the
 file, line and an excerpt of the line that shows it), after the loader's issues, with ids of your
 own (`CA1`, ...). They are leads, not findings: a finding needs a saved exchange. The validator
@@ -198,10 +217,26 @@ if the sender aborts, it still writes the partial run.json. List every earlier a
 | `positive_rejected` | A documented example got a 4xx other than 401, 403 or 429 |
 | `auth_enforced` | A secured operation answered 2xx without credentials |
 | `graphql_errors` | A valid query returned `errors`, or data that doesn't match the field types |
+| `response_size` | Advisory, only with `--max-response-bytes N`: a 2xx body over N bytes (Medium; an uncapped search or export) |
 
 Failing exchanges are saved, redacted, and each failing case is re-sent once. Bodies over 2 MB are
-truncated with the full body's SHA-256 kept. Timestamps and ids are checked by schema only, never
-compared between sends.
+truncated with the full body's SHA-256 kept; the rest of the body is counted, not kept (up to
+16 MB or `--max-response-bytes`, or the `Content-Length`), so every result records its real
+`body_bytes`, and a body too large to read whole is `cantTell` for `schema_conformance`, never
+"not valid JSON". Timestamps and ids are checked by schema only, never compared between sends.
+
+**Vacuous passes.** Each result records `items`, the number of items in a collection body (a
+top-level array, or the one array in a page wrapper). When every 2xx answer of an operation was an
+empty collection, its `schema_conformance` is `cantTell`, not `passed` (the item schema was never
+checked), `candidates.json` lists it under `vacuous_passes`, and the validator requires
+`limitations` to name it. Add cases that return data (`gen_cases.py --add-cases`): a documented
+example that combines every filter usually matches nothing. The largest body per operation is
+`largest_response_bytes`; pass `--max-response-bytes` on an API with search or export routes.
+
+**Rate limits are normally untested.** Rule 6 keeps the run under the API's limits, so 429 answers
+(and their bodies) are rarely seen. Say so in `limitations`; a rate-limit or response-size defect
+found by reading the code is an agent contract issue with a basis, and a security concern (a limit
+keyed on a client-set header) belongs to a security review.
 
 **An environment that is down looks like N defects.** When every answer over two or more operations
 is a 5xx, `merge_findings.py` makes one `environment_outage` candidate (confidence low) instead of
@@ -226,8 +261,12 @@ from the version.
 ### 6b. Optional: compare the contract with the handlers (with a repo)
 
 ```bash
-python scripts/handler_map.py <repo> --contract <run>/contract.json --out <run>/handlers.json [--contract-prefix /api] [--handler-prefix /api]
+python scripts/handler_map.py <repo> --contract <run>/contract.json --out <run>/handlers.json [--contract-prefix /api] [--handler-prefix /api] [--only /api/]
 ```
+
+`--only PREFIX` (repeatable) keeps only handlers under that path, so HTML pages, static files and
+sitemaps of a site that also serves an API are not reported as `undocumented_handler`
+(`handlers_outside_only` counts the rest).
 
 Reads the route handlers (Next.js App Router `route.ts` exports including `export { h as GET }`,
 Pages Router API files, Express, Flask, FastAPI, Azure Functions) and lists undocumented handlers,
@@ -294,7 +333,8 @@ environment variables before validating, so the exchanges are scanned for their 
 - `run_status`: `complete`, `partial` (stopped early, down, or an environment outage) or `not_run`
   (static only), with `run_status_reason` whenever it isn't complete.
 - `scope`: the contract (kind, version, title, API version, source, SHA-256; copy them from
-  contract.json, whose `source` is the path as load_contract.py was given it), the previous contract,
+  contract.json, whose `source` is the path as load_contract.py was given it, and its `provenance`
+  when recorded), the previous contract,
   base URL, `authorised_by`, writes allowed, production hosts, seed, filter and case limit (base
   URL, seed and limit are null when nothing was run or planned).
 - `metadata`: tools, generator (`stdlib`, `schemathesis` or `both`), requests sent, rate-limit
@@ -303,7 +343,9 @@ environment variables before validating, so the exchanges are scanned for their 
   record).
 - `headline`: verdict (`violations_found` or `not_established`), a summary, severity counts, flaky
   findings, breaking-change counts, operation coverage, evidence completeness and overall confidence.
-- `operations[]`: every operation with status, cases sent and the result of each check.
+- `operations[]`: every operation with status, cases sent, the result of each check
+  (`response_size` only for a run sent with `--max-response-bytes`) and `largest_response_bytes`
+  for runs that record sizes.
 - `findings[]`, `needs_review[]`, `triage[]`, `contract_issues[]` (the loader's, then any found by
   reading, with `source: agent` and a `basis`), `handler_check` (null when not run),
   `breaking_changes[]`, `limitations[]`, `next_steps[]`.
@@ -323,4 +365,6 @@ and its summary says the API was not run and claims nothing a run would show. Th
 issues must equal contract.json's; issues found by review need a `basis`, re-read with `--repo`
 (the line must exist and hold the excerpt). The contract's source is compared as a path, so a
 relative and an absolute path to the same file match. The handler check must equal handlers.json,
-and with `--repo` each cited line is re-read.
+and with `--repo` each cited line is re-read. `scope.contract.provenance` must equal contract.json's; a generated or
+derived contract caps overall confidence at medium and must be named in `limitations`, as must every
+operation whose `schema_conformance` passed only on empty collections.

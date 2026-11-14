@@ -20,6 +20,11 @@ Environment outage: when every answer (first sends and re-sends) over two or mor
 outage") with confidence low, instead of one defect per operation: the run shows the environment
 failing, not the handlers.
 
+Vacuous passes: when every 2xx answer of an operation whose schema was checked was an empty collection
+(send_cases.py `items` 0), its schema_conformance is cantTell, not passed, and the operation is listed in
+`vacuous_passes`. Runs that record sizes give each operation `largest_response_bytes`; response_size
+(with --max-response-bytes) is a per-operation candidate, rated Medium.
+
 Static mode: `merge_findings.py contract.json [cases.json] --out candidates.json` without a run lists
 every operation as untested (or its plan status) with no candidates, and run_status `not_run`.
 
@@ -103,6 +108,8 @@ def cause_of(check: str, r: dict, op: dict | None) -> tuple[str, bool]:
         return f'status {r["status"]}', False
     if check == 'negative_accepted':
         return re.sub(r': answered \d+$', '', d.get('detail', '')), False
+    if check == 'response_size':
+        return 'response over --max-response-bytes', False
     return f'status {r["status"]}', False
 
 
@@ -124,6 +131,10 @@ def operations(contract: dict, cases: dict | None, run: dict | None) -> list[dic
     for r in (run or {}).get('results') or []:
         by_op.setdefault(r['operation_id'], []).append(r)
     out = []
+    all_results = [r for rs in by_op.values() for r in rs]
+    # response_size is advisory: present only when the run was sent with --max-response-bytes
+    checks_here = CHECKS + (['response_size'] if any('response_size' in r['checks'] for r in all_results) else [])
+    sized = any('body_bytes' in r for r in all_results)
     for op in contract['operations']:
         oid = op['operation_id']
         rs = by_op.get(oid, [])
@@ -132,7 +143,7 @@ def operations(contract: dict, cases: dict | None, run: dict | None) -> list[dic
         if status in ('planned',):
             status = 'exercised' if any(r['kind'] != 'no_auth' for r in rs) else 'untested'
         checks = {}
-        for c in CHECKS:
+        for c in checks_here:
             vals = [r['checks'][c]['result'] for r in rs if c in r['checks']]
             if not rs:
                 checks[c] = 'untested'
@@ -146,8 +157,36 @@ def operations(contract: dict, cases: dict | None, run: dict | None) -> list[dic
                 applicable = (c == 'auth_enforced' and (op['security'] or oid in marked)) or (c == 'positive_rejected' and contract['kind'] == 'openapi') \
                     or (c == 'graphql_errors' and contract['kind'] == 'graphql')
                 checks[c] = 'untested' if applicable else 'not_applicable'
-        out.append({'operation_id': oid, 'method': op['method'], 'path': op['path'], 'status': status,
-                    'cases_sent': len(rs), 'checks': checks})
+        entry = {'operation_id': oid, 'method': op['method'], 'path': op['path'], 'status': status,
+                 'cases_sent': len(rs), 'checks': checks}
+        if vacuous(rs) and checks['schema_conformance'] == 'passed':
+            # every 2xx body checked was an empty collection: the item schema was never exercised
+            checks['schema_conformance'] = 'cantTell'
+        if sized and rs:
+            entry['largest_response_bytes'] = max(r.get('body_bytes') or 0 for r in rs)
+        out.append(entry)
+    return out
+
+
+def vacuous(rs: list[dict]) -> bool:
+    """True when schema_conformance passed only on empty collections: every 2xx answer whose schema was checked
+    held a collection (send_cases.py `items`), and every one of them was empty."""
+    checked = [r for r in rs if 200 <= (r.get('status') or 0) < 300 and (r['checks'].get('schema_conformance') or {}).get('result') == 'passed']
+    return bool(checked) and all(r.get('items') == 0 for r in checked)
+
+
+def vacuous_passes(contract: dict, run: dict | None) -> list[dict]:
+    by_op: dict[str, list[dict]] = {}
+    for r in (run or {}).get('results') or []:
+        by_op.setdefault(r['operation_id'], []).append(r)
+    out = []
+    for op in contract['operations']:
+        rs = by_op.get(op['operation_id'], [])
+        if vacuous(rs):
+            n = sum(1 for r in rs if 200 <= (r.get('status') or 0) < 300)
+            out.append({'operation_id': op['operation_id'],
+                        'reason': f'all {n} 2xx answer(s) were empty collections, so the item schema was never checked; '
+                                  'add cases that return data (gen_cases.py --add-cases)'})
     return out
 
 
@@ -283,6 +322,7 @@ def main() -> int:
         cands += schemathesis_candidates(a.schemathesis, 1, contract)
     out = {'contract_sha256': contract['sha256'], 'seed': (cases or {}).get('seed'), 'run_status': run['status'] if run else 'not_run',
            'environment_outage': is_outage(run),
+           'vacuous_passes': vacuous_passes(contract, run),
            'operations': ops, 'operation_coverage': coverage(ops), 'candidates': cands,
            'contract_issues': contract['issues'],
            'breaking_changes': json.loads(a.diff.read_text(encoding='utf-8'))['changes'] if a.diff else []}

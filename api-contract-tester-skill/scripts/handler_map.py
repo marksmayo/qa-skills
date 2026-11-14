@@ -2,8 +2,18 @@
 """Compare the contract's operations with the route handlers in the code (static; nothing is run).
 
     python handler_map.py <repo> --contract run/contract.json --out run/handlers.json
-        [--framework auto|nextjs|express|flask|fastapi ...] [--contract-prefix /api] [--exclude-dir DIR ...]
+        [--framework auto|nextjs|express|flask|fastapi ...] [--contract-prefix /api] [--exclude-dir DIR ...] [--only /api/]
+    python handler_map.py <repo> --out run/handlers.json --skeleton run/openapi.derived.json [--only /api/]   # no contract
     python handler_map.py --self-test
+
+Without --contract the handlers are listed and nothing is compared. --skeleton writes a derived OpenAPI
+3.1 contract (JSON) from them, marked `x-contract-provenance: derived`: paths and methods, path
+parameters typed from Flask converters or FastAPI annotations, query parameters from
+request.args.get(name, default, type=int) / request.args[name] / getlist (or FastAPI parameters),
+JSON or HTML responses (jsonify or a dict/list literal against render_template; redirect is a 302,
+send_file a file) and statuses from `return ..., 201`. Response schemas are left open for the agent to
+fill in. --only PREFIX (repeatable) keeps handlers under that path, so a site's HTML pages, static
+files and sitemaps are not reported as undocumented API handlers.
 
 Frameworks (heuristic, by reading source text):
   nextjs   App Router `route.(ts|js|tsx|jsx|mjs)` under app/ or src/app/: exported GET/POST/... as
@@ -154,11 +164,157 @@ def python_handlers(py_files: dict[str, str], host_files: dict[str, str], wanted
         else:
             path = re.sub(r'\{(\w+):[^}]*\}', r'{\1}', r['path']).rstrip('/') or '/'   # {file_path:path} -> {file_path}
         h = {'method': '*' if r['method'] == 'ANY' else r['method'], 'path': path, 'file': r['file'], 'line': r['line'],
-             'framework': fw, 'mount': r['mount']}
+             'framework': fw, 'mount': r['mount'], '_raw_path': r['path'], '_function': r.get('function')}
         if r.get('response_classes'):
             h['response_classes'] = r['response_classes']
         out.append(h)
     return out
+
+
+CONVERTER_TYPE = {'int': {'type': 'integer'}, 'float': {'type': 'number'}, 'uuid': {'type': 'string', 'format': 'uuid'},
+                  'path': {'type': 'string'}, 'string': {'type': 'string'}}
+PY_TYPE = {'int': 'integer', 'float': 'number', 'bool': 'boolean', 'str': 'string'}
+HTML_CALLS = {'render_template', 'render_template_string', 'render', 'TemplateResponse', 'HTMLResponse'}
+FILE_CALLS = {'send_file', 'send_from_directory', 'FileResponse', 'StreamingResponse'}
+REDIRECT_CALLS = {'redirect', 'RedirectResponse', 'HttpResponseRedirect'}
+
+
+def _call_name(node) -> str | None:
+    import ast
+    f = node.func if isinstance(node, ast.Call) else None
+    if isinstance(f, ast.Name):
+        return f.id
+    if isinstance(f, ast.Attribute):
+        return f.attr
+    return None
+
+
+def _func_def(tree, name: str | None, line: int):
+    """The handler's def: the function with this name nearest after the decorator line."""
+    import ast
+    best = None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and (name is None or node.name == name):
+            first = min([node.lineno] + [d.lineno for d in node.decorator_list])
+            if first <= line <= node.lineno + 1 or (name and best is None):
+                best = node
+                if first <= line <= node.lineno + 1:
+                    break
+    return best
+
+
+def derive_operation(h: dict, source: str | None) -> dict:
+    """An OpenAPI operation for one handler, read from its source: path parameters (Flask converters, FastAPI
+    annotations), query parameters (request.args.get(name, default, type=int), request.args[name],
+    request.args.getlist(name); FastAPI parameters that are not path parameters), and the response kind
+    (jsonify or a dict/list literal is JSON; render_template is HTML; redirect is a 302; send_file a file),
+    with a status from `return ..., 201`. Response schemas are left open: the skeleton says what exists, not
+    what it returns."""
+    import ast
+    raw = h.get('_raw_path') or h['path']
+    names = re.findall(r'\{([^}]+)\}', h['path'])
+    conv = {m.group(2): m.group(1) for m in re.finditer(r'<(?:(\w+):)?(\w+)>', raw)}
+    path_types = {n: dict(CONVERTER_TYPE.get(conv.get(n) or 'string', {'type': 'string'})) for n in names}
+    query: dict[str, dict] = {}
+    media, statuses = None, set()
+    fn = None
+    if source:
+        try:
+            fn = _func_def(ast.parse(source), h.get('_function'), h['line'])
+        except SyntaxError:
+            fn = None
+    if fn is not None:
+        if h['framework'] == 'fastapi':
+            args = fn.args.args + fn.args.kwonlyargs
+            defaults = [None] * (len(fn.args.args) - len(fn.args.defaults)) + list(fn.args.defaults) + list(fn.args.kw_defaults)
+            for arg, default in zip(args, defaults):
+                ann = arg.annotation.id if isinstance(arg.annotation, ast.Name) else None
+                if isinstance(default, ast.Call) and _call_name(default) in ('Depends', 'Security', 'Body', 'File', 'Form', 'Header', 'Cookie'):
+                    continue
+                if arg.arg in ('self', 'request', 'response', 'session', 'db') or (ann and ann not in PY_TYPE):
+                    continue
+                if arg.arg in names:
+                    if ann in PY_TYPE:
+                        path_types[arg.arg] = {'type': PY_TYPE[ann]}
+                    continue
+                query[arg.arg] = {'schema': {'type': PY_TYPE.get(ann, 'string')}, 'required': default is None}
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Attribute) \
+                    and node.func.value.attr == 'args' and node.args and isinstance(node.args[0], ast.Constant) \
+                    and isinstance(node.args[0].value, str):
+                qn = node.args[0].value
+                typ = next((PY_TYPE.get(k.value.id, 'string') for k in node.keywords
+                            if k.arg == 'type' and isinstance(k.value, ast.Name)), 'string')
+                if node.func.attr == 'getlist':
+                    query.setdefault(qn, {'schema': {'type': 'array', 'items': {'type': typ}}, 'required': False})
+                elif node.func.attr == 'get':
+                    query.setdefault(qn, {'schema': {'type': typ}, 'required': False})
+            elif isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute) and node.value.attr == 'args' \
+                    and isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
+                query.setdefault(node.slice.value, {'schema': {'type': 'string'}, 'required': True})
+            elif isinstance(node, ast.Call):
+                name = _call_name(node)
+                if name in HTML_CALLS:
+                    media = media or 'text/html'
+                elif name in FILE_CALLS:
+                    media = media or 'application/octet-stream'
+                elif name in REDIRECT_CALLS:
+                    statuses.add('302')
+                elif name == 'jsonify':
+                    media = 'application/json'
+            elif isinstance(node, ast.Return) and node.value is not None:
+                v = node.value
+                if isinstance(v, ast.Tuple) and len(v.elts) >= 2 and isinstance(v.elts[1], ast.Constant) and isinstance(v.elts[1].value, int):
+                    statuses.add(str(v.elts[1].value))
+                    v = v.elts[0]
+                if isinstance(v, (ast.Dict, ast.List, ast.ListComp, ast.DictComp)):
+                    media = media or 'application/json'
+    if media is None and h['framework'] in ('fastapi', 'azure-functions'):
+        media = 'application/json'
+    ok = sorted(s for s in statuses if s.startswith('2')) or ([] if statuses and not media else ['200'])
+    responses = {}
+    for st in ok:
+        responses[st] = {'description': 'derived from the handler; replace with what it returns',
+                         **({'content': {media: {}}} if media else {})}
+    for st in sorted(s for s in statuses if not s.startswith('2')):
+        responses[st] = {'description': 'derived from the handler'}
+    params = [{'name': n, 'in': 'path', 'required': True, 'schema': path_types[n]} for n in names]
+    params += [{'name': n, 'in': 'query', 'required': q['required'], 'schema': q['schema']} for n, q in query.items()]
+    op = {'operationId': h.get('_function') or f"{h['method'].lower()}_{re.sub(r'[^A-Za-z0-9]+', '_', h['path']).strip('_') or 'root'}",
+          'x-derived-from': f"{h['file']}:{h['line']}", 'responses': responses or {'200': {'description': 'derived'}}}
+    if params:
+        op['parameters'] = params
+    return op
+
+
+def skeleton(handlers: list[dict], root: Path, repo_name: str) -> dict:
+    """A derived OpenAPI 3.1 contract: every handler's path and method, its parameters and response kind, marked
+    x-contract-provenance: derived. The run against it checks the code against itself; say so."""
+    sources: dict[str, str | None] = {}
+    paths: dict[str, dict] = {}
+    seen_ids: set[str] = set()
+    for h in sorted(handlers, key=lambda x: (x['path'], x['method'])):
+        if h['file'] not in sources:
+            try:
+                sources[h['file']] = (root / h['file']).read_text(encoding='utf-8', errors='replace') if h['file'].endswith('.py') else None
+            except OSError:
+                sources[h['file']] = None
+        methods = HTTP[:5] if h['method'] == '*' else (h['method'],)
+        for m in methods:
+            op = derive_operation(h, sources[h['file']])
+            oid = op['operationId']
+            if oid in seen_ids:
+                oid = f'{oid}_{m.lower()}'
+            seen_ids.add(oid)
+            op['operationId'] = oid
+            paths.setdefault(h['path'], {})[m.lower()] = op
+    return {'openapi': '3.1.0',
+            'info': {'title': f'{repo_name} (derived from the handlers)', 'version': '0.0.0-derived',
+                     'description': 'Derived by handler_map.py --skeleton from the route handlers, not published by the API. '
+                                    'Response schemas are left open; fill them in from the code or the documentation. A run '
+                                    'against a derived contract checks the code against itself.'},
+            'x-contract-provenance': 'derived',
+            'paths': paths}
 
 
 def detect(root: Path, wanted: list[str], exclude: set[str]) -> tuple[list[str], list[dict], int]:
@@ -279,23 +435,45 @@ def compare(contract: dict, handlers: list[dict], prefix: str) -> list[dict]:
     return [{k: i[k] for k in ('id', 'kind', 'method', 'path', 'operation_id', 'file', 'line', 'message')} for i in issues]
 
 
-def build(repo: Path, contract: dict, frameworks: list[str], prefix: str | None, exclude: set[str],
-          handler_prefix: str = '') -> dict:
+def build(repo: Path, contract: dict | None, frameworks: list[str], prefix: str | None, exclude: set[str],
+          handler_prefix: str = '', only: list[str] | None = None, skeleton_out: Path | None = None) -> dict:
+    """Compare the contract with the handlers. With no contract, list the handlers and compare nothing; with
+    skeleton_out, also write a derived OpenAPI contract from them. `only` keeps handlers under these path prefixes
+    (the API surface of a site that also serves HTML pages)."""
     fws, handlers, scanned = detect(repo, frameworks, exclude)
-    prefix = default_prefix(contract) if prefix is None else ('/' + prefix.strip('/') if prefix.strip('/') else '')
+    prefix = (default_prefix(contract) if contract else '') if prefix is None else ('/' + prefix.strip('/') if prefix.strip('/') else '')
     hp = '/' + handler_prefix.strip('/') if handler_prefix.strip('/') else ''
     if hp:
         for h in handlers:
             h['path'] = (hp + h['path']).rstrip('/') or '/'
-    issues = compare(contract, handlers, prefix) if handlers else []
+    dropped = 0
+    if only:
+        # /api/ keeps what is under /api (not the /api page itself); /api keeps /api and what is under it
+        keep = [h for h in handlers if any(h['path'].startswith(o) if o.endswith('/') else (h['path'] == o or h['path'].startswith(o + '/'))
+                                           for o in only)]
+        dropped, handlers = len(handlers) - len(keep), keep
+    if skeleton_out is not None:
+        skeleton_out.parent.mkdir(parents=True, exist_ok=True)
+        skeleton_out.write_text(json.dumps(skeleton(handlers, repo, repo.resolve().name), indent=2) + '\n', encoding='utf-8')
+    issues = compare(contract, handlers, prefix) if handlers and contract else []
     counts = {k: sum(i['kind'] == k for i in issues) for k in ('undocumented_handler', 'missing_handler', 'method_not_handled',
                                                                 'parameter_name_mismatch', 'response_class_mismatch')}
     unmounted = sum(h.get('mount') in ('unmounted', 'dynamic') for h in handlers)
-    return {'tool': 'handler_map.py', 'contract_sha256': contract['sha256'], 'repo': repo.as_posix(), 'frameworks': fws,
-            'contract_prefix': prefix, 'handler_prefix': hp, 'files_scanned': scanned,
-            'unresolved_mounts': unmounted, 'handlers': handlers,
-            'operations': len(contract['operations']), 'counts': counts, 'issues': issues,
-            'note': None if handlers else 'no route handlers recognised; nothing was compared'}
+    handlers = [{k: v for k, v in h.items() if not k.startswith('_')} for h in handlers]
+    note = None
+    if not handlers:
+        note = 'no route handlers recognised; nothing was compared'
+    elif contract is None:
+        note = 'no contract given: the handlers are listed and nothing was compared' + \
+            (f'; a derived contract was written to {skeleton_out.as_posix()}' if skeleton_out else '')
+    out = {'tool': 'handler_map.py', 'contract_sha256': contract['sha256'] if contract else None, 'repo': repo.as_posix(),
+           'frameworks': fws, 'contract_prefix': prefix, 'handler_prefix': hp, 'files_scanned': scanned,
+           'unresolved_mounts': unmounted, 'handlers': handlers,
+           'operations': len(contract['operations']) if contract else 0, 'counts': counts, 'issues': issues, 'note': note}
+    if only:
+        out['only'] = only
+        out['handlers_outside_only'] = dropped
+    return out
 
 
 def self_test() -> int:
@@ -366,24 +544,32 @@ def main() -> int:
     ap.add_argument('--contract-prefix', default=None, help='prepended to every contract path (default: the first servers URL path)')
     ap.add_argument('--handler-prefix', default='', help='prepended to every handler path, for a mount prefix the reader cannot see')
     ap.add_argument('--exclude-dir', action='append', default=[])
+    ap.add_argument('--only', action='append', default=[], metavar='PREFIX',
+                    help='keep only handlers whose path starts with PREFIX (repeatable), e.g. /api/ on a site that also serves pages')
+    ap.add_argument('--skeleton', type=Path, metavar='FILE',
+                    help='write a derived OpenAPI 3.1 contract (JSON) from the handlers, marked x-contract-provenance: derived')
     ap.add_argument('--self-test', action='store_true')
     a = ap.parse_args()
     if a.self_test:
         return self_test()
-    if not a.repo or not a.contract or not a.out:
-        ap.error('repo, --contract and --out are required (or --self-test)')
+    if not a.repo or not a.out:
+        ap.error('repo and --out are required (or --self-test); --contract compares, --skeleton derives one')
     if not a.repo.is_dir():
         print(f'error: {a.repo} is not a directory', file=sys.stderr)
         return 2
-    contract = json.loads(a.contract.read_text(encoding='utf-8'))
-    if contract['kind'] != 'openapi':
+    contract = json.loads(a.contract.read_text(encoding='utf-8')) if a.contract else None
+    if contract and contract['kind'] != 'openapi':
         print(f'error: the handler comparison needs an OpenAPI contract, not {contract["kind"]}', file=sys.stderr)
         return 2
-    res = build(a.repo, contract, a.framework or ['auto'], a.contract_prefix, set(a.exclude_dir), a.handler_prefix)
+    res = build(a.repo, contract, a.framework or ['auto'], a.contract_prefix, set(a.exclude_dir), a.handler_prefix,
+                [o if o.startswith('/') else '/' + o for o in a.only], a.skeleton)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(res, indent=2) + '\n', encoding='utf-8')
     print(f'{len(res["handlers"])} handler(s) in {", ".join(res["frameworks"]) or "no recognised framework"}; '
           f'{res["operations"]} operation(s); {res["counts"]} -> {a.out}', file=sys.stderr)
+    if a.skeleton:
+        print(f'derived contract (x-contract-provenance: derived) -> {a.skeleton}; fill in the response schemas, and say in the '
+              'report that the contract was derived from the code', file=sys.stderr)
     return 0
 
 

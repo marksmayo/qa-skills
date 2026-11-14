@@ -340,3 +340,29 @@ these gaps. What changed:
   `format: date-time`, recorded payloads checked with `jsonschema_lite.py`).
 - **Not built:** dismissing individual handler-check issues in the report, and a `--samples` step
   that checks recorded client payloads against the contract.
+
+## As built (v1.3.0): gaps found on a Flask API with no contract
+
+- **No contract.** `handler_map.py` runs without `--contract` (lists the handlers, compares
+  nothing) and `--skeleton` writes a derived OpenAPI 3.1 contract from them: paths, methods, path
+  parameters typed from converters or FastAPI annotations, query parameters from
+  `request.args.get(..., type=int)`, JSON or HTML responses, statuses from `return ..., 201`,
+  marked `x-contract-provenance: derived`. `--only PREFIX` keeps the API surface of a site that
+  also serves pages.
+- **Provenance.** `load_contract.py` records `provenance` (from `x-contract-provenance` or
+  `--provenance`); the report copies it into `scope.contract.provenance` (optional in the schema,
+  checked against contract.json). A generated or derived contract caps overall confidence at
+  medium and must be named in `limitations`; the renderer prints it under the headline.
+- **Vacuous passes.** `send_cases.py` records `items` (the length of a collection body) for every
+  result; an operation whose every 2xx answer was an empty collection has `schema_conformance`
+  `cantTell` and is listed in `vacuous_passes`, which the validator requires in `limitations`.
+- **Response size.** Every result records its real `body_bytes` (the rest of a large body is
+  counted, not kept); operations get `largest_response_bytes`; `--max-response-bytes N` adds an
+  advisory `response_size` check (Medium, per operation). A body too large to read whole is
+  `cantTell` for `schema_conformance` instead of "not valid JSON". SKILL.md says 429 answers are
+  normally untested under rule 6.
+- **Tests.** `scripts/self_test.py` covers the skeleton, provenance, sizes, vacuous passes and the
+  confidence cap against a loopback server it starts.
+- **Not built:** cross-parameter rules and pattern-based string synthesis in the generator, a
+  deliberate rate-limit conformance burst, and checking that an agent contract issue's `location`
+  exists in the contract. The examples' runs predate sizes and items; they validate unchanged.

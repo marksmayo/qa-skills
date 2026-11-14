@@ -74,6 +74,9 @@ def main() -> int:
            f'Operations: {cov["exercised"]}/{cov["total"]} exercised' +
            ''.join(f', {cov[k]} {k.replace("_", " ")}' for k in ('excluded', 'skipped_write', 'skipped_auth', 'untested') if cov[k]) +
            f'. Evidence {hl["evidence_completeness"]}, confidence {hl["overall_confidence"]}.']
+    if c.get('provenance') in ('generated', 'derived'):
+        out.append(P(f'Contract {c["provenance"]} from the code: the run checks the code against itself, so most checks '
+                     'could not fail.', YELLOW))
     run_status = d.get('run_status', 'complete')
     if run_status == 'not_run':
         out.append(P('Not run: no request was sent; every check is untested.', YELLOW + BOLD) +
