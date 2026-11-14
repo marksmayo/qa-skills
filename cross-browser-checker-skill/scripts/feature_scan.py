@@ -17,6 +17,21 @@ Node-only scripts (a node shebang, or an import of a node: module or of fs, chil
 Node built-ins: CLIs, build scripts, dev servers). `skipped` lists the test directories and Node-only
 files left out.
 
+Data directories are pruned too: a directory holding at least 200 files of which at least 90% are data files
+(.json, .geojson, .csv, .tsv, .xml, .ndjson, .jsonl, .txt, .yaml, .yml, .parquet, .avro) and none are code or
+markup is a data tree, not browser code (a site's data directory of thousands of JSON records); it is listed in
+skipped.data_dirs with its file count and never walked. --exclude DIR (repeatable, repository-relative) leaves
+out any other directory (skipped.excluded). `scanned_files` lists every file read (count, and up to 300 paths),
+so a stale page or a retired build script that was scanned can be seen.
+
+Server-rendered sites: when the repository is mostly Python, Ruby or PHP and the scanned markup includes
+templates (HTML under a templates/, views/, layouts/ or partials/ directory, or with {% %}, {{ }}, <% %> or
+@extends syntax: Flask and Django with Jinja or Django templates named .html, Rails, Laravel), the
+server-side language is the code that renders those templates, not browser code. language_coverage then
+has status "server_rendered", names the templates scanned (and markup outside the template and static
+folders, which may not be served), and no language limitation or warning is written: the templates and
+stylesheets are the browser code, and they were scanned.
+
 CSS-in-JS: when package.json depends on Emotion, MUI, styled-components (CSS_IN_JS_DEPS), scripts that use
 it are also read for CSS written literally: object styles (camelCase property with a string value, or a
 selector / at-rule key) and tagged template literals (styled.div`...`, css`...`). Those uses carry
@@ -74,6 +89,14 @@ HTML_STRING = re.compile(r'(`[^`]*`|"""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|r#+"[\s\
 HTML_DOC = re.compile(r'<(!doctype\s+html|html\b|body\b|style\b|script\b)', re.I)
 # the languages whose browser code this scan reads (CSS and HTML files are not source languages in the census)
 SCANNED_LANGUAGES = {'JavaScript', 'TypeScript', 'Vue', 'Svelte'}
+# a data tree: at least DATA_DIR_MIN files, at least DATA_DIR_SHARE of them data files, none code or markup
+DATA_EXT = {'.json', '.geojson', '.csv', '.tsv', '.xml', '.ndjson', '.jsonl', '.txt', '.yaml', '.yml', '.parquet', '.avro'}
+DATA_DIR_MIN, DATA_DIR_SHARE = 200, 0.9
+# server-side languages that render templates (a Flask or Django app, Rails, Laravel)
+SERVER_LANGUAGES = {'Python', 'Ruby', 'PHP'}
+TEMPLATE_DIRS = {'templates', 'views', 'layouts', 'partials', 'includes'}
+TEMPLATE_SYNTAX = re.compile(r'\{%-?\s*\w+|\{\{[^}]*\}\}|<%[=-]?\s|@(?:extends|section|yield)\b')
+STATIC_DIRS = {'static', 'public', 'assets', 'www', 'wwwroot'}
 
 
 def embedded_html(text: str) -> bool:
@@ -143,18 +166,46 @@ def node_only(text: str) -> bool:
     return bool(NODE_ONLY.search(text[:20000]))
 
 
-def files(repo: Path, skipped: dict | None = None, excluded: list[str] | None = None):
+def data_dir_files(d: Path) -> int | None:
+    """The number of files in d when it is a data tree (DATA_DIR_MIN files or more, DATA_DIR_SHARE of them data files,
+    none code or markup), else None. Only d's own listing is read, never a file."""
+    try:
+        names = [n for n in os.listdir(d) if not os.path.isdir(os.path.join(d, n))]
+    except OSError:
+        return None
+    if len(names) < DATA_DIR_MIN:
+        return None
+    exts = [os.path.splitext(n)[1].lower() for n in names]
+    if any(e in SUFFIXES or e in HOST_SUFFIXES for e in exts):
+        return None
+    data = sum(1 for e in exts if e in DATA_EXT)
+    return len(names) if data >= DATA_DIR_SHARE * len(names) else None
+
+
+def files(repo: Path, skipped: dict | None = None, excluded: list[str] | None = None, user_excluded: list[str] | None = None):
     """Source files, walking with excluded directories pruned before descending (a node_modules tree is never listed).
     Test directories (is_test_dir), test and story files, and Node-only scripts (CLIs, build scripts, servers) don't ship
-    to browsers and are left out; with `skipped`, the test directories and Node-only files are listed there."""
+    to browsers and are left out; with `skipped`, the test directories and Node-only files are listed there. Data trees
+    (data_dir_files) and the directories given with --exclude (user_excluded) are pruned and listed too."""
+    user = {e.replace('\\', '/').strip('/') for e in user_excluded or []}
     for root, dirs, names in os.walk(repo):
         keep = []
         for d in sorted(dirs):
             if d in SKIP_DIRS:
                 continue
+            rel = rel_name(Path(root) / d, repo)
+            if rel in user:
+                if skipped is not None:
+                    skipped.setdefault('excluded', []).append(rel)
+                continue
             if excluded and lang_census.excluded_path({'excluded': [{'path': e, 'reason': ''} for e in excluded]},
-                                                      rel_name(Path(root) / d, repo)) is not None:
+                                                      rel) is not None:
                 continue   # vendored or third-party (shared lang_census)
+            n_data = data_dir_files(Path(root) / d)
+            if n_data is not None:
+                if skipped is not None:
+                    skipped.setdefault('data_dirs', []).append({'path': rel, 'files': n_data})
+                continue
             if is_test_dir(Path(root) / d):
                 if skipped is not None:
                     skipped.setdefault('test_dirs', []).append(rel_name(Path(root) / d, repo))
@@ -256,11 +307,15 @@ def rel_name(f: Path, repo: Path) -> str:
 
 def scan(repo: Path, patterns: list[dict], utility: bool = False, built: list[Path] | None = None,
          css_in_js: bool = False, tailwind_major: int | None = None, skipped: dict | None = None,
-         excluded: list[str] | None = None) -> list[dict]:
+         excluded: list[str] | None = None, user_excluded: list[str] | None = None,
+         scanned: list[str] | None = None) -> list[dict]:
     """Uses of every pattern in the repo's sources; utility-class patterns only when `utility` (Tailwind found); CSS
-    written in scripts when `css_in_js` (a CSS-in-JS library found); the built CSS files with the CSS patterns."""
+    written in scripts when `css_in_js` (a CSS-in-JS library found); the built CSS files with the CSS patterns. With
+    `scanned`, every file read is appended to it."""
     uses = []
-    for f, markup in files(repo, skipped, excluded):
+    for f, markup in files(repo, skipped, excluded, user_excluded):
+        if scanned is not None:
+            scanned.append(rel_name(f, repo))
         uses += scan_file(f, rel_name(f, repo), patterns, utility, css_in_js, markup=markup)
     for f in built_css_files(built or []):
         uses += scan_file(f, rel_name(f, repo), patterns, False, tailwind_major=tailwind_major)
@@ -448,6 +503,54 @@ def scan_file(f: Path, rel: str, patterns: list[dict], utility: bool, css_in_js:
     return uses
 
 
+def server_templates(repo: Path, scanned: list[str]) -> tuple[list[str], list[str]]:
+    """Scanned markup that is a server-side template (under a templates/views/layouts/partials directory, or using
+    template syntax), and scanned markup outside the template and static folders (a stale page that may not be served)."""
+    templates, outside = [], []
+    for rel in scanned:
+        if not rel.lower().endswith(('.html', '.htm')) and not TEMPLATE_FILE.search(rel):
+            continue
+        parts = rel.lower().split('/')[:-1]
+        if any(p in TEMPLATE_DIRS for p in parts) or TEMPLATE_FILE.search(rel):
+            templates.append(rel)
+            continue
+        try:
+            text = (repo / rel).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            text = ''
+        if TEMPLATE_SYNTAX.search(text):
+            templates.append(rel)
+        elif not any(p in STATIC_DIRS for p in parts):
+            outside.append(rel)
+    return templates, outside
+
+
+def server_rendered(cov: dict, repo: Path, scanned: list[str]) -> dict | None:
+    """language_coverage for a server-rendered site (see the module doc), or None when it isn't one."""
+    # the dominant language, whether the shared census calls it unsupported or (a newer census that counts a template
+    # site's server language as supported) not
+    lang = cov.get('dominant_unsupported_language') or cov.get('dominant')
+    if cov.get('status') == 'no_source' or lang not in SERVER_LANGUAGES:
+        return None
+    templates, outside = server_templates(repo, scanned)
+    if not templates:
+        return None
+    styles = [f for f in scanned if f.endswith(('.css', '.scss'))]
+    scripts = [f for f in scanned if f.endswith(SCRIPT_SUFFIXES)]
+    note = (f'Server-rendered {lang} site: {len(templates)} template(s) ({", ".join(templates[:3])}'
+            f'{", ..." if len(templates) > 3 else ""}), {len(styles)} stylesheet(s) and {len(scripts)} script file(s) were '
+            f'scanned as its browser code. The {lang} code ({(cov.get("unsupported") or {}).get(lang) or (cov.get("supported") or {}).get(lang)} '
+            'files) is the server '
+            'that renders them, not browser code, so it is outside a feature scan.')
+    if outside:
+        note += (f' {len(outside)} HTML file(s) outside the template and static folders were scanned too '
+                 f'({", ".join(outside[:3])}): check they are served before reporting a use in them.')
+    return {'status': 'server_rendered', 'dominant': cov.get('dominant'), 'supported': cov.get('supported'),
+            'unsupported': cov.get('unsupported'), 'warning': None, 'note': note,
+            'excluded_source_files': cov.get('excluded_source_files'), 'server_language': lang,
+            'templates': templates[:100], 'markup_outside_templates': outside[:50]}
+
+
 def support_for(feature: str, pattern: dict, wf: dict) -> tuple[dict | None, str | None]:
     if pattern.get('support'):
         return pattern['support'], pattern.get('baseline')
@@ -466,6 +569,8 @@ def main() -> int:
     ap.add_argument('--query')
     ap.add_argument('--built-css', type=Path, action='append',
                     help='a built CSS file or folder to scan as well (repeatable); default .next/static/css when it exists')
+    ap.add_argument('--exclude', action='append', default=[], metavar='DIR',
+                    help='a repository-relative directory to leave out (repeatable), e.g. a data or archive folder')
     a = ap.parse_args()
     from fetch_data import asset_path
     caniuse = json.loads(asset_path('caniuse-db').read_text(encoding='utf-8'))
@@ -484,14 +589,18 @@ def main() -> int:
         tw_major = int(m.group(1)) if m else None
     cij = css_in_js_libraries(a.repo)
     skipped: dict = {}
-    census = lang_census.census(a.repo)
+    census = lang_census.census(a.repo, a.exclude)
     excluded = [e['path'] for e in census['excluded']]
+    scanned: list[str] = []
     uses = scan(a.repo, pats, utility=bool(fw), built=built, css_in_js=bool(cij), tailwind_major=tw_major, skipped=skipped,
-                excluded=excluded)
+                excluded=excluded, user_excluded=a.exclude, scanned=scanned)
     embedded = skipped.pop('embedded_html', [])
     cov = lang_census.language_coverage(census, SCANNED_LANGUAGES, tool='feature_scan.py', what='feature scan')
+    served = server_rendered(cov, a.repo, scanned)
     limitations = []
-    if cov['status'] == 'unsupported_dominant':
+    if served:
+        print(f'note: {served["note"]}', file=sys.stderr)
+    elif cov['status'] == 'unsupported_dominant':
         lang = cov['dominant_unsupported_language']
         note = (f'The repository is predominantly {lang} ({cov["dominant_unsupported_files"]} source files, vendored and '
                 f'third-party trees excluded), which the feature scan does not read as browser code. ' +
@@ -568,12 +677,15 @@ def main() -> int:
                          'status': 'possible', 'linked_differences': []})
     out = {'repo': a.repo.as_posix(), 'browserslist': {'query': query, 'source': source, 'resolved_count': len(targets['resolved']),
                                                        'coverage': targets['coverage'], 'unresolved': targets['unresolved']},
-           'uses': sum(u.get('occurrences', 1) for u in uses), 'features': findings}
+           'uses': sum(u.get('occurrences', 1) for u in uses), 'features': findings,
+           'scanned_files': {'count': len(scanned), 'files': scanned[:300]}}
     if fw:   # only written when there is something to say, so a plain CSS/JS repo's output is unchanged
         out['utility_css'] = fw
     if css_in_js:
         out['css_in_js'] = css_in_js
-    if cov['status'] == 'unsupported_dominant' or embedded:
+    if served:
+        out['language_coverage'] = served | {'embedded_html': embedded, 'excluded': excluded[:30]}
+    elif cov['status'] == 'unsupported_dominant' or embedded:
         out['language_coverage'] = {k: cov.get(k) for k in ('status', 'dominant', 'supported', 'unsupported', 'warning',
                                                            'excluded_source_files')} | {
             'embedded_html': embedded, 'excluded': excluded[:30]}

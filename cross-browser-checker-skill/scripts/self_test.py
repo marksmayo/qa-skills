@@ -82,6 +82,134 @@ def feature_scan_checks() -> tuple[list[str], str]:
     return fails, 'ran'
 
 
+# a server-rendered Python site (a recipe site): Flask routes render Jinja templates named .html, the CSS is under
+# static/, the Python modules outnumber everything else, and a data directory holds a few hundred JSON files
+FLASK_TREE = {
+    'requirements.txt': 'flask==3.1.0\nJinja2>=3.1\n',
+    'app.py': 'from flask import Flask, render_template\n\napp = Flask(__name__)\n\n\n@app.route("/")\ndef index():\n'
+              '    return render_template("index.html")\n',
+    'recipes/__init__.py': '', 'recipes/search.py': 'def search(q):\n    return []\n',
+    'recipes/units.py': 'def grams(x):\n    return x\n', 'recipes/store.py': 'def load():\n    return {}\n',
+    'tools/rebuild_index.py': 'print("rebuild")\n', 'tools/fetch_images.py': 'print("fetch")\n',
+    'templates/base.html': '<!doctype html><html><head><link rel="stylesheet" href="/static/site.css"></head>\n'
+                           '<body>{% block body %}{% endblock %}</body></html>\n',
+    'templates/index.html': '{% extends "base.html" %}\n{% block body %}\n<style>\n.card:has(> img) { gap: 4px; }\n</style>\n'
+                            '<ul>{% for r in recipes %}<li>{{ r.name }}</li>{% endfor %}</ul>\n{% endblock %}\n',
+    'static/site.css': '.list::-webkit-scrollbar { width: 6px; }\n',
+    'old_build/export.html': '<!doctype html><html><body><p>stale</p></body></html>\n',
+}
+FLASK_TREE.update({f'data/recipes/r{i:04d}.json': '{"name": "soup %d"}' % i for i in range(260)})
+
+
+def flask_scan_checks() -> tuple[list[str], str]:
+    try:
+        from fetch_data import asset_path
+        asset_path('web-features'); asset_path('caniuse-db')
+    except (FileNotFoundError, ImportError, KeyError):
+        return [], 'skipped (feature data not cached: fetch_data.py)'
+    fails = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / 'recipes-site'
+        for rel, text in FLASK_TREE.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        out = Path(tmp) / 'features.json'
+        r = subprocess.run([sys.executable, '-B', str(HERE / 'feature_scan.py'), '--repo', str(root), '--out', str(out),
+                            '--query', 'defaults', '--exclude', 'old_build'], capture_output=True, text=True, encoding='utf-8')
+        try:
+            d = json.loads(out.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return [f'feature_scan.py failed: {r.stderr[-300:]}'], 'ran'
+        lc = d.get('language_coverage') or {}
+        if lc.get('status') == 'unsupported_dominant' or 'NOT a' in str(lc.get('warning')):
+            fails.append(f'a Flask site whose Jinja templates and CSS were scanned is called unsupported: {lc}')
+        if any('not read as browser code' in x or 'NOT a feature scan' in x for x in d.get('limitations') or []):
+            fails.append(f'a misleading language limitation for a server-rendered site: {d.get("limitations")}')
+        if 'WARN' in r.stderr:
+            fails.append(f'feature_scan.py warns about the language of a server-rendered site: {r.stderr.strip()[-200:]!r}')
+        if 'templates/index.html' not in (lc.get('templates') or []):
+            fails.append(f'language_coverage does not name the templates it scanned: {lc.get("templates")}')
+        scanned = (d.get('scanned_files') or {}).get('files') or []
+        if not {'templates/index.html', 'static/site.css'} <= set(scanned):
+            fails.append(f'scanned_files does not list the templates and stylesheets read: {d.get("scanned_files")}')
+        if any(f.startswith('old_build/') for f in scanned):
+            fails.append(f'--exclude old_build did not leave the directory out: {scanned}')
+        data = (d.get('skipped') or {}).get('data_dirs') or []
+        if not any(x.get('path') == 'data/recipes' and x.get('files') == 260 for x in data):
+            fails.append(f'the data directory of 260 JSON files is not recorded as skipped: {d.get("skipped")}')
+    return fails, 'ran'
+
+
+def grouping_checks() -> list[str]:
+    """Repeated cards (nth-of-type siblings) across two viewports, an undecoded AVIF in each with the fallback the page
+    shows instead, the same console error on two pages, and a 400 response logged by two engines only."""
+    fails = []
+    def el(sig, box, tag='div', text='x'):
+        return {'sig': sig, 'tag': tag, 'type': None, 'text': text, 'box': box, 'font': 'Verdana'}
+    def page_runs(page, vp, eng, n):
+        cards = []
+        imgs = []
+        for i in range(1, 4):
+            sig = f'main>div.card:nth-of-type({i})'
+            cards.append(el(sig, [0, 100 * i, 300, 90]))
+            if eng == 'webkit':
+                cards.append(el(sig + '>span.logo-fallback', [0, 100 * i, 40, 40], tag='span', text='AB'))
+            else:
+                cards.append(el(sig + '>img.logo', [0, 100 * i, 40, 40], tag='img', text=''))
+            imgs.append({'sig': sig + '>img.logo', 'src': f'/static/logos/l{i}.avif', 'complete': True,
+                         'natural': [0, 0] if eng == 'webkit' else [40, 40]})
+        r = {'page': page, 'viewport': vp, 'engine': eng, 'rerun': n, 'run_status': 'ran', 'elements': cards,
+             'images': imgs, 'page_errors': [], 'failed_requests': [], 'steps': [], 'overflow_x': False, 'size': [1280, 800],
+             'console_errors': (['Refused to apply inline style because it violates the Content Security Policy.']
+                                if eng == 'webkit' else [])}
+        if page == 'search' and eng in ('chromium', 'webkit'):
+            r['console_errors'] = r['console_errors'] + [
+                'Failed to load resource: the server responded with a status of 400 (BAD REQUEST)']
+        if page == 'search':
+            r['http_errors'] = ['400 http://127.0.0.1:8000/api/items?bbox=1']
+        return r
+    runs = [page_runs(p, vp, e, n) for p in ('home', 'search') for vp in ('1280x800', '390x844')
+            for e in ('chromium', 'firefox', 'webkit') for n in (1, 2)]
+    doc = {'engines': [{'name': e} for e in ('chromium', 'firefox', 'webkit')], 'reruns': 2, 'platform': 'win32', 'runs': runs}
+    diffs, flaky, dismissed = ce.compare(doc, Path(tempfile.gettempdir()), 'chromium', 1)
+    cands = ce.candidates(diffs, dismissed, doc, None, None, set())
+    by = {}
+    for c in cands:
+        by.setdefault(c['subkind'], []).append(c)
+    for sub in ('image_not_decoded', 'element_missing', 'element_extra'):
+        cs = by.get(sub) or []
+        if len(cs) != 1:
+            fails.append(f'{sub}: repeated cards on two pages at two viewports are not one candidate: '
+                         f'{[(c["key"], c["viewport"], c["pages"]) for c in cs]}')
+        elif cs[0].get('occurrences') != 12 or sorted(cs[0].get('viewports') or []) != ['1280x800', '390x844']:
+            fails.append(f'{sub}: the grouped candidate does not count its occurrences (12) and viewports: '
+                         f'occurrences {cs[0].get("occurrences")}, viewports {cs[0].get("viewports")}')
+    for sub in ('element_missing', 'element_extra'):
+        for c in by.get(sub) or []:
+            if 'webkit-windows-avif' not in c['build_limitations']:
+                fails.append(f'{sub} {c["key"]} follows from the undecoded AVIF beside it but does not inherit the build '
+                             f'limitation: {c["build_limitations"]}')
+    csp = [c for c in by.get('console_error') or [] if any('Content Security' in m for ms in c['messages'].values() for m in ms)]
+    if len(csp) != 1 or sorted(csp[0]['pages']) != ['home', 'search']:
+        fails.append(f'one console message on two pages and two viewports is not one candidate: '
+                     f'{[(c["pages"], c["viewport"]) for c in csp]}')
+    http = [c for c in by.get('console_error') or [] if any('status of 400' in m for ms in c['messages'].values() for m in ms)]
+    if http:
+        fails.append(f'a 400 response every engine received, logged to the console by two engines only, is a candidate: '
+                     f'{[(c["id"], c["engines"]) for c in http]}')
+    # the engine-build limitations: a Windows WebKit control face other than Times, and flag emoji drawn as letters
+    lim = ce.build_limitations({'engines': ['webkit'], 'subkind': 'font_family_differs', 'element': 'button.go',
+                                'detail': '2 element(s) draw in font family "ms shell dlg" in webkit but "verdana" in chromium',
+                                'messages': {}}, 'win32')
+    if 'webkit-windows-serif-controls' not in lim:
+        fails.append(f'"MS Shell Dlg" in WebKit on Windows does not match the default-face limitation: {lim}')
+    lim = ce.build_limitations({'engines': ['firefox'], 'subkind': 'content_not_rendered', 'element': 'h1.title>span',
+                                'detail': '', 'messages': {}, '_text': '\U0001F1F3\U0001F1FF'}, 'win32')
+    if 'windows-flag-emoji' not in lim:
+        fails.append(f'a flag emoji (regional indicators) on Windows does not match a flag-emoji limitation: {lim}')
+    return fails
+
+
 SNAP_PAGE = """<!doctype html><html><head><style>body { font-family: Verdana, sans-serif; margin: 0 }
 .btn { font-family: Georgia, serif } .panel { height: 120px; overflow-y: auto }
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.6) }</style></head><body>
@@ -179,17 +307,30 @@ def validator_render_checks() -> list[str]:
                            capture_output=True, text=True, encoding='utf-8')
         if 'K99' not in r.stdout or 'Inner scroll panels were compared by box only.' not in r.stdout:
             fails.append('render_report.py --brief omits the needs-review items or the limitations')
+        # a wording error is reported before any screenshot is decoded (the decode takes minutes on a big run)
+        rep = json.loads((EXAMPLES / 'report.example.json').read_text(encoding='utf-8'))
+        rep['headline']['summary'] = rep['headline']['summary'] + ' The date picker works in Safari.'
+        (t / 'safari.json').write_text(json.dumps(rep), encoding='utf-8')
+        r = subprocess.run([sys.executable, '-B', str(HERE / 'validate_report.py'), str(t / 'safari.json'),
+                            '--runs', str(EXAMPLES / 'run' / 'capture' / 'runs.json'),
+                            '--candidates', str(EXAMPLES / 'run' / 'candidates.json'), '--jobs', '1'],
+                           capture_output=True, text=True, encoding='utf-8', cwd=SKILL)
+        if r.returncode == 0 or 'Safari' not in r.stdout or 'recomputing the candidates' in r.stderr:
+            fails.append('validate_report.py decoded the screenshots before reporting a summary naming Safari: '
+                         f'exit {r.returncode}, stderr {r.stderr.strip()[-120:]!r}')
     return fails
 
 
 def main() -> int:
     ok = True
     for name, fn in (('feature_scan.py: Go string constants, vendored trees, language guard', feature_scan_checks),
+                     ('feature_scan.py: a Flask site with Jinja templates, a data directory, --exclude', flask_scan_checks),
                      ('capture.py snapshot: font family, occlusion, inner scroll panels', snapshot_checks)):
         fails, how = fn()
         ok &= not fails
         print(f"self-test {'passed' if not fails else 'FAILED'}: {name} ({how})" + ''.join(f'\n  - {f}' for f in fails))
     for name, fn in (('compare_engines.py: font family, occlusion, scroll offsets', compare_checks),
+                     ('compare_engines.py: grouping repeats, inherited limitations, logged HTTP errors', grouping_checks),
                      ('validate_report.py --features and render_report.py --brief', validator_render_checks)):
         fails = fn()
         ok &= not fails
