@@ -252,7 +252,7 @@ For each dimension output:
 - risks
 - recommendations
 
-A scored dimension must carry at least one piece of evidence and cannot have evidence level `unknown`; a dimension the evidence does not support is not assessed (score null, evidence level `unknown`), with the finding starting "Not assessed" and saying why. Placeholder findings are rejected.
+A scored dimension must carry at least one piece of evidence and cannot have evidence level `unknown`; a dimension the evidence does not support is not assessed (score null, evidence level `unknown`), with the finding starting "Not assessed" and saying why. Placeholder findings are rejected: an empty or "n/a" finding, a marker such as TODO or TBD on its own or leading the text, or a short text holding one. A full sentence that uses such a word as the suite's own vocabulary ("the content rules check placeholder text") is not a placeholder.
 
 **Evidence levels belong to evidence, not to a whole dimension.** The dimension's level must hold for every piece of its evidence. When a dimension rests on evidence of different levels (a coverage run and inferences read from tests), set `evidence_level: mixed` and write each evidence item as an object with its own level and an id: `{"id": "e1", "level": "verified", "text": "vitest --coverage: lines 81.2%"}`. A sentence of the finding, risks or recommendations that states a coverage figure must cite a verified item by its id (`[e1]`). Never pick `verified` for a dimension because some of its evidence is verified: that would license coverage wording for the inferred parts.
 

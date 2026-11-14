@@ -81,6 +81,20 @@ CODE_SPAN = re.compile(r'`[^`\n]*`')
 OLD_DIMENSION_IDS = {'trustworthiness': 'trust', 'oracles': 'assertions', 'scope': 'coverage', 'data': 'test_data',
                      'environment': 'portability', 'crosscutting': 'security_a11y'}
 PLACEHOLDER = re.compile(r'\b(placeholder|todo|tbd|lorem ipsum|fixme)\b|^\W*$|^\s*(n/?a|-+|\.\.\.)\s*$', re.I)
+
+
+PLACEHOLDER_LEAD = re.compile(r'^\W*(placeholder|todo|tbd|lorem ipsum|fixme)\b\s*(?:[:\-–—(]|$)', re.I)
+PLACEHOLDER_SHORT = 40
+
+
+def is_placeholder(text: str) -> bool:
+    """A finding that stands in for one: empty, n/a, a marker on its own or leading the text ("TODO: ..."), or a short
+    text holding a marker. A full sentence that uses the word (a suite whose rules check "placeholder text", a test
+    file with a TODO comment) is domain vocabulary, not a placeholder."""
+    text = (text or '').strip()
+    if not PLACEHOLDER.search(text):
+        return False
+    return len(text) < PLACEHOLDER_SHORT or bool(PLACEHOLDER_LEAD.search(text)) or not re.search(r'\w', text)
 REC_ORDER = ['critical_risk', 'top_improvement', 'quick_win', 'structural', 'evidence_needed']
 REF = re.compile(r'\[([A-Za-z][\w-]*)\]')
 
@@ -315,7 +329,7 @@ def check(rep: dict) -> tuple[list[str], list[str]]:
         elif item_levels - {level}:
             errs.append(f'{i}: evidence items at {", ".join(sorted(item_levels - {level}))} in a dimension recorded as '
                         f'{level}; use mixed (the dimension level must hold for all its evidence)')
-        if PLACEHOLDER.search(d.get('finding', '')):
+        if is_placeholder(d.get('finding', '')):
             errs.append(f'{i}: finding is a placeholder ("{d["finding"][:40]}")')
         if d['score'] is None:
             if d.get('applicable') is not False:
@@ -651,6 +665,15 @@ def self_test() -> int:
         er['runs'][1]['passed'] -= 1
     if not any('r2' in e for e in errs_for(under)):
         fails.append('a run whose recorded failures exceed the failures attributed to it is an error')
+    # a finding is a placeholder when it is one, not when a sentence uses the word as the suite's own vocabulary
+    for text, want in (('TODO', True), ('TBD: fill in after the runs', True), ('placeholder', True), ('n/a', True),
+                       ('...', True), ('FIXME - write this up once the second run finishes', True),
+                       ('The data rules check spelling, tip length and placeholder text in every content file, but no test '
+                        'reads the rendered page, so a template change that drops a section passes.', False),
+                       ('Two tests carry a TODO comment about a missing teardown (tests/test_cart.py:12, :40); the '
+                        'shared fixture still cleans up, so the suite is reliable.', False)):
+        if is_placeholder(text) != want:
+            fails.append(f'is_placeholder({text[:40]!r}) should be {want}')
     if fails:
         print('validate_evaluation self-test FAILED:\n  - ' + '\n  - '.join(fails))
         return 1
