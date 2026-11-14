@@ -1,7 +1,7 @@
 ---
 name: performance-budget-auditor
 description: Measure web pages in a real browser against a performance budget, as lab data. Core Web Vitals (LCP, CLS, INP) with web-vitals' attribution, TBT, FCP, TTFB and bytes per resource type, each page run several times under fixed network and CPU profiles, with median, range and coefficient of variation. Each over-budget metric is pointed at its cause (the LCP element and its resource, the layout shift's target, the scripts in long tasks, the slow interaction handler, the largest downloads and unused JavaScript, Server-Timing for slow responses), rated, and compared with a baseline when one is given. Never calls a site fast: the best verdict is "within budget in the lab, under the tested profiles; field performance not established".
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Performance budget auditor
@@ -121,8 +121,13 @@ python scripts/measure.py plan.json --out <run>/measurements.json --artifacts <r
 python scripts/measure.py plan.json --out <run>/measurements.json --append --browser firefox --profiles desktop --only about --no-diagnostic
 ```
 
-It records the machine and a CPU calibration (warning when its CV is above 0.1: the machine is
-busy), then per page, variant, profile and cache mode: a warm-up, N measured runs in fresh
+It records the machine and a CPU calibration, timed again at the end of the run. The machine is
+`busy` when the calibration runs vary (CV above 0.1), when the median is 1.5x or more the idle
+reference for this machine (the fastest calibration stored in the asset cache, or
+`--calibration-reference MS`), or when the start and end calibrations are 1.5x or more apart. A
+steady load (another process using the CPU throughout) gives a low CV, so without a reference the
+calibration's `note` says a steady load would not show: never call that machine idle. A busy
+machine inflates every CPU-bound number (LCP, TBT, INP under CPU throttling). Then per page, variant, profile and cache mode: a warm-up, N measured runs in fresh
 contexts, extra runs while a budgeted metric is unstable (up to `max_runs`), and one diagnostic run
 with the trace, filmstrip (until the later of load and the final LCP, plus 500 ms) and JavaScript
 coverage. A 429 or 503 is retried twice after Retry-After; any other HTTP error stops that page
@@ -152,6 +157,13 @@ site-wide candidate listing every page, so its reach counts them all. It also wr
 An LCP element inside a `position: fixed` overlay, or a text LCP painted more than 500 ms after
 load with no resource, is named as such in the cause: usually a consent banner, a modal or a
 client-rendered block (a timer, or hydration). Measure the page with and without it (`variants`).
+
+An LCP image painted as a CSS background (`css_background`) is found only once the stylesheet
+applies; the cause says whether a `<link rel=preload as=image>` names it (`preloaded`), with the
+resource load delay. An INP cause names the largest of its three subparts: a long input delay is
+the main thread being busy when the user acted (`overlapping_long_tasks`, style and layout), not
+the handler, which only processing time blames. Note that `{"click": sel}` is a mouse click that
+hovers first, even in a mobile profile: hover styles (a menu opened on `:hover`) are part of it.
 
 ### 5. Compare with a baseline (optional)
 

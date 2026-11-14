@@ -355,6 +355,22 @@ def med(xs) -> float | None:
     return round(statistics.median(xs), 1) if xs else None
 
 
+def overlapping_long_tasks(runs: list[dict]) -> list[dict]:
+    """Long tasks running while the interaction waited for the main thread (from its time to the end of its input
+    delay), from the first run that has any; the input delay's likely cause."""
+    for r in runs:
+        a = r.get('attribution') or {}
+        x = a.get('INP') or {}
+        t0, delay = x.get('interactionTime'), x.get('inputDelay')
+        if t0 is None or delay is None:
+            continue
+        hits = [{'start': t['start'], 'duration': t['duration']} for t in a.get('long_tasks') or []
+                if t['start'] < t0 + max(delay, 1) and t['start'] + t['duration'] > t0]
+        if hits:
+            return sorted(hits, key=lambda t: -t['duration'])[:3]
+    return []
+
+
 def attribute(metric: str, runs: list[dict], diag: dict | None) -> tuple[str, str, dict]:
     """(cause, cause_key, attribution) for one over-budget measurement."""
     a = [r['attribution'] for r in runs]
@@ -370,6 +386,15 @@ def attribute(metric: str, runs: list[dict], diag: dict | None) -> tuple[str, st
                 'render_blocking': a[0].get('render_blocking', [])}
         if url:
             kb = round((attr['resource_bytes'] or 0) / 1024)
+            if el.get('background_image'):
+                # a CSS background is found only once the stylesheet that names it has loaded and applied: unless a
+                # preload names it, its request starts late (the resource load delay shows how late)
+                attr['css_background'] = True
+                attr['preloaded'] = el.get('preloaded')
+                delay = attr['breakdown_ms']['resourceLoadDelay']
+                how = 'preloaded' if el.get('preloaded') else 'not preloaded, so it is found only once the stylesheet applies'
+                return (f'LCP image {path_of(url)} ({kb} KB), a CSS background {how}' +
+                        (f' ({delay} ms resource load delay)' if delay is not None else ''), url, attr)
             return f'LCP image {path_of(url)} ({kb} KB)', url, attr
         hints = []
         els = [x.get('element') for x in lcp if x.get('element')]
@@ -409,8 +434,30 @@ def attribute(metric: str, runs: list[dict], diag: dict | None) -> tuple[str, st
         attr = {'interaction_target': target, 'interaction_type': next((x.get('interactionType') for x in inp), None),
                 'input_delay_ms': med(x.get('inputDelay') for x in inp), 'processing_ms': med(x.get('processingDuration') for x in inp),
                 'presentation_delay_ms': med(x.get('presentationDelay') for x in inp),
-                'longest_script': {'source': ls.get('sourceURL'), 'invoker': ls.get('invoker'), 'subpart': ls.get('subpart')} if ls else None}
-        return f'{attr["interaction_type"] or "interaction"} on {target}: {attr["processing_ms"]} ms processing' + \
+                'longest_script': {'source': ls.get('sourceURL'), 'invoker': ls.get('invoker'), 'subpart': ls.get('subpart')} if ls else None,
+                'style_layout_ms': med(x.get('totalStyleAndLayoutDuration') for x in inp)}
+        # name the largest of the three INP subparts: an interaction that waits 350 ms for a busy main thread and then
+        # runs a 10 ms handler is an input-delay problem, and the handler is not where the time went
+        parts = {k: attr[k + '_ms'] for k in ('input_delay', 'processing', 'presentation_delay') if attr[k + '_ms'] is not None}
+        attr['dominant_subpart'] = max(parts, key=parts.get) if parts else None
+        attr['overlapping_long_tasks'] = overlapping_long_tasks(runs)
+        what = f'{attr["interaction_type"] or "interaction"} on {target}'
+        if attr['dominant_subpart'] == 'input_delay':
+            lt = attr['overlapping_long_tasks']
+            blame = []
+            if lt:
+                blame.append(f'a {lt[0]["duration"]} ms long task from {lt[0]["start"]} ms overlaps it')
+            if ls.get('subpart') == 'input-delay' and ls.get('invoker'):
+                blame.append(f'longest script {ls["invoker"]}')
+            if attr['style_layout_ms']:
+                blame.append(f'{attr["style_layout_ms"]} ms of style and layout in the frame')
+            return (f'{attr["input_delay_ms"]} ms input delay before {what}: main thread busy' +
+                    (f' ({"; ".join(blame)})' if blame else ''), f'interaction:{target}', attr)
+        if attr['dominant_subpart'] == 'presentation_delay':
+            return (f'{attr["presentation_delay_ms"]} ms presentation delay after {what}: rendering the next frame' +
+                    (f' ({attr["style_layout_ms"]} ms of style and layout)' if attr['style_layout_ms'] else ''),
+                    f'interaction:{target}', attr)
+        return f'{what}: {attr["processing_ms"]} ms processing' + \
             (f' in {ls.get("invoker")}' if ls.get('invoker') else ''), f'interaction:{target}', attr
     if metric in ('transfer_total', 'transfer_script'):
         res = runs[0].get('resources') or []

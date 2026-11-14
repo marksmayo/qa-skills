@@ -293,3 +293,21 @@ a loopback-tuned design breaks:
   which the report copies to `metadata.harness`. Blocked first-party requests use each blocked
   entry's `site` (same_site) when present. The validator requires a limitation when the CSP was
   bypassed or the request budget ran out, and a spent budget makes the evidence partial.
+- **Found on a server-rendered Python site measured on a loaded machine, fixed (v1.2.0)**:
+  - *The calibration called a loaded machine idle.* It flagged `busy` only on a CV above 0.1, and a
+    steady load (other processes using the CPU for the whole run) gives a low CV: the run was 2.6x
+    slower than the same CPU idle and nothing said so. `measure.py` now compares the median with an
+    idle reference (the fastest calibration stored per machine in the asset cache, or
+    `--calibration-reference`), calibrates again at the end of the run, and flags 1.5x or more either
+    way. Without a reference the `note` says a steady load would not show.
+  - *INP blamed the handler for an input delay.* A 349 ms input delay before a 10 ms handler was
+    reported as "processing in DOMWindow.onclick". The cause names the largest subpart, with the long
+    tasks that overlap the input delay and the style and layout time.
+  - *An LCP image as a CSS background.* The LCP element record says whether the element paints a CSS
+    background image and whether a preload names it; the cause says so with the resource load delay.
+  - `scripts/self_test.py` (new) covers these on synthetic data (the LCP element check drives Chromium).
+    The example measurements were not re-run; its candidates were regenerated (only the INP
+    attribution gained fields) and the report's F3 attribution updated to match.
+  - Not done: a `tap` action for mobile profiles (SKILL.md now says a click hovers first), surfacing
+    the page's own failed fetch/XHR calls, and a host-resolver guard for `preconnect`/`dns-prefetch`
+    (a shared harness change).

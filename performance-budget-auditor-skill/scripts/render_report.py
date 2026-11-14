@@ -119,7 +119,9 @@ def main() -> int:
            third_party_line(sc.get('third_party'))] + ([first_party_line(sc.get('blocked_first_party'))] if sc.get('blocked_first_party') else []) + [
            *([harness_line(md['harness'])] if md.get('harness') else []),
            f'Machine: {md["machine"]["cpu"]}, {md["machine"]["cores"]} cores, {md["machine"]["os"]}; calibration '
-           f'{md["calibration"]["median_ms"]} ms (CV {md["calibration"]["cv"]}){" BUSY" if md["calibration"]["busy"] else ""}.']
+           f'{md["calibration"]["median_ms"]} ms (CV {md["calibration"]["cv"]}){" BUSY" if md["calibration"]["busy"] else ""}; '
+           # older measurements have no note: they compared nothing with an idle reference
+           f'{md["calibration"].get("note") or "no idle reference was compared, so a steady load would not show"}.']
     if a.brief:
         out.append('')
         for f in d['findings']:

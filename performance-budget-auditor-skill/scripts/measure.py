@@ -70,7 +70,11 @@ element's record says whether it sits in a position: fixed or sticky overlay (a 
 modal) and whether a resource-less LCP was painted more than 500 ms after the load event.
 
 The machine (CPU, cores, OS), the browser version, the throttling actually applied, and a CPU
-calibration (a fixed workload timed three times) are recorded with the runs.
+calibration (a fixed workload timed three times at the start and again at the end) are recorded
+with the runs. The calibration is `busy` when its runs vary (CV above 0.1), when its median is 1.5x or
+more the idle reference for this machine (the fastest calibration stored in the asset cache, or
+--calibration-reference MS), or when start and end are 1.5x or more apart; without a reference its
+`note` says a steady load would not show.
 """
 from __future__ import annotations
 import argparse, base64, gzip, json, os, platform, statistics, sys, time
@@ -81,7 +85,7 @@ HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
 sys.path.insert(0, str(HERE))
 from browser_harness import Harness, check_authorised, NotAuthorised, now, retry_decision  # noqa: E402
-from fetch_assets import asset_path, load_lock  # noqa: E402
+from fetch_assets import asset_path, cache_root, load_lock  # noqa: E402
 
 VITALS = ('LCP', 'CLS', 'INP', 'FCP', 'TTFB')
 CV_LIMIT = 0.25
@@ -159,15 +163,96 @@ LCP_ELEMENT = r"""
     const pos = getComputedStyle(n).position;
     if (pos === 'fixed' || pos === 'sticky') { fixed = true; break; }
   }
-  return {tag: el.tagName.toLowerCase(), in_fixed_overlay: fixed, poster: el.getAttribute('poster'), fetchpriority: el.getAttribute('fetchpriority'), loading: el.getAttribute('loading'),
+  // an LCP image painted as a CSS background is found only once the stylesheet applies: record it and any preload
+  let bg = null;
+  const m = /url\(["']?([^"')]+)["']?\)/.exec(getComputedStyle(el).backgroundImage || '');
+  if (m && el.tagName.toLowerCase() !== 'img') { try { bg = new URL(m[1], document.baseURI).href; } catch (e) { bg = m[1]; } }
+  const preloaded = bg ? [...document.querySelectorAll('link[rel~="preload" i][as="image" i]')].some(l => {
+    try { return new URL(l.getAttribute('href') || '', document.baseURI).href === bg; } catch (e) { return false; } }) : null;
+  return {tag: el.tagName.toLowerCase(), in_fixed_overlay: fixed, background_image: bg, preloaded, poster: el.getAttribute('poster'), fetchpriority: el.getAttribute('fetchpriority'), loading: el.getAttribute('loading'),
           width_attr: el.getAttribute('width'), height_attr: el.getAttribute('height'),
           natural: el.naturalWidth ? [el.naturalWidth, el.naturalHeight] : (el.videoWidth ? [el.videoWidth, el.videoHeight] : null),
           rendered: [Math.round(el.getBoundingClientRect().width), Math.round(el.getBoundingClientRect().height)]};
 }
 """
 
+CAL_WORKLOAD = '2e7 iterations of Math.sqrt, no throttling'
+CAL_CV_BUSY = 0.1        # calibration runs that vary this much: the load fluctuated while calibrating
+CAL_SLOWDOWN_BUSY = 1.5  # a median this many times the idle reference (or start vs end of the run): a steady load
+CAL_REFERENCE_FILE = 'calibration-reference.json'
+
 CALIBRATE = """() => { const t = performance.now(); let x = 0; for (let i = 0; i < 20000000; i++) { x += Math.sqrt(i) % 7; }
                      return [performance.now() - t, x > 0]; }"""
+
+
+def calibration_key(mach: dict) -> str:
+    return f"{mach.get('cpu')}|{mach.get('cores')}|{mach.get('os')}"
+
+
+def calibration_reference(mach: dict, cache: Path | None = None) -> dict | None:
+    """The fastest calibration median seen on this machine (same CPU, cores and OS), kept in the asset cache."""
+    f = (cache or cache_root()) / CAL_REFERENCE_FILE
+    try:
+        return json.loads(f.read_text(encoding='utf-8')).get(calibration_key(mach))
+    except (OSError, ValueError):
+        return None
+
+
+def update_calibration_reference(mach: dict, cache: Path | None, median_ms: float) -> None:
+    """Keep the fastest median: a run on a loaded machine never raises the reference."""
+    f = (cache or cache_root()) / CAL_REFERENCE_FILE
+    try:
+        refs = json.loads(f.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        refs = {}
+    key = calibration_key(mach)
+    if refs.get(key) and refs[key].get('median_ms') is not None and refs[key]['median_ms'] <= median_ms:
+        return
+    refs[key] = {'median_ms': median_ms, 'recorded_at': now(), 'workload': CAL_WORKLOAD}
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(refs, indent=1) + '\n', encoding='utf-8')
+    except OSError:
+        pass
+
+
+def assess_calibration(runs_ms: list[float], end_runs_ms: list[float] | None = None, reference_ms: float | None = None,
+                       reference_source: str | None = None) -> dict:
+    """Is the machine loaded? A fluctuating load shows as a CV above 0.1 between calibration runs; a steady one (another
+    process using the CPU throughout) doesn't, so the median is also compared with an idle reference for this machine
+    (the fastest calibration seen on it, or one given) and with a calibration at the end of the run. Without a
+    reference a steady load can't be seen, and the note says so rather than calling the machine idle."""
+    med = statistics.median(runs_ms)
+    out = {'workload': CAL_WORKLOAD, 'runs_ms': runs_ms, 'median_ms': med, 'cv': cv(runs_ms)}
+    reasons = []
+    if out['cv'] > CAL_CV_BUSY:
+        reasons.append(f'calibration CV {out["cv"]} > {CAL_CV_BUSY} (the load fluctuated)')
+    out['reference_ms'] = reference_ms
+    out['reference_source'] = reference_source if reference_ms else None
+    out['slowdown'] = round(med / reference_ms, 2) if reference_ms else None
+    if out['slowdown'] and out['slowdown'] >= CAL_SLOWDOWN_BUSY:
+        reasons.append(f'median {med} ms is {out["slowdown"]}x the idle reference of {reference_ms} ms (a steady load: '
+                       'CPU-bound metrics such as LCP, TBT and INP are inflated)')
+    if end_runs_ms:
+        end = statistics.median(end_runs_ms)
+        out['end_runs_ms'] = end_runs_ms
+        out['end_median_ms'] = end
+        drift = round(max(end, med) / min(end, med), 2) if min(end, med) > 0 else None
+        out['drift'] = drift
+        if drift and drift >= CAL_SLOWDOWN_BUSY:
+            reasons.append(f'calibration {med} ms at the start and {end} ms at the end of the run ({drift}x apart: the load changed)')
+    out['busy'] = bool(reasons)
+    out['busy_reasons'] = reasons
+    if reasons:
+        out['note'] = 'machine busy: ' + '; '.join(reasons)
+    elif reference_ms:
+        out['note'] = (f'no sign of load: median {med} ms is {out["slowdown"]}x the idle reference of {reference_ms} ms, '
+                       f'CV {out["cv"]}' + (f', end of run {out["end_median_ms"]} ms' if end_runs_ms else ''))
+    else:
+        out['note'] = (f'CV {out["cv"]} shows no fluctuating load, but there is no idle reference for this machine, so a '
+                       'steady load (another process using the CPU throughout the run) would not show' +
+                       (f'; end of run {out["end_median_ms"]} ms' if end_runs_ms else ''))
+    return out
 
 
 def machine() -> dict:
@@ -601,6 +686,8 @@ def main() -> int:
     ap.add_argument('--templates', help='measure only these templates (comma-separated)')
     ap.add_argument('--append', action='store_true', help='add to an existing measurements file')
     ap.add_argument('--no-diagnostic', action='store_true')
+    ap.add_argument('--calibration-reference', type=float, metavar='MS',
+                    help='idle calibration median for this machine (default: the fastest one stored in the asset cache)')
     a = ap.parse_args()
     plan = json.loads(a.plan.read_text(encoding='utf-8'))
     all_profiles = json.loads((SKILL / 'data' / 'profiles.json').read_text(encoding='utf-8'))
@@ -644,9 +731,13 @@ def main() -> int:
             cal_page = h.new_page()
             cal = [round(cal_page.evaluate(CALIBRATE)[0], 1) for _ in range(3)]
             h.close_page(cal_page)
-            doc = {'schema': 1, 'generated_at': now(), 'machine': machine(),
-                   'calibration': {'workload': '2e7 iterations of Math.sqrt, no throttling', 'runs_ms': cal,
-                                   'median_ms': statistics.median(cal), 'cv': cv(cal), 'busy': cv(cal) > 0.1},
+            mach = machine()
+            ref = {'median_ms': a.calibration_reference, 'source': 'given'} if a.calibration_reference else \
+                (dict(calibration_reference(mach) or {}, source='fastest calibration stored for this machine')
+                 if calibration_reference(mach) else None)
+            doc = {'schema': 1, 'generated_at': now(), 'machine': mach,
+                   'calibration': assess_calibration(cal, reference_ms=(ref or {}).get('median_ms'),
+                                                     reference_source=(ref or {}).get('source')),
                    'tools': [], 'config': {'runs': runs, 'min_runs': min_runs, 'max_runs': max_runs, 'warmup': 1, 'cv_limit': CV_LIMIT,
                                            'profiles': {p: all_profiles[p] for p in profile_names}, 'cache': cache_modes,
                                            'third_party': {'mode': cfg['third_party'], 'allowed_hosts': cfg['allowed_hosts']},
@@ -657,8 +748,7 @@ def main() -> int:
                               ({'setup': describe_setup(t['setup'])} if t.get('setup') else {})
                               for t in plan['targets']],
                    'runs': [], 'events': [], 'blocked_requests': []}
-            if doc['calibration']['busy']:
-                print(f'warning: calibration CV {doc["calibration"]["cv"]} > 0.1; the machine looks busy', file=sys.stderr)
+            print(f'{"warning: " if doc["calibration"]["busy"] else ""}calibration: {doc["calibration"]["note"]}', file=sys.stderr)
         doc['tools'] = [t for t in doc['tools'] if t['name'] not in (f'playwright-{a.browser}', 'web-vitals')]
         doc['tools'] += [{'name': f'playwright-{a.browser}', 'version': h.version, 'sha256': None, 'status': 'ran', 'note': None},
                          {'name': 'web-vitals', 'version': lock['version'], 'sha256': lock['sha256'], 'status': 'ran',
@@ -724,6 +814,17 @@ def main() -> int:
                         print(f'{base}: {len(oks)}/{len(measured)} ok (cap {max_runs})' + (f'; {stop}' if stop else '') + '; LCP ' +
                               ', '.join(str(round(x['metrics']['LCP'])) if x['metrics'].get('LCP') is not None else '-' for x in oks),
                               file=sys.stderr)
+        # calibrate again at the end: a load that started or stopped during the run shows as drift
+        cal_page = h.new_page()
+        end_cal = [round(cal_page.evaluate(CALIBRATE)[0], 1) for _ in range(3)]
+        h.close_page(cal_page)
+        c0 = doc['calibration']
+        doc['calibration'] = assess_calibration(c0['runs_ms'], end_runs_ms=end_cal, reference_ms=c0.get('reference_ms'),
+                                                reference_source=c0.get('reference_source'))
+        print(f'{"warning: " if doc["calibration"]["busy"] else ""}calibration at the end: {doc["calibration"]["note"]}',
+              file=sys.stderr)
+        if not doc['calibration']['busy']:
+            update_calibration_reference(doc['machine'], None, min(doc['calibration']['median_ms'], doc['calibration']['end_median_ms']))
         doc['events'] += h.events
         doc['blocked_requests'] += h.blocked
         meta = h.metadata()

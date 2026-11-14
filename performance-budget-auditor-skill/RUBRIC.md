@@ -71,7 +71,8 @@ A page marked `critical_path` raises the severity one level (Critical stays Crit
   summary says "under the tested profiles; field performance not established".
 - **Evidence completeness:** `partial` when a measurement is unstable, has fewer runs than
   configured, was stopped early by an HTTP error, or lost its interaction in some runs (any
-  measurement note), the calibration found the machine busy, a tool errored, or anything is in
+  measurement note), the calibration found the machine busy (CV, slowdown against the idle
+  reference, or start/end drift), a tool errored, or anything is in
   needs_review; otherwise `complete`.
 - **Overall confidence:** medium when partial or any finding isn't high; high otherwise; low when
   nothing could be compared with a budget.

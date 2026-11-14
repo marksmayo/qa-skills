@@ -4507,7 +4507,10 @@
      "source": "http://127.0.0.1:8142/order",
      "invoker": "BUTTON#add.onclick",
      "subpart": "processing-duration"
-    }
+    },
+    "style_layout_ms": 0,
+    "dominant_subpart": "processing",
+    "overlapping_long_tasks": []
    },
    "evidence": [
     {

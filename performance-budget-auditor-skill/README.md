@@ -85,6 +85,7 @@ report; `examples/README.md` has the answer key.
 ```bash
 python scripts/validate_report.py examples/perf_report.example.json --measurements examples/run/measurements.json --candidates examples/run/candidates.json --budget examples/budget.json --regressions examples/run/regressions.json
 python scripts/render_report.py examples/perf_report.example.json
+python scripts/self_test.py   # calibration, INP and LCP cause checks on synthetic data
 ```
 
 ## Files
