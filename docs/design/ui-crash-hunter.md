@@ -434,3 +434,31 @@ ui-crash-hunter-skill/
           sarif.py                      # shared copy
   examples/crash_report.example.json  pantry/  run/  probes/  evidence/  repro/
 ```
+
+### v1.7.0: after a run on a FastAPI app serving a committed, hand-written front end from dist/
+
+- **The UI was invisible from the repository root**: recon, the scan, the import graph and the shared census
+  pruned `dist/` as build output, so the root run said "predominantly Python" with no routes. A `dist/`,
+  `build/` or `out/` directory a server in the repository serves (StaticFiles, static_folder, express.static)
+  or that holds an `index.html` nothing builds and no `.gitignore` lists is now walked as source
+  (`kept_build_dirs`); every other one is recorded in `skipped_build_dirs` with a stderr line, and
+  `--include DIR` walks it. The language warning names a skipped tree that holds JavaScript. The shared
+  `lang_census.py` still excludes `dist/`; `langs.with_build_dirs()` counts kept trees back in until the shared
+  build-output helper exists. A FastAPI app with served static pages is a static site (`site.static_dirs`), not
+  an API.
+- **Script-injection loaders were not followed**: modules a loader injects from a literal array were
+  "unreachable" and excluded. The graph follows script-src literals, `importScripts` and `new Worker`; the
+  reachability warning fires at 30% or less; recon reads `document.write('<script src=...>')`.
+- **Generated code** (Emscripten glue) is excluded as `generated` unless `--include-generated`.
+- **False negatives**: a throwing parser passed as a callback (`.map(decodeURIComponent)`),
+  `WEB-FETCH-STATUS-UNCHECKED` (body, stream, blob, text or arrayBuffer read without a status check),
+  `WEB-CACHE-PUT-UNCHECKED` (Cache Storage put of an unchecked response) and `WEB-ASYNC-CALL-NO-CATCH` (an async
+  function's promise dropped).
+- **Probe**: page errors the probe's own third-party block caused go to `blocked_page_errors`; `page_blank`
+  (no visible text, no visible image) counts as blanked, for crashes and the per_script warning.
+- **Validator**: `--write-summary` orders the crashes and fills `rank`. Recon's note on inline scripts no longer
+  says the scan skips them.
+- **Not done**: a `sole_feature` route flag (a dead single feature as B2), a first-top-level-access marker for
+  storage hits, a `partially_reproduced` probe outcome, Cache Storage assertions in probes, a hint naming the
+  element that intercepted a timed-out click, PHP front controllers, and FastAPI proxy routes connected to the
+  pages they serve.

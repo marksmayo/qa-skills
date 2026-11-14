@@ -164,22 +164,25 @@ diff or reading. Full entries, triggers and fixes are in `data/pitfalls.json`.
 
 - Data and parsing: unguarded optional data (`data.items[0].name`), `JSON.parse` without try/catch,
   `Invalid Date` reaching `toISOString`, `toFixed` on null, Intl formatters fed invalid codes,
-  `decodeURIComponent`/`new RegExp(userText)`/`new URL(x)` without try/catch, `reduce` without an
-  initial value.
+  `decodeURIComponent`/`new RegExp(userText)`/`new URL(x)` without try/catch (also passed as a callback:
+  `.map(decodeURIComponent)`, `.then(JSON.parse)`), `reduce` without an initial value.
 - SSR and browser APIs: `window`/`localStorage` at module scope in SSR code, hydration mismatches,
   APIs missing in the declared targets.
 - Configuration at module scope: a Next.js root layout reading configuration, or a Vite module that
   reads `import.meta.env` and throws when a value is missing or invalid (recon's
   `module_scope_config`). It runs on import, before any boundary renders, so it blanks the app (B1);
   the trigger is a build or deployment with the variable unset.
-- Async and lifecycle: unhandled rejections (the scan reads each promise chain whole, across lines, and counts a `.catch` or two-argument `.then` anywhere in it, or a returned, awaited or passed-on chain, as handled), responses applied after unmount or out of order,
+- Async and lifecycle: unhandled rejections (the scan reads each promise chain whole, across lines, and counts a `.catch` or two-argument `.then` anywhere in it, or a returned, awaited or passed-on chain, as handled; a statement that calls an async function of the same file and drops its promise is `WEB-ASYNC-CALL-NO-CATCH`), responses applied after unmount or out of order,
   `setState` during render, effect-dependency loops.
 - Type escapes and resources: TypeScript `!` and `as any`, deep recursion, huge unvirtualised lists,
   catastrophic regex backtracking.
 - Error handling: no boundary around the shell, routes or third-party widgets.
 - Silent failures (degradations, never crashes: nothing throws): `r.json()` without an `r.ok` check
   (a 429 or an HTML error page), an empty catch that swallows the error (`.catch(() => {})`,
-  `catch {}`), and a request on every input event with no debounce against a rate-limited endpoint.
+  `catch {}`), a request on every input event with no debounce against a rate-limited endpoint, a
+  fetched body, stream, blob or text read with no status check (`WEB-FETCH-STATUS-UNCHECKED`: an error
+  page becomes the data), and a response put in Cache Storage with no status check
+  (`WEB-CACHE-PUT-UNCHECKED`: one failed download is replayed on every later visit).
   Reproduce them by their effect (`expect`), and record them as degradations with effect
   `component_broken`.
 
