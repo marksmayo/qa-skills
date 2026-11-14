@@ -164,6 +164,7 @@ def join(*parts: str) -> str:
 
 # ---------------------------------------------------------------- Python (FastAPI, Flask, Azure Functions)
 ROUTE_ATTRS = set(HTTP) | {'api_route', 'route', 'add_api_route', 'add_url_rule', 'websocket'}
+BARE_HANDLER = re.compile(r'^def\s+handler\s*\(\s*request\s*,\s*response\b', re.M)
 PY_HINT = re.compile(r'FastAPI|Router|router|Flask|Blueprint|register_blueprint|add_url_rule|\.route\(|FunctionApp')
 
 
@@ -189,6 +190,12 @@ def python_interfaces(root: Path, files: list[str]) -> tuple[list[dict], list[st
             notes.append(f'{rel}: not parsed ({err})')
     for d in project.dynamic_includes:
         notes.append(f"{d['file']}:{d['line']}: could not resolve the router included by {d['text']}")
+    for rel, text in sorted(texts.items()):
+        bare = BARE_HANDLER.search(text)
+        if bare and not PY_HINT.search(text):
+            notes.append(f'{rel}:{text.count(chr(10), 0, bare.start()) + 1}: defines handler(request, response) (a serverless '
+                         f'function shape), which is not a supported framework: not read as an interface; check by hand '
+                         f'whether it is deployed or retired')
     name = lambda key: f'{dotted(key[0])}:{key[1]}'  # noqa: E731
     out = []
     for h in project.hits():
@@ -1075,7 +1082,22 @@ def match_names(interfaces: list[dict], strings: list[dict]) -> None:
         itf['reached'] = bool(uniq)
 
 
+# routers that try a rule without converters before one with them, whatever the declaration order (Werkzeug sorts
+# its rules, Next.js prefers a static segment, Go's ServeMux the most specific pattern); Express and Starlette match
+# in declaration order, so they are left alone
+STATIC_FIRST = {'flask': 'flask', 'nextjs': 'next', 'nextjs-pages': 'next', 'go-net-http': 'go-net-http'}
+
+
+def has_params(path: str) -> bool:
+    return bool(re.search(r'\{[^}]*\}|<[^>]*>|(?:^|/):\w+|\[[^\]]+\]', path))
+
+
 def match(interfaces: list[dict], lits: list[dict]) -> None:
+    static_rx: dict[str, list[re.Pattern]] = {}
+    for itf in interfaces:
+        fam = STATIC_FIRST.get(itf.get('framework'))
+        if itf.get('kind', 'routes') == 'routes' and fam and not has_params(itf['path']):
+            static_rx.setdefault(fam, []).append(template_regex(itf['path']))
     for itf in interfaces:
         if itf.get('kind', 'routes') != 'routes':
             continue
@@ -1083,10 +1105,14 @@ def match(interfaces: list[dict], lits: list[dict]) -> None:
             itf['reached_by'], itf['reached'] = [], False
             continue
         rx = template_regex(itf['path'])
+        fam = STATIC_FIRST.get(itf.get('framework'))
+        shadow = static_rx.get(fam, []) if fam and has_params(itf['path']) else []
         hits = []
         for lit in lits:
             url = normalise_url(lit['url'])
             if url is None or not rx.match(url):
+                continue
+            if any(s.match(url) for s in shadow):        # the router sends this URL to the static rule, not this one
                 continue
             if lit['method'] and itf['method'] not in ('ANY', lit['method']):
                 continue
@@ -1272,6 +1298,24 @@ GO_SELF_TEST_FILES = {
 }
 
 
+FLASK_SELF_TEST_FILES = {
+    'app.py': ('from flask import Flask, render_template, send_from_directory\n\napp = Flask(__name__)\n\n\n'
+               '@app.route("/")\ndef home():\n    return render_template("home.html")\n\n\n'
+               '@app.route("/robots.txt")\ndef robots():\n    return "User-agent: *"\n\n\n'
+               '@app.route("/<token>.txt")\ndef token_file(token):\n    return send_from_directory(".", token + ".txt")\n\n\n'
+               '@app.route("/sailings/<code>")\ndef sailing(code):\n    return render_template("sailing.html", code=code)\n'),
+    'templates/base.html': '<!doctype html><title>{% block title %}{% endblock %}</title>{% block body %}{% endblock %}\n',
+    'templates/home.html': '{% extends "base.html" %}{% block body %}<a href="/sailings/abc">Sailings</a>{% endblock %}\n',
+    'templates/sailing.html': '{% extends "base.html" %}{% block body %}{{ code }}{% endblock %}\n',
+    'static/js/timetable.js': 'document.querySelectorAll("a").forEach(a => a.dataset.seen = "1");\n',
+    'static/js/menu.js': 'export const open = () => document.body.classList.add("menu");\n',
+    'retired/handlers.py': 'def handler(request, response):\n    response.status_code = 200\n    return response\n',
+    'tests/test_pages.py': ('from app import app\n\n\ndef test_robots():\n    assert app.test_client().get("/robots.txt").status_code == 200\n\n\n'
+                            'def test_sailing():\n    assert app.test_client().get("/sailings/abc").status_code == 200\n'),
+    **{f'data/sailings/s{i:03d}.json': '{"code": "s%03d", "minutes": 40}\n' % i for i in range(300)},
+}
+
+
 def self_test() -> int:
     import shutil, tempfile
     tmp = Path(tempfile.mkdtemp(prefix='li-self-'))
@@ -1356,6 +1400,25 @@ def self_test() -> int:
         want(code == 3 and (res.get('language_coverage', {}).get('dominant') or '').lower() == 'ruby'
              and 'WARNING' in err.getvalue() and any('ruby' in n.lower() for n in res['notes']),
              'an unread dominant language warns on stderr and in notes, sets language_coverage and exits 3')
+
+        # ---- a Flask app rendering Jinja templates, beside a data directory of JSON files
+        fl = tmp / 'flask'
+        for rel, text in FLASK_SELF_TEST_FILES.items():
+            (fl / rel).parent.mkdir(parents=True, exist_ok=True)
+            (fl / rel).write_text(text, encoding='utf-8')
+        with contextlib.redirect_stderr(io.StringIO()):
+            code = main([str(fl), '--tests', str(fl / 'tests'), '--out', str(out)])
+        res = json.loads(out.read_text(encoding='utf-8'))
+        got = {(i['kind'], i['path']): i for i in res['interfaces']}
+        want(code == 0 and not res.get('language_coverage', {}).get('warning'),
+             'a Flask app with Jinja templates is read: no language warning, exit 0')
+        want(('routes', '/robots.txt') in got and got[('routes', '/robots.txt')]['reached'],
+             'a static route a test requests is reached')
+        want(('routes', '/<token>.txt') in got and not got[('routes', '/<token>.txt')]['reached'],
+             'a converter route is not reached by a URL that a static route matches exactly (the router prefers the static rule)')
+        want(got.get(('routes', '/sailings/<code>'), {}).get('reached'), 'a converter route a test requests is reached')
+        want(any('retired/handlers.py' in n and 'handler(request, response)' in n for n in res['notes']),
+             'a module defining handler(request, response) outside a supported framework is named in notes, not dropped silently')
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     if fails:
