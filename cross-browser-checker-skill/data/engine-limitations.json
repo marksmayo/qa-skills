@@ -17,11 +17,22 @@
       "engine": "webkit",
       "platforms": ["win32"],
       "subkinds": ["font_family_differs"],
-      "match": "serif|times",
-      "what": "Playwright's WebKit build for Windows draws text whose font family is the engine default (form controls that don't inherit the page font, placeholders) in a serif face.",
+      "match": "serif|times|ms shell dlg",
+      "what": "Playwright's WebKit build for Windows draws text whose font family is the engine default (form controls that don't inherit the page font, placeholders) in a Windows default face: a serif (Times New Roman) or MS Shell Dlg, depending on the machine.",
       "real_browser": "Safari draws form controls in the system font (-apple-system). The page still relies on each engine's default for those controls, so set font: inherit on them whatever the build does.",
       "source": "Observed by this skill on a generated HTML report with Playwright WebKit on Windows 11 (2026-11): filter buttons and a search input in a serif face, Chromium and Firefox in the page's sans-serif.",
       "confirm": "Open the page in Safari on macOS or iOS (or Playwright WebKit on macOS) and compare the controls' font with the page text."
+    },
+    {
+      "id": "windows-flag-emoji",
+      "engine": ["chromium", "firefox", "webkit"],
+      "platforms": ["win32"],
+      "subkinds": ["content_not_rendered", "box_differs", "font_family_differs"],
+      "match": "[🇦-🇿]",
+      "what": "Windows ships no flag emoji glyphs: Chromium and WebKit draw a flag (a pair of regional-indicator letters) as two letters, while Firefox draws it from its bundled colour emoji font. Ink and box differences of flag text are the platform's emoji font, not the page.",
+      "real_browser": "Chrome and Edge on Windows also show letters; Safari on macOS and iOS and browsers on Android draw flags. A page that relies on flag emoji to convey something is worth a review either way.",
+      "source": "Observed by this skill on a server-rendered site with Playwright Chromium, Firefox and WebKit on Windows 11 (2026-11): flag emoji in a heading and a dropdown drew as letters in Chromium and WebKit, as colour flags in Firefox.",
+      "confirm": "Open the page on macOS, iOS or Android and check the flags render, then decide whether letters on Windows are acceptable."
     },
     {
       "id": "chromium-proprietary-codecs",

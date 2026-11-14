@@ -22,7 +22,12 @@ above it grew, an input's box when its type fell back, an element inside another
 an ink measure between boxes of different shape (a different number of line boxes, or the area
 changed more than twofold: an inline element that wrapped, a list box drawn at another size).
 A layout difference of one element (by its signature) on several pages is one candidate, whose reach
-counts the pages (`pages`). When comparisons were made and nothing at all came out, `self_check`
+counts the pages (`pages`); so is an undecoded image of one component, and one console message (compared one
+message at a time, without its source position). Repeated siblings (`:nth-of-type(N)`, `:nth-child(N)`) group
+as one element (`elements` lists them), viewports merge (`viewports`), and `occurrences` counts the raw
+differences a candidate stands for. Candidates that follow from an undecoded image with a known build
+limitation on the same page and engine inherit it, and a console message about an HTTP error response logged
+by one engine only is dismissed when every run recorded that status (`http_errors`). When comparisons were made and nothing at all came out, `self_check`
 says how many element boxes were compared and how many were identical, to be checked by eye.
 Only captured runs are compared: a page, viewport and engine with any run errored or skipped
 (run_status) is left out, and `comparisons` in the output lists every planned engine-versus-reference
@@ -126,7 +131,10 @@ def observations(run: dict, inks: list | None) -> dict[tuple, dict]:
     for e in run.get('page_errors') or []:
         obs[('error', 'page_error')] = {'messages': (obs.get(('error', 'page_error')) or {}).get('messages', []) + [e]}
     for e in run.get('console_errors') or []:
-        obs[('error', 'console_error')] = {'messages': (obs.get(('error', 'console_error')) or {}).get('messages', []) + [e]}
+        # one observation per message, so the same message on several pages groups into one candidate and another
+        # message on the same page stays its own
+        k = ('error', 'console_error', console_key(e))
+        obs[k] = {'messages': (obs.get(k) or {}).get('messages', []) + [e]}
     for s in run.get('steps') or []:
         if s['outcome'] == 'failed':
             obs[('behaviour', 'step_failed', s['index'])] = {'step': s['action'], 'messages': [s['error']]}
@@ -149,6 +157,41 @@ def observations(run: dict, inks: list | None) -> dict[tuple, dict]:
                 obs[('ink', e['sig'])] = {'ink': round(v, 4), 'box': e['box'], 'tag': e['tag'], 'type': e.get('type'),
                                           'lines': e.get('lines')}
     return obs
+
+
+def console_key(message: str) -> str:
+    """A console message without the source position it was logged from ("... app.js:12:5"), which moves between builds."""
+    return re.sub(r'(:\d+){1,2}\)?\s*$', '', ' '.join(str(message).split()))[:200]
+
+
+# a repeated sibling (a card in a list) is the same component whatever its position: card:nth-of-type(7) is card
+NTH = re.compile(r':nth-(?:of-type|child)\(\d+\)')
+
+
+def group_key(key: str) -> str:
+    return NTH.sub('', key or '')
+
+
+# regional-indicator pairs (flags) and other pictographs, whose glyphs depend on the platform's emoji font
+EMOJI = re.compile('[\U0001F1E6-\U0001F1FF\U0001F300-\U0001FAFF\u2600-\u27BF]')
+HTTP_LOGGED = re.compile(r'^Failed to load resource: the server responded with a status of (\d{3})\b')
+
+
+def http_logged(diffs: list[dict], first: int, dismissed: list[dict], R: list[dict], E: list[dict]) -> None:
+    """A console message an engine writes for an HTTP error response ("Failed to load resource: the server responded with a
+    status of 400"), logged in one engine only, while every run of both engines recorded a response with that status
+    (http_errors, from capture.py): the request failed alike everywhere; only the logging differs (Firefox doesn't log
+    HTTP error responses of fetch() to the console). Captures without http_errors are left as they are."""
+    keep = []
+    for d in diffs[first:]:
+        st = {HTTP_LOGGED.match(m).group(1) if HTTP_LOGGED.match(m) else None for m in d.get('messages') or []}
+        if d['subkind'] == 'console_error' and st and None not in st and all('http_errors' in r for r in R + E) and \
+                all(any(h.split(' ', 1)[0] == s for h in r['http_errors']) for r in R + E for s in st):
+            dismissed.append(dict(d, reason=f'every run of both engines received the HTTP {"/".join(sorted(st))} response '
+                                            '(http_errors); only the console logging of it differs between the engines'))
+        else:
+            keep.append(d)
+    diffs[first:] = keep
 
 
 def img_src(runs: list[dict], sig: str) -> str | None:
@@ -331,7 +374,8 @@ def compare(doc: dict, base: Path, ref: str, jobs: int | None = None,
                         continue
                 if all(low):
                     o = E[0]['obs'][k]
-                    diffs.append({'page': page, 'viewport': vp, 'engine': eng, 'ref': ref, 'kind': 'layout', 'subkind': 'content_not_rendered',
+                    text = (E[0]['obs'].get(('present', k[1])) or {}).get('text') or ''
+                    diffs.append({**({'_text': text} if EMOJI.search(text) else {}),'page': page, 'viewport': vp, 'engine': eng, 'ref': ref, 'kind': 'layout', 'subkind': 'content_not_rendered',
                                   'key': k[1], 'element': k[1], 'element_tag': o['tag'], 'element_type': o.get('type'),
                                   'ref_box': R[0]['obs'][k]['box'], **({'src': img_src(E, k[1])} if img_src(E, k[1]) else {}),
                                   'ink': {ref: rv, eng: ev}, 'runs': {ref: [False] * len(R), eng: low},
@@ -339,6 +383,7 @@ def compare(doc: dict, base: Path, ref: str, jobs: int | None = None,
                 elif any(low):
                     flaky.append({'page': page, 'viewport': vp, 'kind': 'layout', 'subkind': 'content_not_rendered', 'key': k[1],
                                   'runs': {ref: [False] * len(R), eng: low}})
+            http_logged(diffs, first, dismissed, R, E)
             wraps(diffs, first, dismissed, moves, sizes)
             drift(diffs, first, dismissed, moves)
             scrolled(diffs, first, dismissed, R, E, eng)
@@ -651,12 +696,22 @@ def candidates(diffs: list[dict], dismissed: list[dict], doc: dict, caniuse: dic
         base = d['page'].split('~')[0]
         # a layout difference of one element (a shared header, nav or footer component, by its signature) is one cause on
         # every page that shows it: one candidate, whose reach counts the pages
-        shared = d['kind'] == 'layout' and bool(d.get('element'))
-        k = (None if shared else base, d['viewport'], d['kind'], d['subkind'], d['key'])
+        # an undecoded image of one component, and one console message, likewise; a repeated sibling (a card at
+        # :nth-of-type(7)) is the same component as the others, and the viewports a cause shows at are one candidate
+        shared = (d['kind'] == 'layout' and bool(d.get('element'))) or d['subkind'] == 'image_not_decoded' or \
+            (d['subkind'] == 'console_error' and bool(d['key']))
+        gk = group_key(d['key'])
+        k = (None if shared else base, d['kind'], d['subkind'], gk)
         c = merged.setdefault(k, {k2: d.get(k2) for k2 in ('kind', 'subkind', 'key', 'element', 'src', 'step', 'detail', 'element_tag',
                                                            'element_type', 'delta')}
-                              | {'page': base, 'pages': [], 'viewport': d['viewport'], 'states': [], 'engines': [], 'reference': d['ref'],
-                                 'runs': {}, 'messages': {}, 'ink': {}})
+                              | {'key': gk, 'page': base, 'pages': [], 'viewport': d['viewport'], 'viewports': [], 'occurrences': 0,
+                                 'states': [], 'engines': [], 'reference': d['ref'], 'runs': {}, 'messages': {}, 'ink': {},
+                                 '_elements': [], '_text': d.get('_text')})
+        c['occurrences'] += 1
+        if d['viewport'] not in c['viewports']:
+            c['viewports'].append(d['viewport'])
+        if d.get('element') and d['element'] not in c['_elements']:
+            c['_elements'].append(d['element'])
         if base not in c['pages']:
             c['pages'].append(base)
         if d['page'] not in c['states']:
@@ -664,9 +719,9 @@ def candidates(diffs: list[dict], dismissed: list[dict], doc: dict, caniuse: dic
         if d['engine'] not in c['engines']:
             c['engines'].append(d['engine'])
         for eng, rs in d['runs'].items():
-            c['runs'][f'{d["page"]}|{eng}'] = rs
+            c['runs'].setdefault(f'{d["page"]}|{eng}', rs)   # the first viewport's or sibling's runs stand for the rest
         if d.get('messages'):
-            c['messages'][d['engine']] = d['messages']
+            c['messages'][d['engine']] = sorted(set(c['messages'].get(d['engine'], [])) | set(d['messages']))
         if d.get('ink'):
             c['ink'].update(d['ink'])
     cands = list(merged.values())
@@ -686,7 +741,12 @@ def candidates(diffs: list[dict], dismissed: list[dict], doc: dict, caniuse: dic
     platform = doc.get('platform')
     for c in cands:
         c['engines'].sort()
+        c['viewports'].sort()
+        if len(c['_elements']) > 1:   # siblings grouped by their component: which ones
+            c['elements'] = c['_elements'][:50]
         c['build_limitations'] = build_limitations(c, platform)
+    inherit_limitations(cands)
+    for c in cands:
         sev = severity_of(c, cands)
         explained = bool(c['messages']) or bool(c['features'])
         conf = 'low' if c['build_limitations'] else 'high' if explained else 'medium'
@@ -704,7 +764,25 @@ def candidates(diffs: list[dict], dismissed: list[dict], doc: dict, caniuse: dic
     cands.sort(key=lambda c: (order[c['priority']], -c['score'], c['page'], c['kind'], c['subkind'], c['key']))
     for i, c in enumerate(cands, 1):
         c['id'] = f'K{i}'
-    return [{'id': c['id'], **{k: v for k, v in c.items() if k != 'id'}} for c in cands]
+    return [{'id': c['id'], **{k: v for k, v in c.items() if k != 'id' and not k.startswith('_')}} for c in cands]
+
+
+def inherit_limitations(cands: list[dict]) -> None:
+    """A known build limitation of an undecoded image reaches what follows from it in the same engine and page: the <img>
+    an error handler then hides (element_missing), the fallback it shows beside it (element_extra) and boxes resized
+    around it. Those candidates carry the image's limitation (and say so), instead of reading as real differences."""
+    imgs = [c for c in cands if c['subkind'] == 'image_not_decoded' and c['build_limitations']]
+    for c in cands:
+        if c['build_limitations'] or c['subkind'] not in ('element_missing', 'element_extra', 'box_differs', 'content_not_rendered'):
+            continue
+        key = c['key'] or ''
+        for i in imgs:
+            ik = i['key'] or ''
+            related = key == ik or (parent_sig(key) is not None and parent_sig(key) == parent_sig(ik)) or ik.startswith(key + '>')
+            if related and set(i['engines']) & set(c['engines']) and set(i['pages']) & set(c['pages']):
+                c['build_limitations'] = list(i['build_limitations'])
+                c['detail'] = (c.get('detail') or '') + f' (follows from the undecoded image {ik}, a known build limitation)'
+                break
 
 
 def load_limitations() -> list[dict]:
@@ -716,8 +794,9 @@ def build_limitations(c: dict, platform: str | None) -> list[str]:
     without a recorded platform matches every platform: the difference may be the build's, not the browser's."""
     text = ' '.join([c.get('src') or '', c.get('element') or '', c.get('detail') or ''] +
                     [m for ms in c['messages'].values() for m in ms])
+    text += ' ' + (c.get('_text') or '')
     return [L['id'] for L in load_limitations()
-            if L['engine'] in c['engines'] and c['subkind'] in L['subkinds']
+            if set(L['engine'] if isinstance(L['engine'], list) else [L['engine']]) & set(c['engines']) and c['subkind'] in L['subkinds']
             and (platform is None or L['platforms'] is None or platform in L['platforms']) and re.search(L['match'], text)]
 
 

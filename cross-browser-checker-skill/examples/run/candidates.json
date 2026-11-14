@@ -43,6 +43,10 @@
     "home"
    ],
    "viewport": "1280x800",
+   "viewports": [
+    "1280x800"
+   ],
+   "occurrences": 2,
    "states": [
     "home~recommendations"
    ],
@@ -105,6 +109,10 @@
     "home"
    ],
    "viewport": "1280x800",
+   "viewports": [
+    "1280x800"
+   ],
+   "occurrences": 4,
    "states": [
     "home",
     "home~recommendations"
@@ -185,6 +193,10 @@
     "home"
    ],
    "viewport": "1280x800",
+   "viewports": [
+    "1280x800"
+   ],
+   "occurrences": 4,
    "states": [
     "home",
     "home~recommendations"
@@ -274,6 +286,10 @@
     "home"
    ],
    "viewport": "1280x800",
+   "viewports": [
+    "1280x800"
+   ],
+   "occurrences": 2,
    "states": [
     "home~recommendations"
    ],
@@ -329,6 +345,10 @@
     "home"
    ],
    "viewport": "1280x800",
+   "viewports": [
+    "1280x800"
+   ],
+   "occurrences": 2,
    "states": [
     "home",
     "home~recommendations"
@@ -3023,7 +3043,17 @@
      "K3"
     ]
    }
-  ]
+  ],
+  "scanned_files": {
+   "count": 5,
+   "files": [
+    "site/about.html",
+    "site/app.js",
+    "site/deals.html",
+    "site/index.html",
+    "site/style.css"
+   ]
+  }
  },
  "comparisons": {
   "planned": 8,

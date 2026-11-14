@@ -37,6 +37,8 @@ Remote-site hygiene: rate_limit_seconds between page loads (default 0.1 on loopb
 max_retry_after_seconds, and each wait is recorded in the run's `backoff`; still 429/503 after that, the run
 is errored. Every run records requests_sent (requests the page made that the harness let out), runs.json totals
 them in `requests`, and with request_budget set, runs after the total reaches it are recorded as skipped.
+Every run also records http_errors ("<status> <url>" for each response of 400 or more), so a console message an
+engine writes about an HTTP error response is compared with the responses every engine received.
 
 A run that couldn't load, inject or capture has run_status "errored" (or "skipped") with the error text; an
 engine none of whose runs captured is "errored", never "ran".
@@ -233,6 +235,8 @@ def run_once(h: Harness, url: str, viewport: str, actions: list, shot: Path, scr
     log = h.log(page)
     sent: list[str] = []
     page.on('request', lambda r: sent.append(r.url))
+    http_errors: list[str] = []   # responses with an error status, so a console message about one can be told
+    page.on('response', lambda r: http_errors.append(f'{r.status} {r.url}'[:300]) if r.status >= 400 else None)
     rec = {'ok': False, 'run_status': 'errored', 'status': None, 'error': None, 'steps': [], 'backoff': []}
     try:
         resp = load(h, page, url, net, rec)
@@ -271,6 +275,7 @@ def run_once(h: Harness, url: str, viewport: str, actions: list, shot: Path, scr
         rec['requests_sent'] = max(0, len(sent) - rec['blocked_requests'])
         rec['console_errors'] = [c['text'][:300] for c in log['console'] if c['type'] == 'error'
                                  and not (blocked and (BLOCKED_NOISE.search(c['text']) or any(u in c['text'] for u in blocked)))]
+        rec['http_errors'] = sorted(set(http_errors))[:50]
         rec['page_errors'] = [f'{e["name"]}: {e["message"]}'[:300] for e in log['page_errors']]
         rec['failed_requests'] = [f'{r["method"]} {r["url"]} ({r["failure"]})' for r in log['failed_requests']
                                   if r['url'].split('?')[0] not in blocked]

@@ -1179,7 +1179,17 @@
     "status": "possible",
     "linked_differences": []
    }
-  ]
+  ],
+  "scanned_files": {
+   "count": 5,
+   "files": [
+    "site/about.html",
+    "site/app.js",
+    "site/deals.html",
+    "site/index.html",
+    "site/style.css"
+   ]
+  }
  },
  "comparisons": {
   "planned": 8,
