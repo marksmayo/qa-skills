@@ -4,7 +4,7 @@
 Used by list_interfaces.py (and, as an identical copy, by the journey mapper's extract_surface.py):
 
 - conditions: the `if` tests a statement sits under (`if args.uploads: app.include_router(...)`), so a route or
-  middleware that exists only in one serving mode says so (`conditional`).
+  middleware that exists only in one serving mode says so (`condition`).
 - static mounts: `app.mount("/", StaticFiles(directory="dist"))` (FastAPI and Starlette) and Flask's default
   `/static/<path:filename>` route, as routes.
 - middleware: `app.add_middleware(Cls, ...)` and `@app.middleware("http")` functions, with their condition.
@@ -104,6 +104,25 @@ def join_conditions(parts) -> str | None:
     return ' and '.join(parts) or None
 
 
+def route_conditions(project) -> dict[tuple[str, int, str], str]:
+    """{(file, decorator line, mount prefix): condition} for every route declaration that sits under an if, or whose
+    router is included under one (`if args.uploads: app.include_router(uploads.router)`)."""
+    conds = Conditions(project)
+    out = {}
+    for h in project.hits():
+        m, call, key = h['module'], h['call'], h['key']
+        own = conds.at(m.rel, call.lineno)
+        try:
+            chains = project.mount_chains(key) if key else []
+        except Exception:  # noqa: BLE001
+            chains = []
+        for c in chains or [{'prefix': '', 'chain': []}]:
+            cond = join_conditions([own] + conds.chain(c['chain']))
+            if cond:
+                out[(m.rel, call.lineno, c['prefix'] or '')] = cond
+    return out
+
+
 # ---------------------------------------------------------------- static mounts and middleware
 def _join(*parts: str) -> str:
     segs = [p.strip('/') for p in parts if p and p.strip('/')]
@@ -112,7 +131,7 @@ def _join(*parts: str) -> str:
 
 def static_mounts(project, root: Path | None = None) -> list[dict]:
     """StaticFiles mounts and Flask static folders as routes: {method, path, file, line, framework, directory,
-    function, conditional?, prefix_status}."""
+    function, condition?, prefix_status}."""
     conds = Conditions(project)
     out = []
     for m in project.modules.values():
@@ -135,7 +154,7 @@ def static_mounts(project, root: Path | None = None) -> list[dict]:
                     out.append({'method': 'GET', 'path': _join(c['prefix'], path, '{path:path}'), 'file': m.rel,
                                 'line': node.lineno, 'framework': 'starlette-static', 'function': 'StaticFiles',
                                 'directory': directory, 'included': bool(c.get('reached', True)),
-                                **({'conditional': cond} if cond else {})})
+                                **({'condition': cond} if cond else {})})
             elif isinstance(node, ast.Call) and _name(node.func) == 'Flask' and root is not None:
                 folder = _kw(node, 'static_folder')
                 if folder is not None and _const(folder) is None:
@@ -152,7 +171,7 @@ def static_mounts(project, root: Path | None = None) -> list[dict]:
 
 
 def middleware(project) -> list[dict]:
-    """app.add_middleware(Cls, ...) and @app.middleware("http") functions: {file, line, class, owner, conditional?}."""
+    """app.add_middleware(Cls, ...) and @app.middleware("http") functions: {file, line, class, owner, condition?}."""
     conds = Conditions(project)
     out = []
     for m in project.modules.values():
@@ -162,13 +181,13 @@ def middleware(project) -> list[dict]:
                 cls = _name(node.args[0]) or _unparse(node.args[0])
                 cond = conds.at(m.rel, node.lineno)
                 out.append({'file': m.rel, 'line': node.lineno, 'class': cls, 'owner': _unparse(node.func.value),
-                            **({'conditional': cond} if cond else {})})
+                            **({'condition': cond} if cond else {})})
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 for dec in node.decorator_list:
                     if isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute) and dec.func.attr == 'middleware':
                         cond = conds.at(m.rel, dec.lineno)
                         out.append({'file': m.rel, 'line': dec.lineno, 'class': node.name, 'owner': _unparse(dec.func.value),
-                                    'kind': 'function', **({'conditional': cond} if cond else {})})
+                                    'kind': 'function', **({'condition': cond} if cond else {})})
     return sorted(out, key=lambda x: (x['file'], x['line']))
 
 
@@ -419,10 +438,10 @@ def self_test() -> int:
     import py_routes
     proj = py_routes.Project({'srv.py': src})
     st = static_mounts(proj)
-    if not (st and st[0]['path'] == '/s/{path:path}' and st[0].get('conditional') == 'not (args.port)'):
+    if not (st and st[0]['path'] == '/s/{path:path}' and st[0].get('condition') == 'not (args.port)'):
         fails.append(f'static mount in an else branch: {st}')
     mw = middleware(proj)
-    if not (mw and mw[0]['class'] == 'Gate' and mw[0].get('conditional') == 'args.port'):
+    if not (mw and mw[0]['class'] == 'Gate' and mw[0].get('condition') == 'args.port'):
         fails.append(f'conditional middleware: {mw}')
     cl = {c['command'] for c in command_lines(proj)}
     if not {'srv', 'srv a', 'srv b'} <= cl:

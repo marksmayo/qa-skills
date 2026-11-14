@@ -47,7 +47,7 @@ Besides HTTP routes (kind `routes`), it lists the interfaces of a library, a CLI
     cli              also a flags-only argparse program (one entry with its options) and sys.argv[1]
                      dispatch (`if command == "pack":`)
 
-Routes, includes and middleware under an `if` carry `conditional`; `middleware` lists add_middleware and
+Routes, includes and middleware under an `if` carry `condition`; `middleware` lists add_middleware and
 @app.middleware functions. dist/, build/ and out/ are skipped only when something produces them (skipped_dirs,
 --include DIR); a committed folder nothing produces is read as source (source_build_dirs).
 
@@ -275,7 +275,7 @@ def python_interfaces(root: Path, files: list[str]) -> tuple[list[dict], list[st
             for meth in methods:
                 out.append({'kind': 'routes', 'framework': router['framework'], 'method': meth, 'path': join(c['prefix'], path), 'file': m.rel,
                             'line': line, **func, 'router': ' > '.join(name(k) for k in c['chain']), 'included': c['reached'],
-                            **({'conditional': cond} if cond else {}),
+                            **({'condition': cond} if cond else {}),
                             **({'note': 'a router prefix is computed, so the path is partial'} if c['status'] == 'dynamic' else {})})
     for st in py_extras.static_mounts(project, root):
         out.append({'kind': 'routes', **st})
@@ -1550,12 +1550,12 @@ def self_test() -> int:
         mount = [i for i in res['interfaces'] if i['kind'] == 'routes' and i.get('framework') == 'starlette-static']
         want(mount and mount[0]['path'] == '/{path:path}' and mount[0].get('directory') == 'dist',
              'app.mount("/", StaticFiles(directory="dist")) is listed as a static route')
-        want(got.get(('routes', 'POST', '/uploads/put'), {}).get('conditional') == 'args.uploads',
+        want(got.get(('routes', 'POST', '/uploads/put'), {}).get('condition') == 'args.uploads',
              'a route whose include_router sits under an if records the condition')
-        want('conditional' not in got.get(('routes', 'GET', '/'), {'conditional': 1}),
+        want('condition' not in got.get(('routes', 'GET', '/'), {'condition': 1}),
              'an unconditional route records no condition')
         mws = res.get('middleware', [])
-        want(any(m.get('class') == 'SimpleAuthMiddleware' and m.get('conditional') == 'args.user' for m in mws),
+        want(any(m.get('class') == 'SimpleAuthMiddleware' and m.get('condition') == 'args.user' for m in mws),
              'app.add_middleware(...) under an if is listed in middleware with its condition')
         srv = got.get(('cli', 'CLI', 'server'))
         want(srv and {'--port', '--offline', '--uploads', '--user'} <= set(srv.get('options', [])),
