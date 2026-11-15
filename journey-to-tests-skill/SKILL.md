@@ -29,6 +29,10 @@ Input: one or more journey files in the Journey Markdown format (`JOURNEY_FORMAT
   the Expect says, classify the failure `fail_product` and report a suspected bug. Never change
   the expected value, loosen the assertion, or edit the journey to make the test pass. Once an
   attempt is classified `fail_product`, the result stays `fail_product`.
+- **An `**Observed:**` line is not an Expect.** It records what an earlier run of the app showed
+  (with that run's evidence file). Assert the Expect, not the observation; it is not counted in
+  the Expect totals and does not change the journey's fingerprint. When the two disagree, say so
+  in the plan: it is a lead for a suspected bug, not a reason to assert the observed behaviour.
 - **Stable selectors only.** Use the repository's selector convention; otherwise role, label and
   accessible-name queries (`getByRole`, `getByLabel`), or accessibility IDs on mobile. When no
   stable selector exists, record a **testability gap** with a concrete suggestion instead of

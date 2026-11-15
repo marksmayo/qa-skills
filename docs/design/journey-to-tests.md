@@ -158,3 +158,7 @@ scripts and register a service worker. Red/green checks in new `validate_report.
   config no script runs).
 - The example's spec (written before these rules) now gets the two network warnings; its runs are
   hashed, so it is left as recorded.
+- Journey Markdown 1.1 (shared): a step may carry an indented `**Observed:**` line after its
+  Expect (what a run showed, with the run's evidence file). `journey_md.py` parses it into
+  `steps[].observed`, never into the Expect, so `plan_coverage.py` neither counts it nor lets it
+  change `expect_sha256`; SKILL.md says not to assert it.

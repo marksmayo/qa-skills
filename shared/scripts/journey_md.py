@@ -21,6 +21,8 @@ SECTIONS = ('Preconditions', 'Steps', 'Variants', 'Test data', 'Not automatable'
 ID_RE = re.compile(r'^JRN-[A-Z0-9]+-\d{3}$')
 STEP_RE = re.compile(r'^(\d+)\.\s+\*\*Action:\*\*\s*(.*?)\s*(?:\*\*Expect:\*\*\s*(.*))?$')
 EXPECT_RE = re.compile(r'^\s+\*\*Expect:\*\*\s*(.*)$')
+OBSERVED_RE = re.compile(r'^\s+\*\*Observed:\*\*\s*(.*)$')
+OBSERVED_BODY_RE = re.compile(r'^(.*?)\s*\(run\s+`([^`]+)`(?:\s*,\s*([^()]*?))?\s*\)$')
 VARIANT_RE = re.compile(r'^\*\*(V\d+)\s*[–—-]\s*(.+?)\*\*\s*\(from step (\d+)\)\s*:\s*(.*)$')
 VARIANT_BODY_RE = re.compile(r'^(?:\*\*Action:\*\*\s*(.*?)\s*)?\*\*Expect:\*\*\s*(.*)$')
 NA_RE = re.compile(r'^(?:step\s+(\d+)|(V\d+))\s*:\s*(.+)$', re.I)
@@ -113,8 +115,26 @@ def _items(lines: list[str]) -> list[str]:
             items.append(line.strip())
     return [i for i in items if i.lower() != '(none)']
 
+def parse_observed(text: str) -> dict:
+    """`<result> (run `<path>`, <date>)` -> {result, run, at}; run and at are None when the text does not name them."""
+    text = ' '.join(text.split())
+    m = OBSERVED_BODY_RE.match(text)
+    if not m:
+        return {'result': text, 'run': None, 'at': None}
+    return {'result': m.group(1).strip(), 'run': m.group(2).strip(), 'at': (m.group(3) or '').strip() or None}
+
+def observed_line(obs: dict) -> str:
+    """The text after **Observed:** for an observation {result, run, at}."""
+    text = ' '.join(str(obs.get('result') or '').split())
+    if obs.get('run'):
+        text += f" (run `{obs['run']}`" + (f", {' '.join(str(obs['at']).split())}" if obs.get('at') else '') + ')'
+    return text
+
 def _steps(lines: list[str], problems: list) -> list[dict]:
+    """Steps with their Action and Expect. An indented **Observed:** line (what a run showed) goes to the step's
+    `observed`, never into the Expect; lines indented under it continue the observation."""
     steps: list[dict] = []
+    observed: dict[int, str] = {}   # step index -> raw observation text
     field = 'action'
     for line in lines:
         if not line.strip():
@@ -129,10 +149,25 @@ def _steps(lines: list[str], problems: list) -> list[dict]:
         if m and steps:
             steps[-1]['expect'] = m.group(1).strip(); field = 'expect'
             continue
+        m = OBSERVED_RE.match(line)
+        if m and steps:
+            idx = len(steps) - 1
+            if idx in observed:
+                problems.append(('error', f'step {steps[-1]["n"]} has more than one **Observed:** line'))
+            elif field != 'expect':
+                problems.append(('error', f'step {steps[-1]["n"]}: **Observed:** must follow its **Expect:** line'))
+            observed.setdefault(idx, m.group(1).strip()); field = 'observed'
+            continue
         if line[:1].isspace() and steps:
-            steps[-1][field] = (steps[-1][field] + ' ' + line.strip()).strip()
+            if field == 'observed':
+                idx = len(steps) - 1
+                observed[idx] = (observed[idx] + ' ' + line.strip()).strip()
+            else:
+                steps[-1][field] = (steps[-1][field] + ' ' + line.strip()).strip()
             continue
         problems.append(('error', f'Steps: unparseable line {line.strip()!r}'))
+    for idx, text in observed.items():
+        steps[idx]['observed'] = parse_observed(text)
     return steps
 
 def _variants(lines: list[str], problems: list) -> list[dict]:
@@ -259,6 +294,18 @@ def lint(j: dict, path=None) -> list[tuple[str, str]]:
             p.append(('error', f'step {s["n"]} has no **Action:**'))
         if not s['expect']:
             p.append(('error', f'step {s["n"]} has no **Expect:**'))
+        if '**Observed:**' in s['expect']:
+            p.append(('error', f'step {s["n"]}: write **Observed:** on its own indented line after the Expect '
+                               '(an observation is never part of the Expect)'))
+        obs = s.get('observed')
+        if obs is not None:
+            if not obs.get('run'):
+                p.append(('error', f'step {s["n"]}: **Observed:** names no run '
+                                   '(end it with (run `<path>`, <date>): the evidence file of the run that showed it)'))
+            elif not obs.get('at'):
+                p.append(('strict', f'step {s["n"]}: **Observed:** has no date (run `<path>`, <date>)'))
+            if not obs.get('result'):
+                p.append(('error', f'step {s["n"]}: **Observed:** has no result'))
     nums = {s['n'] for s in steps}
     vids: set[str] = set()
     for v in j['variants']:
@@ -377,6 +424,8 @@ def render(j: dict) -> str:
     for i, s in enumerate(j.get('steps') or [], 1):
         out.append(f"{i}. **Action:** {flat(s['action'])}")
         out.append(f"   **Expect:** {flat(s['expect'])}")
+        if s.get('observed'):
+            out.append(f"   **Observed:** {observed_line(s['observed'])}")
     out.append('')
     bullets('Variants', [_variant_line(v) for v in j.get('variants') or []])
     raw('Test data', j.get('test_data') or '')
@@ -390,9 +439,103 @@ def render(j: dict) -> str:
     return '\n'.join(out).rstrip() + '\n'
 
 
+# ---------- self-test ----------
+
+_SELF_TEST_JOURNEY = """---
+id: JRN-BIKE-001
+title: Visitor books a bike service
+domain: booking
+platforms: [web]
+persona: visitor
+priority: P1
+status: inferred
+entry_point: /service
+goal: Booking reference shown
+---
+
+## Preconditions
+- (none)
+
+## Steps
+1. **Action:** Open the service page
+   **Expect:** The booking form is visible
+   **Observed:** the page answered 200 and showed the form (run `run/probe/service.txt`, 2026-11-15)
+2. **Action:** Submit the form
+   **Expect:** A booking reference is shown
+   and the form is cleared
+
+## Variants
+- (none)
+
+## Test data
+- (none)
+
+## Not automatable
+- (none)
+
+## Open questions
+- (none)
+
+## Evidence
+- Step 1: `app/service/page.tsx:3` — service page
+- Step 2: `app/api/book/route.ts:9` — POST /api/book
+"""
+
+
+def self_test() -> int:
+    """An indented **Observed:** line after a step's Expect is parsed into steps[].observed (never into the Expect),
+    rendered back after the Expect, and linted: an observation that names no run, one written before its Expect,
+    or one written inside the Expect line is an error."""
+    problems: list[str] = []
+    check = lambda ok, what: ok or problems.append(what)
+    j = parse_journey(_SELF_TEST_JOURNEY)
+    s1, s2 = j['steps'][0], j['steps'][1]
+    check(s1['expect'] == 'The booking form is visible',
+          f'the Observed line does not alter the Expect, got {s1["expect"]!r}')
+    check(s1.get('observed') == {'result': 'the page answered 200 and showed the form',
+                                 'run': 'run/probe/service.txt', 'at': '2026-11-15'},
+          f'the Observed line parses to {{result, run, at}}, got {s1.get("observed")!r}')
+    check(s2['expect'] == 'A booking reference is shown and the form is cleared' and 'observed' not in s2,
+          f'an ordinary continuation line still joins the Expect, got {s2!r}')
+    check(not [m for lvl, m in lint(j) if lvl in ('error', 'strict')],
+          f'a journey with an Observed line lints clean in strict mode, got {lint(j)}')
+    text = render(j)
+    check('   **Expect:** The booking form is visible\n   **Observed:** the page answered 200 and showed the form '
+          '(run `run/probe/service.txt`, 2026-11-15)\n' in text, 'render writes the Observed line after the Expect')
+    check(parse_journey(text)['steps'] == j['steps'], 'render then parse keeps every step, observed included')
+
+    def errors(text):
+        return [m for lvl, m in lint(parse_journey(text)) if lvl == 'error']
+    no_run = _SELF_TEST_JOURNEY.replace(' (run `run/probe/service.txt`, 2026-11-15)', '')
+    check(any('names no run' in m for m in errors(no_run)), 'an Observed line that names no run is an error')
+    check(parse_journey(no_run)['steps'][0]['expect'] == 'The booking form is visible',
+          'an Observed line without a run still never becomes part of the Expect')
+    before = _SELF_TEST_JOURNEY.replace(
+        '   **Expect:** The booking form is visible\n   **Observed:** the page answered 200 and showed the form '
+        '(run `run/probe/service.txt`, 2026-11-15)\n',
+        '   **Observed:** the page answered 200 and showed the form (run `run/probe/service.txt`, 2026-11-15)\n'
+        '   **Expect:** The booking form is visible\n')
+    check(any('must follow its **Expect:**' in m for m in errors(before)), 'an Observed line before the Expect is an error')
+    inline = _SELF_TEST_JOURNEY.replace(
+        '   **Expect:** The booking form is visible\n   **Observed:**', '   **Expect:** The booking form is visible **Observed:**')
+    check(any('own indented line' in m for m in errors(inline)), 'an Observed written inside the Expect line is an error')
+    twice = _SELF_TEST_JOURNEY.replace('2026-11-15)\n', '2026-11-15)\n   **Observed:** again (run `run/b.txt`, 2026-11-16)\n', 1)
+    check(any('more than one **Observed:**' in m for m in errors(twice)), 'a second Observed line on one step is an error')
+    plain = _SELF_TEST_JOURNEY.replace(
+        '   **Observed:** the page answered 200 and showed the form (run `run/probe/service.txt`, 2026-11-15)\n', '')
+    check('Observed' not in render(parse_journey(plain)) and 'observed' not in parse_journey(plain)['steps'][0],
+          'a journey with no Observed line renders and parses as before')
+    for p in problems:
+        print('FAIL', p)
+    print('SELF-TEST FAILED' if problems else 'self-test passed')
+    return 1 if problems else 0
+
+
 # ---------- CLI ----------
 
 def main(argv=None) -> int:
+    if (argv if argv is not None else sys.argv[1:]) == ['--self-test']:
+        return self_test()
     ap = argparse.ArgumentParser(description='Parse and lint Journey Markdown files.')
     sub = ap.add_subparsers(dest='cmd', required=True)
     lp = sub.add_parser('lint', help='lint journey files or directories')

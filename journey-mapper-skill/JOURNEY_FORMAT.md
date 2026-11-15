@@ -1,8 +1,8 @@
 # Journey Markdown format
 
-Version 1.0. This file is the contract between skills that **write** user journeys (Journey
-Mapper) and skills that **read** them (Journey to Tests). People may also write journeys by
-hand.
+Version 1.1 (adds the optional `**Observed:**` step line). This file is the contract between
+skills that **write** user journeys (Journey Mapper) and skills that **read** them (Journey to
+Tests). People may also write journeys by hand.
 
 A journey is one Markdown file describing how one persona reaches one goal. The file has YAML
 front matter, then a fixed set of `##` sections.
@@ -13,6 +13,7 @@ front matter, then a fixed set of `##` sections.
 python scripts/journey_md.py lint journeys/ --strict    # generated journeys
 python scripts/journey_md.py lint journeys/              # hand-written journeys (warnings allowed)
 python scripts/journey_md.py parse journeys/checkout/JRN-CHK-001-guest-checkout.md
+python scripts/journey_md.py --self-test
 ```
 
 ## Directory layout
@@ -55,6 +56,7 @@ tests: []
 ## Steps
 1. **Action:** Open a product page
    **Expect:** Product title, price and "Add to cart" are visible
+   **Observed:** the page answered 200 and showed the title, price and button (run `run/probe/product.txt`, 2026-11-15)
 2. **Action:** Click "Add to cart"
    **Expect:** Cart count shows 1
 3. **Action:** Go to checkout and fill shipping and card details
@@ -112,7 +114,7 @@ The sections appear in this order. Write `- (none)` in a section that has no ent
 | Section | Format |
 |---|---|
 | `## Preconditions` | Bullet list of states that must hold before step 1 |
-| `## Steps` | Numbered list starting at 1. Each item is `N. **Action:** …` followed by an indented `**Expect:** …` line (or both on one line). **Every step must have an Expect** — it becomes the test assertion |
+| `## Steps` | Numbered list starting at 1. Each item is `N. **Action:** …` followed by an indented `**Expect:** …` line (or both on one line). **Every step must have an Expect** — it becomes the test assertion. A step may add one indented `` **Observed:** <result> (run `<path>`, <date>) `` line after its Expect (see rule 6) |
 | `## Variants` | One bullet per variant: `**V<n> – <name>** (from step <N>): [**Action:** …] **Expect:** …`. A variant branches from an existing step. Single line |
 | `## Test data` | Free text or bullets describing data the journey needs |
 | `## Not automatable` | Bullets of `step <N>: <reason>` or `V<n>: <reason>` for expectations a test can't check (e.g. visual judgement of imagery) |
@@ -133,6 +135,14 @@ The sections appear in this order. Write `- (none)` in a section that has no ent
    least one evidence bullet containing a `` `path:line` `` reference.
 5. **Gherkin mapping.** Preconditions map to `Given`, each Action to `When`, and each Expect to
    `Then`.
+6. **Observed is not expected.** The Expect is what the code (or a person) says should happen. An
+   optional `**Observed:**` line, indented on its own line after the step's Expect, records what a
+   run of the application actually showed: `` **Observed:** <result> (run `<path>`, <date>) ``,
+   where `<path>` is the run's evidence file (relative to the journeys directory) and `<date>` an
+   ISO date or time. It is parsed into the step's `observed` (`result`, `run`, `at`), never counts
+   as an Expect or an assertion, and never changes the Expect (so it doesn't change a test plan's
+   fingerprint of the Expects). Lines indented under it continue the observation. Steps only;
+   variants have no Observed line.
 
 ## Lint levels
 
@@ -140,6 +150,8 @@ The sections appear in this order. Write `- (none)` in a section that has no ent
 |---|---|---|
 | Unparseable front matter, missing required key, invalid enum value, bad ID | error | error |
 | No steps, step numbering gap, step without Action or Expect | error | error |
+| `**Observed:**` that names no run or has no result, comes before the Expect, is repeated on a step, or is written inside the Expect line | error | error |
+| `**Observed:**` with a run but no date | warning | error |
 | Variant from an unknown step, duplicate variant ID, unparseable variant | error | error |
 | `Not automatable` or `Evidence` entry pointing at an unknown step or variant | error | error |
 | `automation` is `partial` or `automated` but `tests` is empty | error | error |
