@@ -87,6 +87,43 @@ CSP_REPORT = re.compile(r'"(?:blocked-uri|blockedURL|blockedURI)"\s*:\s*"(?P<url
 CSP_DIRECTIVE = re.compile(r'"(?:effective-directive|effectiveDirective|violated-directive|violatedDirective)"\s*:\s*"(?P<d>[\w-]+)')
 
 
+DECLARED_TEXT = ('.html', '.htm', '.md', '.mdx', '.txt', '.tsx', '.jsx', '.ts', '.js', '.vue', '.svelte', '.astro', '.j2', '.jinja', '.njk')
+
+
+def load_declared(path: Path | None, extra_names=()) -> dict:
+    """The declared processors: a JSON file ({"source", "processors": [{"vendor", "domains"?}]}), or a policy page kept in
+    the repository (HTML, Markdown, MDX or a page component), whose processors are the vendors its text names: a vendor
+    name or alias from data/vendors.json (or extra_names, the domain list's vendors), as a whole word, three letters at
+    least; bare company names don't count (a policy that says "Google" names no product). Each processor from a page
+    records the line that names it."""
+    if not path:
+        return {'processors': []}
+    path = Path(path)
+    if path.suffix.lower() == '.json':
+        return json.loads(path.read_text(encoding='utf-8'))
+    text = path.read_text(encoding='utf-8', errors='replace')
+    lines = [re.sub(r'<[^>]+>', ' ', ln) for ln in text.splitlines()]
+    names = set(extra_names) | set(VENDORS) | {v['vendor'] for v in VENDOR_DATA.get('domains', {}).values()}
+    names |= {a for info in VENDORS.values() for a in info.get('aliases', [])}
+    found: dict = {}
+    for name in sorted((n for n in names if n and len(n) >= 3), key=len, reverse=True):
+        rx = re.compile(r'(?<![\w.-])' + re.escape(name) + r'(?![\w-])', re.I)
+        for i, ln in enumerate(lines, 1):
+            if rx.search(ln):
+                found.setdefault(name, {'vendor': name, 'line': i, 'from_page': True})
+                break
+    hosts = {}
+    for i, ln in enumerate(lines, 1):
+        for m in re.finditer(r'(?<![\w@.-])((?:[a-z0-9-]+\.)+[a-z]{2,})(?![\w-])', ln, re.I):
+            h = m.group(1).lower()
+            if not re.search(r'\.(html?|mdx?|[cm]?[jt]sx?|json|png|jpe?g|svg|css|txt)$', h):
+                hosts.setdefault(h, i)
+    procs = sorted(found.values(), key=lambda p: (p['line'], p['vendor']))
+    procs += [{'vendor': h, 'domains': [h], 'line': n, 'from_page': True} for h, n in sorted(hosts.items(), key=lambda kv: kv[1])]
+    return {'source': f'{path.as_posix()} (policy page: the processors are the vendors and hosts its text names)', 'page': path.as_posix(),
+            'processors': procs}
+
+
 def norm(name: str | None) -> str:
     """A vendor name for comparison: lower case, letters and digits only, a trailing company suffix dropped."""
     n = re.sub(r'[^a-z0-9]+', ' ', (name or '').lower()).strip()
@@ -159,6 +196,11 @@ def csp_attempts(st: dict, first: set, dom_of) -> list[dict]:
     return [x for x in out if x['host'] and dom_of(x['host']) not in first]
 
 
+def lists_vendor_names(lists: dict) -> set:
+    """Vendor names the domain list knows (with their aliases): a policy page may name any of them."""
+    return {v.get('vendor') for v in (lists.get('domains') or {}).values() if v.get('vendor')} |         {a for info in (lists.get('vendors') or {}).values() for a in info.get('aliases', [])} | set(lists.get('vendors') or {})
+
+
 def static_only(a, static: dict, lists: dict, regions: set) -> dict:
     reason = a.run_status_reason or 'no live capture was given: the browser half did not run'
     no_banner = no_banner_cfg(json.loads(a.flows.read_text(encoding='utf-8')) if a.flows else None)
@@ -168,7 +210,7 @@ def static_only(a, static: dict, lists: dict, regions: set) -> dict:
             'inputs': {'flows': a.flows.as_posix() if a.flows else None, 'lists': a.lists.as_posix() if a.lists else None,
                        'declared': a.declared.as_posix() if a.declared else None, 'regions': a.regions},
             'lists': lists.get('source'),
-            'declared': json.loads(a.declared.read_text(encoding='utf-8')).get('source') if a.declared else None, 'regions': sorted(regions), 'first_party': [], 'third_party_mode': None,
+            'declared': load_declared(a.declared, lists_vendor_names(lists)).get('source') if a.declared else None, 'regions': sorted(regions), 'first_party': [], 'third_party_mode': None,
             'blocked_domains': [], 'blocked_first_party_writes': [], 'csp_attempts': [], 'recipients': [],
             'consent_matrix': matrix, 'candidates': static['candidates']}
 
@@ -195,7 +237,7 @@ def main() -> int:
         ap.error('--capture needs --flows and --lists')
     cap = json.loads(a.capture.read_text(encoding='utf-8'))
     flows = json.loads(a.flows.read_text(encoding='utf-8'))
-    declared = json.loads(a.declared.read_text(encoding='utf-8')) if a.declared else {'processors': []}
+    declared = load_declared(a.declared, lists_vendor_names(lists))
     declared_by_name = {norm(p['vendor']): p['vendor'] for p in declared['processors']}
     declared_by_domain = {registrable(d): p['vendor'] for p in declared['processors'] for d in p.get('domains', [])}
     known = {**VENDORS, **lists.get('vendors', {})}
@@ -212,7 +254,9 @@ def main() -> int:
         return hit[0] if hit else registrable(h)
 
     def vendor(dom: str) -> dict:
-        return domains.get(dom) or {}
+        """The list's entry for a domain, else data/vendors.json's (a domain list fetched before a vendor was added
+        there still gets its name)."""
+        return domains.get(dom) or VENDOR_DATA.get('domains', {}).get(dom) or {}
 
     def declared_as(dom: str) -> dict | None:
         """The declared processor that covers this domain, and how: exact, alias, company or domain."""

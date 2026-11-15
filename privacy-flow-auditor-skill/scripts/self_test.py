@@ -237,7 +237,8 @@ LOG_LINE = "logger.info('new patient signup email=%s dob=%s reason=%s', patient[
 def telemetry_finding(**kw) -> dict:
     f = {'id': 'F06', 'type': 'telemetry', 'title': 'The command-line tool calls home with a hashed machine id before any choice',
          'source': 'agent', 'basis': [{'file': 'serve.py', 'line': 62, 'excerpt': LOG_LINE}], 'candidates': [],
-         'categories': ['online_identifier'], 'fields': None, 'vendor': None, 'domain': HOST, 'recipient_kind': 'third_party',
+         'categories': ['online_identifier'], 'categories_basis': 'the payload carries a hashed host name, a stable machine identifier',
+         'fields': None, 'vendor': None, 'domain': HOST, 'recipient_kind': 'third_party',
          'consent_states': [], 'flow_basis': 'before_consent', 'default_on': True, 'reach': 2,
          'reach_source': 'every run of the tool unless an opt-out variable is set', 'confidence': 'traced',
          'evidence': {'summary': 'Found by review: telemetry is on unless DO_NOT_TRACK is set.', 'code_path': [{'file': 'serve.py', 'line': 62}]},
@@ -248,7 +249,8 @@ def telemetry_finding(**kw) -> dict:
     return f
 
 
-def run_validator(rep: dict, extra: list[str] | None = None, cands: dict | None = None, evidence: dict | None = None) -> str:
+def run_validator(rep: dict, extra: list[str] | None = None, cands: dict | None = None, evidence: dict | None = None,
+                  repo: Path | None = None) -> str:
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / 'audit.json'
         p.write_text(json.dumps(rep, indent=1), encoding='utf-8')
@@ -256,7 +258,7 @@ def run_validator(rep: dict, extra: list[str] | None = None, cands: dict | None 
         if cands is not None:
             cp = Path(d) / 'candidates.json'
             cp.write_text(json.dumps(cands), encoding='utf-8')
-        args = [sys.executable, str(HERE / 'validate_privacy_audit.py'), str(p), '--candidates', str(cp), '--repo', str(REPO)]
+        args = [sys.executable, str(HERE / 'validate_privacy_audit.py'), str(p), '--candidates', str(cp), '--repo', str(repo or REPO)]
         if evidence:
             ev = Path(d) / 'ev'
             write(ev, evidence)
@@ -540,10 +542,255 @@ def console_and_key_canaries() -> None:
           'merge: a canary in the browser console is a personal-data-in-logs candidate')
 
 
+# A bird-watching site on the Next.js App Router: the root layout loads an analytics tag, an ad loader, an SEO analytics
+# vendor and an unknown statistics host through next/script, after dns-prefetch and preconnect hints for some of the
+# hosts; next.config headers() sets a CSP whose script-src leaves out the ad vendor's consent-message host and the
+# unknown host, and whose connect-src allows a widget host nothing uses. Every host and id is invented or a vendor's
+# documented loader host.
+NEXT_LAYOUT = '''import Script from 'next/script';
+import './globals.css';
+
+export const metadata = { title: 'Bird log' };
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <head>
+        <link rel="dns-prefetch" href="https://www.google-analytics.com" />
+        <link rel="preconnect" href="https://pagead2.googlesyndication.com" />
+      </head>
+      <body>
+        {children}
+        <Script src="https://www.googletagmanager.com/gtag/js?id=G-TEST0000" strategy="afterInteractive" />
+        <Script id="ga-init" strategy="afterInteractive">
+          {`window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-TEST0000');`}
+        </Script>
+        <Script
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-0000"
+          strategy="afterInteractive"
+          crossOrigin="anonymous"
+        />
+        <Script src="https://analytics.ahrefs.com/analytics.js" data-key="test-key" strategy="afterInteractive" />
+        <Script src="https://stats.birdcount-metrics.io/s.js" strategy="lazyOnload" />
+      </body>
+    </html>
+  );
+}
+'''
+NEXT_CONFIG = '''import type { NextConfig } from 'next';
+
+const csp = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://pagead2.googlesyndication.com https://analytics.ahrefs.com",
+  "connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com https://widgets.example-unused.io",
+  "img-src 'self' data:",
+].join('; ');
+
+const nextConfig: NextConfig = {
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'Content-Security-Policy', value: csp },
+          { key: 'X-Frame-Options', value: 'DENY' },
+        ],
+      },
+    ];
+  },
+};
+
+export default nextConfig;
+'''
+NEXT_SITE = {
+    'package.json': json.dumps({'name': 'bird-log', 'dependencies': {'next': '15.0.0', 'react': '19.0.0', 'react-dom': '19.0.0'}}),
+    'next.config.ts': NEXT_CONFIG,
+    'app/layout.tsx': NEXT_LAYOUT,
+    'app/page.tsx': 'export default function Home() {\n  return <h1>Sightings</h1>;\n}\n',
+    'app/globals.css': 'body { margin: 0; }\n',
+}
+
+
+def next_script_loaders() -> None:
+    st, out = scan(NEXT_SITE)
+    loaders = {c.get('vendor'): c for c in st['candidates'] if c.get('subtype') == 'loader_before_consent'}
+    check({'Google Tag Manager', 'Google AdSense', 'Ahrefs Web Analytics'} <= set(loaders),
+          f'scan: next/script loaders with no consent check are loader_before_consent candidates (got {sorted(map(str, loaders))})')
+    check((loaders.get('Google AdSense') or {}).get('line') == 22 and (loaders.get('Google Tag Manager') or {}).get('line') == 15,
+          'scan: a loader candidate sits at its <Script> line, not at a preconnect hint or the gtag config call '
+          f'(got AdSense {(loaders.get("Google AdSense") or {}).get("line")}, GTM {(loaders.get("Google Tag Manager") or {}).get("line")})')
+    check(((loaders.get('Google AdSense') or {}).get('facts') or {}).get('source') == 'next_script',
+          'scan: a next/script loader is recorded with source next_script')
+    sdk_hosts = {x.get('host') for x in st['sdks'] if x.get('host')}
+    check('www.google-analytics.com' not in sdk_hosts,
+          'scan: a host named only by a dns-prefetch hint or the CSP is not an SDK (nothing loads from it)')
+    ment = [m for m in st.get('host_mentions') or [] if m.get('host') == 'www.google-analytics.com']
+    kinds = {m.get('kind') for m in ment}
+    check({'dns-prefetch', 'csp'} <= kinds, f'scan: every mention of a host is recorded with its kind (got {sorted(map(str, kinds))})')
+    ads = [x for x in st['sdks'] if x.get('host') == 'pagead2.googlesyndication.com']
+    check(len(ads) == 1 and ads[0]['line'] == 22 and {'loader', 'preconnect'} <= {m.get('kind') for m in ads[0].get('mentions') or []},
+          'scan: the SDK entry is at the loader line and lists the other mentions (preconnect) with their kinds')
+    unk = [x for x in st['sdks'] if x.get('host') == 'stats.birdcount-metrics.io']
+    check(len(unk) == 1 and unk[0].get('vendor') is None, 'scan: a third-party script host missing from data/vendors.json is still listed (vendor unknown)')
+    uc = [c for c in st['candidates'] if c.get('host') == 'stats.birdcount-metrics.io']
+    check(len(uc) == 1 and uc[0].get('subtype') == 'unknown_third_party_loader' and uc[0].get('vendor') is None,
+          'scan: an unknown third-party loader with no consent check is a candidate to triage (vendor unknown)')
+    check('stats.birdcount-metrics.io' in out, 'scan: the unknown script host is printed')
+    gated = dict(NEXT_SITE)
+    gated['app/layout.tsx'] = NEXT_LAYOUT.replace('        {children}\n', '        {children}\n        {hasConsent && (<>\n').replace(
+        '      </body>', '        </>)}\n      </body>')
+    st, _ = scan(gated)
+    check(not [c for c in st['candidates'] if c.get('subtype') in ('loader_before_consent', 'unknown_third_party_loader')],
+          'scan: next/script loaders behind a consent check are not loader candidates')
+    st, _ = scan({'package.json': json.dumps({'name': 'trail-map', 'dependencies': {'react': '19.0.0'}}),
+                  'src/Analytics.jsx': 'export function Analytics() {\n  return <script async src="https://cdn.usefathom.com/script.js" data-site="ABCD" />;\n}\n'})
+    fa = [c for c in st['candidates'] if c.get('subtype') == 'loader_before_consent']
+    check(len(fa) == 1 and fa[0].get('vendor') == 'Fathom' and fa[0]['line'] == 2,
+          f'scan: a JSX <script src> outside Next.js is a loader (got {[(c.get("vendor"), c.get("line")) for c in fa]})')
+
+
+def csp_compared() -> None:
+    st, out = scan(NEXT_SITE)
+    csp = st.get('csp') or {}
+    check(bool(csp.get('policies')) and csp['policies'][0].get('file') == 'next.config.ts',
+          'scan: the CSP set in next.config headers() is read')
+    blocked = {(x.get('host'), x.get('role')) for x in csp.get('blocked') or []}
+    check(('fundingchoicesmessages.google.com', 'consent_message') in blocked,
+          f'scan: a consent-message host the CSP would block is reported (got {sorted(map(str, blocked))})')
+    check(('stats.birdcount-metrics.io', 'loader') in blocked, 'scan: a loader the CSP would block is reported')
+    cc = [c for c in st['candidates'] if c.get('subtype') == 'consent_message_blocked_by_csp']
+    check(len(cc) == 1 and cc[0].get('host') == 'fundingchoicesmessages.google.com' and cc[0]['file'] == 'next.config.ts'
+          and cc[0].get('vendor') == 'Google AdSense', 'scan: the blocked consent-message host is a candidate at the CSP line, naming the loader vendor')
+    unused = {x.get('source') for x in csp.get('unused_allowances') or []}
+    check('https://widgets.example-unused.io' in unused and not {u for u in unused if 'google-analytics' in (u or '')},
+          f'scan: CSP allowances nothing uses are listed; hosts a loader needs (gtag collection) are not (got {sorted(map(str, unused))})')
+    ads = next((c for c in st['candidates'] if c.get('vendor') == 'Google AdSense' and c.get('subtype') == 'loader_before_consent'), {})
+    unk = next((c for c in st['candidates'] if c.get('subtype') == 'unknown_third_party_loader'), {})
+    check((ads.get('facts') or {}).get('csp') == 'allowed' and (unk.get('facts') or {}).get('csp') == 'blocked',
+          'scan: each loader candidate says whether the CSP allows it')
+    check('CSP' in out and 'fundingchoicesmessages.google.com' in out, 'scan: the CSP comparison is printed')
+
+
+def vendors_added() -> None:
+    vend = json.loads((SKILL / 'data' / 'vendors.json').read_text(encoding='utf-8'))['domains']
+    names = {v['vendor'] for v in vend.values()}
+    want = {'Ahrefs Web Analytics', 'Plausible', 'Fathom', 'Simple Analytics', 'Umami', 'Matomo', 'Microsoft Clarity', 'Hotjar'}
+    check(want <= names, f'vendors: common analytics vendors are listed (missing {sorted(want - names)})')
+    cap = {'site': 'http://birds.test:8000', 'third_party': 'block', 'states': [{
+        'state': 'no_banner', 'status': 'tested', 'snapshots': [{'phase': 'initial', 'cookies': [], 'storage': []}],
+        'requests': [{'n': 1, 'host': 'analytics.ahrefs.com', 'url': 'https://analytics.ahrefs.com/analytics.js', 'path': '/analytics.js',
+                      'method': 'GET', 'phase': 'initial', 'matches': [], 'blocked': 'third_party'}]}]}
+    with tempfile.TemporaryDirectory() as d:
+        cp, fl, out = Path(d) / 'capture.json', Path(d) / 'flows.json', Path(d) / 'c.json'
+        cp.write_text(json.dumps(cap), encoding='utf-8')
+        fl.write_text(json.dumps({'site': cap['site'], 'consent': {'banner': None}, 'flows': []}), encoding='utf-8')
+        subprocess.run([sys.executable, str(HERE / 'merge_candidates.py'), '--capture', str(cp), '--flows', str(fl), '--lists',
+                        str(SKILL / 'examples' / 'lists.example.json'), '--out', str(out)], capture_output=True, text=True)
+        c = json.loads(out.read_text(encoding='utf-8')) if out.is_file() else {'candidates': []}
+    v = [x.get('vendor') for x in c['candidates'] if x.get('domain') == 'ahrefs.com']
+    check(v == ['Ahrefs Web Analytics'], f'merge: a vendor data/vendors.json names is named even when the domain list lacks it (got {v})')
+
+
+POLICY_PAGE = ('<h1>Privacy</h1>\n<p>We use Trackly to count visits.</p>\n'
+               '<p>Visitors in the EEA and UK see a consent message before any analytics cookie is set.</p>\n')
+
+
+def repo_with_policy(d: str) -> Path:
+    import shutil
+    root = Path(d) / 'clinic'
+    shutil.copytree(REPO, root, ignore=shutil.ignore_patterns('stub-vendors'))
+    (root / 'site' / 'privacy.html').write_text(POLICY_PAGE, encoding='utf-8')
+    return root
+
+
+def policy_finding(**kw) -> dict:
+    f = {'id': 'F06', 'type': 'policy_mismatch', 'title': 'The privacy page promises a consent message, but the code loads analytics with no consent check',
+         'source': 'agent', 'policy': {'file': 'site/privacy.html', 'line': 3, 'promise': 'consent_step',
+                                       'excerpt': 'Visitors in the EEA and UK see a consent message before any analytics cookie is set.'},
+         'basis': [{'file': 'site/index.html', 'line': 9, 'excerpt': '<script src="http://cdn.trackly.test:8153/t.js"></script>'}],
+         'candidates': [], 'categories': [], 'fields': None, 'vendor': None, 'domain': None, 'recipient_kind': None, 'consent_states': [],
+         'flow_basis': 'before_consent', 'reach': 3, 'reach_source': 'every page loads the analytics script', 'confidence': 'traced',
+         'evidence': {'summary': 'Found by review: the policy promises a consent message; the page head loads the analytics script unconditionally.',
+                      'code_path': [{'file': 'site/index.html', 'line': 9}]},
+         'references': {r: vpa.PROV['types'].get('policy_mismatch', {}).get(r, []) for r in ('EU', 'AU')},
+         'fix': 'Load the analytics script only after the visitor agrees, or correct the policy.',
+         'verification': 'Run the live capture: no analytics request before a choice.'}
+    f.update(kw)
+    return f
+
+
+def policy_mismatch() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        repo = repo_with_policy(d)
+        rep = base()
+        rep['findings'].append(policy_finding())
+        out = run_validator(rep, repo=repo)
+        check(': valid (' in out, f'validator: a policy_mismatch finding with an in-repo policy basis may rate before consent ({out.strip()[-300:]})')
+        rep = base()
+        rep['findings'].append(policy_finding(policy=dict(policy_finding()['policy'], line=2)))
+        check('F06: policy excerpt is not on site/privacy.html:2' in run_validator(rep, repo=repo),
+              'validator: the policy basis is re-read with --repo')
+        rep = base()
+        f = policy_finding()
+        f.pop('policy')
+        check('F06: policy_mismatch needs a policy basis' in run_validator(rep | {'findings': rep['findings'] + [f]}, repo=repo),
+              'validator: a policy_mismatch finding needs a policy basis')
+        rep = base()
+        rep['findings'].append(telemetry_finding(type='personal_data_to_third_party', default_on=None,
+                                                 references={r: vpa.PROV['types']['personal_data_to_third_party'][r] for r in ('EU', 'AU')}))
+        out = run_validator(rep, repo=repo)
+        check('no candidate shows the before state' not in out and 'F06: flow_basis before_consent needs' in out,
+              'validator: an unsupported before_consent says what would support it (not "no candidate shows the before state")')
+
+
+def declared_page() -> None:
+    run = SKILL / 'examples' / 'run'
+    with tempfile.TemporaryDirectory() as d:
+        repo = repo_with_policy(d)
+        out = Path(d) / 'c.json'
+        r = subprocess.run([sys.executable, str(HERE / 'merge_candidates.py'), '--capture', str(run / 'capture.json'), '--static',
+                            str(run / 'static.json'), '--flows', str(SKILL / 'examples' / 'flows.json'), '--lists',
+                            str(SKILL / 'examples' / 'lists.example.json'), '--declared', str(repo / 'site' / 'privacy.html'), '--out', str(out)],
+                           capture_output=True, text=True, cwd=ROOT)
+        c = json.loads(out.read_text(encoding='utf-8')) if out.is_file() else {'recipients': []}
+    kinds = {x['domain']: (x['kind'], (x.get('declared_as') or {}).get('name')) for x in c['recipients']}
+    check(kinds.get('trackly.test') == ('declared_processor', 'Trackly') and kinds.get('adnetic.test', ('',))[0] == 'third_party',
+          f'merge: --declared takes an in-repo policy page and declares the vendors it names (got {kinds}){r.stderr[-200:]}')
+    check('privacy.html' in str(c.get('declared') or ''), 'merge: the declared source names the policy page')
+
+
+def categories_reproducible() -> None:
+    rep = base()
+    rep['findings'][4]['categories'] = ['contact', 'health']
+    out = run_validator(rep)
+    check('F05: categories' in out and 'categories_basis' in out,
+          'validator: a category the candidates, fields and vendor do not give needs a categories_basis')
+    rep = base()
+    rep['findings'][4]['categories'] = ['contact', 'health']
+    rep['findings'][4]['categories_basis'] = 'the welcome page also shows the appointment reason, which the redirect carries'
+    check('categories_basis' not in run_validator(rep), 'validator: a stated categories_basis lets the agent set categories')
+    full = json.loads((SKILL / 'examples' / 'privacy_audit.example.json').read_text(encoding='utf-8'))
+    f4 = next(f for f in full['findings'] if f['id'] == 'F04')
+    f4['categories'] = ['online_identifier']
+    run = SKILL / 'examples' / 'run'
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / 'audit.json'
+        p.write_text(json.dumps(full), encoding='utf-8')
+        r = subprocess.run([sys.executable, str(HERE / 'validate_privacy_audit.py'), str(p), '--candidates', str(run / 'candidates.json'),
+                            '--capture', str(run / 'capture.json'), '--canaries', str(run / 'canaries.json'), '--repo', str(REPO)],
+                           capture_output=True, text=True, cwd=ROOT)
+    check('F04: categories' in r.stdout and 'browsing_behaviour' in r.stdout,
+          'validator: a tracking finding for a vendor of known category carries that category\'s data categories (or a categories_basis)')
+
+
 def main() -> int:
     for t in (go_scan, unanalysed_language, template_loaders, fonts_not_tracker, undeclared_without_canary, telemetry_before_consent, declared_must_name, inventory_and_headline,
               observed_with_runtime_evidence, url_credentials_message, language_limitation, committed_dist, static_front_end_flows,
-              agent_undeclared_third_party, console_and_key_canaries):
+              agent_undeclared_third_party, console_and_key_canaries, next_script_loaders, csp_compared, vendors_added, policy_mismatch,
+              declared_page, categories_reproducible):
         try:
             t()
         except Exception as exc:  # a crash in one group is a failure, not the end of the run

@@ -89,6 +89,12 @@ def main() -> int:
                     '', ev.get('summary', ''), '']
             for b in f.get('basis') or []:
                 out.append(f'- Basis: `{b["file"]}:{b["line"]}` {b.get("excerpt", "")}' if 'file' in b else f'- Basis: evidence {b.get("evidence")}')
+            pol = f.get('policy') or {}
+            if pol:
+                where = f'`{pol["file"]}:{pol["line"]}`' if pol.get('file') else pol.get('url', '')
+                out.append(f'- Policy promise ({pol.get("promise")}): {where} "{pol.get("excerpt", "")}"')
+            if f.get('categories_basis'):
+                out.append(f'- Categories: {f["categories_basis"]}')
             if f.get('consent_states'):
                 out.append(f'- Consent states: {", ".join(f["consent_states"])}')
             if f.get('floor') or f.get('cap'):

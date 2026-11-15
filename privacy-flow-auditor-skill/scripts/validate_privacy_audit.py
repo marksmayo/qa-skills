@@ -27,6 +27,11 @@ Findings found by reading the code rather than from a candidate set "source": "a
 {"file", "line", "excerpt"} (re-read with --repo: the excerpt must be on that line) or {"evidence": path} (a file
 in --evidence). They are at most traced, and never observed without runtime evidence.
 
+A policy_mismatch finding carries "policy": {"file", "line", "excerpt", "promise"} (an in-repo policy page, re-read
+with --repo) or {"url", "excerpt", "promise"}, plus the code side (a candidate, a code basis or a code path); a
+consent_step promise may support before_consent. Categories must follow from the candidates, the fields and, for
+tracking findings, the vendor category's data (data/vendors.json category_data); otherwise categories_basis says why.
+
 --write-summary fills the computed fields (headline counts and states; each finding's sensitivity, flow, score,
 priority, floor and cap when they are missing) and writes the audit back; --fix-ratings also rewrites computed
 rating fields that are wrong, printing each change (the categories, flow basis, reach and confidence stay yours).
@@ -48,6 +53,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from match_canaries import EMAIL, PHONE_RX, CARD, card_like, encodings  # noqa: E402
 from domains import registrable  # noqa: E402
+from merge_candidates import load_declared  # noqa: E402
 
 DATA = HERE.parent / 'data'
 CATS = json.loads((DATA / 'categories.json').read_text(encoding='utf-8'))
@@ -78,8 +84,8 @@ def declared_covers(names: list[str], rep: dict, cfile: dict) -> bool:
     path = (cfile.get('inputs') or {}).get('declared')
     procs = []
     if path and Path(path).is_file():
-        try:
-            procs = json.loads(Path(path).read_text(encoding='utf-8')).get('processors', [])
+        try:  # a JSON list of processors, or a policy page in the repository (the vendors its text names)
+            procs = load_declared(Path(path)).get('processors', [])
         except ValueError:
             procs = []
     names_declared = {norm(p.get('vendor')) for p in procs}
@@ -132,6 +138,37 @@ RECIPIENT_CLAIM = re.compile(r"\b(sent|send|sends|goes|go|flows?|reach(es)?|leav
 CODE_QUALIFIER = re.compile(r'\b(code|static(ally)?|source|scan(ned)?|by reading|as written|in the repository)\b', re.I)
 NO_BANNER_TEXT = re.compile(r'\bno (consent|cookie) (banner|prompt|dialog)|\bwithout a (consent|cookie) (banner|prompt)|\bhas no banner\b', re.I)
 FILE_KINDS = ('file_upload', 'file_parse', 'form_data_upload')
+# what a privacy policy promises that the code may not do (policy_mismatch); consent_step lets the finding rate before consent
+PROMISES = ('consent_step', 'no_third_parties', 'vendor_list', 'purpose', 'retention', 'other')
+# the personal-data categories a vendor of each category receives when its tag runs (data/vendors.json category_data)
+CATEGORY_DATA = {k: v for k, v in (VENDORS.get('category_data') or {}).items() if k != 'note'}
+TRACKING_TYPES = ('tracking_before_consent', 'tracking_after_reject')
+
+
+def vendor_category_of(f: dict, own: list[dict]) -> str | None:
+    """A finding's vendor category: from its candidates (a live candidate's vendor_category, a static loader's facts), else
+    data/vendors.json by the finding's domain or vendor name."""
+    for c in own:
+        vc = c.get('vendor_category') or (c.get('facts') or {}).get('vendor_category')
+        if vc:
+            return vc
+    dom = (f.get('domain') or '').lower()
+    entry = VENDORS['domains'].get(dom) or VENDORS['domains'].get(registrable(dom)) if dom else None
+    if entry:
+        return entry['category']
+    return next((e['category'] for e in VENDORS['domains'].values() if f.get('vendor') and e['vendor'] == f['vendor']), None)
+
+
+def field_categories(fields) -> set[str]:
+    """The categories data/categories.json gives a finding's field names (email -> contact)."""
+    out = set()
+    for fld in fields or []:
+        low = str(fld).lower().replace('-', '_')
+        for cat, c in CATS['categories'].items():
+            if any(low == p or low.startswith(p + '_') or low.endswith('_' + p) or (len(p) > 4 and p in low) for p in c['names']) \
+                    or low in c.get('autocomplete', []):
+                out.add(cat)
+    return out
 
 
 def rate(f: dict) -> tuple[int, int, int, int]:
@@ -356,7 +393,7 @@ def main() -> int:
         n_err = len(errs)
         for k in ('type', 'title', 'categories', 'flow_basis', 'reach', 'reach_source', 'confidence', 'evidence', 'references', 'fix', 'verification', 'candidates'):
             if k not in f or f[k] in (None, '', []):
-                if not (k == 'categories' and f.get('type', '').startswith(('tracking_', 'first_party_beacon', 'telemetry'))) and not (k == 'candidates' and agent and 'candidates' in f):
+                if not (k == 'categories' and f.get('type', '').startswith(('tracking_', 'first_party_beacon', 'telemetry', 'policy_mismatch'))) and not (k == 'candidates' and agent and 'candidates' in f):
                     e(f'{fid}: missing {k}')
         if len(errs) > n_err:
             continue
@@ -435,6 +472,41 @@ def main() -> int:
         cand_cats = sorted({x for c in own for x in c.get('categories', [])})
         if cand_cats and not set(cand_cats) <= set(f['categories']):
             e(f'{fid}: categories {f["categories"]} leave out {sorted(set(cand_cats) - set(f["categories"]))} from its candidates')
+        # categories drive the rating, so they must be reproducible: from the candidates, the fields, and (for tracking) the
+        # data a vendor of that category receives; anything else, or leaving the vendor's out, needs a stated basis
+        vcat = vendor_category_of(f, own) if f['type'] in TRACKING_TYPES else None
+        vendor_cats = set(CATEGORY_DATA.get(vcat or '', []))
+        derived = set(cand_cats) | field_categories(f.get('fields')) | vendor_cats
+        has_basis = bool(str(f.get('categories_basis') or '').strip())
+        extra_cats = sorted(set(f['categories']) - derived)
+        if extra_cats and not has_basis:
+            e(f'{fid}: categories {extra_cats} come from no candidate, field or vendor category: state why in categories_basis '
+              '(the categories set the rating)')
+        if vendor_cats - set(f['categories']) and not has_basis:
+            e(f'{fid}: categories {f["categories"]} leave out {sorted(vendor_cats - set(f["categories"]))}, which a {vcat} vendor receives '
+              '(data/vendors.json category_data): add them, or state why not in categories_basis')
+        # a policy_mismatch compares what a privacy policy promises with what the code does: both sides need a basis
+        pol_ok = False
+        if f['type'] == 'policy_mismatch':
+            pol = f.get('policy')
+            if not isinstance(pol, dict) or not (pol.get('excerpt') and (pol.get('url') or ('file' in pol and 'line' in pol))):
+                e(f'{fid}: policy_mismatch needs a policy basis: {{"file", "line", "excerpt", "promise"}} for a policy page in the repository '
+                  '(re-read with --repo) or {"url", "excerpt", "promise"}')
+            else:
+                pol_ok = True
+                if pol.get('promise') not in PROMISES:
+                    e(f'{fid}: policy.promise {pol.get("promise")!r} is not one of {list(PROMISES)}'); pol_ok = False
+                if 'file' in pol and a.repo:
+                    p_ = a.repo / pol['file']
+                    lines = p_.read_text(encoding='utf-8', errors='replace').splitlines() if p_.is_file() else []
+                    want_ = ' '.join(pol['excerpt'].split())
+                    if not isinstance(pol['line'], int) or not 1 <= pol['line'] <= len(lines):
+                        e(f'{fid}: policy {pol["file"]}:{pol["line"]} not found'); pol_ok = False
+                    elif want_ not in ' '.join(lines[pol['line'] - 1].split()) and \
+                            want_ not in ' '.join(re.sub(r'<[^>]+>', ' ', lines[pol['line'] - 1]).split()):
+                        e(f'{fid}: policy excerpt is not on {pol["file"]}:{pol["line"]}'); pol_ok = False
+            if not own and not any('file' in b for b in f.get('basis') or []) and not f['evidence'].get('code_path'):
+                e(f'{fid}: policy_mismatch needs the code side too: a candidate, a code basis or a code path'); pol_ok = False
         if f.get('fields') is not None and cand_fields and sorted(f['fields']) != cand_fields:
             e(f'{fid}: fields {f.get("fields")} differ from its candidates ({cand_fields})')
         traced_vendors = set()
@@ -481,9 +553,15 @@ def main() -> int:
         # from a static telemetry candidate: sent with no choice made, which is what before consent means
         default_on = f.get('default_on') is True and f['type'] in DEFAULT_ON_TYPES and (
             (agent and bool(f.get('basis'))) or any(c['type'] == 'telemetry' for c in static_own))
-        if f['flow_basis'] == 'before_consent' and not static_before and not default_on and not any(
+        # a policy that promises a consent step, against code that loads the vendor with none: before consent by reading
+        policy_before = pol_ok and (f.get('policy') or {}).get('promise') == 'consent_step'
+        if f['flow_basis'] == 'before_consent' and not static_before and not default_on and not policy_before and not any(
                 c['type'] == 'tracking_before_consent' or {'before', 'no_banner'} & set(c.get('states') or []) or c.get('before_choice') for c in live):
-            e(f'{fid}: flow_basis before_consent, but no candidate shows the before state')
+            state_ = 'no_banner' if 'no_banner' in {r['state'] for r in cfile['consent_matrix']} else 'before'
+            e(f'{fid}: flow_basis before_consent needs one of: a live candidate in the {state_} state (or a tracking_before_consent one)'
+              + (' (none here: the capture did not run)' if static_only else '')
+              + ', a static loader_before_consent candidate at pattern confidence, default_on on a telemetry or first_party_beacon '
+                'finding found by review, or a policy_mismatch whose policy basis promises a consent step (promise consent_step)')
         if f['flow_basis'] == 'after_reject' and not any(c['type'] == 'tracking_after_reject' or 'reject' in (c.get('states') or []) for c in live):
             e(f'{fid}: flow_basis after_reject, but no candidate shows the reject state')
         # a review finding traced to a third-party domain the declared processors do not name is undeclared by the same test
