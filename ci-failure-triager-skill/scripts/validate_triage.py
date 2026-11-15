@@ -98,6 +98,16 @@ def summarise(d: dict, run: dict, run_dir: Path, changes: dict | None, failures:
             'reruns': len(d.get('reruns', [])), 'evidence_completeness': completeness(run, run_dir, changes, failures)}
 
 
+def found_file(name: str, triage: Path) -> Path | None:
+    """A files_written entry, resolved against the working directory, then the triage's folder and up to three above it
+    (an example triage lists paths relative to its skill folder)."""
+    for base in [Path.cwd(), *list(triage.resolve().parents)[:4]]:
+        p = base / name
+        if p.is_file():
+            return p
+    return None
+
+
 def check_reruns(run: dict, reruns: list[dict], e) -> None:
     if len(run['attempts']) > 1 and not reruns:
         e('the run has a re-run attempt but no reruns.json: record it with rerun.py --recorded --authorised-by (this triage asked for it) '
@@ -279,6 +289,22 @@ def main() -> int:
             e(f'{w["id"]}: priority {f.get("priority")} should be {expected_priority(f, run)}')
     for k in set(got) - {w['id'] for w in want}:
         e(f'{k} is not a failure of the run')
+
+    # files written: each listed file exists, and a drafts file is the renderer's (it writes none when there is no draft)
+    drafted = [f for f in d['failures'] if f.get('draft_defect')]
+    for name in d.get('files_written') or []:
+        p = found_file(name, a.triage)
+        if not p:
+            e(f'files_written lists {name}, which does not exist (relative to the working directory or the triage\'s folders)')
+        elif p.resolve() == a.triage.resolve() or p.suffix.lower() not in ('.md', '.markdown'):
+            continue
+        elif not drafted:
+            e(f'files_written lists {name}, but the triage has no draft: render_report.py --defects-md writes no drafts file for it')
+        else:
+            md = p.read_text(encoding='utf-8')
+            missing = [f['id'] for f in drafted if f['draft_defect'].get('title') and f['draft_defect']['title'] not in md]
+            if missing:
+                e(f'files_written lists {name}, which lacks the draft(s) of {", ".join(missing)}: write it again with render_report.py --defects-md')
 
     # secrets and language ----------------------------------------------------------------------------
     text = json.dumps(d, ensure_ascii=False)

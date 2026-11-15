@@ -205,12 +205,23 @@ def no_jobs_checks(fails: list) -> None:
         rc, out = finish(t, Path(td))
         if rc or json.loads((Path(td) / 'triage.json').read_text(encoding='utf-8'))['summary'].get('evidence_completeness') != 0.0:
             fails.append(f'no jobs: a not_run triage with completeness 0.0 should validate:\n{out}')
-        bad = json.loads((Path(td) / 'triage.json').read_text(encoding='utf-8'))
+        good = json.loads((Path(td) / 'triage.json').read_text(encoding='utf-8'))
+        bad = copy.deepcopy(good)
         bad['run_status'] = 'complete'
         rc, out = validate(bad, Path(td))
         if rc == 0 or 'run_status' not in out:
             fails.append(f'no jobs: run_status complete for a run with no jobs not caught:\n{out}')
-        bad = json.loads((Path(td) / 'triage.json').read_text(encoding='utf-8'))
+        bad = copy.deepcopy(good)
+        bad['files_written'] = ['notes/never-written.md']
+        rc, out = validate(bad, Path(td))
+        if rc == 0 or 'files_written' not in out:
+            fails.append(f'files_written: a listed file that does not exist not caught:\n{out}')
+        (Path(td) / 'drafts.md').write_text('# Drafted defects\n', encoding='utf-8')
+        bad['files_written'] = ['drafts.md']
+        rc, out = validate(bad, Path(td))
+        if rc == 0 or 'no draft' not in out:
+            fails.append(f'files_written: a drafts file listed for a triage with no draft (render_report.py writes none) not caught:\n{out}')
+        bad = copy.deepcopy(good)
         bad['summary']['evidence_completeness'] = 0.4
         rc, out = validate(bad, Path(td))
         if rc == 0 or 'evidence_completeness' not in out:
@@ -509,6 +520,14 @@ def main() -> int:
             check(rc != 0 and expect in out, f'seeded "{name}" not caught (expected {expect!r}):\n{out}')
 
         by = lambda t, job: next(f for f in t['failures'] if f['job'] == job)  # noqa: E731
+        # the drafts file the renderer writes may be listed; one that lacks a draft is not the triage's
+        (td / 'triage.json').write_text(json.dumps(base, indent=1, ensure_ascii=False), encoding='utf-8')
+        subprocess.run([sys.executable, str(HERE / 'render_report.py'), str(td / 'triage.json'), '--defects-md', str(td / 'drafts.md')], capture_output=True)
+        rc, out = validate(dict(base, files_written=['triage.json', 'drafts.md']), td)
+        check(rc == 0, f'files_written naming the triage and its rendered drafts should validate:\n{out}')
+        md = (td / 'drafts.md').read_text(encoding='utf-8')
+        (td / 'drafts.md').write_text(md.replace(f'## {by(base, "unit")["draft_defect"]["title"]}', '## (removed)'), encoding='utf-8')
+        seeded('drafts file without one of the drafts', lambda t: t.update(files_written=['drafts.md']), 'files_written')
         seeded('limitation omits the failed log', lambda t: t.update(limitations=['Nothing else to say.']), 'job lint was not downloaded')
         seeded('triage re-runs differ from reruns.json', lambda t: t['reruns'][0].update(triggered_by='someone-else'), 'reruns differ')
         rr = RUN / 'reruns.json'
