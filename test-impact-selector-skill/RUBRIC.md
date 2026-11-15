@@ -28,14 +28,20 @@ A reason must not cite a source recorded `not_run`, `errored` or `not_applicable
 
 | Kind | Required scope | Allowed scopes |
 |---|---|---|
-| `global_config` | Full suite for repo-level files, lockfiles and CI; the package for a package's own manifest or test config | `full_suite`, `package` |
+| `global_config` | Full suite for repo-level files, lockfiles and CI; the package for a package's own manifest or test config; every Rust test for the workspace's Cargo files (`Cargo.toml`, `Cargo.lock`, toolchain, `.cargo/config`) | `full_suite`, `package`, `language` |
 | `shared_fixture` | Every test under a `conftest.py`'s directory; a helper's importers, or the package when nothing imports it | `fixture_reach`, `package` |
 | `dynamic_reference` | The package | `package` |
 | `data_or_schema` | The package's tests plus contract tests | `package_and_contract` |
-| `unmapped_source` | The package (Go: the package directory's tests and its importers' tests, else the module's Go tests; never another language's) | `package` |
+| `unmapped_source` | The package's tests of the file's language family: Rust files only Rust tests, Go files only Go tests (the package directory's and its importers', else the module's), other source files every test but Rust and Go ones. When the file's language has no import parser and that scope is empty, the full suite | `package`, `full_suite` |
 | `deleted_or_renamed` | Tests that imported it in the base tree | `importers` |
 | `non_code` | E2E and visual tests that reach it, falling back to the package's e2e and visual tests, then the tests that reach it through rendering views and templates (a server-rendered app with no browser tests), then the package | `e2e_and_visual` |
 | `huge_change` | Full suite | `full_suite` |
+
+A file of no language (data, styles, configuration) widens to every test of its scope. A Rust
+bench file is change kind `bench`, not a blind spot: `cargo test` never builds or runs it.
+
+When `language_coverage.warning` is set (a changed file in a language with no import parser),
+every language in `changed_unparsed` must be named in `limitations`.
 
 | Mode | What widens |
 |---|---|

@@ -14,7 +14,14 @@ Every change that evidence can't bound is listed as a blind spot, with what was 
 - a `conftest.py` widens to every test under it;
 - a lockfile widens to the full suite;
 - a plugin loaded by name widens to its package;
-- a stylesheet widens to the e2e and visual tests that render it.
+- a stylesheet widens to the e2e and visual tests that render it;
+- a Cargo workspace manifest widens to every Rust test, and nothing else.
+
+Rust workspaces are read from their manifests and `mod` trees (no cargo needed): a change to a
+library selects its crate's unit tests (`#[cfg(test)]` modules) and the integration tests of every
+crate that reaches it, with `cargo test -p <crate> ... -- --exact` commands. Python commands use
+the repository's runner (`unittest` when CI runs it). A changed file in a language with no import
+parser is a loud warning the report must repeat, never a quiet empty selection.
 
 It is strict about what a selection shows:
 
@@ -121,15 +128,15 @@ python scripts/render_report.py examples/impact_report.example.json --brief
 - `RUBRIC.md`: strengths, blind-spot scopes, modes, completeness, recall, honesty rules
 - `data/file_kinds.json`: the globs that classify lockfiles, CI, config, fixtures, schemas, assets, docs and test levels
 - `schemas/impact_report.schema.json`: output contract
-- `scripts/import_graph.py`: file-level import graph for Python, JS/TS and Go (go.mod module paths, package directories, go:embed), conftest fixtures, dynamic loading sites
+- `scripts/import_graph.py`: file-level import graph for Python (including folders put on `sys.path`), JS/TS, Go (go.mod module paths, package directories, go:embed) and Rust (crates, targets and tests from `cargo_project.py`), conftest fixtures, dynamic loading sites
 - `scripts/coverage_map.py`: per-test coverage (coverage.py contexts, the mutation tester's map, Vitest/Jest per-test-file Istanbul runs) to line -> tests; Go per-test coverprofiles (`go`)
 - `scripts/select_tests.py`: the selection, blind spots and commands
 - `scripts/replay.py`: recall from past changes (a change may name a git `base` or `commit`; diffs that do not apply are skipped; `--baseline-failures`)
-- `scripts/self_test.py`: synthetic Go cases for the graph, widening, naming, history mapping, replay, coverage and the Run line
+- `scripts/self_test.py`: synthetic Go, Flask, Cargo-workspace and sys.path cases for the graph, widening, naming, commands (cargo, unittest), history mapping, replay, coverage, the language warning, the Run line and a timing check
 - `scripts/build_command.py`: commands per framework, splitting, CI snippets
 - `scripts/validate_impact_report.py`: checks the report against the evidence and the rules
 - `scripts/render_report.py`: coloured terminal/Markdown report
-- `scripts/diff_scope.py`, `unified_diff.py`, `run_tests.py`, `parse_results.py`, `detect_conventions.py`, `stats.py`: shared helpers
+- `scripts/diff_scope.py`, `unified_diff.py`, `run_tests.py`, `parse_results.py`, `detect_conventions.py`, `cargo_project.py`, `lang_census.py`, `stats.py`: shared helpers
 - `examples/`: sample monorepo, changes, history, real run and reports
 
 ## Design principles

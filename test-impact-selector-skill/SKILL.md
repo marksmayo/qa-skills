@@ -1,7 +1,7 @@
 ---
 name: test-impact-selector
 description: Given a change (a branch, a commit range or a diff), pick which tests to run, give every selected test its reasons and evidence (coverage of a changed line, an import chain, a journey link, naming, co-failure history), and list every change that no evidence can bound as a blind spot that widens the selection (strict by default). Outputs ready-to-run commands per package and framework, an optional CI snippet for the user to add, and, when past runs are available, measured recall with a Wilson interval from replaying history. Never calls unselected tests "safe to skip".
-version: 1.3.0
+version: 1.4.0
 ---
 
 # Test impact selector
@@ -92,6 +92,14 @@ modules and the like. The import graph parses Python (`ast`), and JavaScript and
 (imports, `require`, `import()`, `import.meta.glob`, `require.context`, workspace names, tsconfig
 `paths`). It also records which conftest fixtures each pytest file uses.
 
+Python test files that put a folder on `sys.path` and then import a module by its bare name
+(`sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))`,
+`os.path.join(os.path.dirname(__file__), "..", "scripts")`, also in a `conftest.py` above them)
+reach that folder's module (`via: import (sys.path)`). When the folder can't be worked out
+statically (an environment variable, `PYTHONPATH`), the import of a module that exists in the
+repository is recorded under `unresolved` with its candidate files, and an unmapped blind spot on
+that module names the importers. It is never silently dropped.
+
 A directory named `e2e`, `test`, `tests` or `spec` is test code unless it is a product package
 (it holds a manifest and ships code: a `src/` directory, a `package.json` with
 `main`/`exports`/`bin`, ...). A workspace package called `e2e` is therefore source, and only its
@@ -102,7 +110,12 @@ shared-fixture blind spot.
 Languages without a parser (Java, Kotlin, C#, Swift, Dart and others) are listed as
 `no_parser`. Their files rely on the other evidence sources, and on blind spots. `graph.json`
 carries `language_coverage` (vendored and embedded third-party trees left out), and the console
-warns when the repository's dominant language has no parser.
+warns when the repository's dominant language has no parser. When a changed file is in such a
+language, `selection.json` carries `language_coverage` with `warning` set and the languages in
+`changed_unparsed`: copy it into the report and name each of those languages in `limitations`
+(the validator checks). Each such file is an `unmapped_source` blind spot widened to its
+package, or to the full suite when no test file of its package could be found, so the
+selection never shrinks to nothing because a parser is missing.
 
 **Go.** Go is parsed from text: each `go.mod`'s module path maps an import path to a package
 directory, a file depends on every non-test file of each package it imports, a `_test.go` file
@@ -120,13 +133,38 @@ History from gotestsum JUnit (classname is the import path) maps to the `_test.g
 `go.mod` when `--repo` is given; a package that failed to build is `<dir>/(package)`, counted as
 selected when any test file of that directory is.
 
-**Language support / Rust.** The import parsers are Python (`ast`), JavaScript/TypeScript
-(regex) and Go (text, with go.mod). Rust (`.rs`) is `no_parser`, so it yields no import edges, and there is no cargo coverage
-ingestion either: `coverage_map.py` reads coverage.py JSON (or the mutation tester's
-`coverage.json`), not cargo-llvm-cov or grcov output. So for a Rust-only change with no other
-source, every evidence source is empty and the selector honestly falls back to running everything
-(a blind spot per changed file widening to the package or full suite) rather than claiming an
-impact-based subset. Don't read that empty selection as "nothing to run".
+**Rust.** A repository (or a top-level folder) with a `Cargo.toml` is read with
+`cargo_project.py`: crates, their targets (lib, bins, `tests/*.rs`, benches, examples, build
+script) and their `#[test]` functions. No cargo or build is needed.
+- A file holding `#[test]` functions is a test file: a source file with a `#[cfg(test)]` module
+  (unit tests; the file is still source, and a change to it selects it) or a file of a
+  `tests/*.rs` target (integration tests). Helper binaries under `tests/fixtures/` are not tests;
+  a change to one widens to its crate's tests. A shared module such as `tests/common/mod.rs`
+  reaches the integration tests that include it.
+- A file's build is the targets whose module tree (`mod x;`) holds it. A library file reaches its
+  crate's lib, bin and test targets and those of every crate that depends on it by path, however
+  indirectly. A binary's module reaches that binary's unit tests only. Each test file of a reached
+  target is import-graph evidence (`via: cargo <kind> target <crate>/<target>`).
+- A bench file is kind `bench`: `cargo test` does not build or run benches, so it selects nothing
+  and the notes say to check it with `cargo bench -p <crate> --no-run`.
+- The workspace `Cargo.toml`, `Cargo.lock`, `rust-toolchain(.toml)` and `.cargo/config(.toml)`
+  are `global_config` widened to every Rust test (scope `language`), not to the Python or
+  JavaScript tests beside them. A crate's own `Cargo.toml` widens to its crate. A Python or
+  JavaScript change never widens to Rust tests, and a Rust change never to theirs.
+- Commands come from the libtest ids (`<target>::<path>`, as `run_tests.py` records them): every
+  Rust test file selected runs the CI's own `cargo test --workspace ...` line (or `cargo test
+  --workspace`); a whole crate `cargo test -p <crate>`; otherwise
+  `cargo test -p <crate> --lib|--bin <b>|--test <t> -- --exact <paths>`, with the ids in
+  `test_ids` for `run_tests.py --preset cargo --tests`. Tests behind a cargo feature the crate
+  does not enable by default (a `#[cfg(feature = "x")]` on the test, its module, or the `mod`
+  declaration that includes it; `any(feature = "x", test)` does not gate) are listed in
+  `command.feature_gated`. The commands do not run them, so say so and give the `--features`
+  command the CI uses for them.
+- `--cargo-metadata <file>` (the output of `cargo metadata --format-version 1 --no-deps`, if the
+  user can run it) takes the targets and features from cargo itself.
+- There is no cargo coverage ingestion: `coverage_map.py` reads coverage.py JSON (or the mutation
+  tester's `coverage.json`), not cargo-llvm-cov or grcov output, so Rust coverage stays `not_run`.
+- Doc tests are not selected by file; `cargo test --doc -p <crate>` runs them.
 
 ## Step 2: Evidence sources
 
@@ -190,7 +228,9 @@ For JaCoCo per-test data, convert it to the coverage.py JSON shape, or leave cov
 `{tool, version, command, related: {changed path: [test files]}}`. Examples:
 - `npx jest --listTests --findRelatedTests <files>`;
 - `npx nx show projects --affected`;
-- `bazel query 'rdeps(//..., <target>)'`.
+- `bazel query 'rdeps(//..., <target>)'`;
+- Rust: the import graph already uses the crate graph; `cargo metadata --format-version 1
+  --no-deps` (passed as `--cargo-metadata`) or `cargo nextest list` gives cargo's own targets.
 
 `vitest related` runs the tests, so only use it with the user's agreement.
 
@@ -233,6 +273,7 @@ repo. It then classifies each changed file:
 | `data_or_schema` | Migrations, schemas, data files |
 | `non_code` | Styles, templates, translations, images |
 | `docs` | Documentation |
+| `bench` | A Rust bench target's file (`cargo test` does not run benches; noted, nothing selected) |
 
 Evidence is collected for source files:
 
@@ -261,11 +302,11 @@ had only one weak reason are listed under `considered_not_selected`.
 
 | Kind | When | `strict` action |
 |---|---|---|
-| `global_config` | A lockfile, CI or repo-level build file; a package's own manifest or test config | Full suite; the package for a package's own file |
+| `global_config` | A lockfile, CI or repo-level build file; a package's own manifest or test config | Full suite; the package for a package's own file; every Rust test (scope `language`) for the workspace's Cargo files |
 | `shared_fixture` | `conftest.py`; a helper or setup file | Every test under the conftest's directory; a helper's importers, or the package if nothing imports it (it's loaded by runner config) |
 | `dynamic_reference` | The file contains a computed import, is a target of one (by literal prefix), or has no static importer in a package with an unbounded one | The package |
 | `data_or_schema` | A migration, schema, or data file in a directory (also in a single-package repo; only a data file at the repository root is `global_config`) | The package's tests plus any contract tests |
-| `unmapped_source` | No test is selected for the file by its own evidence | The package, and say no tests were found (hand it to ticket-to-tdd or journey-to-tests) |
+| `unmapped_source` | No test is selected for the file by its own evidence | The package's tests of the file's language (never Rust tests for a Python file, or the reverse); the full suite when the language has no parser and the package has no test that could be found. The note says "No tests found" (hand it to ticket-to-tdd or journey-to-tests) only when nothing links the file and its scope holds no test |
 | `deleted_or_renamed` | A removed or renamed module | Tests that imported it in the base tree |
 | `non_code` | A style, template, translation or image | E2E and visual tests that reach it; otherwise every e2e and visual test in the package; otherwise the tests that reach it through the views and templates that render or link it; otherwise the package |
 | `huge_change` | More than 30% of source files changed | The full suite: selection would save little |
@@ -299,6 +340,12 @@ the user to run them with that script. When selected tests in one workspace pack
 changed package by name and that package publishes a build (`main`/`exports` pointing at
 `dist/`), `command.build_first` builds it first (`pnpm run build` in that package); otherwise the
 tests would run the previous build. A package with no build script gets a note instead.
+
+Python tests run with the package's runner (`detect_conventions.py`'s `python_runner`): when CI
+runs `unittest` and no test uses pytest, the command is `python -m unittest <files>`, and for the
+whole suite the CI's own command (`command_from` names the CI line). Otherwise `python -m
+pytest`. Rust commands are described under Step 1. A test file with no runner this selector
+knows is in `no_runner`, with the reason in `no_runner_reasons`.
 
 ## Step 6: Replay (when there is history)
 
@@ -345,8 +392,8 @@ The label's last word is the package. List every test file that failed in a full
 ## Step 8: Report, validate, render
 
 Build `impact_report.json`. Copy `sources`, `changes`, `selected`, `blind_spots`, the counts,
-`command` and the packages from `selection.json` unchanged. Copy the replay figures from
-`replay.json`.
+`command`, the packages and `language_coverage` (when present) from `selection.json` unchanged.
+Copy the replay figures from `replay.json`.
 
 Then write these yourself:
 - the headline, with "N of M test files";
@@ -384,7 +431,8 @@ Show the user:
 | `changes[]` | Path, status, kind, line ranges, rename |
 | `selected[]` | Test file, package, level, strength, reasons, journey priority, past failures, the blind spots that widened to it, order |
 | `blind_spots[]` | Kind, action, required scope, widened_to, would_widen_to, note, your comment |
-| `command` | Commands per package and framework, split count |
+| `command` | Commands per package and framework (`command_from` when it is the CI's own line, `test_ids` for cargo), split count, `no_runner` and reasons, `feature_gated` Rust tests |
+| `language_coverage` | Parsed and unparsed languages, changed files in unparsed ones, and the warning to name in limitations |
 | `replay` | Counts, recall, interval, mean share selected, misses with why and fix, flaky failures |
 | `verify` | Run ids, failures inside and outside the selection |
 | `recommendations`, `ci_snippet` | When the full suite runs; other advice; where the snippet is |

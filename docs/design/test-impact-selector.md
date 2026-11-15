@@ -1,6 +1,6 @@
 # Design: `test-impact-selector-skill`
 
-Status: Built (v1.3.0), see "As built" at the end. Build order: 10.
+Status: Built (v1.4.0), see "As built" at the end. Build order: 10.
 
 ## Mission
 
@@ -369,3 +369,56 @@ Where the build differs from the design above, and what the example showed.
     record), the conftest-autouse strength (G4), pytest `testpaths`/`python_files` in test lists,
     per-id baseline failures, and grouping blind spots by directory in `--brief`. The examples
     are unchanged and validate with `--recompute`.
+- **v1.4.0: a Rust workspace with Python helper scripts.** Red/green cases in
+  `scripts/self_test.py` on a synthetic "tide tables" Cargo workspace (a library with unit tests in
+  `#[cfg(test)]` modules, a feature-gated test, an integration test and a bench; a binary crate
+  depending on it by path, with a shared test module and a helper binary under `tests/fixtures`;
+  an unrelated crate) beside Python scripts whose unittest tests put `scripts/` on `sys.path`.
+  - **Rust graph and selection** (`rust_graph`, `select_rust_change`): `import_graph.py` reads each
+    top-level Cargo project with the shared `cargo_project.py`. Files holding `#[test]` functions
+    are test files (a source file with a `#[cfg(test)]` module stays source, and reaches itself);
+    a file's build is the targets whose `mod` tree holds it; a library file reaches its crate's
+    lib, bin and test targets and those of every crate depending on it by path, transitively.
+    Before, `.rs` was `no_parser`: a Rust-only change widened to a crate whose inline tests were
+    not modelled, so it selected nothing that could reach the change.
+  - **Cargo commands** (`rust_exact_ids`): every Rust test file selected runs the CI's own
+    `cargo test --workspace ...` line; a whole crate `cargo test -p <crate>`; otherwise
+    `cargo test -p <crate> --lib|--bin|--test <t> -- --exact <paths>` from the libtest ids, the same
+    arguments `run_tests.py`'s cargo preset builds (`test_ids`). Tests behind a non-default cargo
+    feature (on the test, its module or the `mod` declaration including it; `any(feature, test)`
+    does not gate) are listed under `command.feature_gated`, never counted as run. Checked once
+    with a real `cargo test` on the fixture.
+  - **Cargo layout** (`rust_bench_and_fixture`, `root_cargo_toml_widens_to_rust_only`): bench files
+    are change kind `bench` (cargo test does not run benches; a note says how to check them);
+    `tests/fixtures` helper binaries are not tests and widen to their crate; the workspace Cargo
+    files are `global_config` with the new scope `language` (every Rust test, nothing else).
+    Package widening is by language family (`same_family`): a Python change never widens to Rust
+    tests, a Rust change never to Python ones.
+  - **sys.path** (`python_sys_path_imports`, `python_sys_path_unknown_recorded`): a test file (or a
+    conftest above it) that puts a folder on `sys.path` (pathlib and os.path forms, names assigned
+    earlier) resolves bare imports into that folder. An unworkable `sys.path` change, or a bare
+    import of a repository module on no known root, is recorded under `unresolved` with candidates,
+    and the unmapped blind spot names the importers. Before, those edges vanished silently and the
+    scripts were reported as having no tests.
+  - **Wording** (`blind_spot_wording`): an unmapped note says "No tests found" only when nothing
+    links the file and its scope holds no test.
+  - **Runner** (`unittest_command`): Python commands use `detect_conventions`' `python_runner`:
+    `python -m unittest <files>`, and the CI's own command for the whole suite (`command_from`).
+  - **Loud language gaps** (`no_parser_language_warns`, `validator_requires_language_limitation`):
+    a changed file in a language with no parser sets `language_coverage.warning` in the selection
+    (copied to the report); the validator needs a limitation naming each such language. Such a file
+    in a package with no findable test widens to the full suite, which makes the "falls back to
+    running everything" claim true.
+  - **Speed** (`selection_speed`): the base graph reuses the changed graph's file reads, parses,
+    handler results, package detection and Cargo model when no manifest or configuration changed;
+    module lookup is indexed; the git calls of git mode run in two parallel rounds; the
+    committed-only hash does not start git on the extracted tree. The 50-hop import-chain limit
+    (which silently dropped tests at the end of long chains) is gone. On the review's 12 MB
+    workspace the selection went from about 15 s to 6-8 s on a loaded machine (the review's 48 s
+    was not reproduced; process starts and file opens dominate what is left). `--recompute`
+    re-runs the same selection, so it gained the same.
+  - Not done: cargo-llvm-cov or grcov coverage ingestion (Rust coverage stays `not_run`), doc tests
+    by file, `#[path]` modules beyond what `cargo_project.py` resolves, and pytest `pythonpath`
+    configuration (recorded as unresolved, not resolved). C5's selection and report were refreshed
+    for the shared `diff_scope.py` change of kind reasons; the other examples are unchanged and
+    validate with `--recompute`.
