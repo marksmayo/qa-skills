@@ -30,7 +30,8 @@ sys.path.insert(0, str(HERE))
 from extract_failures import SECRET, TEST_STEP, extract, redact, strip  # noqa: E402
 from classify import decide, local_run_problem, local_runs, signals  # noqa: E402
 
-SCHEMA_VERSION = '1.2.0'
+SCHEMA_VERSION = '1.3.0'
+ACCEPTED_SCHEMAS = ('1.2.0', '1.3.0')   # 1.3.0 adds optional fields only
 CONF = {'confirmed': 3, 'indicated': 2, 'low': 1}
 CLASSES = ('real', 'flaky', 'environment', 'data', 'consequence', 'unclassified')
 BANNED = re.compile(r'(?i)\b(build is (fine|green|healthy|ok)|all (green|good|clear)|stable build|nothing (is )?wrong|safe to merge|(?<!not )green build|ready to merge)\b')
@@ -152,8 +153,8 @@ def main() -> int:
             e(f'missing {k}')
     if E:
         print('\n'.join(E)); return 1
-    if d['schema_version'] != SCHEMA_VERSION:
-        e(f'schema_version {d["schema_version"]} should be {SCHEMA_VERSION}')
+    if d['schema_version'] not in ACCEPTED_SCHEMAS:
+        e(f'schema_version {d["schema_version"]} should be {SCHEMA_VERSION} (or {", ".join(ACCEPTED_SCHEMAS[:-1])})')
     if d['run']['id'] != run['run']['id'] or d['run']['commit'] != run['run']['commit']:
         e('run id or commit differ from run.json')
     if (d['run'].get('last_green') or {}).get('id') != (run.get('last_green') or {}).get('id'):

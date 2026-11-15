@@ -106,7 +106,7 @@ def triage_from(run: dict, cands: list[dict]) -> dict:
         fails.append(t)
     r = run['run']
     status, why = expected_run_status(run)
-    return {'schema_version': '1.2.0', 'skill': {'name': 'ci-failure-triager', 'version': '1.2.0'}, 'generated_at': '2026-03-02T12:00:00Z',
+    return {'schema_version': '1.3.0', 'skill': {'name': 'ci-failure-triager', 'version': '1.4.0'}, 'generated_at': '2026-03-02T12:00:00Z',
             'run_status': status, **({'run_status_reason': why} if why else {}),
             'run': {'system': 'github', 'repo': run['repo'], 'id': r['id'], 'attempt': r['attempt'], 'commit': r['commit'], 'branch': r['branch'],
                     'started_at': r['started_at'], 'last_green': {'id': run['last_green']['id'], 'commit': run['last_green']['commit']} if run.get('last_green') else None, 'source': 'recorded'},

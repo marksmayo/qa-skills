@@ -1,6 +1,6 @@
 # Design: `ci-failure-triager-skill`
 
-Status: Built (v1.2.0); see "As built" at the end. Build order: 26.
+Status: Built (v1.4.0); see "As built" at the end. Build order: 26.
 
 ## Mission
 
@@ -303,3 +303,33 @@ and the validator stopped the agent from naming the test. Fixed:
     `run.json` and the example triage is unchanged (schema 1.2.0 kept: the new fields are optional).
   - **Not built**: Azure DevOps timeline `issues` are not yet read as annotations; later runs of the workflow
     (after the failing one) are still not fetched.
+- **Found on a Rust workspace whose CI stopped on billing (v1.4.0)** (a Cargo workspace with Python tooling; every
+  failed run was a macOS leg the account's spending limit kept from starting, so the real-failure path never ran):
+  - **Rust failures per test.** `extract_failures.cargo_tests` reads `cargo test` (libtest blocks, the target from
+    cargo's `Running` line) and cargo-nextest output (status lines, STDOUT/STDERR blocks, TIMEOUT) through the shared
+    `parse_results.parse_libtest` and `parse_nextest_output`: ids `<target>::<test path>`, the panic and its location
+    as message and test file, the test's own output as the excerpt. Re-runs read the same tests (`log_tests`).
+  - **Step failures typed.** A Rust compile error, a clippy finding under `-D warnings`, a rustfmt diff and a coverage
+    gate anchor their excerpt on the finding (`--> file.rs:line`, `Diff in file.rs:12:`) and get `failure_type`
+    `compile`, `lint`, `format` or `coverage_gate` from the real signature they carry (`REAL-LINT` and
+    `REAL-FORMAT` widened, `REAL-COVERAGE` new); a coverage step that fails without a message is quoted by its
+    `--fail-under-*` command line and its TOTAL row. Rust standard library and registry frames are dropped. A
+    "coverage gate" step is no longer taken for an aggregate gate.
+  - **Never-started jobs.** No log is requested for them (the 404 read like an expired log); their start-to-completion
+    time is recorded as `queued_for_s` and named as queue time in the failure and by `fetch_run.py`.
+  - **Billing.** `ENV-BILLING` names a spending-limit or failed-payment stop (before `ENV-NOT-STARTED`); the
+    annotation on a never-started job stands in for its log in evidence completeness (it had scored 0.0 on a run
+    where two legs passed and the cause was quoted from the CI).
+  - **History.** The default branch's runs are fetched too (bounded like the branch's; `--default-branch` for Azure
+    DevOps) and its newest green run before this one starts the range when the branch has none (`last_green.branch`,
+    `range.last_green_branch`, `range.basis`); runs of the same commit after this one are marked `after_run`, and the
+    same job passing in one confirms an environment cause. The queries are recorded (`history_query`).
+  - **`files_written`** is checked: each listed file exists, and a drafts file only with drafts, holding them all.
+  - **Schema 1.3.0** (optional fields only; 1.2.0 reports validate). The example triage is unchanged.
+  - **Tested** (each written to fail first): Rust log shapes in `extract_failures.py --self-test`, a synthetic GitHub
+    recording of a Rust workspace's checks with a re-run in `self_test.py`, the never-started job (no log request,
+    queue time, billing signature, annotation credit, a later pass on the same commit), the default-branch last green
+    run in `fetch_run.py --self-test` and `owning_change.py`, and `files_written`.
+  - **Not built**: later runs on the branch at other commits are not fetched; a libtest re-run in which a test passes
+    while its step still fails gives `missing`, not `passed`; Azure DevOps timeline issues are still not read as
+    annotations.
