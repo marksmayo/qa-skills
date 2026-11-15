@@ -7,8 +7,11 @@ Merge rules (see JOURNEY_FORMAT.md):
   as <name>.proposed.md.
 - The human-owned ## Notes section is preserved; `tests` lists are merged, not replaced.
 - Journey files are never deleted. IDs in scope that the map no longer contains are reported as stale.
+- A step's `observed` result (what a run showed) is written as its own Evidence entry,
+  `Step N: Observed <at> (run `<run>`): <result> (Expect inferred from `file:line`)`, never into the Expect.
 
     python write_journeys.py journeys/journey_map.json --out journeys
+    python write_journeys.py --self-test
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -31,12 +34,22 @@ def slug(text: str, limit: int = 48) -> str:
 def ref(ev: dict) -> str:
     return f"`{ev['file']}:{ev['line']}`" + (f" — {ev['note']}" if ev.get('note') else '')
 
+def observed_text(step: dict) -> str:
+    """`Observed <at> (run `<run>`): <result>` plus the step's first code reference, so a reader can tell what a run
+    showed from what the code implies (the Expect) and the entry keeps the `path:line` strict lint asks for."""
+    obs = step['observed']
+    first = (step.get('evidence') or [None])[0]
+    code = f" (Expect inferred from `{first['file']}:{first['line']}`)" if first else ''
+    return f"Observed {obs.get('at')} (run `{obs.get('run')}`): {' '.join(str(obs.get('result')).split())}{code}"
+
 def to_doc(jm: dict) -> dict:
     meta = {k: jm[k] for k in ORDER if k in jm}
     meta['status'] = 'inferred'
     meta.setdefault('automation', 'none')
     meta.setdefault('tests', [])
     evidence = [{'step': n, 'text': ref(ev)} for n, s in enumerate(jm['steps'], 1) for ev in s.get('evidence', [])]
+    # what a run showed stays apart from the inferred Expect: an Evidence entry of its own, tied to the step's code
+    evidence += [{'step': n, 'text': observed_text(s)} for n, s in enumerate(jm['steps'], 1) if s.get('observed')]
     evidence += [{'step': None, 'text': f"{v['id']}: {ref(ev)}"} for v in jm.get('variants', []) for ev in v.get('evidence', [])]
     evidence += [{'step': None, 'text': ref(ev)} for ev in jm.get('evidence', [])]
     return {
@@ -198,7 +211,34 @@ def write_coverage(d: dict) -> str:
         lines += ['## Open questions', ''] + [f'- **{qid}:** {q}' for qid, q in questions] + ['']
     return '\n'.join(lines).rstrip() + '\n'
 
+def self_test() -> int:
+    """A step's observed result reaches the written journey (apart from the inferred Expect, which it must not alter),
+    and the file still lints clean in strict mode."""
+    from journey_md import lint, parse_journey
+    example = Path(__file__).resolve().parent.parent / 'examples' / 'journeys' / 'journey_map.json'
+    d = json.loads(example.read_text(encoding='utf-8'))
+    jm = d['journeys'][0]
+    jm['steps'][0]['observed'] = {'result': 'the page answered 200 and showed the form', 'run': 'run/probe/home.txt',
+                                  'at': '2026-11-15'}
+    text = render(to_doc(jm))
+    parsed = parse_journey(text)
+    problems = []
+    if 'the page answered 200 and showed the form' not in text or 'run/probe/home.txt' not in text or \
+            'Observed' not in text:
+        problems.append('the observed result, its run and the word Observed are in the journey file')
+    if parsed['steps'][0]['expect'] != ' '.join(jm['steps'][0]['expect'].split()):
+        problems.append(f"the observation leaves the Expect unchanged, got {parsed['steps'][0]['expect']!r}")
+    errs = [m for lvl, m in lint(parsed) if lvl in ('error', 'strict')]
+    if errs:
+        problems.append(f'the written journey lints clean in strict mode, got {errs}')
+    for p in problems:
+        print('FAIL', p)
+    print('SELF-TEST FAILED' if problems else 'self-test passed')
+    return 1 if problems else 0
+
 def main() -> int:
+    if '--self-test' in sys.argv[1:]:
+        return self_test()
     ap = argparse.ArgumentParser(description='Write journey files from a journey_map.json.')
     ap.add_argument('journey_map', type=Path)
     ap.add_argument('--out', type=Path, default=Path('journeys'))
