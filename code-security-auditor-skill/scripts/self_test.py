@@ -32,6 +32,25 @@ def check(ok: bool, what: str) -> None:
     if not ok:
         FAILS.append(what)
 
+def _sequential_run(value: str, n: int = 4) -> bool:
+    """True when the value holds n ascending characters in a row (abcd, 1234, EfGh): plainly typed by hand."""
+    s = value.lower()
+    return any(all(ord(s[i + k + 1]) - ord(s[i + k]) == 1 for k in range(n - 1)) for i in range(len(s) - n + 1))
+
+def own_literals() -> None:
+    """The secrets this file plants must look fake to a secret scanner watching the repository: a mixed letter-and-
+    digit literal of 16 or more characters with high entropy needs a hand-typed ascending run (abcd, 1234) in it.
+    Literals that a check needs to be high-entropy (a token scan_secrets must still report) get it that way."""
+    print('planted literals in self_test.py')
+    bad = []
+    for n, line in enumerate(Path(__file__).read_text(encoding='utf-8').splitlines(), 1):
+        for m in re.finditer(r"""['"]([A-Za-z0-9]{16,})['"]""", line):
+            v = m.group(1)
+            if re.search(r'\d', v) and re.search(r'[A-Za-z]', v) and scan_secrets.entropy(v) >= 3.5 \
+                    and not _sequential_run(v):
+                bad.append(n)
+    check(not bad, f'no random-looking secret literal (lines {bad})')
+
 def patterns(root: Path, want: dict) -> None:
     print('scan_pitfalls (javascript pack)')
     got = {(c['file'], c['line'], c['pitfall_id']) for c in scan_pitfalls.scan(root, scan_pitfalls.load_catalogue(), {'javascript'})['candidates']}
@@ -265,7 +284,9 @@ def beacon(root: Path) -> None:
     check([(s['file'], s['line']) for s in found] == want['secrets'], f'a header-name constant is not a secret ({[(s["file"], s["line"], s["key"]) for s in found]})')
     check(scan_secrets.find_in_line('const TokenHeader = "X-Beacon-Token"', 'auth.go') == []
           and scan_secrets.find_in_line('headerName := "X-Api-Key"', 'client.go') == [], 'header names are not secrets')
-    check(len(scan_secrets.find_in_line('const deviceToken = "q7Lm2Vx9Rt4Kp8Zw"', 'auth.go')) == 1, 'a token literal still is')
+    # scan_secrets reports a generic literal only at entropy 3.0 or more, so this token is high-entropy by
+    # construction (16 distinct characters) but typed as the alphabet and 1-8, plainly fake to a repository scanner
+    check(len(scan_secrets.find_in_line('const deviceToken = "AbCdEfGh12345678"', 'auth.go')) == 1, 'a token literal still is')
 
 def tidemark(root: Path) -> None:
     """The Rust fixture: a clap derive CLI that finds a helper under the working directory, loads a native library
@@ -618,7 +639,7 @@ def node_and_ci_rules() -> None:
               'pnpm audit --json (npm audit v6 shape) is read')
         root = Path(tmp) / 'repo'
         (root / 'src').mkdir(parents=True)
-        (root / 'src' / 'cache.json').write_text('{"key": "4f2a9c0d1e7b3a5f8c6d2e0b9a7f1c3e"}\n', encoding='utf-8')
+        (root / 'src' / 'cache.json').write_text('{"key": "deadbeefdeadbeefdeadbeefdeadbeef"}\n', encoding='utf-8')
         sarif = {'version': '2.1.0', 'runs': [{'tool': {'driver': {'name': 'gitleaks', 'version': 'v8.0.0', 'rules': []}}, 'results': [
             {'ruleId': 'generic-api-key', 'message': {'text': 'generic-api-key has detected secret for file src/cache.json.'},
              'locations': [{'physicalLocation': {'artifactLocation': {'uri': 'src/cache.json'}, 'region': {'startLine': 1}}}]},
@@ -958,6 +979,7 @@ def main() -> int:
     advisory_rules()
     merge()
     validator_rules()
+    own_literals()
     print(f"self-test {'passed' if not FAILS else 'FAILED'}: {len(FAILS)} failure(s)")
     return 1 if FAILS else 0
 
