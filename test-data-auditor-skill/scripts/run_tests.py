@@ -25,10 +25,20 @@ unreadable and named in the run's warnings, never a crash. runs.json records the
 (`code_hash_basis`: method and file count), and a change during the runs names the files.
 
 Presets know each runner's JUnit, ordering, seed and worker flags; a variation a preset can't
-apply is an error, never silently ignored. The `nextest` preset runs `cargo nextest run --profile
-ci` (per-case JUnit, `--test-threads` workers) and copies target/nextest/ci/junit.xml to the per-run
-JUnit path; the `cargo` preset runs `cargo test`, which writes no JUnit and so yields no per-case
-data. A run that completes but parses no test cases is flagged `no_tests_parsed` on the run and
+apply is an error, never silently ignored. Rust: the `cargo` preset runs `cargo test --no-fail-fast` and
+parses libtest's output per test (parse_results.parse_libtest) into the run's JUnit: ids are
+`<target>::<path::name>` (the lib's name, a bin's name, an integration test's file stem; `doctest:<lib>` for
+doc tests), panics are the failure messages, and a test binary that died mid-run is a `(crashed)` error case.
+--tests ids re-run as `-p <crate> --lib|--bin|--test <target> -- --exact <paths>` (targets from
+cargo_project.py; ids of two crates in one run are refused: use --isolate), --workers is libtest's
+--test-threads, and --runner-args may hold cargo options and, after `--`, libtest options. A compile error,
+a missing target or a selection that matched nothing is an errored run that says so; a run whose tests ran is
+never errored for failing tests. The `nextest` preset runs `cargo nextest run --no-fail-fast` with any profile
+(--runner-args "--profile ci", else NEXTEST_PROFILE, else default): it copies the JUnit the profile configures
+([profile.<p>.junit] in .config/nextest.toml) from <target dir>/nextest/<p>/ only when this run wrote it (a file
+older than the run is never read), the target dir being CARGO_TARGET_DIR, .cargo/config.toml's target-dir or
+<workspace>/target; with no JUnit it reads nextest's own output. Ids are mapped to the same `<target>::<path>`
+and re-run with one -E filterset. A run that completes but parses no test cases is flagged `no_tests_parsed` on the run and
 warned loudly, so a zero-case run is never mistaken for a pass. `--minutes` caps the wall time:
 repeats stop early and the stop is recorded. The user's home directory is replaced with ~ in JUnit
 files and output.
@@ -182,17 +192,18 @@ PRESETS = {
         'cmd': ['go', 'test', '-json', '-count=1'], 'tests': 'go', 'workers': ['-p', '{n}'],
         'shuffle': ['-shuffle={seed}'], 'go_json': True,
     },
-    # cargo-nextest writes JUnit to target/nextest/<profile>/junit.xml when the profile configures
-    # [profile.<profile>.junit] (e.g. .config/nextest.toml). run_one copies that file to the per-run
-    # {junit} path (`junit_from`). --test-threads sets the worker count; nextest has no seeded shuffle
-    # flag, so --order is refused for it (recorded as not_run), as with the other non-reordering runners.
+    # cargo-nextest: any profile (default unless --runner-args names one). Its JUnit is read from
+    # <target dir>/nextest/<profile>/<junit path> when .config/nextest.toml configures [profile.<p>.junit]
+    # and the file was written by this run (never an older one); otherwise nextest's own output is parsed.
+    # --test-threads sets the worker count; nextest has no seeded shuffle flag, so --order is refused.
     'nextest': {
-        'cmd': ['cargo', 'nextest', 'run', '--profile', 'ci'], 'tests': 'args',
-        'workers': ['--test-threads', '{n}'], 'junit_from': 'target/nextest/ci/junit.xml',
+        'cmd': ['cargo', 'nextest', 'run', '--no-fail-fast'], 'tests': 'nextest',
+        'workers': ['--test-threads', '{n}'],
     },
-    # Plain `cargo test` emits no JUnit, so a run parses 0 cases and is flagged `no_tests_parsed`
-    # (no per-case data). Install cargo-nextest and use --preset nextest for per-case results.
-    'cargo': {'cmd': ['cargo', 'test'], 'tests': 'args'},
+    # `cargo test`: libtest's text output is parsed per test (parse_results.parse_libtest) and written to the
+    # run's JUnit path; ids are <target>::<path::name>. --no-fail-fast runs every test binary.
+    'cargo': {'cmd': ['cargo', 'test', '--no-fail-fast'], 'tests': 'cargo', 'workers': ['--test-threads', '{n}'],
+              'libtest': True},
     # node:test (Node 20+). The junit reporter writes {junit}; spec keeps a readable log on stdout.
     'node-test': {
         'cmd': ['node', '--test', '--test-reporter=junit', '--test-reporter-destination={junit}',
@@ -1069,6 +1080,8 @@ def build(args, preset: dict, junit: Path, tests: list[str], seed: int | None) -
             cmd += ([f'--test-name-pattern={pattern}'] if pattern else []) + files
             env = {k: fill(v) for k, v in preset.get('env', {}).items()}
             return cmd, env
+        if preset.get('tests') in ('cargo', 'nextest') and not args.cmd:
+            return cargo_command(args, preset, cmd, tests, fill), {k: fill(v) for k, v in preset.get('env', {}).items()}
         cmd += getattr(args, 'script_args', [])
         cmd += shlex.split(args.runner_args or '')
         if args.workers:
@@ -1085,6 +1098,164 @@ def build(args, preset: dict, junit: Path, tests: list[str], seed: int | None) -
             cmd += tests
     env = {k: fill(v) for k, v in preset.get('env', {}).items()}
     return cmd, env
+
+
+def _split_dashdash(tokens: list[str]) -> tuple[list[str], list[str]]:
+    if '--' in tokens:
+        i = tokens.index('--')
+        return tokens[:i], tokens[i + 1:]
+    return tokens, []
+
+
+def cargo_targets(cwd: Path) -> dict[str, list[tuple[str, str]]]:
+    """{target name: [(crate, kind)]} for the Cargo project at cwd (cargo_project.py beside this script)."""
+    try:
+        import cargo_project
+    except ImportError:
+        return {}
+    out: dict[str, list[tuple[str, str]]] = {}
+    for c in cargo_project.read_cargo(cwd).get('crates', []):
+        for t in c['targets']:
+            out.setdefault(t['name'], []).append((c['name'], t['kind']))
+    return out
+
+
+def cargo_ids(tests: list[str], cwd: Path) -> tuple[list[str], list[str], bool]:
+    """(cargo selection args, libtest filters, exact) for --tests: ids `<target>::<path::name>` (as parse_libtest
+    records them; `doctest:<lib>::<name>` for doc tests) become `-p <crate> --lib|--bin|--test|--bench|--example
+    <target>` plus `--exact` paths. Ids of two crates in one run are refused (use --isolate). Anything else is a
+    plain libtest name filter."""
+    ids = [re.sub(r'#\d+$', '', t) for t in tests if '::' in t]
+    if not ids:
+        return [], list(tests), False
+    if len(ids) != len(tests):
+        raise ValueError('cargo: a mix of test ids and plain name filters in one run; run them separately or use '
+                         '--isolate')
+    known = cargo_targets(cwd)
+    crates, sel, names = [], [], []
+    for t in ids:
+        target, _, path = t.partition('::')
+        doc = target.startswith('doctest:')
+        tname = target.split(':', 1)[1] if doc else target
+        hits = known.get(tname) or []
+        if not hits:
+            raise ValueError(f'cargo: no target named {tname!r} in the Cargo project at {cwd} (ids are '
+                             '<target>::<path>; cargo_project.py lists the targets)')
+        crate, kind = next(((c, k) for c, k in hits if not doc or k == 'lib'), hits[0])
+        if crate not in crates:
+            crates.append(crate)
+        if doc:
+            flag = ['--doc']
+        elif kind == 'lib':
+            flag = ['--lib']
+        elif kind in ('bin', 'test', 'bench', 'example'):
+            flag = [f'--{kind}', tname]
+        else:
+            flag = []
+        if flag and flag not in sel:
+            sel.append(flag)
+        if path not in names:
+            names.append(path)
+    if len(crates) > 1:
+        raise ValueError(f'cargo: test ids from {len(crates)} crates ({", ".join(crates)}) in one run; libtest filters '
+                         'apply to every selected binary. Run each crate separately, or use --isolate')
+    return ['-p', crates[0]] + [x for f in sel for x in f], names, True
+
+
+def nextest_filter(tests: list[str]) -> list[str]:
+    """`-E` filterset for ids `<target>::<path>` (nextest's binary names: the crate for a lib, the target
+    otherwise), or the tests as plain name filters."""
+    ids = [re.sub(r'#\d+$', '', t) for t in tests if '::' in t]
+    if not ids:
+        return list(tests)
+    if len(ids) != len(tests):
+        raise ValueError('nextest: a mix of test ids and plain name filters in one run; run them separately')
+    parts = []
+    for t in ids:
+        target, _, path = t.partition('::')
+        parts.append(f'(binary(={target}) & test(={path}))')
+    return ['-E', ' | '.join(parts)]
+
+
+def cargo_command(args, preset: dict, base: list[str], tests: list[str], fill) -> list[str]:
+    """The cargo test / cargo nextest command: cargo options, the selection, then (for cargo test) `--` and libtest
+    options (--test-threads, --exact, the names). --runner-args may hold both sides of a `--`."""
+    cargo_side, lib_side = _split_dashdash(shlex.split(args.runner_args or ''))
+    cmd = list(base) + list(getattr(args, 'script_args', [])) + cargo_side
+    cwd = Path(getattr(args, 'cwd', '.')).resolve()
+    if preset.get('tests') == 'nextest':
+        if args.workers:
+            cmd += [fill(x) for x in preset['workers']]
+        cmd += nextest_filter(tests)
+        return cmd + (['--'] + lib_side if lib_side else [])
+    sel, names, exact = cargo_ids(tests, cwd)
+    cmd += sel
+    lib = list(lib_side)
+    if args.workers:
+        lib += [fill(x) for x in preset['workers']]
+    if exact:
+        lib.append('--exact')
+    lib += names
+    return cmd + (['--'] + lib if lib else [])
+
+
+def nextest_profile(runner_args: list[str], env: dict) -> str:
+    for i, a in enumerate(runner_args):
+        if a in ('--profile', '-P') and i + 1 < len(runner_args):
+            return runner_args[i + 1]
+        if a.startswith('--profile='):
+            return a.split('=', 1)[1]
+    return env.get('NEXTEST_PROFILE') or 'default'
+
+
+def cargo_target_dir(cwd: Path, env: dict) -> Path:
+    """Where cargo builds: CARGO_TARGET_DIR, else build.target-dir in .cargo/config.toml (cwd and its parents),
+    else <workspace root>/target."""
+    if env.get('CARGO_TARGET_DIR'):
+        p = Path(env['CARGO_TARGET_DIR'])
+        return p if p.is_absolute() else (cwd / p)
+    ws = cwd
+    for d in [cwd, *cwd.parents]:
+        for cfg in (d / '.cargo' / 'config.toml', d / '.cargo' / 'config'):
+            if cfg.is_file():
+                m = re.search(r'^\s*target-dir\s*=\s*"([^"]+)"', cfg.read_text(encoding='utf-8', errors='replace'), re.M)
+                if m:
+                    p = Path(m.group(1))
+                    return p if p.is_absolute() else d / p
+        man = d / 'Cargo.toml'
+        if man.is_file() and re.search(r'^\s*\[workspace\]', man.read_text(encoding='utf-8', errors='replace'), re.M):
+            ws = d
+            break
+    return ws / 'target'
+
+
+def nextest_junit(cwd: Path, env: dict, runner_args: list[str], started: float) -> tuple[Path | None, str]:
+    """(the JUnit file this nextest run wrote, or None, and a note). The profile is --profile/NEXTEST_PROFILE or
+    `default`; its [profile.<p>.junit] path comes from .config/nextest.toml at the workspace root (or cwd). A file
+    older than the run's start is never read."""
+    profile = nextest_profile(runner_args, env)
+    tdir = cargo_target_dir(cwd, env)
+    junit_rel = None
+    for d in [cwd, *cwd.parents]:
+        cfg = d / '.config' / 'nextest.toml'
+        if cfg.is_file():
+            text = cfg.read_text(encoding='utf-8', errors='replace')
+            m = re.search(r'^\s*\[profile\.' + re.escape(profile) + r'\.junit\]\s*$(.*?)(?=^\s*\[|\Z)', text,
+                          re.M | re.S)
+            if m:
+                pm = re.search(r'^\s*path\s*=\s*"([^"]+)"', m.group(1), re.M)
+                junit_rel = pm.group(1) if pm else None
+            break
+    if not junit_rel:
+        return None, (f'cargo-nextest profile {profile!r} configures no JUnit ([profile.{profile}.junit] path in '
+                      '.config/nextest.toml); per-test results were read from its output instead.')
+    path = tdir / 'nextest' / profile / junit_rel
+    if not os.path.isfile(long_path(path)):
+        return None, f'cargo-nextest wrote no JUnit at {path}; per-test results were read from its output instead.'
+    if os.path.getmtime(long_path(path)) < started - 1:
+        return None, (f'{path} is older than the run (a stale JUnit from an earlier run), so it was not read; '
+                      'per-test results were read from the output instead.')
+    return path, f'Copied JUnit from {path} (cargo-nextest profile {profile!r}).'
 
 
 CMD_META = re.compile(r'[\^&|<>()%!"]')
@@ -1142,6 +1313,18 @@ def run_error(code: int | None, timed_out: bool, cases: list, is_pytest: bool, o
         return (f'{len(broken)} Go package(s) failed to build or set up, so their tests did not run: '
                 + ', '.join(broken[:5]) + (' ...' if len(broken) > 5 else ''))
     if not cases:
+        m = re.search(r'error: could not compile `([^`]+)`', output or '')
+        if m:
+            first = re.search(r'^error(\[E\d+\])?: (?!could not compile).*$', output or '', re.M)
+            return (f'cargo could not compile `{m.group(1)}`, so no test ran'
+                    + (f' ({first.group(0).strip()[:160]})' if first else ''))
+        if re.search(r'no such (sub)?command:? .?nextest', output or ''):
+            return 'cargo-nextest is not installed (cargo: no such command `nextest`); no test ran'
+        m = re.search(r'error: no (test|bin|bench|example) target named `([^`]+)`', output or '')
+        if m:
+            return f'cargo has no {m.group(1)} target named `{m.group(2)}`; no test ran'
+        if re.search(r'^running 0 tests', output or '', re.M) and not re.search(r'^running [1-9]', output or '', re.M):
+            return f'cargo ran the test binaries but no test matched the selection (exit {code})'
         if code in (132, 134, 135, 136, 137, 139):   # a shell reporting 128 + signal
             return f'the process was killed by signal {code - 128} (exit {code}) and wrote no test results'
         return f'no test cases were parsed (exit {code}); the tests did not run, or wrote no JUnit'
@@ -1194,6 +1377,7 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
     kw = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' else {'start_new_session': True}
     exe = resolve_exe(cmd, env, cwd)
     hogs = start_hogs(args.cpu_load) if args.cpu_load else []
+    wall0 = time.time()
     t0 = time.monotonic()
     timed_out = False
     try:
@@ -1210,20 +1394,28 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
             kill_tree(h)
     duration = round(time.monotonic() - t0, 3)
     copy_notes = []
-    junit_from = preset.get('junit_from')   # nextest writes JUnit to a profile path, not {junit}: copy it here
-    if junit_from and not junit.exists():
-        src = cwd / junit_from
-        if os.path.isfile(long_path(src)):
+    text_out = (out or b'').decode('utf-8', 'replace')
+    if preset.get('libtest') and not args.cmd:   # cargo test: libtest's text output becomes the run's JUnit
+        junit.write_text(parse_results.libtest_to_junit(text_out), encoding='utf-8')
+    if preset.get('tests') == 'nextest' and not args.cmd and not junit.exists():
+        src, note = nextest_junit(cwd, env, _split_dashdash(shlex.split(args.runner_args or ''))[0], wall0)
+        copy_notes.append(note)
+        if src:
             shutil.copyfile(long_path(src), long_path(junit))
-            copy_notes.append(f'Copied JUnit from {junit_from} (cargo-nextest profile output) to {junit.name}.')
         else:
-            copy_notes.append(f'cargo-nextest wrote no JUnit at {junit_from}; this run has no per-case data '
-                              '(configure [profile.ci.junit] in .config/nextest.toml, or install cargo-nextest).')
+            junit.write_text(parse_results.nextest_output_to_junit(text_out), encoding='utf-8')
     if preset.get('go_json'):   # go test -json: the events on stdout become gotestsum-shaped JUnit
         junit.write_text(parse_results.go_json_to_junit((out or b'').decode('utf-8', 'replace')), encoding='utf-8')
     if junit.exists():
         junit.write_text(redact_home(junit.read_text(encoding='utf-8', errors='replace')), encoding='utf-8')
     cases, pnotes = parse_results.parse_junit(junit, run_id, cwd) if junit.exists() else ([], [f'{junit.name}: not written'])
+    if preset.get('tests') == 'nextest':   # nextest binary ids (crate, crate::target, crate::bin/name) -> target names
+        for c in cases:
+            if c.get('classname'):
+                tg = parse_results.nextest_target(c['classname'])
+                rep_n = re.search(r'#\d+$', c['id'])
+                c['id'] = f"{tg}::{c['name']}" + (rep_n.group(0) if rep_n else '')
+                c['classname'] = tg
     prefix = getattr(args, 'id_prefix', '')
     if prefix:   # --repo-root: ids and files relative to the repository, so packages never pool
         for c in cases:
@@ -1302,6 +1494,131 @@ def tests_not_run(tests: list[str], cases: list[dict], cwd: Path, prefix: str = 
         elif os.path.isfile(long_path(cwd / t)) and want not in files:
             out.append(want)
     return out
+
+
+CARGO_FIXTURE = {
+    'Cargo.toml': '[workspace]\nmembers = ["gauge", "tidectl"]\nresolver = "2"\n',
+    'gauge/Cargo.toml': '[package]\nname = "gauge"\nversion = "0.1.0"\nedition = "2021"\n',
+    'gauge/src/lib.rs': ('pub fn feet(m: f64) -> f64 { m * 3.28084 }\n\n#[cfg(test)]\nmod tests {\n'
+                         '    #[test]\n    fn converts() { assert!(super::feet(1.0) > 3.0); }\n'
+                         '    #[test]\n    fn rounds_badly() { assert_eq!(super::feet(1.0) as i64, 4); }\n'
+                         '    #[test]\n    #[ignore = "needs a tide gauge"]\n    fn live_reading() {}\n}\n'),
+    'tidectl/Cargo.toml': '[package]\nname = "tidectl"\nversion = "0.1.0"\nedition = "2021"\n',
+    'tidectl/src/main.rs': 'fn main() {}\n',
+    'tidectl/tests/cli.rs': '#[test]\nfn prints_help() {}\n\n#[test]\nfn slow_station() {}\n',
+}
+
+
+def cargo_self_checks() -> list:
+    """The cargo and nextest presets: commands for whole runs and chosen ids, CARGO_TARGET_DIR, nextest's JUnit
+    (any profile, never a stale file), accurate errors, and (with cargo on PATH) a real run of a tiny synthetic
+    workspace with passing, failing and ignored tests. QA_SKILLS_CARGO_TARGET_DIR names the (deleted) target dir."""
+    import types
+    checks = []
+    d = Path(tempfile.mkdtemp(prefix='qa-cargo-'))
+    for rel, body in CARGO_FIXTURE.items():
+        (d / rel).parent.mkdir(parents=True, exist_ok=True)
+        (d / rel).write_text(body, encoding='utf-8')
+
+    def mk(preset, workers=None, runner_args=None):
+        return types.SimpleNamespace(cmd=None, preset=preset, workers=workers, order='given', runner_args=runner_args,
+                                     script_args=[], cwd=d)
+
+    def try_build(a, tests):
+        try:
+            return build(a, PRESETS[a.preset], Path('j.xml'), tests, None)[0]
+        except Exception as e:   # noqa: BLE001
+            return repr(e)
+    cmd = try_build(mk('cargo', 2), [])
+    checks.append(('cargo: a whole run is cargo test --no-fail-fast, --test-threads after --',
+                   isinstance(cmd, list) and cmd[:3] == ['cargo', 'test', '--no-fail-fast']
+                   and cmd[-3:] == ['--', '--test-threads', '2'], cmd))
+    cmd = try_build(mk('cargo'), ['cli::prints_help', 'cli::slow_station'])
+    checks.append(('cargo: ids <target>::<path> re-run as -p <crate> --test <target> -- --exact <paths>',
+                   cmd == ['cargo', 'test', '--no-fail-fast', '-p', 'tidectl', '--test', 'cli', '--', '--exact',
+                           'prints_help', 'slow_station'], cmd))
+    cmd = try_build(mk('cargo'), ['gauge::tests::converts'])
+    checks.append(('cargo: a lib id re-runs with --lib', cmd == ['cargo', 'test', '--no-fail-fast', '-p', 'gauge',
+                                                                '--lib', '--', '--exact', 'tests::converts'], cmd))
+    cmd = try_build(mk('cargo'), ['gauge::tests::converts', 'cli::prints_help'])
+    checks.append(('cargo: ids from two crates in one run are refused (use --isolate)',
+                   isinstance(cmd, str) and '--isolate' in cmd, cmd))
+    cmd = try_build(mk('nextest', 2), ['cli::prints_help', 'gauge::tests::converts'])
+    checks.append(('nextest: no ci profile is required; ids become one -E filterset of binary and test',
+                   isinstance(cmd, list) and '--profile' not in cmd and '-E' in cmd
+                   and cmd[cmd.index('-E') + 1] == ('(binary(=cli) & test(=prints_help)) | '
+                                                    '(binary(=gauge) & test(=tests::converts))')
+                   and cmd[cmd.index('--test-threads') + 1] == '2', cmd))
+    # nextest JUnit: the default profile's junit under CARGO_TARGET_DIR, and never a stale one
+    tdir = d / 'elsewhere-target'
+    (d / '.config').mkdir(exist_ok=True)
+    (d / '.config' / 'nextest.toml').write_text('[profile.default.junit]\npath = "junit.xml"\n', encoding='utf-8')
+    jx = tdir / 'nextest' / 'default' / 'junit.xml'
+    jx.parent.mkdir(parents=True)
+    jx.write_text('<testsuites/>', encoding='utf-8')
+    fn = globals().get('nextest_junit')
+    got = fn(d, {'CARGO_TARGET_DIR': str(tdir)}, [], time.time() + 5) if fn else 'nextest_junit is missing'
+    checks.append(('nextest: a junit.xml older than the run is never read', isinstance(got, tuple) and got[0] is None
+                   and 'older than the run' in got[1], got))
+    got = fn(d, {'CARGO_TARGET_DIR': str(tdir)}, [], time.time() - 60) if fn else None
+    checks.append(('nextest: the default profile\'s junit is found under CARGO_TARGET_DIR',
+                   isinstance(got, tuple) and got[0] == jx, got))
+    got = fn(d, {}, ['--profile', 'ci'], time.time() - 60) if fn else None
+    checks.append(('nextest: a profile with no junit configured falls back to the output, and says so',
+                   isinstance(got, tuple) and got[0] is None and 'no JUnit' in got[1], got))
+    out = ('   Compiling gauge v0.1.0\nerror[E0425]: cannot find value `x` in this scope\n'
+           'error: could not compile `gauge` (lib test) due to 1 previous error\n')
+    err = run_error(101, False, [], False, out)
+    checks.append(('cargo: a compile error is reported as such, naming the crate', 'could not compile' in (err or '')
+                   and 'gauge' in (err or ''), err))
+    err = run_error(101, False, [], False, 'error: no such command: `nextest`\n')
+    checks.append(('nextest: a missing cargo-nextest is reported as not installed', 'not installed' in (err or ''), err))
+    fx = getattr(parse_results, 'parse_nextest_output', None)
+    sample = ('        PASS [   0.004s] gauge tests::converts\n        FAIL [   0.005s] (2/3) gauge tests::rounds_badly\n'
+              '        PASS [   0.010s] tidectl::cli prints_help\n'
+              '     Summary [   0.1s] 3 tests run: 2 passed, 1 failed, 1 skipped\n')
+    got = sorted((c['id'], c['status']) for c in fx(sample, 'R')[0]) if fx else 'parse_nextest_output is missing'
+    checks.append(('nextest: its own output is read when there is no JUnit, ids as cargo test gives them', got == [
+        ('cli::prints_help', 'passed'), ('gauge::tests::converts', 'passed'), ('gauge::tests::rounds_badly', 'failed')],
+        got))
+    if shutil.which('cargo'):
+        tgt = Path(os.environ.get('QA_SKILLS_CARGO_TARGET_DIR') or tempfile.mkdtemp(prefix='qa-cargo-target-'))
+        out_dir = Path(tempfile.mkdtemp(prefix='qa-cargo-runs-'))
+        old = {k: os.environ.get(k) for k in ('CARGO_TARGET_DIR', 'CARGO_BUILD_JOBS')}
+        os.environ['CARGO_TARGET_DIR'], os.environ['CARGO_BUILD_JOBS'] = str(tgt), '1'
+        want = {'gauge::tests::converts': 'passed', 'gauge::tests::rounds_badly': 'failed',
+                'gauge::tests::live_reading': 'skipped', 'cli::prints_help': 'passed', 'cli::slow_station': 'passed'}
+        try:
+            rc = main(['--preset', 'cargo', '--cwd', str(d), '--out', str(out_dir / 'runs.json')])
+            data = json.loads((out_dir / 'runs.json').read_text(encoding='utf-8'))
+            run = data['runs'][0]
+            got = {c['id']: c['status'] for c in data['cases']}
+            checks.append(('cargo (real run): a run with a failing test is not errored, every case is parsed',
+                           rc == 0 and run['errored'] is False and got == want, (run.get('error'), got)))
+            checks.append(('cargo (real run): CARGO_TARGET_DIR is honoured (no target/ in the workspace)',
+                           not (d / 'target').exists() and tgt.exists(), sorted(p.name for p in d.iterdir())))
+            main(['--preset', 'cargo', '--cwd', str(d), '--out', str(out_dir / 'runs.json'), '--tests',
+                  'gauge::tests::rounds_badly', '--workers', '1'])
+            data = json.loads((out_dir / 'runs.json').read_text(encoding='utf-8'))
+            last = data['runs'][-1]
+            got = {c['id']: c['status'] for c in data['cases'] if c['run_id'] == last['id']}
+            checks.append(('cargo (real run): a chosen id re-runs alone, with --test-threads',
+                           got == {'gauge::tests::rounds_badly': 'failed'} and '--test-threads 1' in last['command']
+                           and not last['errored'], (got, last['command'], last.get('error'))))
+        except Exception as e:   # noqa: BLE001
+            checks.append(('cargo (real run): completes', False, repr(e)))
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+            shutil.rmtree(tgt, ignore_errors=True)
+            shutil.rmtree(out_dir, ignore_errors=True)
+    else:
+        print('SKIP cargo real-run cases: cargo is not on PATH')
+    shutil.rmtree(d, ignore_errors=True)
+    return checks
 
 
 def go_self_checks() -> list:
@@ -1519,6 +1836,7 @@ def self_test() -> int:
     _, pat = node_test_ids(['a.test.mjs::sum > inner > deep # 1'])
     checks.append(('a node-test pattern matches the space-joined name', bool(re.match(pat, 'sum inner deep # 1')), pat))
     checks += go_self_checks()
+    checks += cargo_self_checks()
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         (root / 'pnpm-workspace.yaml').write_text('packages:\n  - packages/*\n', encoding='utf-8')
