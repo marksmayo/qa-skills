@@ -27,10 +27,14 @@ unreadable and named in the run's warnings, never a crash. runs.json records the
 Presets know each runner's JUnit, ordering, seed and worker flags; a variation a preset can't
 apply is an error, never silently ignored. Rust: the `cargo` preset runs `cargo test --no-fail-fast` and
 parses libtest's output per test (parse_results.parse_libtest) into the run's JUnit: ids are
-`<target>::<path::name>` (the lib's name, a bin's name, an integration test's file stem; `doctest:<lib>` for
-doc tests), panics are the failure messages, and a test binary that died mid-run is a `(crashed)` error case.
---tests ids re-run as `-p <crate> --lib|--bin|--test <target> -- --exact <paths>` (targets from
-cargo_project.py; ids of two crates in one run are refused: use --isolate), --workers is libtest's
+`<target>::<path::name>` with cargo_project.py's target names (the lib's name, a bin's name, an integration
+test's file stem; `<crate>/<target>` where two crates share the name; `doctest:<lib>` for doc tests), panics are
+the failure messages, and a test binary that died mid-run is a `(crashed)` error case. --tests ids re-run as
+`-p <crate> --lib|--bin|--test <target> -- --exact <paths>` (targets from cargo_project.py; older ids written with
+the deps file name are read too; a name several crates share is resolved by the id's crate, -p in --runner-args or
+the static tests, else refused naming the candidates; ids of two crates in one run are refused: use --isolate;
+doc-test ids and parameterised tests (#[rstest], #[test_case]: name filters `path::`, no --exact) run as separate
+invocations, with a note), --workers is libtest's
 --test-threads, and --runner-args may hold cargo options and, after `--`, libtest options. A compile error,
 a missing target or a selection that matched nothing is an errored run that says so; a run whose tests ran is
 never errored for failing tests. The `nextest` preset runs `cargo nextest run --no-fail-fast` with any profile
@@ -1347,6 +1351,18 @@ def _cargo_candidates(model: dict, tname: str, path: str, doc: bool, crate: str 
     return with_path or exact or loose
 
 
+def _cargo_parameterised(model: dict, test_id: str) -> bool:
+    """Whether a cargo id names a parameterised test function (#[rstest], #[test_case], #[test_matrix]) as
+    cargo_project records it: libtest runs only its generated cases (path::case_1 ...), which --exact never matches."""
+    target, _, path = re.sub(r'#\d+$', '', test_id).partition('::')
+    if not path or target.startswith('doctest:'):
+        return False
+    q = target.split('/')
+    return any(t.get('parameterised') and t.get('name') == path and t.get('target') == q[-1]
+               and (len(q) == 1 or c['name'] == q[0])
+               for c in model.get('crates', []) for t in c.get('tests') or [])
+
+
 def _cargo_packages(cargo_args: list[str]) -> list[str]:
     """The -p/--package values among cargo options."""
     out = []
@@ -1379,6 +1395,11 @@ def cargo_ids(tests: list[str], cwd: Path, packages: list[str] | None = None) ->
     if docs and len(docs) != len(ids):
         raise ValueError('cargo: doc-test ids and other ids in one invocation; cargo rejects --doc with --lib, --bin '
                          'or --test. Run them separately (run_tests does, with cargo_batches), or use --isolate')
+    params = [t for t in ids if _cargo_parameterised(model, t)]
+    if params and len(params) != len(ids):
+        raise ValueError('cargo: parameterised test ids (#[rstest], #[test_case], #[test_matrix]) and other ids in one '
+                         'invocation; --exact matches none of their generated cases. Run them separately (run_tests '
+                         'does, with cargo_batches), or use --isolate')
     crates, sel, names = [], [], []
     for t in ids:
         target, _, path = t.partition('::')
@@ -1412,25 +1433,35 @@ def cargo_ids(tests: list[str], cwd: Path, packages: list[str] | None = None) ->
             flag = []
         if flag and flag not in sel:
             sel.append(flag)
+        if params:   # the generated cases are path::<case>; a name filter reaches them, --exact never does
+            path += '::'
         if path not in names:
             names.append(path)
     if len(crates) > 1:
         raise ValueError(f'cargo: test ids from {len(crates)} crates ({", ".join(crates)}) in one run; libtest filters '
                          'apply to every selected binary. Run each crate separately, or use --isolate')
-    return ([] if crates[0] in (packages or []) else ['-p', crates[0]]) + [x for f in sel for x in f], names, True
+    return ([] if crates[0] in (packages or []) else ['-p', crates[0]]) + [x for f in sel for x in f], names, \
+        not params
 
 
 def cargo_batches(tests: list[str], cwd: Path) -> tuple[list[list[str]], str | None]:
     """The invocations one cargo selection needs, and a note when it needs more than one: doc-test ids
-    (`doctest:...`, run with --doc, which cargo accepts with no other target) apart from the rest."""
+    (`doctest:...`, run with --doc, which cargo accepts with no other target) and parameterised test functions
+    (#[rstest], #[test_case], #[test_matrix]: run as name filters `path::` without --exact, which would match none
+    of their generated cases) apart from the rest."""
+    model = cargo_model(cwd)
     groups: dict[str, list[str]] = {}
     for t in tests:
-        groups.setdefault('doc' if t.startswith('doctest:') else 'exact', []).append(t)
-    batches = [groups[k] for k in ('exact', 'doc') if k in groups]
+        k = 'doc' if t.startswith('doctest:') else ('param' if _cargo_parameterised(model, t) else 'exact')
+        groups.setdefault(k, []).append(t)
+    batches = [groups[k] for k in ('exact', 'doc', 'param') if k in groups]
     if len(batches) < 2:
         return [list(tests)], None
-    return batches, (f'cargo: the {len(tests)} selected ids ran as {len(batches)} separate invocations (doc tests '
-                     'apart: cargo rejects --doc with --lib, --bin or --test)')
+    why = [w for k, w in (('doc', 'doc tests: cargo rejects --doc with --lib, --bin or --test'),
+                          ('param', 'parameterised tests: run as name filters, since --exact matches none of their '
+                                    'generated cases')) if k in groups]
+    return batches, (f'cargo: the {len(tests)} selected ids ran as {len(batches)} separate invocations ('
+                     + '; '.join(why) + ')')
 
 
 def nextest_filter(tests: list[str], cwd: Path | None = None) -> list[str]:
