@@ -1,4 +1,5 @@
 {
+  "status": "checked",
   "models": {
     "Appointment": {
       "source": "clinic_api/models.py:24",

@@ -522,8 +522,17 @@ class Scanner:
         for d, sm in sorted(inventory.get('sampled_dirs', {}).items()):
             self.notes.append(f"{d}/ sampled: {sm['scanned']} of {sm['files']} data files scanned; the rest are not_assessed, "
                               'so personal data in them is not ruled out')
-        if inventory.get('no_tests') or not inventory.get('tests'):
+        for d, sd in sorted(inventory.get('served_dirs', {}).items()):
+            self.notes.append(f"{d}/ is a served asset folder: {sd['files']} file(s) there are site assets, not test fixtures; "
+                              f"{sd['loaded_by_tests']} that tests load were scanned as test data, the rest were not")
+        for d, dc in sorted(inventory.get('data_dir_code', {}).items()):
+            self.notes.append(f"{d}/ (--data-dir): {dc['files']} source file(s) that are not data modules were not read as test "
+                              'data (data_dir_code); they are product code, read for clock and locale calls only')
+        self.no_tests = bool(inventory.get('no_tests') or not inventory.get('tests'))
+        if self.no_tests:
             self.notes.append(inv.NO_TESTS)
+            self.notes.append('unused-file check not run: the repository has no tests, so "no test loads this file" says '
+                              'nothing about any file')
         # where this skill stops: product code is read for clock and locale calls only
         self.notes.append(SCOPE_NOTE)
         self.progress = False
@@ -1386,7 +1395,8 @@ class Scanner:
                 if i.get('lines', 0) > RULES['snapshot_max_lines']:
                     self.add('snapshot_rot', 'large_snapshot', i['path'], 1, f'{i["lines"]} lines asserted wholesale', None, None,
                              details={'lines': i['lines']})
-            elif i['kind'] in ('fixture', 'recording', 'seed') and not i['loaded_by'] and not MIGRATION_SEED.search(i['path']):
+            elif i['kind'] in ('fixture', 'recording', 'seed') and not i['loaded_by'] and not MIGRATION_SEED.search(i['path']) \
+                    and not self.no_tests:
                 self.add('unused_or_duplicate', 'unused', i['path'], 1, 'no test loads this file (its name appears in no test, '
                          'fixture or loader)', None, None)
         data = [i for i in items if i['kind'] in ('fixture', 'recording', 'seed') and i.get('lines', 0) >= RULES['duplicate_min_lines']]
@@ -1563,7 +1573,7 @@ def main(argv=None) -> int:
           + ', '.join(f'{v} {k}' for k, v in s['by_category'].items()) + f' -> {args.out}')
     for note in res['notes']:
         if 'text only' in note or note.startswith('schema drift:') or note.startswith('no test files') or 'NOT scanned' in note or ' sampled: ' in note \
-                or note.startswith('near-duplicate check not run'):
+                or note.startswith('near-duplicate check not run') or 'not read as test data' in note or 'served asset folder' in note:
             print(f'WARNING: {note}', file=sys.stderr)
     return 0
 

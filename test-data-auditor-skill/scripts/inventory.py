@@ -28,7 +28,9 @@ text, and an .xlsx workbook is read with stdlib zipfile. A file name counts as a
 from code in the same package root (nearest pyproject.toml, package.json, ...), unless the code
 gives the path tail (`parent/name`); a glob (`DIR.glob("*.yaml")`) counts when the module also
 names the directory. Test data trees are tests/, fixtures/, testdata/, test-data/, sample-data/
-and the like; --data-dir names any other tree (repeatable). --markers reads {"anonymised_by": {"path": "reference"}} so a
+and the like; --data-dir names any other tree (repeatable). Under a --data-dir, a JS/TS/Python data module (a records
+array written as code) is listed as a fixture and other code is counted under data_dir_code; a served folder
+(public/, static/) keeps only the files a test loads, the rest counted under served_dirs. --markers reads {"anonymised_by": {"path": "reference"}} so a
 file anonymised on purpose is recorded with its reference.
 """
 from __future__ import annotations
@@ -37,7 +39,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import datafiles, detect_conventions  # noqa: E402
+import datafiles, detect_conventions, jsparse  # noqa: E402
 
 SKIP_DIRS = detect_conventions.SKIP_DIRS | {'.git', '.turbo', '.cache', '.venv', 'venv', '__pycache__'}
 DATA_EXT = {'.json', '.yaml', '.yml', '.csv', '.tsv', '.sql', '.xml', '.har', '.snap', '.ambr', '.txt', '.ndjson', '.jsonl', '.svg'}
@@ -71,9 +73,15 @@ SUPPORT_NAME = re.compile(r'^((vitest|jest|mocha|ava|karma|setup[-_.]?tests?|tes
 SUPPORT_DIRS = {'helpers', 'helper', 'test-helpers', 'test_helpers', 'support', 'test-support', 'test_support', 'test-utils',
                 'test_utils', 'testutils', 'testing-library', '__helpers__', 'utils'}
 GLOBAL_SETUP = re.compile(r'^(vitest|jest|setup[-_.]?tests?|test[-_.]?setup|setupTests)[-_.]', re.I)
-# source code under a --data-dir tree is code, not data: everything else there is listed (unknown formats as not_assessed)
+# source code under a --data-dir tree is code, not data: everything else there is listed (unknown formats as not_assessed).
+# A module that is mostly a records array written as code (a data module) is listed and scanned as data; other code
+# there is counted under data_dir_code, stays product code, and is named in a warning
 CODE_EXT = {'.py', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.mts', '.cts', '.go', '.rb', '.java', '.kt', '.cs', '.php', '.rs',
             '.swift', '.dart', '.c', '.h', '.cpp', '.sh'}
+# folders a web app serves as they are (public/, static/): their files are the site's assets, not test fixtures, even when
+# named with --data-dir; only the files a test loads are listed, the rest are counted under served_dirs
+SERVED_DIRS = {'public', 'static', 'wwwroot', 'www', 'htdocs'}
+DATA_MODULE_MAX_BYTES = 1_000_000
 MOBILE_ASSETS = re.compile(r'(^|/)(androidTest|test)/assets/|\.xctest|TestResources?/|(^|/)Fixtures/')
 
 
@@ -167,8 +175,51 @@ def in_data_dir(path: str) -> bool:
 
 
 def in_test_area(path: str) -> bool:
+    # code under a --data-dir tree does not become test code by it (build() lists the data modules there)
     return bool(test_dirs_of(path)) or detect_conventions.is_test_file(path) or PurePosixPath(path).name == 'conftest.py' or \
-        any(path.startswith(d.rstrip('/') + '/') for d in DATA_DIRS)
+        (in_data_dir(path) and PurePosixPath(path).suffix.lower() not in CODE_EXT)
+
+
+def data_dir_of(path: str) -> str | None:
+    """The --data-dir tree a path is under (the longest), or None."""
+    hits = [d for d in DATA_DIRS if path.startswith(d.rstrip('/') + '/')]
+    return max(hits, key=len) if hits else None
+
+
+def is_served_dir(d: str) -> bool:
+    """A --data-dir that is a folder the app serves as is (public/, web/static/), not inside a test area."""
+    parts = set(PurePosixPath(d).parts)
+    return bool(parts & SERVED_DIRS) and not parts & TEST_DIRS
+
+
+def data_module(root: Path, rel: str) -> int:
+    """How many records a source file under --data-dir holds when it is a data module (a records array written as code:
+    `export const birds = [{...}, {...}]`, `ROWS = [dict(...), ...]`), else 0. A data module has three or more literal
+    records of two or more constant fields, at least two with the same keys, and its record fields sit on at least 40% of
+    its non-blank lines, so a component with a style object or a config module is not one."""
+    p = root / rel
+    try:
+        if p.stat().st_size > DATA_MODULE_MAX_BYTES:
+            return 0
+        text = p.read_text(encoding='utf-8')
+        if jsparse.is_js(rel):
+            recs = jsparse.records(text, rel)
+        elif rel.endswith('.py'):
+            recs = datafiles.python_records(text, rel)
+        else:
+            return 0
+    except (OSError, UnicodeDecodeError, datafiles.NotAssessed, RecursionError, ValueError):
+        return 0
+    recs = [r for r in recs if len(r['fields']) >= 2]
+    shapes: dict[frozenset, int] = {}
+    for r in recs:
+        k = frozenset(r['fields'])
+        shapes[k] = shapes.get(k, 0) + 1
+    if len(recs) < 3 or max(shapes.values(), default=0) < 2:
+        return 0
+    field_lines = {v['line'] for r in recs for v in r['fields'].values()}
+    body = [ln for ln in text.split('\n') if ln.strip() and not ln.strip().startswith(('//', '#', '/*', '*'))]
+    return len(recs) if body and len(field_lines) / len(body) >= 0.4 else 0
 
 
 def package_roots(files: list[str]) -> set[str]:
@@ -606,6 +657,21 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
     anonymised = markers.get('anonymised_by', {})
     kinds = {rel: kind_of(rel) for rel in files}
     kinds = {rel: k for rel, k in kinds.items() if k}
+    # source code under a --data-dir tree: a data module is listed as a fixture; the rest is recorded, never dropped silently
+    module_notes: dict[str, str] = {}
+    code_under: dict[str, list[str]] = {}
+    for rel in files:
+        if rel in kinds or PurePosixPath(rel).suffix.lower() not in CODE_EXT:
+            continue
+        d = data_dir_of(rel)
+        if d is None:
+            continue
+        n = data_module(root, rel)
+        if n:
+            kinds[rel] = 'fixture'
+            module_notes[rel] = f'a data module written as code ({n} records): scanned as data'
+        else:
+            code_under.setdefault(d, []).append(rel)
     skipped: dict[str, str] = {}
     sampled: dict[str, dict] = {}
     if max_files_per_dir and max_files_per_dir > 0:
@@ -656,7 +722,7 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
         elif ext in MEDIA_EXT:
             entry.update(status='not_assessed', reason='image, font or media file: its contents (metadata included) are not read',
                          format=ext[1:])
-        elif k == 'fixture' and ext not in DATA_EXT and ext not in ('.xls',):
+        elif k == 'fixture' and ext not in DATA_EXT and ext not in ('.xls',) and rel not in module_notes:
             # a file under --data-dir in a format the inventory does not know (a save file, a custom binary): listed so the
             # report cannot imply it was read
             entry.update(status='not_assessed', reason=f'unknown format ({ext or "no extension"}): not read', format=ext[1:] or 'unknown')
@@ -667,6 +733,8 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
                 entry.update(status='not_assessed', reason='not UTF-8 text')
             except OSError as exc:
                 entry.update(status='not_assessed', reason=f'cannot be read: {exc.__class__.__name__}')
+        if rel in module_notes:
+            entry['note'] = module_notes[rel]
         if rel in anonymised:
             entry['anonymised_by'] = anonymised[rel]
         if k == 'inline' and PurePosixPath(rel).name == 'conftest.py':
@@ -705,7 +773,34 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
             entry['loaded_by'] = loaded_by(rel, py, js_tests, root, FileRef(rel, roots, name_counts, by_dir.get(PurePosixPath(rel).parent.as_posix())))
         items.append(entry)
     tests = sorted({py.test_id(p, fn) for p, fn in py.all_tests()} | {f'{t}::*' for t in js_tests})
+    warnings: list[str] = []
+    # a served folder named with --data-dir: its files are the site's assets; only those a test loads are test data
+    served: dict[str, dict] = {}
+    for d in sorted(x for x in DATA_DIRS if is_served_dir(x)):
+        under = [i for i in items if i['kind'] == 'fixture' and data_dir_of(i['path']) == d]
+        keep = [i for i in under if i['loaded_by']]
+        drop = {id(i) for i in under if not i['loaded_by']}
+        items = [i for i in items if id(i) not in drop]
+        served[d] = {'files': len(under), 'loaded_by_tests': len(keep),
+                     'note': 'a folder the app serves as is: its files are site assets, not test fixtures; only the files a '
+                             'test loads are inventoried, and none is called unused'}
+        warnings.append(f'{d}/ is a served asset folder (named with --data-dir): its {len(under)} file(s) are the site\'s assets, '
+                        f'not test fixtures; {len(keep)} that tests load are inventoried, the rest are not (personal data in '
+                        'served files belongs to privacy-flow-auditor)')
+    data_code = {}
+    for d, fs in sorted(code_under.items()):
+        data_code[d] = {'files': len(fs), 'paths': sorted(fs)[:50],
+                        'reason': 'source code under --data-dir that is not a data module (no records array): not read as '
+                                  'test data; it stays product code, read for clock and locale calls only'}
+        warnings.append(f'{d}/ (--data-dir) holds {len(fs)} source file(s) that are not data modules, not read as test data '
+                        f'(data_dir_code): {", ".join(sorted(fs)[:3])}{", ..." if len(fs) > 3 else ""}. A module of records '
+                        'written as code is listed and scanned; personal data in other product code belongs to '
+                        'code-security-auditor and privacy-flow-auditor')
     extra = {}
+    if served:
+        extra['served_dirs'] = served
+    if data_code:
+        extra['data_dir_code'] = data_code
     unlisted = unlisted_data_dirs(root, all_files, py, js_tests)
     if unlisted:
         extra['unlisted_data_dirs'] = unlisted
@@ -714,13 +809,16 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
     if not tests:
         # loud, like language_coverage: an empty inventory is not a clean one
         extra['no_tests'] = True
-        extra['warnings'] = [NO_TESTS]
+        warnings.insert(0, NO_TESTS)
+    if warnings:
+        extra['warnings'] = warnings
     return {'repo': root.name, 'data_dirs': sorted(DATA_DIRS), 'product_dirs': dict(sorted(PRODUCT_DIRS.items())),
             **extra, 'inventory': items, 'tests': tests,
             'summary': {'sources': len(items), 'by_kind': {k: len([i for i in items if i['kind'] == k])
                                                             for k in sorted({i['kind'] for i in items})},
                         'not_assessed': len([i for i in items if i['status'] == 'not_assessed']),
-                        'unused': [i['path'] for i in items if not i['loaded_by'] and i['kind'] != 'inline']}}
+                        # with no tests, "no test loads it" says nothing about a file
+                        'unused': [i['path'] for i in items if not i['loaded_by'] and i['kind'] != 'inline'] if tests else []}}
 
 
 def main(argv=None) -> int:
