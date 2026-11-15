@@ -1,6 +1,6 @@
 # Design: `test-impact-selector-skill`
 
-Status: Built (v1.4.0), see "As built" at the end. Build order: 10.
+Status: Built (v1.5.0), see "As built" at the end. Build order: 10.
 
 ## Mission
 
@@ -422,3 +422,19 @@ Where the build differs from the design above, and what the example showed.
     configuration (recorded as unresolved, not resolved). C5's selection and report were refreshed
     for the shared `diff_scope.py` change of kind reasons; the other examples are unchanged and
     validate with `--recompute`.
+- **v1.5.0: Rust selection from the shared reader.** Red/green cases on variants of the "tide tables"
+  workspace.
+  - **One Rust model** (`rust_files_scanned_once`): `import_graph.py` takes `cargo_project.py`'s
+    `target_files`, `targets_reaching` and each test's `features`/`features_any` instead of re-walking
+    module trees, rebuilding the path-dependent closure and parsing cfg itself. Each `.rs` file is
+    scanned once per graph (it was twice), and a dev-dependency is no longer followed transitively.
+  - **Binary modules** (`rust_bin_module_selects_integration_tests`): a change to a binary-only module
+    selects its crate's integration tests (`runs_bin`).
+  - **Parameterised tests** (`rust_parameterised_tests_prefix_matched`): `#[rstest]`, `#[test_case]` and
+    `#[test_matrix]` tests get commands without `--exact`, with a `note` (optional `commands[].note` in
+    the schema, shown by the renderer).
+  - **Default features** (`rust_default_features_transitive`): features the defaults enable transitively
+    count as enabled.
+  - **cfg per target** (`rust_cfg_keyed_by_target`): a test's gating cfg comes from its own target's
+    module tree.
+  - The examples have no Rust and are unchanged.
