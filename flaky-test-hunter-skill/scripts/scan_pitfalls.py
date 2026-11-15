@@ -121,8 +121,275 @@ def collection_excluded(root: Path, all_files: list[Path] | None = None, data: d
     return sorted(out)
 
 
-def enclosing_test(lines: list[str], i: int, js: bool) -> str | None:
-    """The test the line sits in. For JS/TS, the describe chain and title joined with ' > '."""
+PY_DEF = re.compile(r'^(\s*)(?:async\s+)?def\s+(\w+)\s*\(')
+RUST_FN = re.compile(r'^(\s*)(?:pub(?:\([^)]*\))?\s+)?(?:const\s+)?(?:async\s+)?(?:unsafe\s+)?(?:extern\s+"[^"]*"\s+)?fn\s+(\w+)')
+RUST_TEST_ATTR = re.compile(r'#\[\s*(?:[\w:]+::)?test\b|#\[\s*rstest\b|#\[\s*test_case\b|#\[\s*(?:[\w:]+::)?test\s*\(')
+RUST_CFG_TEST_MOD = re.compile(r'#\[\s*cfg\s*\(\s*test\s*\)\s*\]\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{')
+
+
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip())
+
+
+def rust_has_test_attr(lines: list[str], j: int) -> bool:
+    """The fn at line j carries a test attribute (#[test], #[tokio::test], #[rstest], #[test_case(..)]) in the
+    attribute and doc-comment lines right above it."""
+    for k in range(j - 1, -1, -1):
+        s = lines[k].strip()
+        if not s or s.startswith(('//', '#[', '#![')) or s.endswith(')]') or s == ']':
+            if RUST_TEST_ATTR.search(s):
+                return True
+            continue
+        return False
+    return False
+
+
+def python_enclosing_test(lines: list[str], i: int) -> str | None:
+    """The test function around line i: the nearest enclosing def named test*, looking outward by indentation through
+    nested helpers. A line in a module-level helper (def make_x) is in no test: None."""
+    indent = _indent(lines[i]) if lines[i].strip() else 10 ** 6
+    m = PY_DEF.match(lines[i])
+    if m and m.group(2).startswith('test'):
+        return m.group(2)
+    for j in range(i - 1, -1, -1):
+        s = lines[j]
+        if not s.strip():
+            continue
+        ind = _indent(s)
+        if ind >= indent:
+            continue
+        m = PY_DEF.match(s)
+        if m and m.group(2).startswith('test'):
+            return m.group(2)
+        indent = ind
+        if ind == 0:
+            return None
+    return None
+
+
+def rust_enclosing_test(lines: list[str], i: int) -> str | None:
+    """The #[test] function around line i, looking outward by indentation; a line in a plain helper fn (a scratch
+    folder maker, a fixture builder) is in no test: None."""
+    m = RUST_FN.match(lines[i])
+    if m and rust_has_test_attr(lines, i):
+        return m.group(2)
+    indent = _indent(lines[i]) if lines[i].strip() else 10 ** 6
+    for j in range(i - 1, -1, -1):
+        s = lines[j]
+        if not s.strip() or s.strip().startswith('//'):
+            continue
+        ind = _indent(s)
+        if ind >= indent:
+            continue
+        m = RUST_FN.match(s)
+        if m and rust_has_test_attr(lines, j):
+            return m.group(2)
+        indent = ind
+        if ind == 0:
+            return None
+    return None
+
+
+def rust_test_lines(lines: list[str]) -> set[int]:
+    """Line indexes inside #[cfg(test)] modules of a Rust source file (unit tests live there, beside the code)."""
+    text = '\n'.join(lines)
+    if 'cfg' not in text or 'test' not in text:
+        return set()
+    try:
+        import cargo_project
+        masked = cargo_project.mask(text)
+    except Exception:          # cargo_project.py missing: comments and strings are not blanked
+        masked = text
+    out = set()
+    for m in RUST_CFG_TEST_MOD.finditer(masked):
+        depth, k = 0, m.end() - 1
+        while k < len(masked):
+            if masked[k] == '{':
+                depth += 1
+            elif masked[k] == '}':
+                depth -= 1
+                if depth == 0:
+                    break
+            k += 1
+        a, b = masked.count('\n', 0, m.start()), masked.count('\n', 0, k)
+        out.update(range(a, b + 1))
+    return out
+
+
+def in_string(line: str, pos: int, lang: str) -> bool:
+    """Position pos of the line sits inside a string literal (a command passed to a child process, a message)."""
+    quotes = '"' if lang == 'rust' else '"\''
+    q, k = None, 0
+    while k < pos and k < len(line):
+        c = line[k]
+        if q:
+            if c == '\\':
+                k += 2
+                continue
+            if c == q:
+                q = None
+        elif c in quotes:
+            q = c
+        elif c == '#' and lang == 'python' or line.startswith('//', k) and lang != 'python':
+            return False
+        k += 1
+    return q is not None
+
+
+NAME_CONTEXT = re.compile(r'format!|\.join\(|\bPath(?:Buf)?\b|temp_?dir|gettempdir|mkdtemp|mkdir|create_dir|\bf["\']|'
+                          r'\.with_(?:file_)?name\(|\b\w*(?:dir|path|name|folder|prefix|suffix|filename)\b|'
+                          r'[\'"]\s*\+\s*\S|\S\s*\+\s*[\'"]', re.I)          # a literal prefix or suffix glued on
+ASSERTISH = re.compile(r'\bassert|\bexpect\(|[=!]=|\s[<>]=?\s|\bsorted\(|\bmin\(|\bmax\(|\.cmp\(|\.sort')
+ASSIGNED = re.compile(r'^\s*(?:let\s+(?:mut\s+)?)?([A-Za-z_]\w*)\s*(?::[^=]+)?=(?!=)')
+
+
+def statement(lines: list[str], i: int, lang: str) -> str:
+    """Line i and its continuation lines: to the `;` in Rust, until the brackets close in Python (at most 8 lines)."""
+    out, depth = [], 0
+    for k in range(i, min(i + 8, len(lines))):
+        s = lines[k]
+        out.append(s)
+        depth += sum(s.count(c) for c in '([{') - sum(s.count(c) for c in ')]}')
+        if (lang == 'rust' and s.rstrip().endswith((';', '{', '}'))) or (lang != 'rust' and depth <= 0):
+            break
+    return '\n'.join(out)
+
+
+def statement_start(lines: list[str], i: int, lang: str) -> int:
+    """The first line of the statement line i belongs to (a clock read on its own line inside a multi-line
+    format!(...) or a call spanning several lines)."""
+    start = i
+    for k in range(i - 1, max(-1, i - 9), -1):
+        s = lines[k].rstrip()
+        if not s.strip():
+            break
+        if lang == 'rust':
+            if s.endswith((';', '{', '}')):
+                break
+            start = k
+        else:
+            depth = sum(l.count(c) for l in lines[k:i] for c in '([{') - sum(l.count(c) for l in lines[k:i] for c in ')]}')
+            if depth > 0:
+                start = k
+    return start
+
+
+def unique_name_only(lines: list[str], i: int, lang: str) -> bool:
+    """The clock or random read only makes a unique folder or file name and never reaches an assertion: uuid4() in a
+    path, SystemTime::now() as nanoseconds formatted into a scratch folder's name. Either the statement builds a name
+    itself, or it assigns a variable whose every later use builds a name. That is the isolation the skill recommends,
+    not a flake lead."""
+    i = statement_start(lines, i, lang)
+    stmt = statement(lines, i, lang)
+    if ASSERTISH.search(stmt):
+        return False
+    m = ASSIGNED.match(lines[i])
+    rhs = stmt[stmt.index('=', m.end() - 1) + 1:] if m else stmt
+    if NAME_CONTEXT.search(rhs) or (m and NAME_CONTEXT.search(m.group(1)) and 'temp' not in m.group(1).lower()):
+        return True
+    if not m:
+        return False
+    var = re.compile(r'(?<![\w.])' + re.escape(m.group(1)) + r'\b')
+    n_lines = len(stmt.split('\n'))
+    uses = [k for k in range(i + n_lines, len(lines)) if var.search(lines[k])]
+    return bool(uses) and all(NAME_CONTEXT.search(statement(lines, k, lang)) and
+                              not ASSERTISH.search(statement(lines, k, lang)) for k in uses)
+
+
+def helper_programs(root: Path, data: dict, all_files: list[Path] | None = None) -> set[str]:
+    """Files in test directories that are programs the tests launch, not tests: a main entry point and no test in
+    the file (a fake server binary under tests/fixtures/, a Python script run as a child). They get only the source
+    checks, so their sleeps and clocks are not reported as test smells."""
+    test_rx = [re.compile(p) for p in data['test_file_patterns']]
+    out = set()
+    for p in all_files if all_files is not None else files(root):
+        lang = data['language_by_suffix'].get(p.suffix)
+        if lang not in ('rust', 'python', 'go'):
+            continue
+        rel = p.relative_to(root).as_posix()
+        if not any(rx.search(rel) for rx in test_rx):
+            continue
+        try:
+            text = p.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        if lang == 'rust':
+            main = re.search(r'(?m)^\s*(?:pub\s+)?(?:async\s+)?fn\s+main\s*\(', text)
+            tests = RUST_TEST_ATTR.search(text)
+        elif lang == 'python':
+            main = re.search(r'(?m)^if\s+__name__\s*==\s*[\'"]__main__[\'"]', text)
+            tests = re.search(r'(?m)^\s*(?:async\s+)?def\s+test|\bTestCase\b', text)
+        else:
+            main = re.search(r'(?m)^func\s+main\s*\(', text)
+            tests = re.search(r'(?m)^func\s+(?:Test|Benchmark|Fuzz|Example)', text)
+        if main and not tests:
+            out.add(rel)
+    return out
+
+
+def test_bodies(lines: list[str], lang: str, test_lines: set[int] | None = None) -> list[tuple[str, int, int]]:
+    """(name, def line, last line) of each test function: Python def test*, Rust fns with a test attribute (body by
+    indentation: to the closing brace at the fn's own indentation)."""
+    out = []
+    for j, line in enumerate(lines):
+        if lang == 'python':
+            m = PY_DEF.match(line)
+            if not m or not m.group(2).startswith('test'):
+                continue
+        else:
+            m = RUST_FN.match(line)
+            if not m or not rust_has_test_attr(lines, j):
+                continue
+        ind, end = len(m.group(1)), j
+        for k in range(j + 1, len(lines)):
+            s = lines[k]
+            if not s.strip():
+                continue
+            if _indent(s) <= ind:
+                end = k if lang == 'rust' and s.strip().startswith('}') else end
+                break
+            end = k
+        out.append((m.group(2), j, end))
+    return out
+
+
+def body_hits(lines: list[str], lang: str, sm: dict) -> list[tuple[int, str]]:
+    """(line index, test name) for a test-body smell. count_over_duration: a lower bound on a count asserted in a test
+    whose body also runs or waits for a fixed duration (one hit per test). py_helper: a module-level def test_* that
+    other code in the file calls (pytest would collect the helper as a test)."""
+    rx = re.compile(sm['pattern'])
+    code = lambda s: not s.strip().startswith(('#', '//'))  # noqa: E731
+    hits = []
+    if sm['scope'] == 'count_over_duration':
+        dur = re.compile(sm['duration_pattern'])
+        for name, a, b in test_bodies(lines, lang):
+            body = [k for k in range(a, b + 1) if code(lines[k])]
+            if not any(dur.search(lines[k]) for k in body):
+                continue
+            k = next((k for k in body if rx.search(lines[k])), None)
+            if k is not None:
+                hits.append((k, name))
+    elif sm['scope'] == 'py_helper' and lang == 'python':
+        for j, line in enumerate(lines):
+            m = rx.match(line)
+            if not m:
+                continue
+            name = m.group(1)
+            if re.search(r'\b' + re.escape(name) + r'\.__test__\s*=\s*False', '\n'.join(lines)):
+                continue
+            call = re.compile(r'(?<![\w.])' + re.escape(name) + r'\s*\(')
+            if any(k != j and code(l) and call.search(l) for k, l in enumerate(lines)):
+                hits.append((j, name))
+    return hits
+
+
+def enclosing_test(lines: list[str], i: int, js: bool, lang: str | None = None) -> str | None:
+    """The test the line sits in. For JS/TS, the describe chain and title joined with ' > '. Python and Rust: the
+    enclosing test function only (a line in a helper is in no test)."""
+    if lang == 'python':
+        return python_enclosing_test(lines, i)
+    if lang == 'rust':
+        return rust_enclosing_test(lines, i)
     for j in range(i, -1, -1):
         m = TEST_NAME.match(lines[j])
         if not m:
@@ -207,14 +474,18 @@ def scan(root: Path, data: dict) -> list[dict]:
                'prev_rx': re.compile(s['skip_if_prev']) if s.get('skip_if_prev') else None,
                'next_rx': re.compile(s['skip_if_next']) if s.get('skip_if_next') else None,
                'mit_rx': re.compile(s['mitigated_by']) if s.get('mitigated_by') else None,
-               'req_rx': re.compile(s['requires_in_file']) if s.get('requires_in_file') else None}
-              for s in data['smells'] if s.get('scope') not in ('thread_setup', 'reload_target', 'module_let', *GO_SCOPES)]
+               'req_rx': re.compile(s['requires_in_file']) if s.get('requires_in_file') else None,
+               'skip_rx': re.compile(s['skip_if_in_file']) if s.get('skip_if_in_file') else None}
+              for s in data['smells']
+              if s.get('scope') not in ('thread_setup', 'reload_target', 'module_let', *GO_SCOPES, *BODY_SCOPES)]
     module_let = [s for s in data['smells'] if s.get('scope') == 'module_let']
+    body_smells = [s for s in data['smells'] if s.get('scope') in BODY_SCOPES]
     go_body = {s['scope']: s for s in data['smells'] if s.get('scope') in GO_SCOPES}
     project = [s for s in data['smells'] if s.get('scope') == 'thread_setup']
     reload_targets = [s for s in data['smells'] if s.get('scope') == 'reload_target']
     all_files = list(files(root))
     not_collected = set(collection_excluded(root, all_files, data))
+    helpers = helper_programs(root, data, all_files)
     setups, pools = setup_files(root, all_files)
     texts: dict[str, list[str]] = {}
 
@@ -245,22 +516,35 @@ def scan(root: Path, data: dict) -> list[dict]:
         if not lang:
             continue
         rel = p.relative_to(root).as_posix()
-        is_test = any(rx.search(rel) for rx in test_rx) and rel not in not_collected
+        is_test = any(rx.search(rel) for rx in test_rx) and rel not in not_collected and rel not in helpers
         lines = read(p)
         if lines is None:
             continue
-        local_mit, has_req, once = {}, {}, set()
+        # Rust unit tests live in #[cfg(test)] modules of source files: those lines are test code
+        test_lines = rust_test_lines(lines) if lang == 'rust' and not is_test else set()
+        local_mit, has_req, has_skip, once = {}, {}, {}, set()
         for i, line in enumerate(lines):
             s = line.strip()
-            if s.startswith(('#', '//', '*', '/*')):
+            if s.startswith(('#', '//', '*', '/*')) and not s.startswith(('#[', '#![')):
                 continue
+            line_test = is_test or i in test_lines
             for sm in smells:
                 if lang not in sm['languages']:
                     continue
-                if (sm.get('scope') == 'source') == is_test:
+                if (sm.get('scope') == 'source') == line_test:
                     continue
-                if not sm['rx'].search(line):
+                if sm.get('code_only'):
+                    if not any(not in_string(line, mm.start(), lang) for mm in sm['rx'].finditer(line)):
+                        continue          # only inside a string: a command for a child process, a message
+                elif not sm['rx'].search(line):
                     continue
+                if sm['skip_rx'] is not None:
+                    if sm['id'] not in has_skip:
+                        has_skip[sm['id']] = first_match(sm['skip_rx'], lines) is not None
+                    if has_skip[sm['id']]:
+                        continue
+                if sm.get('skip_if_unique_name') and unique_name_only(lines, i, lang):
+                    continue              # only makes a unique folder or file name
                 if sm['req_rx'] is not None:
                     if sm['id'] not in has_req:
                         has_req[sm['id']] = first_match(sm['req_rx'], lines) is not None
@@ -284,14 +568,27 @@ def scan(root: Path, data: dict) -> list[dict]:
                         n = first_match(sm['mit_rx'], lines)
                         local_mit[sm['id']] = f'{sm["mitigation"]} in this file (line {n})' if n else None
                     mitigation = global_mit.get(sm['id']) or local_mit[sm['id']]
-                test = enclosing_test(lines, i, lang in JS_LANGS) if is_test else None
+                test = enclosing_test(lines, i, lang in JS_LANGS, lang) if line_test else None
                 if sm.get('once_per_test'):
                     if (sm['id'], test) in once:
                         continue          # one lead per test: the first read is enough to point at it
                     once.add((sm['id'], test))
+                if sm.get('once_per_file'):
+                    if sm['id'] in once:
+                        continue          # one lead per file: the file never cleans up, wherever it creates
+                    once.add(sm['id'])
                 out.append({'id': f'SM-{len(out) + 1}', 'smell': sm['id'], 'file': rel, 'line': i + 1,
                             'excerpt': s[:160], 'cause': sm['cause'], 'message': sm['message'], 'fix': sm['fix'],
-                            'test': test, 'in_test_file': is_test, 'mitigation': mitigation})
+                            'test': test, 'in_test_file': line_test, 'mitigation': mitigation})
+        if (is_test or test_lines) and lang in ('python', 'rust'):
+            for sm in body_smells:
+                if lang not in sm['languages']:
+                    continue
+                for k, name in body_hits(lines, lang, sm):
+                    if is_test or k in test_lines:
+                        out.append({'id': f'SM-{len(out) + 1}', 'smell': sm['id'], 'file': rel, 'line': k + 1,
+                                    'excerpt': lines[k].strip()[:160], 'cause': sm['cause'], 'message': sm['message'],
+                                    'fix': sm['fix'], 'test': name, 'in_test_file': True, 'mitigation': None})
         if is_test and lang == 'go' and go_body:
             for scope, line, test, name in go_body_hits(lines):
                 sm = go_body.get(scope)
@@ -342,6 +639,75 @@ def scan(root: Path, data: dict) -> list[dict]:
 
 
 GO_SCOPES = ('go_parallel', 'go_goroutine')
+BODY_SCOPES = ('count_over_duration', 'py_helper')
+# presets of run_tests.py per language, and the CI gate runners detect_conventions.py names
+PRESETS_BY_LANG = {'python': ['pytest'], 'rust': ['cargo', 'nextest'], 'go': ['go-test', 'gotestsum'],
+                   'javascript': ['vitest', 'jest', 'node-test', 'playwright'],
+                   'typescript': ['vitest', 'jest', 'node-test', 'playwright']}
+GATE_LANG = {'cargo-llvm-cov': 'rust', 'cargo-tarpaulin': 'rust', 'cargo-nextest': 'rust', 'cargo-test': 'rust',
+             'coverage-unittest': 'python', 'coverage-pytest': 'python', 'unittest': 'python', 'pytest': 'python',
+             'go-test': 'go'}
+STATIC_TEST = {'python': re.compile(r'^\s*(?:async\s+)?def\s+test\w*\s*\('),
+               'go': re.compile(r'^func\s+Test\w*\s*\(\s*\w+\s+\*testing\.T\b'),
+               'javascript': re.compile(r'^\s*(?:it|test)(?:\.\w+)*\s*\(\s*[\'"`]'),
+               'typescript': re.compile(r'^\s*(?:it|test)(?:\.\w+)*\s*\(\s*[\'"`]')}
+
+
+def suite_inventory(root: Path, data: dict | None = None) -> list[dict]:
+    """One entry per language that has tests: {language, test_files, tests, count_source, presets, ci_gates}. The
+    languages and test files come from detect_conventions.py (lines, test files, CI gates); Rust tests are counted
+    from the Cargo model (cargo_project.py: #[test] functions in #[cfg(test)] modules and tests/*.rs, doc tests
+    apart), other languages by a static count of test definitions in test files. A report covers each of these
+    suites in metadata.suites, as run or not run with the reason, so a language half of the suite with no
+    per-test runs lowers evidence completeness instead of disappearing."""
+    data = data or json.loads(DATA.read_text(encoding='utf-8'))
+    try:
+        import detect_conventions
+        res = detect_conventions.Detector(root, 50_000).run(None)
+    except Exception as exc:                  # noqa: BLE001 - the inventory is a lead, never fatal
+        res = {'languages': {}, 'ci_gates': [], 'error': repr(exc)}
+    langs = res.get('languages') or {}
+    gates = res.get('ci_gates') or []
+    rust = None
+    if (root / 'Cargo.toml').is_file():
+        try:
+            import cargo_project
+            model = cargo_project.read_cargo(root)
+            tests = [t for c in model.get('crates', []) for t in c.get('tests', [])]
+            rust = {'tests': sum(t.get('kind') != 'doc' for t in tests), 'doc_tests': sum(t.get('kind') == 'doc' for t in tests),
+                    'ignored': sum(bool(t.get('ignored')) for t in tests)}
+        except Exception:                     # noqa: BLE001
+            rust = None
+    test_rx = [re.compile(p) for p in data['test_file_patterns']]
+    all_files = list(files(root))
+    helpers = helper_programs(root, data, all_files)
+    counts: dict[str, int] = {}
+    for p in all_files:
+        lang = data['language_by_suffix'].get(p.suffix)
+        rel = p.relative_to(root).as_posix()
+        if lang not in STATIC_TEST or rel in helpers or not any(rx.search(rel) for rx in test_rx):
+            continue
+        try:
+            text = p.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        counts[lang] = counts.get(lang, 0) + sum(bool(STATIC_TEST[lang].match(l)) for l in text.splitlines())
+    out = []
+    for lang, info in langs.items():
+        tf = (info or {}).get('test_files', 0)
+        if lang == 'rust' and rust is not None and (rust['tests'] or tf):
+            entry = {'language': lang, 'test_files': tf, 'tests': rust['tests'], 'doc_tests': rust['doc_tests'],
+                     'ignored': rust['ignored'], 'count_source': 'cargo_project.py (#[test] fns; doc tests apart)'}
+        elif tf:
+            entry = {'language': lang, 'test_files': tf, 'tests': counts.get(lang),
+                     'count_source': 'static count of test definitions' if lang in STATIC_TEST else None}
+        else:
+            continue
+        entry['presets'] = PRESETS_BY_LANG.get(lang, ['custom'])
+        entry['ci_gates'] = [f"{g.get('file')}:{g.get('line')} {g.get('command')}" for g in gates
+                             if GATE_LANG.get(g.get('runner')) == lang]
+        out.append(entry)
+    return out
 GO_TEST_FUNC = re.compile(r'^func\s+(Test\w*|Benchmark\w*|Fuzz\w*|Example\w*)\s*\(')
 GO_WAITS = re.compile(r'\.Wait\(\)|<-|\berrgroup\b|\bEventually\w*\(|\bsynctest\.(?:Run|Test|Wait)\(')
 GO_GOROUTINE = re.compile(r'^\s*go\s+(?:func\b|[\w.]+\()')
@@ -640,10 +1006,130 @@ PY_SAMPLES = {
 }
 
 
+# A synthetic tide-table workspace: a clap CLI crate with integration tests in tests/*.rs, a helper binary under
+# tests/fixtures that the tests launch, and unit tests in a #[cfg(test)] module of the library.
+RUST_TIDE = {
+    'Cargo.toml': '[package]\nname = "tidectl"\nversion = "0.1.0"\nedition = "2024"\n',
+    'src/lib.rs': (
+        'use std::time::Duration;\n\n'
+        'pub fn settle() {\n    std::thread::sleep(Duration::from_millis(5));\n}\n\n'
+        'pub fn height(hour: u32) -> f64 {\n    f64::from(hour) * 0.5\n}\n\n'
+        '#[cfg(test)]\nmod tests {\n    use super::*;\n\n'
+        '    fn helper_mode() -> String {\n        std::env::var("TIDE_MODE").unwrap_or_default()\n    }\n\n'
+        '    #[test]\n    fn reads_mode_from_env() {\n        std::env::set_var("TIDE_MODE", "spring");\n'
+        '        assert_eq!(helper_mode(), "spring");\n    }\n\n'
+        '    #[test]\n    fn height_is_linear() {\n        assert_eq!(height(2), 1.0);\n    }\n}\n'),
+    'tests/cli.rs': (
+        'use std::process::Command;\nuse std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};\n\n'
+        'fn scratch_dir(tag: &str) -> std::path::PathBuf {\n'
+        '    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();\n'
+        '    let dir = std::env::temp_dir().join(format!("tide-{tag}-{nanos}"));\n'
+        '    std::fs::create_dir_all(&dir).unwrap();\n    dir\n}\n\n'
+        '#[test]\nfn logs_samples_for_a_duration() {\n    let dir = scratch_dir("log");\n'
+        '    let out = Command::new(env!("CARGO_BIN_EXE_tidectl"))\n'
+        '        .args(["log", "--duration", "0.7", "--interval-ms", "100"])\n'
+        '        .current_dir(&dir)\n        .output()\n        .unwrap();\n'
+        '    let samples = String::from_utf8_lossy(&out.stdout).lines().count();\n'
+        '    assert!(samples >= 2, "only {samples} samples");\n}\n\n'
+        '#[test]\nfn reports_samples_in_json() {\n    let dir = std::env::temp_dir().join(format!(\n'
+        '        "tide-report-{}-{}",\n        std::process::id(),\n        SystemTime::now()\n'
+        '            .duration_since(UNIX_EPOCH)\n            .unwrap()\n            .as_nanos()\n    ));\n'
+        '    std::fs::create_dir(&dir).unwrap();\n'
+        '    let out = Command::new(env!("CARGO_BIN_EXE_tidectl"))\n'
+        '        .args(["log", "--json", "--duration", "0.5"])\n        .output()\n        .unwrap();\n'
+        '    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();\n'
+        '    assert!(report["samples"].as_array().unwrap().len() >= 2);\n}\n\n'
+        '#[test]\nfn answers_quickly() {\n    let start = Instant::now();\n'
+        '    let _ = Command::new(env!("CARGO_BIN_EXE_tidectl")).arg("--help").output();\n'
+        '    assert!(start.elapsed() < Duration::from_millis(500));\n}\n\n'
+        '#[test]\nfn reads_today() {\n    let today = SystemTime::now();\n'
+        '    assert!(today > UNIX_EPOCH);\n}\n'),
+    'tests/fixtures/slow_station.rs': (
+        'use std::{thread, time::Duration};\n\nfn main() {\n'
+        '    thread::sleep(Duration::from_millis(200));\n    println!("station ready");\n}\n'),
+}
+# A unittest-style Python suite (as CI runs it with python -m unittest; pytest collects it too).
+PY_LOGGER = {
+    'tests/test_logger.py': (
+        'import subprocess\nimport sys\nimport tempfile\nimport unittest\nimport uuid\nfrom pathlib import Path\n\n\n'
+        'def test_directory(name):\n    return Path(tempfile.gettempdir()) / f"{name}-{uuid.uuid4().hex}"\n\n\n'
+        'class LoggerTest(unittest.TestCase):\n'
+        '    def test_samples_over_duration(self):\n'
+        '        out = subprocess.run([sys.executable, "logger.py", "--duration", "3", "--interval-ms", "100"],\n'
+        '                             capture_output=True, text=True).stdout\n'
+        '        samples = out.splitlines()\n        self.assertGreaterEqual(len(samples), 2)\n\n'
+        '    def test_child_waits(self):\n'
+        '        subprocess.run([sys.executable, "-c", "import time; time.sleep(0.2)"], check=True)\n\n'
+        '    def test_scratch(self):\n        scratch_dir = test_directory("scratch")\n'
+        '        self.assertTrue(str(scratch_dir))\n\n'
+        '    def test_report_folder(self):\n        scratch = Path(tempfile.gettempdir())\n'
+        '        tmp = scratch / ("report-" + uuid.uuid4().hex)\n        tmp.mkdir()\n'
+        '        self.assertTrue(tmp.is_dir())\n\n'
+        '    def test_ids_sort(self):\n        ids = sorted(uuid.uuid4() for _ in range(3))\n'
+        '        self.assertEqual(len(ids), 3)\n'),
+    'tests/fixtures/fake_station.py': (
+        'import time\n\n\ndef main():\n    time.sleep(1)\n    print("ready")\n\n\n'
+        'if __name__ == "__main__":\n    main()\n'),
+}
+
+
 def self_test() -> int:
     data = json.loads(DATA.read_text(encoding='utf-8'))
     ok = True
     lines = []
+
+    # 6) Rust in a realistic layout: unique-name clock reads, helper binaries under tests/fixtures, unit tests in a
+    #    #[cfg(test)] module, a sample count over a fixed duration, an elapsed-time budget, a scratch folder never
+    #    removed.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for rel, text in RUST_TIDE.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        hits = scan(root, data)
+        got = {(h['smell'], h['file'], h['test']) for h in hits}
+        want = {('shared-env-rust', 'src/lib.rs', 'reads_mode_from_env'),
+                ('wall-time-count-assertion', 'tests/cli.rs', 'logs_samples_for_a_duration'),
+                ('wall-time-count-assertion', 'tests/cli.rs', 'reports_samples_in_json'),
+                ('wall-time-assertion-rust', 'tests/cli.rs', 'answers_quickly'),
+                ('wall-clock-rust', 'tests/cli.rs', 'answers_quickly'),
+                ('wall-clock-rust', 'tests/cli.rs', 'reads_today'),
+                ('scratch-dir-leak-rust', 'tests/cli.rs', None)}
+        unwanted = {h for h in got if h[1] == 'tests/fixtures/slow_station.rs'
+                    or (h[1] == 'src/lib.rs' and h[0] == 'fixed-sleep-rust')            # product code, not a test
+                    or (h[0] == 'wall-clock-rust' and h not in want)                    # unique folder name
+                    or h[0] == 'shared-temp-path-rust'}                                  # temp_dir + unique name
+        leaks = [h for h in hits if h['smell'] == 'scratch-dir-leak-rust']
+        if len(leaks) != 1:                                                     # one lead per file is enough
+            unwanted.add(('scratch-dir-leak-rust x' + str(len(leaks)), 'tests/cli.rs', None))
+        inv = suite_inventory(root)
+        rust = next((s for s in inv if s['language'] == 'rust'), None)
+        good = want <= got and not unwanted and rust is not None and rust['tests'] == 6 \
+            and 'tests/fixtures/slow_station.rs' in helper_programs(root, data)
+        lines.append('rust layout (unique names, fixtures, cfg(test), counts over a duration, inventory): ' + (
+            'ok' if good else f'FAILED, missing {sorted(want - got, key=str)}, unwanted {sorted(unwanted, key=str)}, '
+                              f'rust suite {rust}'))
+        ok = ok and good
+
+    # 7) Python: uuid4 that only names a folder, a sleep inside a child's -c string, a helper binary under
+    #    tests/fixtures, a sample count over a fixed duration, and a module-level test_* helper pytest would collect.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for rel, text in PY_LOGGER.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        hits = scan(root, data)
+        got = {(h['smell'], h['file'], h['test']) for h in hits}
+        want = {('wall-time-count-assertion', 'tests/test_logger.py', 'test_samples_over_duration'),
+                ('unseeded-random', 'tests/test_logger.py', 'test_ids_sort'),
+                ('pytest-collects-helper', 'tests/test_logger.py', 'test_directory')}
+        unwanted = {h for h in got if h[1] == 'tests/fixtures/fake_station.py'
+                    or (h[0] == 'fixed-sleep' and h[2] == 'test_child_waits')
+                    or (h[0] == 'unseeded-random' and h[2] != 'test_ids_sort')}
+        good = want <= got and not unwanted
+        lines.append('python unique names, child strings, fixtures, counts over a duration, collected helpers: ' + (
+            'ok' if good else f'FAILED, missing {sorted(want - got, key=str)}, unwanted {sorted(unwanted, key=str)}'))
+        ok = ok and good
 
     # 1) The Rust pack fires on a sample Rust test and source file.
     with tempfile.TemporaryDirectory() as d:
@@ -763,6 +1249,10 @@ def main(argv=None) -> int:
     cfg = pytest_collection(root)
     if cfg:
         result['pytest_collection'] = {**cfg, 'not_collected': collection_excluded(root, None, data)}
+    helpers = sorted(helper_programs(root, data))
+    if helpers:
+        result['helper_programs'] = helpers
+    result['suites'] = suite_inventory(root, data)
     text = json.dumps(result, indent=2, ensure_ascii=False) + '\n'
     if args.out:
         args.out.write_text(text, encoding='utf-8')
