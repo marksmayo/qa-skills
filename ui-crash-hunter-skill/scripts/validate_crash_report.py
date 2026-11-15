@@ -19,7 +19,10 @@ A reproduced finding needs a stack trace, or a probe that reproduced it by its e
 effect_observed, every expectation held) plus repro.observed_effect. An effect is enough for a B3/B4
 degradation; a B1/B2 crash without a stack trace also needs the probe to show the app blanked
 (root_empty, or a screen fallback for B2). A baseline_clean probe ignores console errors caused by
-the probe's own third-party blocking (ERR_BLOCKED_BY_CLIENT, kept in blocked_console_errors).
+the probe's own third-party blocking (ERR_BLOCKED_BY_CLIENT in Chromium; in Firefox a CORS failure that names a
+URL in the evidence's blocked_requests), kept in blocked_console_errors. A repro spec in files_written for a
+baseline probe is stale (baselines never get one), and a metadata.skill_version other than SKILL.md's draws a
+warning.
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -53,6 +56,23 @@ RECOVERABILITY = {'crash_loop': 3, 'restart_or_navigate': 2, 'retry_fixes': 1}
 BANNED = re.compile(r'\b(crash[- ]free|no crashes|never crash(es)?|bug[- ]free|(is|are) (stable|safe)|production[- ]ready|'
                     r'fully (tested|covered)|100% (covered|safe))\b', re.I)
 BLOCKED = re.compile(r'ERR_BLOCKED_BY_CLIENT|blockedbyclient', re.I)
+SKILL_MD = Path(__file__).resolve().parent.parent / 'SKILL.md'
+
+
+def skill_version() -> str | None:
+    try:
+        m = re.search(r'''^version:\s*["']?([\w.-]+)''', SKILL_MD.read_text(encoding='utf-8'), re.M)
+    except OSError:
+        return None
+    return m.group(1) if m else None
+
+
+def own_console(ev: dict) -> list:
+    """The app's own console errors in a probe's evidence: not the probe's third-party block, in any engine (Firefox
+    reports a blocked crossorigin script as a CORS failure naming the URL, which is in blocked_requests)."""
+    urls = {u.split('?')[0] for u in ev.get('blocked_requests') or [] if u}
+    return [c for c in ev.get('console_errors') or [] if not BLOCKED.search(str(c.get('text', c)))
+            and not any(u in str(c.get('text', c)) for u in urls)]
 VAGUE = re.compile(r'^\W*(this|it|value|data|field)?\s*(could|might|may|can) be (null|undefined|nil|empty)\W*$', re.I)
 
 def score(tier: str, r: dict) -> int:
@@ -195,6 +215,10 @@ def loopback(h: str | None) -> bool:
         return False
 
 def glob_rx(pattern: str) -> re.Pattern:
+    """A path glob: ** (any depth), * (within a segment), ? (one character). Square brackets are literal, so an App
+    Router path such as src/app/[slug]/page.tsx matches as written; the fnmatch escapes [[] and []] for a literal
+    bracket are accepted too."""
+    pattern = pattern.replace('[[]', '[').replace('[]]', ']')
     out = ''
     for part in re.split(r'(\*\*/?|\*|\?)', pattern):
         out += {'**/': '(?:.*/)?', '**': '.*', '*': '[^/]*', '?': '[^/]'}.get(part, re.escape(part))
@@ -262,6 +286,10 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None,
     for k in ('repository', 'generated_at', 'skill_version', 'platforms', 'app_run'):
         if not meta.get(k):
             E(f'metadata.{k} is required')
+    current = skill_version()
+    if current and meta.get('skill_version') and str(meta['skill_version']) != current:
+        W(f"metadata.skill_version is {meta['skill_version']}, but SKILL.md is {current}: rerun with the current skill "
+          'or say which version produced the report')
     app_run = meta.get('app_run') or {}
     boundaries = {b.get('id'): b for b in recon.get('boundaries', [])}
     routes = recon.get('routes_screens', [])
@@ -346,7 +374,7 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None,
             if eh and not loopback(eh) and ev.get('read_only') is False and app_run.get('read_only') is True:
                 E(f"probe {p.get('id')}: app_run.read_only is true, but this probe's evidence says read_only false")
         if ev is not None and p.get('outcome') == 'baseline_not_clean':
-            own = [c for c in ev.get('console_errors') or [] if not BLOCKED.search(str(c.get('text', c)))]
+            own = own_console(ev)
             if not (ev.get('page_errors') or own or ev.get('step_error') or ev.get('baseline_ok') is False):
                 E(f"probe {p['id']}: outcome 'baseline_not_clean' but its evidence records no error or failed expectation")
         if ev is not None and p.get('outcome') in ('reproduced', 'baseline_clean'):
@@ -354,7 +382,7 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None,
                 E(f"probe {p['id']}: outcome 'reproduced' but its evidence file says it did not reproduce")
             if p['outcome'] == 'baseline_clean':
                 # errors caused by the probe's own third-party blocking are not the app's errors
-                own = [c for c in ev.get('console_errors') or [] if not BLOCKED.search(str(c.get('text', c)))]
+                own = own_console(ev)
                 if ev.get('page_errors') or own:
                     E(f"probe {p['id']}: outcome 'baseline_clean' but its evidence file records errors")
                 if ev.get('baseline_ok') is False or any(not x.get('passed') for x in ev.get('expectations') or []):
@@ -650,6 +678,14 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None,
         E('limitations must not be empty')
     if recon_json is not None:
         recon_checks(d, recon_json, E, W)
+
+    # a baseline probe describes healthy behaviour and never gets a repro spec (probe_web.py skips --emit-spec for it)
+    baseline_names = {str(x).lower() for p in d['probes'] if str(p.get('outcome', '')).startswith('baseline')
+                      for x in (p.get('id'), Path(str(p.get('scenario_file') or '')).stem) if x}
+    for p in d['files_written']:
+        stem = Path(str(p)).stem.lower()
+        if stem.startswith('repro') and stem.removeprefix('repro').lstrip('_-') in baseline_names:
+            E(f'files_written: {p} is a repro spec for a baseline probe; baselines never get one (remove the entry)')
 
     # files written stay outside the repository
     if repo:
