@@ -139,10 +139,59 @@ def guess_file(case: ET.Element | None, suite_file: str | None, suite_name: str 
                 return '/'.join(parts[:i]) + '.py'
     return None
 
-def parse_junit(path: Path, run_id: str, root=None) -> tuple[list[dict], list[str]]:
-    """(cases, notes) from one JUnit file. root: the directory the tests ran in, so absolute file attributes are
-    recorded relative to it."""
+PW_CONFIG_RX = re.compile(r'^playwright\.config\.[cm]?[jt]s$')
+PW_TESTDIR_RX = re.compile(r'''\btestDir\s*:\s*['"`]([^'"`]+)['"`]''')
+SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', '.next', 'coverage', 'test-results', 'playwright-report'}
+
+
+def playwright_test_dirs(root: Path, depth: int = 3) -> list[str]:
+    """testDir of each Playwright config at most `depth` folders below root, relative to root ('/'-separated, '' for
+    root itself)."""
+    out = []
+    for cur, dirs, files in os.walk(root):
+        rel_dir = Path(cur).relative_to(root)
+        dirs[:] = [] if len(rel_dir.parts) >= depth else sorted(d for d in dirs if d not in SKIP_DIRS)
+        for name in sorted(files):
+            if not PW_CONFIG_RX.match(name):
+                continue
+            try:
+                m = PW_TESTDIR_RX.search((Path(cur) / name).read_text(encoding='utf-8', errors='replace'))
+            except OSError:
+                continue
+            d = os.path.normpath(os.path.join(rel_dir.as_posix(), m.group(1) if m else '.')).replace(os.sep, '/')
+            if not d.startswith('..'):
+                out.append('' if d == '.' else d)
+    return out
+
+
+def root_relative(f: str | None, root, test_dir: str | None = None, _dirs: dict | None = None) -> str | None:
+    """A relative case file made relative to root (the repository, or where the tests ran): Playwright names specs
+    relative to its testDir, so a file not found under root is looked up under test_dir (given) or under the testDir of
+    a Playwright config below root. test_dir is applied even when the file can't be checked (it was named)."""
+    if not f or root is None or Path(f).is_absolute() or f.startswith('~/'):
+        return f
+    rootp = Path(root)
+    if (rootp / f).exists():
+        return f
+    if test_dir:
+        td = test_dir.replace('\\', '/').strip('/')
+        return f'{td}/{f}' if td not in ('', '.') else f
+    if _dirs is not None:
+        if 'pw' not in _dirs:
+            _dirs['pw'] = playwright_test_dirs(rootp)
+        for d in _dirs['pw']:
+            if d and (rootp / d / f).exists():
+                return f'{d}/{f}'
+    return f
+
+
+def parse_junit(path: Path, run_id: str, root=None, test_dir: str | None = None) -> tuple[list[dict], list[str]]:
+    """(cases, notes) from one JUnit file. root: the directory the tests ran in (or the repository), so absolute file
+    attributes are recorded relative to it, and files relative to Playwright's testDir are re-rooted on it (test_dir
+    names testDir relative to root when no config below root says it). Case ids, classnames and files are
+    '/'-separated when they are file paths (Playwright on Windows writes backslashes)."""
     notes = []
+    pw_dirs: dict = {}
     try:
         xml_root = ET.parse(path).getroot()
     except ET.ParseError as exc:
@@ -174,7 +223,8 @@ def parse_junit(path: Path, run_id: str, root=None) -> tuple[list[dict], list[st
             if not any(local(c.tag) == 'testcase' for c in el.iter()) and (int(el.get('errors', 0) or 0) or int(el.get('failures', 0) or 0)):
                 msg = ' '.join((c.get('message') or '') + ' ' + (c.text or '') for c in el if local(c.tag) in ('error', 'failure', 'system-err'))
                 add({'name': f'(suite) {suite_name or path.name}', 'classname': suite_name or '',
-                     'file': relative_file(guess_file(None, suite_file, suite_name), root),
+                     'file': root_relative(relative_file(guess_file(None, suite_file, suite_name), root), root, test_dir,
+                                           pw_dirs),
                      'status': 'error', 'failure_type': 'error',
                      'message': strip_ansi(msg) or 'suite reported errors with no test cases', 'time': el.get('time')})
             return
@@ -194,7 +244,9 @@ def parse_junit(path: Path, run_id: str, root=None) -> tuple[list[dict], list[st
                     status, message = 'skipped', strip_ansi(child.get('message') or '')
             name = strip_ansi(el.get('name')) or '(unnamed)'
             classname = strip_ansi(el.get('classname')) or suite_name or ''
-            file = relative_file(guess_file(el, suite_file, suite_name), root)
+            file = root_relative(relative_file(guess_file(el, suite_file, suite_name), root), root, test_dir, pw_dirs)
+            if '\\' in classname and FILE_RX.search(classname):   # a spec path written with Windows separators
+                classname = classname.replace('\\', '/')
             node_path = None
             # node:test's JUnit: every case has a file attribute and a classname that is its dotted describe path
             # (or "test" at the top level); make the id file::Describe > Inner > name, as for Vitest
@@ -468,6 +520,7 @@ def self_test() -> int:
          strip_ansi('\x1b[31mred\x1b[39m')),
     ]
     checks += go_self_checks()
+    checks += playwright_windows_checks()
     for name, ok, extra in checks:
         failed += not ok
         print(f"{'PASS' if ok else 'FAIL'} {name}" + ('' if ok else f'  [{extra}]'))
@@ -516,6 +569,33 @@ GO_JSON_EVENTS = [
     {'Action': 'fail', 'Package': 'example.test/shop/pkg/broken', 'Elapsed': 0,
      'FailedBuild': 'example.test/shop/pkg/broken [example.test/shop/pkg/broken.test]'},
 ]
+
+
+def playwright_windows_checks() -> list:
+    """Playwright's JUnit on Windows: the classname is the spec path relative to testDir, with backslashes."""
+    import tempfile
+    out = []
+    xml = ('<?xml version="1.0"?><testsuites><testsuite name="trails\\loop.spec.ts" tests="1">'
+           '<testcase name="loop page shows the map" classname="trails\\loop.spec.ts" time="1.2"/></testsuite></testsuites>')
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for rel, body in {'web/playwright.config.ts': "export default { testDir: './e2e' };\n",
+                          'web/e2e/trails/loop.spec.ts': "test('loop page shows the map', async () => {});\n"}.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(body, encoding='utf-8')
+        (root / 'pw.xml').write_text(xml, encoding='utf-8')
+        plain, _ = parse_junit(root / 'pw.xml', 'P')
+        rooted, _ = parse_junit(root / 'pw.xml', 'P', root / 'web')
+        given, _ = parse_junit(root / 'pw.xml', 'P', root, test_dir='web/e2e')
+    out.append(('Playwright on Windows: ids and files use forward slashes',
+                [(c['id'], c['file'], c['classname']) for c in plain]
+                == [('trails/loop.spec.ts::loop page shows the map', 'trails/loop.spec.ts', 'trails/loop.spec.ts')],
+                plain))
+    out.append(('with --files-root, a file relative to Playwright\'s testDir (read from the config) is made relative '
+                'to that root', [c['file'] for c in rooted] == ['e2e/trails/loop.spec.ts'], [c['file'] for c in rooted]))
+    out.append(('--test-dir names testDir when the config is elsewhere',
+                [c['file'] for c in given] == ['web/e2e/trails/loop.spec.ts'], [c['file'] for c in given]))
+    return out
 
 
 def go_self_checks() -> list:
@@ -578,7 +658,10 @@ def main(argv=None) -> int:
     ap.add_argument('--hash', nargs='*', default=[], help='files to fingerprint (SHA-256) as of this run')
     ap.add_argument('--root', default='.', help='paths in --hash are recorded relative to this directory')
     ap.add_argument('--phase', help='optional label stored on the run, e.g. red, green, regression, re_red')
-    ap.add_argument('--files-root', help='record absolute test file paths relative to this directory (where the tests ran)')
+    ap.add_argument('--files-root', help='record test file paths relative to this directory (the repository, or where the '
+                                         'tests ran): absolute paths are made relative, and files Playwright names '
+                                         'relative to its testDir are re-rooted (testDir read from playwright.config.*)')
+    ap.add_argument('--test-dir', help="Playwright's testDir relative to --files-root, when no config below it says so")
     if '--self-test' in (sys.argv[1:] if argv is None else argv):
         return self_test()
     args = ap.parse_args(argv)
@@ -606,7 +689,7 @@ def main(argv=None) -> int:
         p = Path(j)
         if not p.exists():
             notes.append(f'{j}: JUnit file not found (the runner may have crashed before writing it)'); continue
-        c, n = parse_junit(p, args.run_id, args.files_root); cases += c; notes += n
+        c, n = parse_junit(p, args.run_id, args.files_root, args.test_dir); cases += c; notes += n
     if not cases:
         notes.append('No test cases parsed. Treat this run as not having run the tests, whatever the exit code.')
     elif args.exit_code != 0 and all(c['status'] in ('passed', 'skipped') for c in cases):
