@@ -79,7 +79,7 @@ Library use:
     lang_census.excluded_path(c, 'drivers/ios/Agent/x.ts')   # the exclusion reason, or None
 """
 from __future__ import annotations
-import argparse, json, os, re, sys, tempfile
+import argparse, json, os, re, shutil, sys, tempfile
 from collections import Counter
 from pathlib import Path, PurePosixPath
 
@@ -314,9 +314,13 @@ def count_lines(text: str) -> int:
 
 
 def _read_head(path: Path, n: int = GENERATED_READ) -> str:
+    """The first n characters of a file. A text-mode read(n) sizes its buffer by n, so the request is capped at the
+    file's own size (bytes are never fewer than the characters they decode to): reading a small file costs microseconds,
+    not the milliseconds a multi-megabyte buffer takes."""
     try:
+        size = os.path.getsize(path)
         with open(path, encoding='utf-8', errors='replace') as fh:
-            return fh.read(n)
+            return fh.read(min(n, size + 1))
     except OSError:
         return ''
 
@@ -1191,6 +1195,34 @@ def self_test() -> int:
                    all(p in reasons for p in ('drivers/ios/prebuilt/Runner.app', 'vendor', 'npm/wrapper/node_modules')),
                    sorted(reasons)))
     nm = next((e for e in c['excluded'] if e['path'] == 'npm/wrapper/node_modules'), {})
+    # reading a small file never asks for a multi-megabyte buffer (text-mode read(n) sizes its buffer by n)
+    asked = []
+    real_open = open
+
+    class _Recording:
+        def __init__(self, fh):
+            self.fh = fh
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return self.fh.__exit__(*a)
+
+        def read(self, n=-1):
+            asked.append(n)
+            return self.fh.read(n)
+    small_dir = Path(tempfile.mkdtemp(prefix='lang-census-read-'))
+    small = small_dir / 'small.go'
+    small.write_text('package main\n\nfunc main() {}\n', encoding='utf-8')
+    globals()['open'] = lambda *a, **k: _Recording(real_open(*a, **k))
+    try:
+        text = _read_head(small, LINE_READ_MAX)
+    finally:
+        del globals()['open']
+        shutil.rmtree(small_dir, ignore_errors=True)
+    checks.append(('a small file is read with a buffer the size of the file, not the read cap',
+                   text.startswith('package main') and all(0 <= n <= 4096 for n in asked), asked))
     checks.append(('a dependency tree (node_modules/) is listed without being walked to count it',
                    nm.get('source_files_counted') is False and nm.get('source_files') == 0, nm))
     checks.append(('a header-only tree under drivers/ is excluded', 'header-only' in reasons.get('drivers/ios/headers-only', ''),
