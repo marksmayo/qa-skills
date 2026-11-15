@@ -49,7 +49,11 @@ def main() -> int:
     c = supports_color(args.color)
     P = lambda t, s: paint(t, s, c)  # noqa: E731
     md, s = d['metadata'], d['summary']
-    out = [P(f'# Test data audit: {md["repo"]}', BOLD),
+    found = md.get('tests_found')
+    tests_line = ([P('No tests: the repository has no tests (tests_found 0), so there is no test data to audit; an empty '
+                     'audit here is not clean test data', YELLOW)] if found == 0 else
+                  [f'{found} test(s) found'] if isinstance(found, int) else [])
+    out = [P(f'# Test data audit: {md["repo"]}', BOLD), *tests_line,
            f'{s["files_scanned"]} files scanned, {s["not_assessed"]} not assessed | {len(d["findings"])} findings | '
            f'audit date {md["today"]} | ' + (f'evidence completeness {100 * s["evidence_completeness"]:.0f}%' if d['inventory']
                                               else 'no test data found: nothing was inventoried, so evidence completeness is 0%'), '',

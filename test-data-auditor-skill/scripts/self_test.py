@@ -12,7 +12,10 @@ stock placeholder passwords, the language coverage note, residue outside the tre
 severity of an agent finding that names a live endpoint, a product data tree of hundreds of templated
 JSON files (listed when not inventoried, inventoried and scanned in seconds, sampled with a cap, the
 pairwise duplicate check bounded), cwd-relative data paths in tests, and the leak check on an agent
-personal-data finding's basis line. Every fixture value is invented; the
+personal-data finding's basis line, a served folder and a source tree named with --data-dir (site assets are not
+fixtures, a records module is a data module, other code is recorded), no "unused" files without tests, the no-tests
+statement, metadata.tests_found (schema 1.1), a runs file for run_tests.py, schema_drift.py with nothing to check,
+and --write-summary keeping line endings. Every fixture value is invented; the
 secret-looking strings are assembled at run time so none sits in this file whole.
 """
 from __future__ import annotations
@@ -476,9 +479,206 @@ def data_dir_unknown_format() -> None:
           'inventory: a file of an unknown format under --data-dir is listed as not_assessed (unknown format), never dropped')
 
 
+# a small static site with no tests: a web app whose served folder holds the usual crawler and install files
+SERVED_SITE = {'package.json': '{"name": "birding-notes", "private": true}\n',
+               'app/page.tsx': 'export default function Home() { return <main>Sightings</main>; }\n',
+               'public/ads.txt': 'placeholder.example, pub-0000, DIRECT\n',
+               'public/manifest.json': '{"name": "Birding notes", "start_url": "/"}\n',
+               'public/robots.txt': 'User-agent: *\nAllow: /\n',
+               'samples/sightings.json': '[{"species": "wren", "count": 2}]\n'}
+
+
+def served_data_dir() -> None:
+    """--data-dir naming a served asset folder (public/, static/) does not turn the site's assets into test fixtures, and
+    with no tests no file is called unused."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, SERVED_SITE)
+        invd = inv.build(root, None, {}, ['public', 'samples'])
+        res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
+        served = [i for i in invd['inventory'] if i['path'].startswith('public/')]
+        check(not served, f'inventory: files in a served folder named with --data-dir are not test fixtures (got {[i["path"] for i in served]})')
+        sd = (invd.get('served_dirs') or {}).get('public') or {}
+        check(sd.get('files') == 3 and any('served' in w and 'public' in w for w in invd.get('warnings', [])),
+              'inventory: a served --data-dir is recorded under served_dirs with its file count, and warned about')
+        unused = [c for c in res['candidates'] if c['rule'] == 'unused']
+        check(not unused, f'scan: with no tests no file is "unused" (got {[c["file"] for c in unused]})')
+        check(any('unused' in n and 'no tests' in n for n in res['notes']), 'scan: the notes say the unused-file check needs tests')
+        # a file in a served folder that a test reads is still test data
+        write(root, {'tests/test_feed.py': 'from pathlib import Path\n\n\ndef test_manifest():\n'
+                                           '    assert Path("public/manifest.json").read_text()\n'})
+        invd = inv.build(root, None, {}, ['public'])
+        kept = {i['path']: i for i in invd['inventory'] if i['path'].startswith('public/')}
+        check(list(kept) == ['public/manifest.json'] and bool(kept['public/manifest.json']['loaded_by']),
+              f'inventory: a served file a test loads stays listed with its tests (got {sorted(kept)})')
+        sd = (invd.get('served_dirs') or {}).get('public') or {}
+        check(sd.get('files') == 3 and sd.get('loaded_by_tests') == 1,
+              'inventory: served_dirs counts the files and the ones tests load')
+
+
+BIRDS_TS = ('export type Sighting = { species: string; observer: string; contact: string; count: number };\n\n'
+            'export const sightings: Sighting[] = [\n'
+            '  { species: "wren", observer: "Field team", contact: "", count: 2 },\n'
+            '  { species: "heron", observer: "Field team", contact: "%s", count: 1 },\n'
+            '  { species: "kite", observer: "Field team", contact: "", count: 4 },\n'
+            '];\n')
+CARD_TSX = ('import { sightings } from "../data/birds";\n\nexport function Card() {\n'
+            '  const style = { color: "green", margin: 4 };\n  return <ul style={style}>{sightings.map(s => <li>{s.species}</li>)}</ul>;\n}\n')
+
+
+def data_dir_code() -> None:
+    """--data-dir over a source tree: a module of records written as code is listed and scanned as data; other code is
+    not silently dropped but recorded (data_dir_code) and named in the notes."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, {'package.json': '{"name": "birding-notes"}\n', 'src/data/birds.ts': BIRDS_TS % place_mailbox(),
+                     'src/components/Card.tsx': CARD_TSX, 'src/lib/fmt.py': 'def fmt(n):\n    return f"{n:,}"\n'})
+        invd = inv.build(root, None, {}, ['src'])
+        res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
+    item = next((i for i in invd['inventory'] if i['path'] == 'src/data/birds.ts'), None)
+    check(item is not None and item['status'] == 'scanned' and 'data module' in (item.get('note') or ''),
+          'inventory: a module exporting a records array under --data-dir is listed as a data module and scanned')
+    check(not any(i['path'] in ('src/components/Card.tsx', 'src/lib/fmt.py') for i in invd['inventory']),
+          'inventory: ordinary code under --data-dir is not listed as test data')
+    dc = (invd.get('data_dir_code') or {}).get('src') or {}
+    check(dc.get('files') == 2 and 'src/components/Card.tsx' in dc.get('paths', []),
+          f'inventory: code under --data-dir that is not a data module is recorded under data_dir_code (got {dc})')
+    check(any('src/' in w and 'not read as test data' in w for w in invd.get('warnings', [])),
+          'inventory: a warning names the code files under --data-dir that were not read as data')
+    check(any('src/' in n and 'not read as test data' in n for n in res['notes']),
+          'scan: the notes say the code under --data-dir was not read as test data')
+    check(any(c['file'] == 'src/data/birds.ts' and c['rule'] == 'email' and not c['auto_dismiss'] for c in res['candidates']),
+          'scan: an address in a record of a data module under --data-dir is a personal-data candidate')
+
+
+def report_with(**changes) -> dict:
+    ex = json.loads((HERE.parent / 'examples' / 'test_data_report.example.json').read_text(encoding='utf-8'))
+    ex['inventory'], ex['findings'], ex['dismissed'], ex['handoffs'] = [], [], [], []
+    ex['tools'] = [{'name': 'inventory.py, scan_data.py', 'status': 'ran', 'reason': 'stdlib static rules'}]
+    ex['metadata']['runs_file'] = None
+    ex['limitations'] = ['Static rules only.']
+    ex['summary']['headline'] = 'Nothing was flagged.'
+    for k, v in changes.items():
+        ex[k] = v
+    return ex
+
+
+def no_tests_statement() -> None:
+    """The no-tests statement must say the repository has no tests: "no test data" or "without tests failing" is not it."""
+    nt = {'tests_found': 0, 'candidates': []}
+    for text in ('No test data was found.', 'Nothing was flagged without tests failing.', 'No tests failed.',
+                 'Inline literals without tests attached were skipped.'):
+        ex = report_with(limitations=[text])
+        errs = vtd.check(ex, None, None, None, None, json.dumps(ex), None, None, cand_doc=nt)
+        check(any('no tests' in e for e in errs), f'validator: "{text}" is not a statement that the repository has no tests')
+    for text in ('The repository has no tests.', 'There are no tests in this repository.', 'No test files were found: the repo has no tests.',
+                 'No tests were found.'):
+        ex = report_with(limitations=[text])
+        errs = vtd.check(ex, None, None, None, None, json.dumps(ex), None, None, cand_doc=nt)
+        check(not any('no tests' in e for e in errs), f'validator: "{text}" says the repository has no tests')
+
+
+def tests_found_field() -> None:
+    """Schema 1.1 records metadata.tests_found; the validator checks it against the candidates, and the renderer says
+    "no tests" when it is 0. A report without schema_version (1.0) still validates."""
+    schema = json.loads(vtd.SCHEMA.read_text(encoding='utf-8'))
+    ex = report_with(limitations=['The repository has no tests.'])
+    check(not vtd.schema_errors(ex, schema, schema), 'schema: a 1.0 report (no schema_version, no tests_found) is still valid')
+    ex['schema_version'] = '1.1'
+    ex['metadata']['tests_found'] = 0
+    check(not vtd.schema_errors(ex, schema, schema), 'schema: a 1.1 report with metadata.tests_found is valid')
+    del ex['metadata']['tests_found']
+    errs = vtd.schema_errors(ex, schema, schema) + vtd.check(ex, None, None, None, None, json.dumps(ex), None, None,
+                                                             cand_doc={'tests_found': 0, 'candidates': []})
+    check(any('tests_found' in e for e in errs), 'validator: a 1.1 report must record metadata.tests_found')
+    ex['metadata']['tests_found'] = 7
+    errs = vtd.check(ex, None, None, None, None, json.dumps(ex), None, None, cand_doc={'tests_found': 0, 'candidates': []})
+    check(any('tests_found' in e for e in errs), 'validator: metadata.tests_found must equal the candidates\' tests_found')
+    ex['metadata']['tests_found'] = 0
+    ex['limitations'] = ['Static rules only.']
+    errs = vtd.check(ex, None, None, None, None, json.dumps(ex), None, None, cand_doc=None)
+    check(any('no tests' in e for e in errs), 'validator: tests_found 0 in the report alone requires the no-tests statement')
+    import subprocess
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / 'r.json'
+        ex['limitations'] = ['The repository has no tests.']
+        p.write_text(json.dumps(ex), encoding='utf-8')
+        out = subprocess.run([sys.executable, str(HERE / 'render_report.py'), str(p), '--color', 'never'],
+                             capture_output=True, text=True).stdout
+    check('no tests' in out.split('\n\n')[0].lower(), 'renderer: the header says the repository has no tests when tests_found is 0')
+
+
+def runs_required() -> None:
+    """A report whose run_tests.py tool ran must name its runs file, and the runs must be passed to the validator."""
+    ex = json.loads((HERE.parent / 'examples' / 'test_data_report.example.json').read_text(encoding='utf-8'))
+    ex['metadata']['runs_file'] = None
+    errs = vtd.check(ex, None, None, None, None, json.dumps(ex), None, None)
+    check(any('runs_file' in e and 'run_tests' in e for e in errs), 'validator: run_tests.py ran but metadata.runs_file is null')
+    ex = json.loads((HERE.parent / 'examples' / 'test_data_report.example.json').read_text(encoding='utf-8'))
+    errs = vtd.check(ex, None, None, None, None, json.dumps(ex), None, None)
+    check(any('--runs' in e and 'run_tests' in e for e in errs), 'validator: run_tests.py ran, so the runs file must be passed with --runs')
+    errs = vtd.check(ex, None, {'runs': [], 'cases': []}, None, None, json.dumps(ex), None, None)
+    check(any('no runs' in e for e in errs), 'validator: run_tests.py ran but the runs file holds no runs')
+
+
+def drift_nothing_to_check() -> None:
+    """schema_drift.py with no data records to compare is quick and quiet; an unread dominant language with records to
+    compare exits 3, like the other skills' scanners."""
+    import time
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        files = {f'app/section{i}/page.tsx': 'export default function P() { return null; }\n' for i in range(60)}
+        files.update(SERVED_SITE)
+        del files['samples/sightings.json']
+        write(root, files)
+        invd = inv.build(root, None, {})
+        t0 = time.perf_counter()
+        out = schema_drift.drift(root, invd)
+        took = time.perf_counter() - t0
+        lc = out.get('language_coverage') or {}
+        check(out.get('status') == 'nothing_to_check' and not lc.get('warning'),
+              f'schema_drift: an inventory with no data records is nothing_to_check, with no language warning '
+              f'(got {out.get("status")}, {lc.get("warning")})')
+        check(took < 0.5, f'schema_drift: nothing to check returns at once (took {took:.2f} s)')
+        res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
+        check(not any(n.startswith('schema drift:') for n in res['notes']), 'scan: no schema-drift language warning when there was nothing to compare')
+        ip = Path(d) / 'inv.json'
+        ip.write_text(json.dumps(invd), encoding='utf-8')
+        import contextlib, io
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as err:
+            code = schema_drift.main([str(root), '--inventory', str(ip), '--out', str(Path(d) / 'o.json')])
+        check(code == 0 and 'WARNING' not in err.getvalue(), 'schema_drift: nothing to check exits 0 with no warning')
+        root2 = Path(d) / 'go'
+        write(root2, {'go.mod': 'module example.test/shelf\n', 'shelf.go': 'package shelf\n', 'store.go': 'package shelf\n',
+                      'testdata/books.json': '[{"title": "A", "isbn": "1"}]\n', 'shelf_test.go': 'package shelf\n'})
+        ip.write_text(json.dumps(inv.build(root2, None, {})), encoding='utf-8')
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = schema_drift.main([str(root2), '--inventory', str(ip), '--out', str(Path(d) / 'o2.json')])
+        check(code == 3, f'schema_drift: records to compare in a repository whose models it cannot read (Go) exit 3 (got {code})')
+
+
+def write_summary_line_endings() -> None:
+    """--write-summary keeps the report's line endings (LF stays LF, CRLF stays CRLF)."""
+    import contextlib, io
+    src = HERE.parent / 'examples'
+    for nl in ('\n', '\r\n'):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / 'r.json'
+            text = (src / 'test_data_report.example.json').read_text(encoding='utf-8').replace('\r\n', '\n')
+            p.write_bytes(text.replace('\n', nl).encode('utf-8'))
+            with contextlib.redirect_stdout(io.StringIO()):
+                vtd.main([str(p), '--candidates', str(src / 'run' / 'candidates.json'), '--write-summary'])
+            raw = p.read_bytes()
+        crlf, lf = raw.count(b'\r\n'), raw.count(b'\n')
+        check((crlf == 0) if nl == '\n' else (crlf == lf and lf > 0),
+              f'validator: --write-summary keeps {"LF" if nl == chr(10) else "CRLF"} line endings (got {crlf} CRLF of {lf} lines)')
+
+
 def main() -> int:
     for t in (go_rules, url_credentials_and_cards, placeholders, coverage_and_drift, residue_outside_tree, live_endpoint_severity,
-              big_data_tree, cwd_relative_paths, agent_personal_data_leak, empty_repository, data_dir_unknown_format):
+              big_data_tree, cwd_relative_paths, agent_personal_data_leak, empty_repository, data_dir_unknown_format,
+              served_data_dir, data_dir_code, no_tests_statement, tests_found_field, runs_required, drift_nothing_to_check,
+              write_summary_line_endings):
         try:
             t()
         except Exception as exc:  # a crash in one group is a failure, not the end of the run

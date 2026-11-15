@@ -18,8 +18,17 @@ it, so it works without the application's dependencies:
                Python is read by py_routes.py, the route reader shared with the journey mapper, the
                API contract tester and the security auditor: it parses with ast, so decorators in
                strings and docstrings are never read
-    Next.js    app/**/route.(ts|js) exported GET/POST/... handlers (route groups dropped, [id] ->
-               {id}), and pages/api/** files (method ANY)
+    Next.js    app/**/route.(ts|js) exported GET/POST/... handlers at the line of each export (route
+               groups dropped, [id] -> {id}), and pages/api/** files (method ANY). In a Next.js project
+               (a next.config.* or a package.json depending on next) also: App Router pages
+               (page.tsx/jsx/js/mdx, kind pages; [...x] and [[...x]] catch-alls, generateStaticParams
+               and dynamicParams recorded, a parallel-route @slot page at its parent's URL with `slot`,
+               an intercepting (.)x/(..)x/(...)x page at the URL it intercepts with `intercepts`),
+               metadata routes (robots, sitemap, manifest, favicon.ico, icon, apple-icon,
+               opengraph-image and twitter-image, as files or generators: framework nextjs-metadata),
+               and pages/ router pages. What such a project has that is not read (server actions,
+               middleware, public/ files, next.config rewrites and redirects) is listed in `not_read`
+               and on stderr, so a partial list never looks complete.
     Express    app.get/post/... and router.get/post/... with a literal path (pattern-based; a
                router's mount prefix in another file is not resolved: those are marked
                prefix_unresolved)
@@ -29,6 +38,9 @@ the f-string's fields as wildcards; JavaScript strings and template literals) is
 each interface's path template ({id} and :id match one segment); the HTTP method is taken from the
 call around the literal when it is a client method (client.get(...), request(app).post(...)). An
 interface is "reached" when a test literal matches its path and the method agrees or is unknown.
+Files under --tests that declare one of the listed interfaces are product code and are not read as tests;
+when none of the files under --tests looks like a test, a warning goes to stderr and `tests_warnings`. For a
+repository with no tests, --no-tests lists every interface as not reached (summary.tests: none).
 This is test_derived evidence: it says a test names the URL, not which code ran or whether the
 real authentication dependency was in place (check fixtures for dependency overrides and mocked
 auth, and record that as a separate interface_coverage entry).
@@ -290,46 +302,241 @@ EXPRESS = re.compile(r'\b(\w+)\s*\.\s*(get|post|put|patch|delete|all)\s*\(\s*([\
 COMMENT = re.compile(r'/\*.*?\*/|(?<![:\'"])//[^\n]*', re.S)
 
 
-def next_path(parts: list[str]) -> str:
-    segs = []
+INTERCEPT = re.compile(r'^(\(\.\)|(?:\(\.\.\))+|\(\.\.\.\))(.+)$')
+
+
+def next_url(parts: list[str]) -> tuple[str, dict]:
+    """The URL of a Next.js route from its folder segments, and what shaped it: route groups `(x)` and parallel-route
+    slots `@x` are not URL segments (a slot page renders inside its parent's layout at the parent's URL: `slot`);
+    an intercepting segment `(.)x`, `(..)x`, `(..)(..)x` or `(...)x` replaces the URL with the route it intercepts
+    (`intercepts`: shown on client-side navigation, the intercepted route itself on a full load); `[id]` is `{id}`,
+    `[...x]` and `[[...x]]` are `{x*}` (`optional_catch_all` for the second: it also matches the bare parent)."""
+    segs, info = [], {}
     for p in parts:
-        if (p.startswith('(') and p.endswith(')')) or p.startswith('@'):
-            continue                              # route groups and parallel-route slots are not URL segments
-        m = re.fullmatch(r'\[\[?\.\.\.(\w+)\]?\]', p)
+        if p.startswith('@'):
+            info['slot'] = p
+            continue
+        m = INTERCEPT.match(p)
         if m:
-            segs.append('{' + m.group(1) + '*}')
+            marker, p = m.groups()
+            info['intercepts'] = True
+            if marker == '(...)':
+                segs = []
+            elif marker != '(.)':
+                segs = segs[:max(0, len(segs) - marker.count('(..)'))]
+        if p.startswith('(') and p.endswith(')'):
+            continue                              # a route group
+        m = re.fullmatch(r'\[(\[?)\.\.\.(\w+)\]?\]', p)
+        if m:
+            segs.append('{' + m.group(2) + '*}')
+            if m.group(1):
+                info['optional_catch_all'] = True
             continue
         m = re.fullmatch(r'\[(\w+)\]', p)
         segs.append('{' + m.group(1) + '}' if m else p)
-    return join(*segs)
+    return join(*segs), info
 
 
-def js_interfaces(root: Path, files: list[str]) -> list[dict]:
+def next_path(parts: list[str]) -> str:
+    return next_url(parts)[0]
+
+
+NEXT_CONFIG = re.compile(r'^next\.config\.(?:js|mjs|cjs|ts|mts)$')
+NEXT_DEFAULT = re.compile(r'^[ \t]*export\s+default\b', re.M)
+PAGE_EXT = ('.tsx', '.ts', '.jsx', '.js', '.mdx', '.md')
+META_ANY = re.compile(r'^(?:(sitemap)\.(xml|js|jsx|ts|tsx)|(icon|apple-icon|opengraph-image|twitter-image)(\d*)\.'
+                      r'(ico|jpg|jpeg|png|gif|svg|js|jsx|ts|tsx))$')
+META_ROOT = re.compile(r'^(?:(robots)\.(txt|js|ts)|(manifest)\.(json|webmanifest|js|ts)|(favicon)\.(ico))$')
+USE_SERVER = re.compile(r'''(?:^|[{;]\s*)['"]use server['"]''', re.M)
+
+
+def mask_keep_lines(text: str) -> str:
+    return COMMENT.sub(lambda m: re.sub(r'[^\n]', ' ', m.group(0)), text)
+
+
+def next_roots(root: Path, files: list[str]) -> list[str]:
+    """Directories holding a Next.js project: a next.config.* or a package.json depending on next ('' for the root)."""
+    out = set()
+    for rel in files:
+        p = PurePosixPath(rel)
+        d = '' if p.parent.as_posix() == '.' else p.parent.as_posix()
+        if NEXT_CONFIG.match(p.name):
+            out.add(d)
+        elif p.name == 'package.json':
+            try:
+                pkg = json.loads((root / rel).read_text(encoding='utf-8', errors='replace'))
+            except ValueError:
+                continue
+            if isinstance(pkg, dict) and any(isinstance(pkg.get(k), dict) and 'next' in pkg[k]
+                                             for k in ('dependencies', 'devDependencies')):
+                out.add(d)
+    return sorted(out)
+
+
+def under(rel: str, d: str) -> str | None:
+    """rel relative to directory d ('' is the root), or None when it is not inside it."""
+    if not d:
+        return rel
+    return rel[len(d) + 1:] if rel.startswith(d + '/') else None
+
+
+def next_route_handler(rel: str, text: str, path: str) -> list[dict]:
+    """The HTTP methods an App Router route.ts exports, each with the line of its export."""
+    masked = mask_keep_lines(text)
+    found = {}
+    for m in NEXT_METHOD.finditer(masked):
+        found.setdefault(m.group(1) or m.group(2), line_at(masked, m.start()))
+    for m in NEXT_REEXPORT.finditer(masked):
+        for x in m.group(1).split(','):
+            name = x.split(' as ')[-1].strip()
+            if name in ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'):
+                found.setdefault(name, line_at(masked, m.start()))
+    return [{'kind': 'routes', 'framework': 'nextjs', 'method': meth, 'path': path, 'file': rel, 'line': found[meth],
+             'included': True} for meth in sorted(found)]
+
+
+def default_line(text: str) -> int:
+    m = NEXT_DEFAULT.search(mask_keep_lines(text))
+    return line_at(text, m.start()) if m else 1
+
+
+def next_interfaces(root: Path, files: list[str]) -> tuple[list[dict], list[dict], set[str]]:
+    """Next.js projects: App Router pages, route handlers and metadata routes, and pages/ router pages. Returns the
+    interfaces, what the project has that is not read (not_read: server actions, middleware, public/ files, next.config
+    rewrites and redirects), and the files handled here."""
+    out, not_read, handled = [], [], set()
+    for nroot in next_roots(root, files):
+        apps = [d for d in (f'{nroot}/app'.lstrip('/'), f'{nroot}/src/app'.lstrip('/'))]
+        pages = [d for d in (f'{nroot}/pages'.lstrip('/'), f'{nroot}/src/pages'.lstrip('/'))]
+        actions, mids, public, config = [], [], [], []
+        for rel in files:
+            inner = under(rel, nroot)
+            if inner is None or is_test(rel, root):
+                continue
+            p = PurePosixPath(rel)
+            if inner.startswith('public/'):
+                public.append(rel)
+                continue
+            if NEXT_CONFIG.match(inner):
+                if re.search(r'\b(?:rewrites|redirects|headers)\b', (root / rel).read_text(encoding='utf-8', errors='replace')):
+                    config.append(rel)
+                continue
+            if re.fullmatch(r'(?:src/)?(?:middleware|proxy)\.(?:ts|js|mjs|mts)', inner):
+                mids.append(rel)
+                handled.add(rel)
+                continue
+            if p.suffix in JS_EXT and USE_SERVER.search(mask_keep_lines((root / rel).read_text(encoding='utf-8', errors='replace'))):
+                actions.append(rel)
+            app = next((a for a in apps if under(rel, a) is not None), None)
+            if app is not None:
+                segs = list(PurePosixPath(under(rel, app)).parts)
+                name, dirs = segs[-1], segs[:-1]
+                path, info = next_url(dirs)
+                if p.stem == 'page' and p.suffix in PAGE_EXT:
+                    text = (root / rel).read_text(encoding='utf-8', errors='replace')
+                    itf = {'kind': 'pages', 'framework': 'nextjs', 'method': 'GET', 'path': path, 'file': rel,
+                           'line': default_line(text), 'included': True, **info}
+                    masked = mask_keep_lines(text)
+                    if re.search(r'export\s+(?:async\s+)?function\s+generateStaticParams\b|export\s+const\s+generateStaticParams\b',
+                                 masked):
+                        itf['generate_static_params'] = True
+                    dp = re.search(r'export\s+const\s+dynamicParams\s*=\s*(true|false)\b', masked)
+                    if dp:
+                        itf['dynamic_params'] = dp.group(1) == 'true'
+                    notes = []
+                    if itf.get('dynamic_params') is False:
+                        notes.append('dynamicParams = false: only the params generateStaticParams returns are served, '
+                                     'any other value is a 404')
+                    if 'slot' in info:
+                        notes.append(f'a parallel-route slot ({info["slot"]}): renders inside the layout at this URL, '
+                                     f'not a URL of its own')
+                    if info.get('intercepts'):
+                        notes.append('an intercepting route: shown on client-side navigation to this URL; a full load '
+                                     'shows the intercepted page')
+                    if notes:
+                        itf['note'] = '; '.join(notes)
+                    out.append(itf)
+                    handled.add(rel)
+                    continue
+                if p.stem == 'route' and p.suffix in JS_EXT:
+                    out += next_route_handler(rel, (root / rel).read_text(encoding='utf-8', errors='replace'), path)
+                    handled.add(rel)
+                    continue
+                mr = META_ROOT.match(name) if not dirs else None
+                ma = META_ANY.match(name)
+                if mr or ma:
+                    gen = p.suffix in JS_EXT
+                    text = (root / rel).read_text(encoding='utf-8', errors='replace') if gen else ''
+                    note = None
+                    if mr and mr.group(1):
+                        url = '/robots.txt'
+                    elif mr and mr.group(3):
+                        url = '/manifest.webmanifest' if gen else f'/{name}'
+                    elif mr:
+                        url = '/favicon.ico'
+                    elif ma.group(1):
+                        url = join(path, 'sitemap/{id}.xml') if 'generateSitemaps' in text else join(path, 'sitemap.xml')
+                    elif gen:
+                        stem = ma.group(3) + ma.group(4)
+                        url = join(path, stem + '/{id}') if 'generateImageMetadata' in text else join(path, stem)
+                        note = ('a generated image: Next.js may add a build hash to its URL under a dynamic segment; '
+                                'match tests by prefix')
+                    else:
+                        url = join(path, name)
+                    out.append({'kind': 'routes', 'framework': 'nextjs-metadata', 'method': 'GET', 'path': url, 'file': rel,
+                                'line': default_line(text) if gen else 1, 'included': True,
+                                'metadata': 'generated' if gen else 'file', **({'note': note} if note else {})})
+                    handled.add(rel)
+                    continue
+            pg = next((d for d in pages if under(rel, d) is not None), None)
+            if pg is not None and p.suffix in PAGE_EXT:
+                segs = list(PurePosixPath(under(rel, pg)).parts)
+                if segs[0] == 'api' or any(s.startswith('_') for s in segs) or p.stem in ('404', '500'):
+                    continue                  # API routes are read below; _app, _document, error pages are not URLs
+                path, info = next_url(segs[:-1] + ([] if p.stem == 'index' else [p.stem]))
+                text = (root / rel).read_text(encoding='utf-8', errors='replace')
+                itf = {'kind': 'pages', 'framework': 'nextjs-pages', 'method': 'GET', 'path': path, 'file': rel,
+                       'line': default_line(text), 'included': True, **info}
+                if re.search(r'\bgetStaticPaths\b', text):
+                    itf['note'] = 'getStaticPaths: check its fallback for which params are served'
+                out.append(itf)
+                handled.add(rel)
+        label = nroot or 'the repository root'
+        for kind, fs, why in (
+                ('server_actions', actions, "server actions ('use server' functions): called by POST from forms and "
+                                            "client components, not listed; map them by hand (kind server_actions)"),
+                ('middleware', mids, 'middleware runs before every matched request (often authentication or '
+                                     'redirects); its matcher and logic are not read'),
+                ('static_files', public, 'files in public/ are served at their own path (a service worker, robots.txt, '
+                                         'images, downloads) and are not listed'),
+                ('config_routes', config, 'rewrites, redirects and headers in next.config are not read')):
+            if fs:
+                not_read.append({'framework': 'nextjs', 'project': label, 'kind': kind, 'count': len(fs),
+                                 'files': fs[:20], 'why': why})
+    return out, not_read, handled
+
+
+def js_interfaces(root: Path, files: list[str], handled: frozenset | set = frozenset()) -> list[dict]:
+    """Route handlers in an app/ folder (also outside a detected Next.js project), pages/api routes, Express routes and
+    plain Node servers; files next_interfaces already read (handled) are skipped."""
     out = []
     for rel in files:
-        if not rel.endswith(JS_EXT) or is_test(rel, root):
+        if not rel.endswith(JS_EXT) or is_test(rel, root) or rel in handled:
             continue
         p = PurePosixPath(rel)
         parts = list(p.parts)
         if p.stem == 'route' and 'app' in parts[:-1]:
             i = len(parts) - 1 - parts[::-1].index('app')
-            text = COMMENT.sub(' ', (root / rel).read_text(encoding='utf-8', errors='replace'))
-            methods = [a or b for a, b in NEXT_METHOD.findall(text)]
-            for m in NEXT_REEXPORT.finditer(text):
-                methods += [x.split(' as ')[-1].strip() for x in m.group(1).split(',')
-                            if x.split(' as ')[-1].strip() in ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')]
-            path = next_path(parts[i + 1:-1])
-            for meth in sorted(set(methods)):
-                out.append({'kind': 'routes', 'framework': 'nextjs', 'method': meth, 'path': path, 'file': rel, 'line': 1, 'included': True})
+            out += next_route_handler(rel, (root / rel).read_text(encoding='utf-8', errors='replace'), next_path(parts[i + 1:-1]))
             continue
+        text = (root / rel).read_text(encoding='utf-8', errors='replace')
         if 'pages' in parts[:-1] and 'api' in parts[:-1]:
             i = len(parts) - 1 - parts[::-1].index('pages')
             if parts[i + 1:i + 2] == ['api']:
                 segs = parts[i + 1:-1] + ([] if p.stem == 'index' else [p.stem])
-                out.append({'kind': 'routes', 'framework': 'nextjs-pages', 'method': 'ANY', 'path': next_path(segs), 'file': rel, 'line': 1,
-                            'included': True})
+                out.append({'kind': 'routes', 'framework': 'nextjs-pages', 'method': 'ANY', 'path': next_path(segs), 'file': rel,
+                            'line': default_line(text), 'included': True})
                 continue
-        text = (root / rel).read_text(encoding='utf-8', errors='replace')
         masked = COMMENT.sub(lambda m: re.sub(r'[^\n]', ' ', m.group(0)), text)
         out += node_server(rel, text, masked)
         if not re.search(r'\bexpress\b|\bRouter\s*\(|\bfastify\b', text):
@@ -1100,7 +1307,7 @@ def match_names(interfaces: list[dict], strings: list[dict]) -> None:
         by_value.setdefault(s_['value'], []).append(s_)
     imports = [s_ for s_ in strings if 'import' in s_]
     for itf in interfaces:
-        if itf.get('kind') == 'routes':
+        if itf.get('kind') in URL_KINDS:
             continue
         hits = []
         if itf['kind'] == 'tools':
@@ -1129,7 +1336,9 @@ def match_names(interfaces: list[dict], strings: list[dict]) -> None:
 # routers that try a rule without converters before one with them, whatever the declaration order (Werkzeug sorts
 # its rules, Next.js prefers a static segment, Go's ServeMux the most specific pattern); Express and Starlette match
 # in declaration order, so they are left alone
-STATIC_FIRST = {'flask': 'flask', 'nextjs': 'next', 'nextjs-pages': 'next', 'go-net-http': 'go-net-http'}
+STATIC_FIRST = {'flask': 'flask', 'nextjs': 'next', 'nextjs-pages': 'next', 'nextjs-metadata': 'next',
+                'go-net-http': 'go-net-http'}
+URL_KINDS = ('routes', 'pages')                 # interfaces reached by a URL literal
 
 
 def has_params(path: str) -> bool:
@@ -1140,21 +1349,23 @@ def match(interfaces: list[dict], lits: list[dict]) -> None:
     static_rx: dict[str, list[re.Pattern]] = {}
     for itf in interfaces:
         fam = STATIC_FIRST.get(itf.get('framework'))
-        if itf.get('kind', 'routes') == 'routes' and fam and not has_params(itf['path']):
+        if itf.get('kind', 'routes') in URL_KINDS and fam and not has_params(itf['path']):
             static_rx.setdefault(fam, []).append(template_regex(itf['path']))
     for itf in interfaces:
-        if itf.get('kind', 'routes') != 'routes':
+        if itf.get('kind', 'routes') not in URL_KINDS:
             continue
         if itf.get('framework') == 'go-listener':     # what it serves is unknown, so no URL can be said to reach it
             itf['reached_by'], itf['reached'] = [], False
             continue
-        rx = template_regex(itf['path'])
+        rxs = [template_regex(itf['path'])]
+        if itf.get('optional_catch_all'):           # [[...x]] also matches the bare parent URL
+            rxs.append(template_regex(re.sub(r'/?\{\w+\*\}$', '', itf['path']) or '/'))
         fam = STATIC_FIRST.get(itf.get('framework'))
         shadow = static_rx.get(fam, []) if fam and has_params(itf['path']) else []
         hits = []
         for lit in lits:
             url = normalise_url(lit['url'])
-            if url is None or not rx.match(url):
+            if url is None or not any(rx.match(url) for rx in rxs):
                 continue
             if any(s.match(url) for s in shadow):        # the router sends this URL to the static rule, not this one
                 continue
@@ -1170,6 +1381,8 @@ def main(argv=None) -> int:
     ap.add_argument('repo', type=Path, nargs='?')
     ap.add_argument('--tests', type=Path, action='append', default=[],
                     help='a directory (or file) of tests whose URL literals are matched against the interfaces; repeat')
+    ap.add_argument('--no-tests', action='store_true',
+                    help='the repository has no tests: list the interfaces with nothing reached (not with --tests)')
     ap.add_argument('--out', type=Path)
     ap.add_argument('--include', action='append', default=[], metavar='DIR',
                     help='read a directory that is skipped by default (dist/, build/, out/...); repeat')
@@ -1179,6 +1392,8 @@ def main(argv=None) -> int:
         return self_test()
     if args.repo is None:
         ap.error('the repository path is required')
+    if args.no_tests and args.tests:
+        ap.error('--no-tests and --tests contradict each other: give one')
     root = args.repo.resolve()
     include = tuple(i.replace('\\', '/').strip('/') for i in args.include)
     skipped, kept = [], []
@@ -1215,9 +1430,14 @@ def main(argv=None) -> int:
     gos = go_interfaces(root, files)
     others = manifests + js_commands_and_tools(root, files, progs) + py_commands_and_tools(root, files, project) + \
         [g for g in gos if g['kind'] != 'routes']
-    interfaces = sorted(py + [{'kind': 'routes', **r} for r in php] + js_interfaces(root, files) + [g for g in gos if g['kind'] == 'routes'] + others,
+    nxt, not_read, handled = next_interfaces(root, files)
+    interfaces = sorted(py + [{'kind': 'routes', **r} for r in php] + nxt + js_interfaces(root, files, handled)
+                        + [g for g in gos if g['kind'] == 'routes'] + others,
                         key=lambda x: (x['kind'], x['path'], x['method'], x['file']))
-    res = {'repo': root.name, 'interfaces': interfaces, 'notes': notes, 'language_coverage': coverage,
+    for nr in not_read:
+        notes.append(f"{nr['framework']} ({nr['project']}): {nr['kind']} not read ({nr['count']} file(s), e.g. "
+                     f"{', '.join(nr['files'][:3])}): {nr['why']}; the list is partial for these")
+    res = {'repo': root.name, 'interfaces': interfaces, 'notes': notes, 'language_coverage': coverage, 'not_read': not_read,
            'middleware': py_extras.middleware(project), 'skipped_dirs': skipped, 'source_build_dirs': kept,
            'summary': {'total': len(interfaces), 'by_kind': {}, 'by_framework': {}}}
     for i in interfaces:
@@ -1228,12 +1448,20 @@ def main(argv=None) -> int:
                      'Express, a plain Node server), CLI commands (package.json bin, commander/yargs/cac, argparse/click/'
                      'typer, pyproject scripts, Cargo binaries), package exports and MCP tools. An empty list is not '
                      '"no interfaces": map them by hand (SKILL.md Step 4) or record interface coverage as not assessed')
+    if args.no_tests:
+        for itf in interfaces:
+            itf['reached_by'], itf['reached'] = [], False
+        res['summary'].update(reached=0, tests='none',
+                              method='--no-tests: the repository has no tests, so no interface is reached by one')
     if args.tests:
         missing = [str(t) for t in args.tests if not t.exists()]
         if missing:
-            print(f'error: --tests path does not exist: {", ".join(missing)}', file=sys.stderr)
+            print(f'error: --tests path does not exist: {", ".join(missing)} (for a repository with no tests, pass '
+                  f'--no-tests)', file=sys.stderr)
             return 2
         lits, strings, go_masked = [], [], {}
+        itf_files = {i['file'] for i in interfaces}
+        res['tests_warnings'] = []
         for t in args.tests:
             t = t.resolve()
             test_files = [n for n in (walk(t) if t.is_dir() else [t.name]) if n.endswith(('.py', '.go') + JS_EXT)]
@@ -1245,6 +1473,24 @@ def main(argv=None) -> int:
             rel_base = base.relative_to(root).as_posix() if base.is_relative_to(root) else str(base)
             if bundled and base.is_relative_to(root):
                 names = [n for n in names if not any(f'{rel_base}/{n}'.lstrip('./').startswith(b + '/') for b in bundled)]
+            repo_rel = lambda n: f'{rel_base}/{n}' if rel_base not in ('.', '') else n  # noqa: E731
+            product = [n for n in names if repo_rel(n) in itf_files and not is_test(repo_rel(n), root)]
+            if product:
+                names = [n for n in names if n not in product]
+                msg = (f'--tests {t}: {len(product)} file(s) under it declare the product\'s interfaces (e.g. '
+                       f'{", ".join(repo_rel(n) for n in product[:3])}); they are product code and are not read as tests')
+                res['tests_warnings'].append(msg)
+                notes.append(msg)
+                print(f'WARNING: {msg}', file=sys.stderr)
+            code_files = [n for n in names if n.endswith(('.py', '.go') + JS_EXT)]
+            if code_files and not any(is_test(repo_rel(n), root) for n in code_files):
+                msg = (f'--tests {t}: none of its {len(code_files)} code file(s) look like tests (no test_*.py, '
+                       f'*.test.* or *.spec.*, _test.go, or tests/, e2e/, __tests__/ folder); they are read as test code '
+                       f'anyway, so a "reached" may be product code naming a URL. If the repository has no tests, '
+                       f'pass --no-tests')
+                res['tests_warnings'].append(msg)
+                notes.append(msg)
+                print(f'WARNING: {msg}', file=sys.stderr)
             # everything under --tests is test code, except Go: Go tests sit beside the code, so only _test.go is read
             for lit in test_literals(base, [n for n in names if not n.endswith('.go')], every_file=True):
                 lits.append({**lit, 'file': f'{rel_base}/{lit["file"]}' if rel_base != '.' else lit['file']})
@@ -1271,6 +1517,9 @@ def main(argv=None) -> int:
     for sk in skipped:
         print(f"note: {sk['path']}/ skipped as build output ({sk['reason']}); --include {sk['path']} reads it",
               file=sys.stderr)
+    for nr in not_read:
+        print(f"note: {nr['framework']} ({nr['project']}) interfaces not read: {nr['kind']} ({nr['count']} file(s), e.g. "
+              f"{', '.join(nr['files'][:3])}); the list is partial for these (see not_read)", file=sys.stderr)
     if coverage.get('warning'):
         bar = '!' * 78
         print(f'{bar}\nWARNING: {coverage["warning"]}\n{bar}', file=sys.stderr)
@@ -1428,6 +1677,51 @@ KIOSK_SELF_TEST_FILES = {
                   'if (preg_match(\'#^\' . $BASE . \'/assets/(.*)#\', $uri, $m)) {\n    echo "asset";\n}\n'
                   'elseif (preg_match("#^/uploads/put$#", $uri)) {\n    echo "put";\n}\n'),
     '.htaccess': 'RewriteEngine On\nRewriteRule ^.*$ index.php [L]\n',
+}
+
+
+# A Next.js App Router bird-watching log with no tests: pages (a route group, a dynamic segment with
+# generateStaticParams and dynamicParams = false, catch-alls, an .mdx page, a parallel-route slot, an intercepting
+# route), a route handler whose export is not on line 1, metadata routes (files and generators), a pages/ router page,
+# and interface kinds the reader does not list (a server action, middleware, a service worker in public/).
+NEXT_SELF_TEST_FILES = {
+    'package.json': ('{"name": "birdlog", "private": true, "scripts": {"build": "next build", "dev": "next dev"},\n'
+                     ' "dependencies": {"next": "15.0.0", "react": "19.0.0"}}\n'),
+    'next.config.mjs': 'export default { async redirects() { return [{ source: "/old", destination: "/", permanent: true }]; } };\n',
+    'app/layout.tsx': 'export default function Root({ children }) { return <html><body>{children}</body></html>; }\n',
+    'app/page.tsx': ('import Link from "next/link";\n\n'
+                     'export default function Home() { return <Link href="/sightings/7">Latest</Link>; }\n'),
+    'app/about/page.mdx': '# About the log\n',
+    'app/(marketing)/membership/page.tsx': 'export default function Membership() { return <main />; }\n',
+    'app/sightings/[id]/page.tsx': ('export const dynamicParams = false;\n\n'
+                                    'export async function generateStaticParams() { return [{ id: "7" }]; }\n\n'
+                                    'export default async function Sighting({ params }) { return <main />; }\n'),
+    'app/sightings/[id]/opengraph-image.tsx': 'export default function Image() { return new Response(""); }\n',
+    'app/species/[...family]/page.tsx': 'export default function Family() { return <main />; }\n',
+    'app/guides/[[...topic]]/page.tsx': 'export default function Guide() { return <main />; }\n',
+    'app/@modal/default.tsx': 'export default function Default() { return null; }\n',
+    'app/@modal/(.)sightings/[id]/page.tsx': 'export default function SightingModal() { return <dialog />; }\n',
+    'app/dashboard/page.tsx': 'export default function Dashboard() { return <main />; }\n',
+    'app/dashboard/@tallies/page.tsx': 'export default function Tallies() { return <aside />; }\n',
+    'app/dashboard/loading.tsx': 'export default function Loading() { return null; }\n',
+    'app/feed.xml/route.ts': ('import { list } from "../../lib/sightings";\n\n'
+                              'export const dynamic = "force-static";\n\n'
+                              'export async function GET() { return new Response(list().join("")); }\n'),
+    'app/robots.ts': 'export default function robots() { return { rules: [] }; }\n',
+    'app/sitemap.ts': 'export default function sitemap() { return []; }\n',
+    'app/manifest.ts': 'export default function manifest() { return { name: "Bird log" }; }\n',
+    'app/favicon.ico': 'not really an icon\n',
+    'app/icon.png': 'not really a png\n',
+    'app/apple-icon.tsx': 'export default function Icon() { return new Response(""); }\n',
+    'app/twitter-image.png': 'not really a png\n',
+    'app/twitter-image.alt.txt': 'A heron\n',
+    'app/actions.ts': '"use server";\n\nexport async function addSighting(form) { return form; }\n',
+    'middleware.ts': 'export function middleware(request) { return undefined; }\n',
+    'public/sw.js': 'self.addEventListener("fetch", () => {});\n',
+    'public/heron.svg': '<svg />\n',
+    'pages/archive/[year].tsx': 'export default function Archive() { return <main />; }\n',
+    'pages/_app.tsx': 'export default function App({ Component, pageProps }) { return <Component {...pageProps} />; }\n',
+    'lib/sightings.ts': 'export const list = () => ["/sightings/7"];\n',
 }
 
 
@@ -1590,6 +1884,71 @@ def self_test() -> int:
             main([str(ks), '--include', 'dist', '--out', str(out)])
         res = json.loads(out.read_text(encoding='utf-8'))
         want(not any(s['path'] == 'dist' for s in res.get('skipped_dirs', [])), '--include dist reads a skipped dist/')
+
+        # ---- Next.js App Router with no tests: pages, metadata routes, a pages/ router page, what is not read
+        nx = tmp / 'next'
+        for rel, text in NEXT_SELF_TEST_FILES.items():
+            (nx / rel).parent.mkdir(parents=True, exist_ok=True)
+            (nx / rel).write_text(text, encoding='utf-8')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            try:
+                code = main([str(nx), '--no-tests', '--out', str(out)])
+            except SystemExit as exc:
+                code = f'exit {exc.code}'
+        res = json.loads(out.read_text(encoding='utf-8')) if code == 0 else {'interfaces': [], 'summary': {}}
+        got = {(i['kind'], i['path']): i for i in res['interfaces']}
+        want(code == 0, f'--no-tests is accepted (got {code})')
+        for p in ('/', '/about', '/membership', '/sightings/{id}', '/species/{family*}', '/guides/{topic*}', '/dashboard',
+                  '/archive/{year}'):
+            want(('pages', p) in got and got[('pages', p)]['method'] == 'GET', f'the page {p} is listed as kind pages')
+        want(not any(p in ('/(marketing)/membership', '/_app') or '@' in p or '(' in p for k, p in got),
+             'route groups and slots are not URL segments, and pages/_app is not a page')
+        sp = got.get(('pages', '/sightings/{id}'), {})
+        want(sp.get('generate_static_params') and sp.get('dynamic_params') is False and sp.get('line') == 5,
+             'a dynamic page records generateStaticParams, dynamicParams = false and the line of its default export')
+        want(got.get(('pages', '/guides/{topic*}'), {}).get('optional_catch_all'), 'an optional catch-all says so')
+        slot = [i for i in res['interfaces'] if i['kind'] == 'pages' and i.get('slot') == '@tallies']
+        want(slot and slot[0]['path'] == '/dashboard', 'a parallel-route slot page renders at its parent URL and names the slot')
+        icpt = [i for i in res['interfaces'] if i.get('intercepts')]
+        want(icpt and icpt[0]['path'] == '/sightings/{id}' and icpt[0].get('slot') == '@modal',
+             'an intercepting route (.)x is listed at the URL it intercepts, with its slot')
+        want(not any(i['file'].endswith(('default.tsx', 'loading.tsx', 'layout.tsx')) for i in res['interfaces']),
+             'layouts, loading and default files are not interfaces')
+        feed = got.get(('routes', '/feed.xml'), {})
+        want(feed.get('method') == 'GET' and feed.get('line') == 5, f'a route handler records the line of its export (got {feed.get("line")})')
+        for p in ('/robots.txt', '/sitemap.xml', '/manifest.webmanifest', '/favicon.ico', '/icon.png', '/apple-icon',
+                  '/twitter-image.png', '/sightings/{id}/opengraph-image'):
+            want(got.get(('routes', p), {}).get('framework') == 'nextjs-metadata', f'the metadata route {p} is listed')
+        want(not any(i['path'].endswith('.alt.txt') for i in res['interfaces']), 'an image alt text file is not a route')
+        nr = {(x['framework'], x['kind']): x for x in res.get('not_read', [])}
+        want(('nextjs', 'server_actions') in nr and 'app/actions.ts' in nr[('nextjs', 'server_actions')]['files'],
+             'server actions are named as not read (machine-readable not_read)')
+        want(('nextjs', 'middleware') in nr and ('nextjs', 'static_files') in nr
+             and 'public/sw.js' in nr[('nextjs', 'static_files')]['files'] and ('nextjs', 'config_routes') in nr,
+             'middleware, public/ files (a service worker) and next.config redirects are named as not read')
+        want('not read' in err.getvalue() and 'server_actions' in err.getvalue(),
+             'what a detected framework has that is not read goes to stderr, so a partial list never looks complete')
+        want(res['summary'].get('reached') == 0 and all(i.get('reached') is False and i.get('reached_by') == []
+                                                         for i in res['interfaces'])
+             and res['summary'].get('tests') == 'none',
+             '--no-tests lists every interface as not reached and records that the repository has no tests')
+        # --tests pointed at product code: interface files under it are product code, not tests
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = main([str(nx), '--tests', str(nx / 'app'), '--out', str(out)])
+        res = json.loads(out.read_text(encoding='utf-8'))
+        got = {(i['kind'], i['path']): i for i in res['interfaces']}
+        want(not got.get(('pages', '/sightings/{id}'), {}).get('reached', True),
+             'a link in a page under --tests is product code: it does not reach the page')
+        want('look like tests' in err.getvalue() and res.get('tests_warnings'),
+             '--tests on a directory with no test-like file warns on stderr and in tests_warnings')
+        with contextlib.redirect_stderr(io.StringIO()):
+            try:
+                code = main([str(nx), '--no-tests', '--tests', str(nx / 'app'), '--out', str(out)])
+            except SystemExit as exc:
+                code = exc.code
+        want(code == 2, '--no-tests with --tests is refused')
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     if fails:

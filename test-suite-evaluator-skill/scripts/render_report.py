@@ -358,6 +358,10 @@ def brief(data: dict, color: bool) -> str:
     for f in data.get('critical_findings', []):
         if f['severity'] in ('critical', 'high'):
             o.p(f"[{f['severity'].upper()}] {f['title']}", RED)
+    left = {sev: sum(1 for f in data.get('critical_findings', []) if f['severity'] == sev) for sev in ('medium', 'low')}
+    if any(left.values()):
+        o.p(f"{sum(left.values())} more finding(s) not shown here ("
+            + ', '.join(f'{n} {sev}' for sev, n in left.items() if n) + '): see the full report', DIM)
     width = max(len(d['name']) for d in data['dimensions'])
     for d in data['dimensions']:
         sc = 'not assessed' if d['score'] is None else f"{d['score']}/10"
@@ -394,6 +398,12 @@ def self_test() -> int:
     for name, text in (('brief', brief(none, color=False)), ('report', render(none, md=False, color=False))):
         if NO_TESTS_NOTE not in text or 'PROVISIONAL' in text:
             fails.append(f'a no-tests {name} says the absence of tests is verified, and is not provisional')
+    lower = copy.deepcopy(ex)
+    lower['critical_findings'] += [{**lower['critical_findings'][0], 'title': f'Medium finding {k}', 'severity': 'medium'}
+                                   for k in range(2)] + [{**lower['critical_findings'][0], 'title': 'Low one', 'severity': 'low'}]
+    text = brief(lower, color=False)
+    if 'Medium finding' in text or '3 more finding(s)' not in text or '2 medium' not in text or '1 low' not in text:
+        fails.append('a brief that leaves out medium and low findings says how many it left out, by severity')
     if fails:
         print('render_report self-test FAILED:\n  - ' + '\n  - '.join(fails))
         return 1

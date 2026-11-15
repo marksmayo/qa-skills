@@ -33,8 +33,16 @@ It is strict about what it shows:
   `--data-dir` inventories it quickly, and `--max-files-per-dir N` samples it, recording the rest
   as not assessed.
 - A repository with no tests is reported as such: the tools warn, evidence completeness is 0
-  with nothing inventoried, and the validator wants the headline or a limitation to say so.
-  Files of an unknown format under `--data-dir` are listed as not assessed, never dropped.
+  with nothing inventoried, the validator wants the headline or a limitation to say the
+  repository has no tests (and `metadata.tests_found`, schema 1.1, to match the scan), no file is
+  called unused, and the renderer prints "No tests" under the title.
+  Files of an unknown format under `--data-dir` are listed as not assessed, never dropped; a data
+  module written as code (a records array in a JS, TS or Python module) is listed and scanned, and
+  other code there is recorded under `data_dir_code` with a warning. A served folder named with
+  `--data-dir` (`public/`, `static/`) is site assets, not fixtures: only files a test loads are
+  listed, the rest are counted under `served_dirs`.
+- `schema_drift.py` with nothing to compare returns at once (`status: nothing_to_check`, exit 0);
+  with records to compare in a repository whose models it cannot read it warns and exits 3.
 - Real-looking personal data is treated as real, and is always P0.
 - A time bomb is confirmed only by a failing run with a moved clock, or by exact date
   arithmetic.

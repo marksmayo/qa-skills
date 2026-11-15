@@ -512,16 +512,49 @@ VARIATION_CHECKS = [
 ]
 
 
-NO_TESTS_SAID = re.compile(r'\bno (?:test|tests|test files|automated tests)\b|\bhas no tests?\b|\bwithout (?:any )?tests\b'
-                           r'|\bzero test', re.I)
+# a statement that the repository has no tests: "has no tests", "there are no tests", "no tests were found". Not "no test
+# data", "no tests failed" or "without tests attached", which say nothing about whether tests exist
+NO_TESTS_SAID = re.compile(
+    r'\b(?:has|have|had|contains?|holds?|there (?:are|were|is)|with) no (?:automated )?'
+    r'(?:tests|test files|test code|test suites?|test functions)\b(?! (?:fail|pass|broke|ran|run))'
+    r'|\bno (?:automated )?(?:tests|test files)(?: (?:were|was))? (?:found|present|collected)\b'
+    r'|\bzero tests\b', re.I)
 
 
 def no_tests(rep: dict, cand_doc: dict | None) -> bool:
-    """True when the audited repository has no tests: scan_data.py recorded tests_found 0, or (without the candidates) no
-    inventoried source is test code."""
+    """True when the audited repository has no tests: scan_data.py recorded tests_found 0, the report records
+    metadata.tests_found 0, or (without either) no inventoried source is test code."""
     if cand_doc is not None and 'tests_found' in cand_doc:
         return cand_doc['tests_found'] == 0
+    if isinstance(rep['metadata'].get('tests_found'), int):
+        return rep['metadata']['tests_found'] == 0
     return not any(i.get('kind') in ('inline', 'support') for i in rep['inventory'])
+
+
+def tests_found_errors(rep: dict, cand_doc: dict | None) -> list[str]:
+    """Schema 1.1 records metadata.tests_found, which must be scan_data.py's count."""
+    md, errs = rep['metadata'], []
+    if rep.get('schema_version', '1.0') != '1.0' and 'tests_found' not in md:
+        errs.append('metadata.tests_found: a schema 1.1 report records how many tests scan_data.py found (tests_found in the '
+                    'candidates)')
+    if 'tests_found' in md and cand_doc is not None and 'tests_found' in cand_doc and md['tests_found'] != cand_doc['tests_found']:
+        errs.append(f'metadata.tests_found: {md["tests_found"]} but the candidates record tests_found {cand_doc["tests_found"]}')
+    return errs
+
+
+def runs_errors(rep: dict, runs: dict | None) -> list[str]:
+    """A run_tests.py tool that ran left a runs file: the report names it and the validator reads it."""
+    ran = [t['name'] for t in rep['tools'] if 'run_tests' in t['name'] and t['status'] == 'ran']
+    if not ran:
+        return []
+    errs = []
+    if not rep['metadata'].get('runs_file'):
+        errs.append(f'tools: {ran[0]} ran, but metadata.runs_file is null: name the runs file it wrote (or set the tool not_run)')
+    if runs is None:
+        errs.append(f'tools: {ran[0]} ran: pass --runs <runs file> so the runs are checked')
+    elif not runs.get('runs'):
+        errs.append(f'tools: {ran[0]} ran, but the runs file holds no runs')
+    return errs
 
 
 def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, evidence: Path | None, report_text: str,
@@ -530,8 +563,10 @@ def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, e
     fs = rep['findings']
     if no_tests(rep, cand_doc) and not NO_TESTS_SAID.search(' '.join([rep['summary'].get('headline', '')] + rep['limitations'])):
         errs.append('the repository has no tests (no test files were inventoried): the headline or a limitation must say there '
-                    'are no tests, so an empty audit is not read as clean test data')
-    ids = [f['id'] for f in fs]
+                    'are no tests ("the repository has no tests"), so an empty audit is not read as clean test data')
+    errs += tests_found_errors(rep, cand_doc)
+    errs += runs_errors(rep, runs)
+    ids =[f['id'] for f in fs]
     if len(set(ids)) != len(ids):
         errs.append('findings: duplicate ids')
     if cands is not None:
@@ -707,7 +742,10 @@ def main(argv=None) -> int:
         except (KeyError, TypeError, ValueError) as exc:
             print(f'INVALID: cannot compute the summary ({exc!r}); fix the report structure first')
             return 1
-        args.report.write_text(json.dumps(rep, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+        # keep the report's own line endings (write_text would turn LF into CRLF on Windows)
+        nl = '\r\n' if b'\r\n' in args.report.read_bytes() else '\n'
+        with args.report.open('w', encoding='utf-8', newline=nl) as fh:
+            fh.write(json.dumps(rep, indent=2, ensure_ascii=False) + '\n')
     schema = json.loads(SCHEMA.read_text(encoding='utf-8'))
     errs = schema_errors(rep, schema, schema)
     if errs:

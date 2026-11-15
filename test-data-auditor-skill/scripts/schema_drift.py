@@ -18,6 +18,12 @@ nearest directory with a pyproject.toml, package.json or similar), unless the re
 A record matches a model only when at least half of its keys are the model's fields, so a chart
 or an extract that happens to share a file name with a model is not compared with it. Records no
 model matches are counted per file as unmatched, not guessed.
+
+With no scanned fixture, seed or recording in the inventory there is nothing to compare: the output says
+`status: nothing_to_check` at once (no models are read, no language warning) and the exit status is 0. When
+there are records to compare but the repository is mostly in a language whose models are not read (Go,
+TypeScript), the language_coverage warning goes to stderr and the exit status is 3, as the other skills'
+scanners do; the output is still written.
 """
 from __future__ import annotations
 import argparse, ast, json, re, sys
@@ -145,7 +151,15 @@ def match_model(record: dict, path: str, models: dict, roots: set[str] | None = 
     return None
 
 
+RECORD_KINDS = ('fixture', 'seed', 'recording')
+
+
 def drift(root: Path, inventory: dict) -> dict:
+    if not any(i['kind'] in RECORD_KINDS and i['status'] == 'scanned' for i in inventory['inventory']):
+        # no data records: nothing to compare, so no models are read and no language is judged
+        return {'status': 'nothing_to_check', 'models': {}, 'findings': [], 'unmatched_records': {}, 'unmatched_total': 0,
+                'language_coverage': {'status': 'not_needed', 'warning': None, 'models_read_from': [],
+                                      'note': 'no scanned fixture, seed or recording in the inventory: no records to compare'}}
     files = inv.walk(root)
     inv.set_product_dirs(root, files)          # a product package named e2e or tests holds models, not test data
     models, enums = python_models(root, files)
@@ -155,7 +169,7 @@ def drift(root: Path, inventory: dict) -> dict:
     findings: dict[tuple, dict] = {}
     unmatched: dict[str, int] = {}
     for item in inventory['inventory']:
-        if item['kind'] not in ('fixture', 'seed', 'recording') or item['status'] != 'scanned':
+        if item['kind'] not in RECORD_KINDS or item['status'] != 'scanned':
             continue
         try:
             records = datafiles.load_records(root / item['path'], item['path'])
@@ -188,7 +202,7 @@ def drift(root: Path, inventory: dict) -> dict:
                     key = (item['path'], 'missing_required', fname, model)
                     findings.setdefault(key, {'rule': 'missing_required', 'file': item['path'], 'field': fname,
                                               'model': mname, 'model_source': spec['source'], 'lines': []})['lines'].append(r['line'])
-    return {'models': {k: {'source': v['source'], 'fields': sorted(v['fields'])} for k, v in sorted(models.items())},
+    return {'status': 'checked', 'models': {k: {'source': v['source'], 'fields': sorted(v['fields'])} for k, v in sorted(models.items())},
             'findings': list(findings.values()), 'unmatched_records': dict(sorted(unmatched.items())),
             'unmatched_total': sum(unmatched.values()), 'language_coverage': coverage(root, models)}
 
@@ -220,7 +234,7 @@ def main(argv=None) -> int:
         sys.stdout.write(text)
     if res['language_coverage']['warning']:
         print(f'WARNING: {res["language_coverage"]["warning"]}', file=sys.stderr)
-    return 0
+    return 3 if res['language_coverage'].get('status') == 'unsupported_dominant' else 0
 
 
 if __name__ == '__main__':

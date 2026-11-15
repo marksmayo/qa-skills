@@ -1,6 +1,6 @@
 # Design: `test-data-auditor-skill`
 
-Status: Built (v1.6.0), see "As built" at the end. Build order: 11.
+Status: Built (v1.7.0), see "As built" at the end. Build order: 11.
 
 ## Mission
 
@@ -545,3 +545,38 @@ parametrised pytest suite globs:
   walk still prunes build-output directories through the shared `detect_conventions.SKIP_DIRS`.
 - **Example.** The example's `candidates.json` gained `tests_found` and the scope note; the report
   is unchanged and still validates.
+
+### v1.7.0: a content site with no tests, audited with --data-dir
+
+- **Found on** a statically generated content site (a web framework's app directory, a served
+  `public/` folder, a TypeScript module exporting the site's records as an array) with no tests:
+  `--data-dir public` turned the served assets (an ads.txt, a web manifest) into test fixtures
+  and raised "unused" candidates for them, although "unused by tests" means nothing with no tests;
+  `--data-dir src` dropped every code file silently, the records module with them, against the
+  rule that nothing under a `--data-dir` tree is dropped; the validator took "no test data" or
+  "without tests" as saying the repository had no tests; the report had no field for the test
+  count, so the renderer could not say "no tests"; a report whose `run_tests.py` ran was accepted
+  with no runs file; `schema_drift.py` on an empty inventory read every model, printed a loud
+  TypeScript warning and exited 0; `--write-summary` rewrote the report with CRLF on Windows.
+- **Changed:** a `--data-dir` that is a served folder (`public/`, `static/`, `wwwroot/`, `www/`,
+  `htdocs/`, outside a test area) keeps only the files a test loads; the rest are counted under
+  `served_dirs` with a warning. With no tests the unused-file rule does not run, the scan notes
+  say so, and the inventory's `summary.unused` is empty. A JavaScript, TypeScript or Python file
+  under a `--data-dir` that is a data module (three or more literal records of two or more fields,
+  two with the same keys, record fields on at least 40% of its non-blank lines) is listed as a
+  fixture with a "data module" note and scanned; other code there is recorded under
+  `data_dir_code` with its paths, warned about and repeated in the scan notes, and stays product
+  code (code under a `--data-dir` no longer counts as a test area). The validator's no-tests
+  statement must be about the repository ("has no tests", "there are no tests", "no tests were
+  found"). Report schema 1.1 adds `schema_version` and `metadata.tests_found` (required in 1.1,
+  checked against the candidates); reports without `schema_version` are 1.0 and still valid; the
+  renderer prints "No tests" under the title when it is 0. A `run_tests.py` tool that ran needs
+  `metadata.runs_file`, `--runs`, and at least one run. `schema_drift.py` returns
+  `status: nothing_to_check` at once when no fixture, seed or recording was scanned (no models
+  read, no language warning, exit 0), and exits 3 when there are records to compare but the
+  dominant language's models are not read, like `list_interfaces.py`. `--write-summary` keeps the
+  report's line endings.
+- **Not changed:** code under a served folder (a service worker) is still counted under
+  `data_dir_code` as well; data modules in other languages are not detected.
+- **Example.** The report is now schema 1.1 with `metadata.tests_found: 15`; `run/drift.json`
+  gained `status: checked`. The inventory and candidates are unchanged.
