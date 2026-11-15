@@ -76,7 +76,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import detect_conventions, diff_scope, lang_census, next_app  # noqa: E402
+import cargo_project, detect_conventions, diff_scope, lang_census, next_app  # noqa: E402
 
 SURFACES = json.loads((HERE.parent / 'data' / 'surfaces.json').read_text(encoding='utf-8'))
 LIKELIHOOD = {'churn': 2, 'defects': 3, 'complexity': 1, 'change_in_scope': 2, 'test_weakness': 2}
@@ -382,7 +382,7 @@ def dir_names(path: str) -> set[str]:
 def is_source(f: str) -> bool:
     p = PurePosixPath(f)
     return (p.suffix in CODE_EXT and not is_test(f) and not f.endswith('.d.ts') and not dir_names(f) & NOT_SOURCE_DIRS
-            and not CONFIG_NAME.match(p.name))
+            and not CONFIG_NAME.match(p.name) and not is_bench(f))
 
 
 DOC_DIRS = {'docs', 'doc', 'documentation', 'examples'}
@@ -398,7 +398,7 @@ def is_area_code(f: str) -> bool:
         return True
     p = PurePosixPath(f)
     return (p.suffix in CODE_EXT and not is_test(f) and not CONFIG_NAME.match(p.name)
-            and not dir_names(f) & DOC_DIRS)
+            and not dir_names(f) & DOC_DIRS and not is_bench(f))
 
 
 # Configuration that is product behaviour, not tooling: set by score() from the Next.js model (next.config.* with
@@ -674,6 +674,8 @@ def define_areas(root: Path, files: list[str], explicit: Path | None) -> tuple[l
     if explicit:
         return json.loads(explicit.read_text(encoding='utf-8'))['areas'], 'explicit (--areas)'
     areas, basis = default_areas(root, files)
+    # a second language that is a large share of the code and sits outside every area (Python scripts beside a Cargo
+    # workspace) is product or release tooling, not incidental: it gets areas by directory, never "root tooling"
     # a root module that creates (or is launched as) the web app is product code: its own area, with the templates/ and
     # static/ directories beside it, never root tooling
     apps = {f: why for f, why in root_app_modules(root, files).items() if area_of(f, areas) is None}
@@ -693,7 +695,64 @@ def define_areas(root: Path, files: list[str], explicit: Path | None) -> tuple[l
     if cfg:
         areas.append({'id': 'runtime config', 'paths': cfg})
         basis += '; runtime configuration: ' + ', '.join(cfg)
+    extra, note = second_language_areas(root, files, areas)
+    if extra:
+        areas += extra
+        basis += '; ' + note
     return areas, basis
+
+
+SECOND_LANGUAGE_SHARE = 0.30     # a language with this share of the code's lines is never dropped as tooling
+SECOND_LANGUAGE_MIN_LINES = 50
+
+
+def code_lines_by_language(root: Path, files: list[str], owner) -> dict[str, list]:
+    """{language: [lines outside every area, lines inside, [files outside]]} over the code that counts as source
+    (tests, docs, config, generated and vendored code left out); lines are non-blank lines, owner(f) is f's area."""
+    out: dict[str, list] = {}
+    for f in files:
+        lang = lang_census.LANG_BY_EXT.get(PurePosixPath(f).suffix)
+        if not lang or not is_source(f) or diff_scope.classify(f, '', False, root)[0] in ('generated', 'vendored'):
+            continue
+        try:
+            n = sum(1 for x in (root / f).read_text(encoding='utf-8', errors='replace').splitlines() if x.strip())
+        except OSError:
+            continue
+        n -= RUST_INLINE_TESTS.get(f, ([], 0))[1]          # #[cfg(test)] modules are test lines, not code
+        acc = out.setdefault(lang, [0, 0, []])
+        if owner(f) is None:
+            acc[0] += n
+            acc[2].append(f)
+        else:
+            acc[1] += n
+    return out
+
+
+def second_language_areas(root: Path, files: list[str], areas: list[dict]) -> tuple[list[dict], str]:
+    """Areas for a language that holds SECOND_LANGUAGE_SHARE or more of the code's lines and is mostly outside the
+    default areas (Python helper scripts beside a Cargo workspace): one area per top-level directory holding it (split
+    by subdirectory like a main source tree when large), and one for its files at the repository root."""
+    by = code_lines_by_language(root, files, lambda f: area_of(f, areas))
+    total = sum(v[0] + v[1] for v in by.values())
+    new, notes = [], []
+    for lang, (out_n, in_n, fs) in sorted(by.items()):
+        if not total or out_n < SECOND_LANGUAGE_MIN_LINES or out_n < SECOND_LANGUAGE_SHARE * total or in_n >= out_n:
+            continue
+        groups: dict[str, list[str]] = {}
+        for f in fs:
+            groups.setdefault(f.split('/')[0] if '/' in f else '', []).append(f)
+        made = []
+        for top, gfs in sorted(groups.items()):
+            if not top:
+                made.append({'id': f'{lang} files at the root', 'paths': sorted(gfs)})
+                continue
+            base = descend(top, gfs)
+            parts = module_areas(base, gfs, base) if len(gfs) > SPLIT_PACKAGE else []
+            made += parts if len(parts) >= 2 else [{'id': base, 'paths': [base]}]
+        new += made
+        notes.append(f'{lang} outside the packages ({out_n} of {total} code lines, {len(fs)} file(s)): '
+                     + ', '.join(a['id'] for a in made))
+    return new, 'second language: ' + '; '.join(notes) if notes else ''
 
 
 def default_areas(root: Path, files: list[str]) -> tuple[list[dict], str]:
@@ -719,7 +778,9 @@ def default_areas(root: Path, files: list[str]) -> tuple[list[dict], str]:
     # by the main-source rule beside the nested packages instead of being called root tooling.
     root_go = [f for f in all_source if f.endswith('.go') and not in_pkg(f)] if (root / 'go.mod').is_file() else []
     outside = [f for f in all_source if not in_pkg(f)]
-    root_manifest = next((m for m in ROOT_MANIFESTS if (root / m).is_file()), None)
+    # a virtual Cargo workspace (a root Cargo.toml with no [package]) lists crates; it is not a root package
+    virtual = bool((CARGO.get('workspace') or {}).get('virtual'))
+    root_manifest = next((m for m in ROOT_MANIFESTS if (root / m).is_file() and not (m == 'Cargo.toml' and virtual)), None)
     if root_go or (pkgs and root_manifest and len(outside) > len(all_source) / 2):
         if root_go:
             areas, basis = go_package_areas('', root_go), 'Go packages of the root module (go.mod)'
@@ -831,13 +892,17 @@ def go_package_areas(base: str, go_files: list[str]) -> list[dict]:
 
 SURFACE_ONLY_WARNING = ('impact rests on the surface factor alone for every area (journey criticality and reach are not '
                         'assessed): the ranking is by surface patterns, so the headline must say so; for a library or CLI, '
-                        'give --usage (downloads or calls per package or entry point) or a journey map')
+                        'give --usage (downloads or calls per package or entry point) or a journey map; for a desktop or '
+                        'command-line app with neither, judge impact per area by hand (what a user loses when it fails: '
+                        'their data, a running session, a result they publish) as a judged surface factor with a reason')
 OUTSIDE_REASON ='outside the workspace packages and the main source tree (root tooling and scripts); add it to --areas to score it'
 
 
 def is_test(path: str) -> bool:
     if in_runner_dir(path):                  # an XCUITest runner app is the product's on-device agent
         return False
+    if path in RUST_TEST_FILES:              # a Rust module declared under a test cfg (#[cfg(test)] mod x;)
+        return True
     p = PurePosixPath(path)
     if p.suffix in C_FAMILY and any(x.endswith('Tests') for x in p.parts[:-1]):   # an XCTest bundle's Objective-C
         return True
@@ -1111,6 +1176,8 @@ HELPER_DIRS = {'helpers', 'helper', 'support', 'fixtures', '__fixtures__', 'util
 def not_a_counted_test(t: str) -> str | None:
     """Why a file in a test tree doesn't count as a test of the areas it imports, or None when it does: live tests need
     real credentials or services and don't run in a routine CI run; helpers and fixtures in a test tree are not tests."""
+    if t in FIXTURE_BINS:
+        return 'helper binary under tests/ (fn main, built for tests to run), not a test'
     names = dir_names(t)
     if names & LIVE_TEST_DIRS:
         return 'live test: needs real credentials or services, so it does not run in a routine CI run'
@@ -1142,9 +1209,36 @@ def tests_by_area(files: list[str], areas: list[dict], flaky: set[str], imports:
             hit.add(area_of_dir(r.rstrip('/'), areas) if r.endswith('/') else area_of(r, areas))
         if t.endswith('.rs'):
             hit |= rust_test_areas(t, areas, files)
+            hit |= rust_crate_uses(t, areas)
         for aid in hit - {None}:
             out[aid].add(t)
+    # Rust unit tests live in the source file, in #[cfg(test)] modules: the file is a test of its own area too
+    for f in RUST_INLINE_TESTS:
+        aid = area_of(f, areas)
+        if aid in out and f not in flaky:
+            out[aid].add(f)
     return {k: sorted(v) for k, v in out.items()}, skipped, not_counted
+
+
+RUST_PATH_ROOT = re.compile(r'(?:^|[^:\w])([a-z_][a-z0-9_]*)::')
+
+
+def rust_crate_uses(t: str, areas: list[dict]) -> set[str]:
+    """Areas of the workspace crates a Rust test names by path (`use station_core::mean;`, `station_core::x()`): an
+    integration test in one crate's tests/ that drives another crate is a test of that crate too."""
+    if not CRATE_DIRS:
+        return set()
+    try:
+        text = cargo_project.mask((Path(CARGO['repo']) / t).read_text(encoding='utf-8', errors='replace'))
+    except (OSError, KeyError):
+        return set()
+    hits = set()
+    for name in set(RUST_PATH_ROOT.findall(text)) & set(CRATE_DIRS):
+        d = CRATE_DIRS[name]
+        aid = area_of_dir(d, areas) if d != '.' else None
+        if aid:
+            hits.add(aid)
+    return hits
 
 
 # ---------------------------------------------------------------- inputs from other skills
@@ -1400,20 +1494,127 @@ def comment_free(text: str, suffix: str) -> str:
                   else m.group(0), text)
 
 
-RUST_TEST_CFG = re.compile(r'^#\[cfg\((?:test\)|all\(\s*test\b)')
+TEST_CFG = re.compile(r'(?<!not\()\btest\b')
+CFG_TEST_ATTR = re.compile(r'^\s*#\[\s*cfg\s*\((.*)\)\s*\]\s*$')
+TEST_MOD_OPEN = re.compile(r'^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{')
 
 
-def rust_test_mod_cut(raw_lines: list[str]) -> int | None:
-    """Line index at which a trailing top-level `#[cfg(test)] mod ... { ... }` begins, or None. Rust
-    keeps unit tests inline in the source file, conventionally in a module at the end; that is test
-    code, not a surface, so it is dropped before scanning (the integration tests under tests/ are
-    linked separately). Only a top-level (column 0) cfg(test) attribute followed by a `mod` is cut."""
-    for i, line in enumerate(raw_lines):
-        if RUST_TEST_CFG.match(line):
-            nxt = next((raw_lines[j] for j in range(i + 1, len(raw_lines)) if raw_lines[j].strip()), '')
-            if re.match(r'(pub\s+)?mod\s+\w', nxt):
-                return i
-    return None
+def rust_test_ranges(text: str) -> list[tuple[int, int]]:
+    """[(first line index, end line index)) of every inline test module: a `mod x { ... }` under a cfg attribute that
+    turns on with test (#[cfg(test)], #[cfg(all(test, feature = "x"))], not #[cfg(not(test))]), at any depth. Rust
+    keeps unit tests in the source file; those lines are test code, not product source or a surface."""
+    masked = cargo_project.mask(text).splitlines()
+    out: list[tuple[int, int]] = []
+    i = 0
+    while i < len(masked):
+        m = CFG_TEST_ATTR.match(masked[i])
+        if m and TEST_CFG.search(m.group(1)):
+            j = i + 1
+            while j < len(masked) and (not masked[j].strip() or masked[j].strip().startswith('#[')):
+                j += 1
+            if j < len(masked) and TEST_MOD_OPEN.match(masked[j]):
+                depth, k = 0, j
+                while k < len(masked):
+                    depth += masked[k].count('{') - masked[k].count('}')
+                    k += 1
+                    if depth <= 0:
+                        break
+                out.append((i, k))
+                i = k
+                continue
+        i += 1
+    return out
+
+
+# The Cargo model of the repository (cargo_project.read_cargo), set by set_cargo_model() from score(): files that are
+# test modules (declared under a test cfg, `#[cfg(test)] mod x;` or with #[path]), bench targets, inline test-module
+# line counts, crate names (for integration tests that `use` another crate) and the surface hits the model reads.
+CARGO: dict = {}
+RUST_TEST_FILES: set[str] = set()
+BENCH_FILES: set[str] = set()
+FIXTURE_BINS: set[str] = set()
+RUST_INLINE_TESTS: dict[str, tuple[list[tuple[int, int]], int]] = {}
+CRATE_DIRS: dict[str, str] = {}
+BENCH_REASON = 'Cargo bench target (benches/ or [[bench]]): benchmark code, not product source'
+
+
+def is_bench(f: str) -> bool:
+    return f in BENCH_FILES or (f.endswith('.rs') and 'benches' in dir_names(f) and bool(CARGO.get('is_cargo')))
+
+
+def set_cargo_model(root: Path, files: list[str]) -> None:
+    for x in (RUST_TEST_FILES, BENCH_FILES, FIXTURE_BINS, RUST_INLINE_TESTS, CRATE_DIRS, CARGO):
+        x.clear()
+    if not (root / 'Cargo.toml').is_file():
+        return
+    try:
+        CARGO.update(cargo_project.read_cargo(root))
+    except Exception as e:                       # a manifest the reader cannot parse: say so, score without the model
+        CARGO.update({'is_cargo': True, 'crates': [], 'error': f'{type(e).__name__}: {e}'})
+        return
+    fileset = set(files)
+    for c in CARGO.get('crates', []):
+        CRATE_DIRS[c['name'].replace('-', '_')] = c['dir']
+        for t in c.get('targets', []):
+            if t['kind'] == 'bench':
+                BENCH_FILES.add(t['path'])
+        FIXTURE_BINS.update(b['file'] for b in c.get('fixture_bins', []))
+    for f in files:
+        if not f.endswith('.rs'):
+            continue
+        sc = cargo_project.scan_file(root / f, f)
+        p = PurePosixPath(f)
+        for d in sc.get('mods', []):
+            if not any(TEST_CFG.search(c) for c in d.get('cfg') or []):
+                continue
+            if d.get('path_attr'):
+                cands = [p.parent / d['path_attr']]
+            else:
+                base = p.parent if p.name in ('lib.rs', 'main.rs', 'mod.rs') else p.parent / p.stem
+                base = base.joinpath(*d['inline']) if d['inline'] else base
+                cands = [base / f'{d["name"]}.rs', base / d['name'] / 'mod.rs', p.parent / f'{d["name"]}.rs']
+            hit = next((os.path.normpath(str(c)).replace('\\', '/') for c in cands
+                        if os.path.normpath(str(c)).replace('\\', '/') in fileset), None)
+            if hit:
+                RUST_TEST_FILES.add(hit)
+    for f in files:
+        if not f.endswith('.rs') or f in RUST_TEST_FILES:
+            continue
+        try:
+            text = (root / f).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        ranges = rust_test_ranges(text)
+        if ranges:
+            lines = text.splitlines()
+            n = sum(1 for a, b in ranges for x in lines[a:b] if x.strip())
+            RUST_INLINE_TESTS[f] = (ranges, n)
+
+
+def in_rust_test_range(f: str, line: int) -> bool:
+    return any(a < line <= b for a, b in RUST_INLINE_TESTS.get(f, ([], 0))[0])
+
+
+def cargo_surface_hits() -> dict[str, list[tuple[str, str]]]:
+    """{file: [(class, evidence)]} the Cargo model reads: clap CLIs (derive and builder) are public entry points,
+    std::process::Command launches run processes, libloading loads load native code. Hits in test modules are left out."""
+    out: dict[str, list[tuple[str, str]]] = {}
+    for c in CARGO.get('crates', []):
+        for cli in c.get('clis', []):
+            if not in_rust_test_range(cli['file'], cli['line']):
+                n = len(cli.get('commands') or [])
+                out.setdefault(cli['file'], []).append(
+                    ('public_api', f'{cli["file"]}:{cli["line"]} (clap {cli.get("style")} CLI'
+                     + (f' {cli["name"]}' if cli.get('name') else '') + (f', {n} subcommand(s)' if n else '') + ')'))
+        for p in c.get('process_launches', []):
+            if not in_rust_test_range(p['file'], p['line']):
+                prog = (p.get('program_expr') or '').strip()
+                out.setdefault(p['file'], []).append(
+                    ('subprocess', f'{p["file"]}:{p["line"]} (std::process::Command' + (f' {prog}' if prog else '') + ')'))
+        for p in c.get('library_loads', []):
+            if not in_rust_test_range(p['file'], p['line']):
+                out.setdefault(p['file'], []).append(('native_code', f'{p["file"]}:{p["line"]} ({p.get("call") or "library load"})'))
+    return out
 
 
 TS_EXT = {'.ts', '.tsx', '.mts', '.cts'}
@@ -1564,11 +1765,12 @@ def surface_scan(root: Path, files: list[str], entries: dict[str, str] | None = 
         except OSError:
             continue
         suffix = PurePosixPath(f).suffix
-        cut = rust_test_mod_cut(text.splitlines()) if suffix == '.rs' else None   # a trailing #[cfg(test)] mod
         raw_lines = comment_free(text, suffix).splitlines()     # raw_patterns see strings, not comments
         code_lines = code_view(text, suffix).splitlines()
-        if cut is not None:
-            raw_lines, code_lines = raw_lines[:cut], code_lines[:cut]
+        if suffix == '.rs':                     # inline #[cfg(test)] modules are test code, not a surface
+            for a, b in rust_test_ranges(text):
+                for k in range(a, min(b, len(raw_lines), len(code_lines))):
+                    raw_lines[k] = code_lines[k] = ''
         for i, (raw, code) in enumerate(zip(raw_lines, code_lines), 1):
             for cls in line_classes(raw, code, suffix):
                 if not any(h.startswith(f'{f}:{i} (') for h in hits.get(cls, [])):   # the model already cites it
@@ -1627,6 +1829,57 @@ def uncovered_language(files: list[str], owner: dict, cx: dict, root: Path, area
     return None
 
 
+UI_MARKUP_EXT = {'.slint': 'Slint', '.qml': 'QML', '.xaml': 'XAML', '.axaml': 'Avalonia XAML', '.ui': 'Qt Designer',
+                 '.glade': 'GTK Builder', '.blp': 'GTK Blueprint', '.kv': 'Kivy', '.xib': 'Interface Builder',
+                 '.storyboard': 'Interface Builder'}
+
+
+def ui_markup_note(root: Path, files: list[str], owner: dict) -> str | None:
+    """Desktop and mobile UI definition files (Slint, QML, XAML, Qt Designer, GTK, Kivy, Interface Builder): neither
+    the language census nor the surface patterns read them, so they are named with their areas, never passed over."""
+    found: dict[str, list[tuple[str, int]]] = {}
+    for f in files:
+        kind = UI_MARKUP_EXT.get(PurePosixPath(f).suffix.lower())
+        if not kind or is_test(f):
+            continue
+        try:
+            n = sum(1 for x in (root / f).read_text(encoding='utf-8', errors='replace').splitlines() if x.strip())
+        except OSError:
+            continue
+        found.setdefault(kind, []).append((f, n))
+    if not found:
+        return None
+    parts = []
+    for kind, fs in sorted(found.items()):
+        homes = sorted({owner.get(f) or 'no area' for f, _ in fs})
+        parts.append(f'{kind} {len(fs)} file(s), {sum(n for _, n in fs)} lines ({", ".join(f for f, _ in fs[:3])}'
+                     + (f' +{len(fs) - 3}' if len(fs) > 3 else '') + f'; area {", ".join(homes)})')
+    return ('UI markup these scripts do not measure (no complexity, no surface): ' + '; '.join(parts)
+            + '; a UI definition decides what users see and can do, so judge the impact of the areas holding it by hand')
+
+
+SECOND_LANGUAGE_WARNING = 'a language with a large share of the code is outside every area'
+
+
+def second_language_warning(root: Path, files: list[str], owner: dict, area_basis: str, skip: set | None = None) -> list[str]:
+    """Loud warnings for each language (not only the dominant one) that holds SECOND_LANGUAGE_SHARE or more of the
+    code's lines with most of them outside every area: half a product in helper scripts is not root tooling. The plan
+    must name the language (validate_test_plan.py checks)."""
+    # the catch-all 'unassigned' area scores stray files as one lump: a language mostly there is not in the areas either
+    by = code_lines_by_language(root, files, lambda f: None if owner.get(f) == 'unassigned' else owner.get(f))
+    total = sum(v[0] + v[1] for v in by.values())
+    out = []
+    for lang, (out_n, in_n, fs) in sorted(by.items()):
+        if lang not in (skip or set()) and total and out_n >= SECOND_LANGUAGE_MIN_LINES and out_n >= SECOND_LANGUAGE_SHARE * total and in_n < out_n:
+            dirs = sorted({f.split('/')[0] + '/' if '/' in f else f for f in fs})
+            out.append(f'{SECOND_LANGUAGE_WARNING}: {lang} has {out_n} of the {total} code lines ({out_n / total:.0%}) in '
+                       f'{len(fs)} file(s) outside every area or only in "unassigned" (area basis: {area_basis}): '
+                       f'{", ".join(dirs[:6])}'
+                       + (f' (+{len(dirs) - 6})' if len(dirs) > 6 else '') + f'; give --areas that score it, or the plan '
+                       f'must name {lang} and say why it needs no testing (headline, an assumption or an open question)')
+    return out
+
+
 CI_FILES = re.compile(r'^(\.github/workflows/[^/]+\.ya?ml|\.gitlab-ci\.yml|azure-pipelines\.ya?ml|Jenkinsfile|'
                       r'\.circleci/config\.ya?ml|bitbucket-pipelines\.yml|\.travis\.yml|\.buildkite/.+|\.drone\.ya?ml)$')
 NO_TESTS = 'the repository has no test files'
@@ -1683,6 +1936,7 @@ def score(args) -> dict:
     PRODUCT_DIRS.clear()
     PRODUCT_DIRS.update(product_dirs(root, files))
     set_runner_dirs(root, files)
+    set_cargo_model(root, files)
     fileset = set(files)
     NEXT_MODEL.clear()
     NEXT_MODEL.update(next_model(root, files))
@@ -1711,7 +1965,7 @@ def score(args) -> dict:
             excluded.append({'path': f, 'reason': why})
         elif PurePosixPath(f).suffix in CODE_EXT and not is_test(f) and not is_area_code(f) and area_of(f, areas):
             excluded.append({'path': f, 'reason': 'tool configuration file' if CONFIG_NAME.match(PurePosixPath(f).name)
-                             else 'documentation or examples directory'})
+                             else BENCH_REASON if is_bench(f) else 'documentation or examples directory'})
     excluded_paths = {e['path'] for e in excluded}
     for aid, kept in sorted(kept_generated.items()):
         warnings.append(f'area {aid}: {len(kept)} file(s) classified generated ({kept[0][1]}) are scored because --areas '
@@ -1748,6 +2002,8 @@ def score(args) -> dict:
             reason = RUNTIME_CONFIG_REASON
         elif CONFIG_NAME.match(p.name):
             reason = 'tool configuration file'
+        elif is_bench(f):
+            reason = BENCH_REASON
         elif names & DOC_DIRS:
             reason = 'documentation or examples directory'
         elif names & NOT_SOURCE_DIRS:
@@ -1809,9 +2065,15 @@ def score(args) -> dict:
     lost = uncovered_language(files, owner, cx, root, area_basis)
     if lost:
         warnings.append(lost)
+    said = re.search(r' (\.\w+) file\(s\)', lost or '')        # the language uncovered_language already named
+    warnings += second_language_warning(root, files, owner, area_basis,
+                                        {lang_census.LANG_BY_EXT.get(said.group(1))} if said else set())
     lang_cov, note = language_note(root)
     if note:
         warnings.append(note)
+    markup = ui_markup_note(root, files, owner)
+    if markup:
+        warnings.append(markup)
     inputs = [load_input(k, Path(p)) for k, p in (x.split('=', 1) for x in args.input)]
     names = [(i['skill'], i['path']) for i in inputs]
     if len(set(names)) != len(names):
@@ -1877,6 +2139,11 @@ def score(args) -> dict:
             coverage[k] = (max(o[0], n), max(o[1], c))
     entries = manifest_entries(root, files)
     next_hits = next_surface_hits(NEXT_MODEL)
+    for f, hs in cargo_surface_hits().items():     # clap CLIs, process launches and library loads the Cargo model reads
+        next_hits.setdefault(f, []).extend(hs)
+    if CARGO.get('error'):
+        warnings.append(f'the Cargo manifests could not be read ({CARGO["error"]}): test modules, benches, clap CLIs, '
+                        'process launches and library loads are not taken from the Cargo model')
     release = json.loads(args.release.read_text(encoding='utf-8')) if args.release else None
     rel_pkgs = {n: p for n, p in ((release or {}).get('packages') or {}).items() if isinstance(p, dict) and p.get('dir') is not None}
 
@@ -1921,10 +2188,11 @@ def score(args) -> dict:
         h = [hist['files'][f] for f in every + gone_h]
         added_in_scope = [f for f in every if scope_files.get(f, {}).get('status') == 'added']
         novel = bool(every) and len(added_in_scope) == len(every)
-        loc = sum(cx.get(f, {}).get('loc', 0) for f in mine)
+        inline = {f: RUST_INLINE_TESTS[f][1] for f in mine if f in RUST_INLINE_TESTS}   # #[cfg(test)] module lines
+        loc = sum(max(0, cx.get(f, {}).get('loc', 0) - inline.get(f, 0)) for f in mine)
         branches = sum(cx.get(f, {}).get('branches', 0) for f in mine)
         code_files = [f for f in mine if cx.get(f, {}).get('loc', 0) > 0]
-        test_loc = sum(cx.get(t, {}).get('loc', 0) for t in tests[a['id']])
+        test_loc = sum(RUST_INLINE_TESTS[t][1] if t in RUST_INLINE_TESTS else cx.get(t, {}).get('loc', 0) for t in tests[a['id']])
         scope_lines = sum(scope_files[f]['lines_added'] + scope_files[f]['lines_deleted'] for f in every if f in scope_files)
         scope_lines += sum((sf.get('lines_added') or 0) + (sf.get('lines_deleted') or 0) for sf in gone_s)
         fix_shas = sorted({s for x in h for s in x['fix_commits']})
@@ -1943,7 +2211,7 @@ def score(args) -> dict:
             'scope_lines': scope_lines, 'tests': tests[a['id']], 'test_loc': test_loc, 'code_files': code_files,
             'packages': sorted({package_of(x) for x in mine} - {None}),
             'breaking_commits': [c for c in (release or {}).get('breaking_commits') or [] if set(c.get('files') or []) & mine_set],
-            'gone_history': gone_h, 'gone_scope': gone_s,
+            'gone_history': gone_h, 'gone_scope': gone_s, 'inline_tests': inline,
         }
     # A package with a breaking pending changeset (major, or a "Breaking" note) flags the areas of it the scope changed;
     # when the scope changed none of them (or there is no scope), every area of the package.
@@ -2033,7 +2301,9 @@ def score(args) -> dict:
             ratio = r['test_loc'] / r['loc'] if r['loc'] else 1
             tw = 4 if ratio < 0.2 else 3 if ratio < 0.5 else 2 if ratio < 1 else 1
             tev = [f'{len(r["tests"])} test file(s) import it ({", ".join(r["tests"][:4])}); {r["test_loc"]} test lines for '
-                   f'{r["loc"]} lines of code (ratio {ratio:.2f})']
+                   f'{r["loc"]} lines of code (ratio {ratio:.2f})'
+                   + (f'; {len(r["inline_tests"])} source file(s) hold #[cfg(test)] modules '
+                      f'({sum(r["inline_tests"].values())} lines, counted as test lines, not code)' if r['inline_tests'] else '')]
         cov_files = [x for x in r['files'] if x in coverage]
         stmts = sum(coverage[x][0] for x in cov_files)
         if stmts:                         # a coverage profile measures it: statement coverage, not the size ratio
@@ -2292,6 +2562,22 @@ SELF_TEST_CASES = [
     ('.js', "self.addEventListener('fetch', (event) => {", ['service_worker']),
     ('.js', '  event.respondWith(caches.match(event.request));', ['service_worker']),
     ('.ts', "window.addEventListener('resize', onResize);", []),
+    # graphics objects freed in an error path or Drop destroy no stored data; a store's delete does
+    ('.rs', '        self.gl.delete_texture(self.tex);', []),
+    ('.rs', '    gl.delete_framebuffer(fb);', []),
+    ('.rs', 'device.destroy_buffer(staging, None);', []),
+    ('.ts', 'gl.deleteTexture(tex);', []),
+    ('.rs', 'store.delete_reading(id)?;', ['destructive']),
+    ('.rs', 'repo.delete_user(&conn, user_id)?;', ['destructive']),
+    # Rust CLIs (clap), process launches and native code; Python process launches
+    ('.rs', '#[derive(Parser)]', ['public_api']),
+    ('.rs', '#[derive(Debug, Subcommand)]', ['public_api']),
+    ('.rs', '#[derive(Debug, Clone)]', []),
+    ('.rs', 'let lib = unsafe { libloading::Library::new(path)? };', ['native_code', 'raw_syscall']),
+    ('.rs', 'unsafe extern "C" {', ['native_code']),
+    ('.py', 'subprocess.run([exe, "--version"], check=True)', ['subprocess']),
+    ('.py', 'proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)', ['subprocess']),
+    ('.py', 'lib = ctypes.CDLL(path)', ['native_code']),
 ]
 
 
@@ -2333,7 +2619,7 @@ def self_test() -> int:
         PRODUCT_DIRS.clear()
         PRODUCT_DIRS.update(saved)
         tmp.cleanup()
-    checks = go_layout_checks() + web_app_checks() + static_front_end_checks() + next_site_checks()
+    checks = go_layout_checks() + web_app_checks() + static_front_end_checks() + next_site_checks() + cargo_workspace_checks()
     bad += [name for name, ok in checks if not ok]
     for b in bad:
         print('FAIL ' + b)
@@ -2867,6 +3153,176 @@ def next_site_checks() -> list[tuple[str, bool]]:
             import traceback
             out.append((f'Next.js site checks raised {type(e).__name__}: {e} {traceback.format_exc()[-600:]}', False))
         finally:
+            PRODUCT_DIRS.clear()
+            PRODUCT_DIRS.update(saved[0])
+            RUNNER_DIRS.clear()
+            RUNNER_DIRS.update(saved[1])
+    return out
+
+
+_PY_TOOL = ('import json\nimport subprocess\nimport sys\n\n\n'
+            + ''.join(f'def step_{i}(rows):\n    out = []\n    for r in rows:\n        if r > {i}:\n            out.append(r)\n'
+                      f'    return out\n\n\n' for i in range(6))
+            + 'def main():\n    subprocess.run([sys.executable, "-c", "print(1)"], check=True)\n')
+CARGO_SITE = {
+    'Cargo.toml': '[workspace]\nmembers = ["crates/*"]\nresolver = "2"\n',
+    'crates/station-core/Cargo.toml': '[package]\nname = "station-core"\nversion = "0.1.0"\nedition = "2024"\n',
+    'crates/station-core/src/units.rs': ''.join(f'pub fn to_unit_{i}(x: f64) -> f64 {{\n    if x < 0.0 {{\n        return 0.0;\n'
+                                                f'    }}\n    x * {i}.0\n}}\n\n' for i in range(30)),
+    'crates/station-core/src/lib.rs': (
+        'pub mod store;\npub mod units;\n\npub fn mean(xs: &[f64]) -> f64 {\n    if xs.is_empty() {\n        return 0.0;\n    }\n'
+        '    xs.iter().sum::<f64>() / xs.len() as f64\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n'
+        '    #[test]\n    fn mean_of_two() {\n        assert_eq!(mean(&[1.0, 3.0]), 2.0);\n    }\n\n'
+        '    #[test]\n    fn mean_of_none() {\n        assert_eq!(mean(&[]), 0.0);\n    }\n}\n'),
+    'crates/station-core/src/store.rs': (
+        'pub struct Db;\n\nimpl Db {\n    pub fn execute(&self, _sql: &str) {}\n}\n\n'
+        'pub fn delete_reading(db: &Db, id: u32) {\n    let _ = id;\n    db.execute("DELETE FROM readings WHERE id = ?1");\n}\n'),
+    'crates/station-core/benches/lookup.rs': (
+        'fn main() {\n    let dir = std::env::temp_dir().join("bench");\n    std::fs::create_dir_all(&dir).unwrap();\n'
+        '    std::fs::remove_dir_all(&dir).unwrap();\n}\n'),
+    'crates/station-render/Cargo.toml': (
+        '[package]\nname = "station-render"\nversion = "0.1.0"\nedition = "2024"\n\n[features]\ngpu-tests = []\n'),
+    'crates/station-render/src/lib.rs': 'pub mod gpu;\n',
+    'crates/station-render/ui/panel.slint': ('export component Panel inherits Window {\n    in property <string> reading;\n'
+                                            '    Text { text: reading; }\n}\n'),
+    'crates/station-render/src/gpu.rs': (
+        'pub struct Gl;\n\nimpl Gl {\n    pub fn delete_texture(&self, _t: u32) {}\n    pub fn delete_framebuffer(&self, _f: u32) {}\n}\n\n'
+        'pub struct Target {\n    gl: Gl,\n    tex: u32,\n    fb: u32,\n}\n\n'
+        'impl Drop for Target {\n    fn drop(&mut self) {\n        self.gl.delete_texture(self.tex);\n'
+        '        self.gl.delete_framebuffer(self.fb);\n    }\n}\n\n'
+        'pub fn load_backend(path: &str) -> Option<libloading::Library> {\n'
+        '    // SAFETY: the backend is built with this crate\n    unsafe { libloading::Library::new(path).ok() }\n}\n\n'
+        '#[cfg(all(test, feature = "gpu-tests"))]\n#[path = "gpu_checks.rs"]\nmod gpu_checks;\n'),
+    'crates/station-render/src/gpu_checks.rs': (
+        'use super::*;\n\n' + ''.join(f'#[test]\nfn draws_{i}() {{\n    let gl = Gl;\n    gl.delete_texture({i});\n'
+                                       f'    assert_eq!({i} + 1, {i + 1});\n}}\n\n' for i in range(12))),
+    'crates/station-cli/Cargo.toml': (
+        '[package]\nname = "station-cli"\nversion = "0.1.0"\nedition = "2024"\n\n[[bin]]\nname = "station"\npath = "src/main.rs"\n\n'
+        '[dependencies]\nclap = { version = "4", features = ["derive"] }\nstation-core = { path = "../station-core" }\n'),
+    'crates/station-cli/src/main.rs': (
+        'use clap::{Parser, Subcommand};\nuse std::process::Command;\n\n#[derive(Parser)]\nstruct Cli {\n'
+        '    #[command(subcommand)]\n    command: Cmd,\n}\n\n#[derive(Subcommand)]\nenum Cmd {\n    Show,\n    Plot,\n}\n\n'
+        'fn main() {\n    match Cli::parse().command {\n        Cmd::Show => println!("{}", station_core::mean(&[1.0])),\n'
+        '        Cmd::Plot => {\n            let _ = Command::new("plotter").arg("--out").status();\n        }\n    }\n}\n'),
+    'crates/station-cli/tests/cli.rs': (
+        'use station_core::mean;\n\n#[test]\nfn shows_mean() {\n    assert_eq!(mean(&[2.0]), 2.0);\n}\n'),
+    'crates/station-cli/tests/fixtures/fake_plotter.rs': 'fn main() {\n    println!("plotted");\n}\n',
+    'scripts/report.py': _PY_TOOL, 'scripts/fetch.py': _PY_TOOL, 'scripts/calibrate.py': _PY_TOOL,
+    'tests/test_report.py': ('import sys\nfrom pathlib import Path\nsys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))\n'
+                             'import report\n\n\ndef test_step():\n    assert report.step_1([3]) == [3]\n'),
+}
+
+
+def cargo_workspace_checks() -> list[tuple[str, bool]]:
+    """A synthetic weather-station Cargo workspace (three crates: a library with unit tests in a #[cfg(test)] module and a
+    bench, a renderer that frees GPU objects in Drop, loads a backend library and includes a feature-gated test module,
+    a clap derive CLI that launches a process, with an integration test and a tests/fixtures helper binary) beside
+    Python scripts that are about 40% of the code. Crates are areas, the Python scripts get areas, in-source tests count
+    as tests, benches and test modules are not product source, GPU deletes destroy no data, and clap, process launches
+    and library loading are surfaces."""
+    import tempfile
+    out: list[tuple[str, bool]] = []
+    saved = (set(PRODUCT_DIRS), set(RUNNER_DIRS))
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        for rel, text in CARGO_SITE.items():
+            p = root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text, encoding='utf-8')
+        files = sorted(CARGO_SITE)
+        hist = {'repo': 'station', 'head': 'abc123', 'shallow': False, 'notes': [], 'command': 'git log',
+                'window': {'days': 180, 'from': '2026-05-01', 'to': '2026-11-01', 'head_date': '2026-11-01'},
+                'excluded_formatting': [], 'summary': {'commits': 0, 'fix_commits': 0, 'formatting_commits': 0},
+                'commits': [],
+                'files': {f: {'commits': 0, 'lines_added': 0, 'lines_deleted': 0, 'authors': [], 'fix_commits': [],
+                              'formatting_commits': [], 'first_commit': '2026-01-01'} for f in files}}
+        cx = {'files': {f: {'loc': len([x for x in CARGO_SITE[f].splitlines() if x.strip()]),
+                            'branches': CARGO_SITE[f].count('if '), 'method': 'regex'}
+                        for f in files if PurePosixPath(f).suffix in CODE_EXT}}
+        scope = {'source': {'kind': 'git', 'base_ref': 'v1', 'command': 'git diff'},
+                 'files': [{'path': 'crates/station-core/benches/lookup.rs', 'status': 'modified', 'kind': 'source',
+                            'lines_added': 5, 'lines_deleted': 0}]}
+        (root / '_in').mkdir()
+        for name, data in (('history.json', hist), ('complexity.json', cx), ('scope.json', scope)):
+            (root / '_in' / name).write_text(json.dumps(data), encoding='utf-8')
+        ns = argparse.Namespace(repo=root, history=root / '_in' / 'history.json', complexity=root / '_in' / 'complexity.json',
+                                scope=root / '_in' / 'scope.json', journeys=None, input=[], usage=None, areas=None,
+                                defects=None, finding_area=[], release=None, coverage=[])
+        try:
+            PRODUCT_DIRS.clear()
+            res = score(ns)
+            got = {a['id']: a for a in res['areas']}
+            ids = sorted(got)
+            out.append((f'Cargo crates are the default areas (got {ids}, {res["area_basis"]})',
+                        {'crates/station-core', 'crates/station-render', 'crates/station-cli'} <= set(ids)))
+            py_area = [a for a in res['areas'] if any(p.startswith('scripts') for p in a['paths'])]
+            excl = {e['path']: e['reason'] for e in res['excluded']}
+            out.append((f'Python scripts that are a large share of the code get an area, not "root tooling" (areas {ids}, '
+                        f'excluded {[p for p in excl if p.startswith("scripts")]})', bool(py_area)
+                        and not any(p.startswith('scripts/') for p in excl)))
+            core = got.get('crates/station-core', {})
+            tw = core.get('factors', {}).get('test_weakness', {})
+            out.append((f'unit tests in a #[cfg(test)] module count as tests of their crate (got {tw})',
+                        tw.get('score') != 5 and any('lib.rs' in t for t in core.get('tests', []))))
+            rend = got.get('crates/station-render', {})
+            tw = rend.get('factors', {}).get('test_weakness', {})
+            out.append((f'a feature-gated test module (#[cfg(all(test, ...))] mod) counts as tests (got {tw})',
+                        tw.get('score') != 5 and any('gpu_checks.rs' in t for t in rend.get('tests', []))))
+            out.append(('a #[path] test module is test code, not product source',
+                        is_test('crates/station-render/src/gpu_checks.rs')))
+            out.append((f'benches are not product source (excluded: {excl.get("crates/station-core/benches/lookup.rs")})',
+                        not is_area_code('crates/station-core/benches/lookup.rs')
+                        and 'bench' in (excl.get('crates/station-core/benches/lookup.rs') or '')))
+            out.append((f'a bench does not set its crate\'s surface (got {core.get("surfaces")})',
+                        'filesystem_destruction' not in core.get('surfaces', [])))
+            out.append(('a tests/fixtures helper binary is not product source',
+                        not is_area_code('crates/station-cli/tests/fixtures/fake_plotter.rs')))
+            out.append((f'freeing GPU objects is not data destruction (got {rend.get("surfaces")})',
+                        'destructive' not in rend.get('surfaces', [])))
+            out.append((f'a DELETE FROM in a store still destroys data (got {core.get("surfaces")})',
+                        'destructive' in core.get('surfaces', [])))
+            out.append((f'library loading is a surface (got {rend.get("surfaces")})', 'native_code' in rend.get('surfaces', [])))
+            cli = got.get('crates/station-cli', {})
+            out.append((f'a clap derive CLI is a public entry point and Command::new a process launch (got {cli.get("surfaces")})',
+                        {'public_api', 'subprocess'} <= set(cli.get('surfaces', []))))
+            out.append((f'an integration test that uses another workspace crate is a test of that crate too (got '
+                        f'{core.get("tests")})', 'crates/station-cli/tests/cli.rs' in core.get('tests', [])))
+            rng = rust_test_ranges('#[cfg(not(test))]\nmod real {\n    fn a() {}\n}\n#[cfg(test)]\nmod t {\n    #[test]\n'
+                                   '    fn b() {}\n}\npub fn after() {}\n')
+            out.append((f'a #[cfg(not(test))] module is product code and code after a test module is not cut (got {rng})',
+                        rng == [(4, 9)]))
+            out.append((f'UI markup no script measures (.slint) is named (got {[w[:80] for w in res["warnings"]]})',
+                        any('.slint' in w for w in res['warnings'])))
+            out.append((f'a tests/fixtures helper binary (fn main) is not counted as a test (got {cli.get("tests")})',
+                        'crates/station-cli/tests/fixtures/fake_plotter.rs' not in cli.get('tests', [])
+                        and any(t['path'].endswith('fake_plotter.rs') for t in res['tests_not_counted'])))
+            # a virtual workspace whose helper scripts are most of the source: the root Cargo.toml is no root package
+            for i in range(4):
+                (root / 'scripts' / f'extra_{i}.py').write_text(_PY_TOOL * 3, encoding='utf-8')
+            more = files + [f'scripts/extra_{i}.py' for i in range(4)]
+            set_cargo_model(root, more)
+            areas3, basis3 = define_areas(root, more, None)
+            out.append((f'a virtual workspace root (no [package]) is not a root package (got {basis3})',
+                        'root package' not in basis3 and {'crates/station-core', 'scripts'} <= {a['id'] for a in areas3}))
+            out.append(('the surface-only warning tells an app that is neither a web UI nor a library how to judge impact',
+                        any(w.startswith('impact rests on the surface factor alone') and 'desktop' in w for w in res['warnings'])))
+            pys = next(iter(py_area), {})
+            out.append((f'a Python subprocess.run is a process launch (got {pys.get("surfaces")})',
+                        'subprocess' in pys.get('surfaces', [])))
+            # explicit areas that leave the Python out: a loud warning naming the second language
+            (root / '_in' / 'areas.json').write_text(json.dumps({'areas': [
+                {'id': c, 'paths': [c]} for c in ('crates/station-core', 'crates/station-render', 'crates/station-cli')]}),
+                encoding='utf-8')
+            res2 = score(argparse.Namespace(**{**vars(ns), 'areas': root / '_in' / 'areas.json'}))
+            lost = [w for w in res2['warnings'] if w.startswith(SECOND_LANGUAGE_WARNING)]
+            out.append((f'a second language with 30%+ of the lines outside every area gets a loud warning (got '
+                        f'{[w[:90] for w in res2["warnings"]]})', bool(lost) and 'Python' in lost[0]))
+        except Exception as e:                       # a missing function is a failed check, not a crash
+            import traceback
+            out.append((f'Cargo workspace checks raised {type(e).__name__}: {e} {traceback.format_exc()[-600:]}', False))
+        finally:
+            for x in (RUST_TEST_FILES, BENCH_FILES, FIXTURE_BINS, RUST_INLINE_TESTS, CRATE_DIRS, CARGO):
+                x.clear()
             PRODUCT_DIRS.clear()
             PRODUCT_DIRS.update(saved[0])
             RUNNER_DIRS.clear()

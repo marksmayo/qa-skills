@@ -1,5 +1,5 @@
 {
-  "$comment": "Impact surfaces found by pattern in an area's source files. `patterns` and `exclude` are case-insensitive regexes run per line on the code with comments and string literals blanked, so a provider named in a CSP header, marketing copy, an API description or a comment doesn't count; `raw_patterns` run on the line as written, so SQL inside a string (op.execute(\"ALTER TABLE x DROP COLUMN y\"), an f-string TRUNCATE) and directives count; the bare TRUNCATE and DROP forms are upper-case only, so prose doesn't match. `path_patterns` match the file's path (a page or screen module of a UI). Decorated Python handlers (Flask, FastAPI, Azure Functions triggers) are entry points; calls through an API client wrapper (apiClient.postJson) are external integrations. (?-i:...) makes part of a pattern case-sensitive, which is how a camelCase verb (captureMessage) is told from capture( or capture_payment(. A line that matches one of the class's exclude patterns doesn't count, nor one whose line as written matches a `raw_exclude` pattern (a same-origin fetch: a relative URL or a service worker passing event.request through is not an external integration). In .tsx, .jsx and .js files JSX text (copy between tags) is blanked too, so a page mentioning the GDPR is not compliance. A class with `next_app` also takes hits from the shared Next.js reader (next_app.py): `scripts` for third-party script loaders whose src is a constant (JSON-LD and other data blocks excluded), `config` for the headers, CSP, redirects and rewrites of next.config.* and platform files. An optional `langs` restricts a class to files with those suffixes (the systems/CLI pack is Rust-only), and an optional `lang_exclude` maps a suffix to extra excludes that apply only to files of that language (so a Rust `drop(` or `matcher: &M` does not fire the web-tuned classes without weakening JS/TS detection). Type declaration files (.d.ts) are skipped. The highest-scoring class an area matches sets its surface factor; a person may judge it differently, with a reason. Patterns are about doing (charging, deleting, authenticating, enforcing access), not mentioning or reading: a catalogue that shows a price does not move money, and useSession() reads who is signed in without enforcing anything. NOTE: the money/access/personal-data classes are tuned for web and app stacks; outside them (systems and CLI code) a surface factor that rests only on these patterns is low-trust and should be flagged, not presented as confidently assessed. Call-aware patterns don't match a TypeScript member signature with no body (`settle(): Promise<void>;` in an interface or abstract class): it declares, it doesn't do. Bare capture/settle/transfer need a money noun (capturePayment, settle_invoice) or a money argument on the line, because in UI-automation code they mean 'take a screenshot' or 'wait until stable'; truncate needs a table or data noun, since truncating a string destroys nothing; Node stream and socket .destroy() and optional-chained map deletes (seen?.delete(k)) are not data destruction. The `secrets` class is credential handling (redaction, an Authorization header set, basic auth, storing or rotating a secret). The `public_api` class (`manifest_entries`) also scores the files a package manifest names as its public entry points: package.json main, module, exports and bin (a dist/, lib/ or build/ target is mapped back to its src/ file) and pyproject [project.scripts]; for a library or CLI that is what every user calls.",
+  "$comment": "Impact surfaces found by pattern in an area's source files. `patterns` and `exclude` are case-insensitive regexes run per line on the code with comments and string literals blanked, so a provider named in a CSP header, marketing copy, an API description or a comment doesn't count; `raw_patterns` run on the line as written, so SQL inside a string (op.execute(\"ALTER TABLE x DROP COLUMN y\"), an f-string TRUNCATE) and directives count; the bare TRUNCATE and DROP forms are upper-case only, so prose doesn't match. `path_patterns` match the file's path (a page or screen module of a UI). Decorated Python handlers (Flask, FastAPI, Azure Functions triggers) are entry points; calls through an API client wrapper (apiClient.postJson) are external integrations. (?-i:...) makes part of a pattern case-sensitive, which is how a camelCase verb (captureMessage) is told from capture( or capture_payment(. A line that matches one of the class's exclude patterns doesn't count, nor one whose line as written matches a `raw_exclude` pattern (a same-origin fetch: a relative URL or a service worker passing event.request through is not an external integration). In .tsx, .jsx and .js files JSX text (copy between tags) is blanked too, so a page mentioning the GDPR is not compliance. A class with `next_app` also takes hits from the shared Next.js reader (next_app.py): `scripts` for third-party script loaders whose src is a constant (JSON-LD and other data blocks excluded), `config` for the headers, CSP, redirects and rewrites of next.config.* and platform files. An optional `langs` restricts a class to files with those suffixes (the systems/CLI pack is Rust-only), and an optional `lang_exclude` maps a suffix to extra excludes that apply only to files of that language (so a Rust `drop(` or `matcher: &M` does not fire the web-tuned classes without weakening JS/TS detection). Type declaration files (.d.ts) are skipped. The highest-scoring class an area matches sets its surface factor; a person may judge it differently, with a reason. Patterns are about doing (charging, deleting, authenticating, enforcing access), not mentioning or reading: a catalogue that shows a price does not move money, and useSession() reads who is signed in without enforcing anything. NOTE: the money/access/personal-data classes are tuned for web and app stacks; outside them (systems and CLI code) a surface factor that rests only on these patterns is low-trust and should be flagged, not presented as confidently assessed. Call-aware patterns don't match a TypeScript member signature with no body (`settle(): Promise<void>;` in an interface or abstract class): it declares, it doesn't do. Bare capture/settle/transfer need a money noun (capturePayment, settle_invoice) or a money argument on the line, because in UI-automation code they mean 'take a screenshot' or 'wait until stable'; truncate needs a table or data noun, since truncating a string destroys nothing; Node stream and socket .destroy() and optional-chained map deletes (seen?.delete(k)) are not data destruction. The `secrets` class is credential handling (redaction, an Authorization header set, basic auth, storing or rotating a secret). The `public_api` class (`manifest_entries`) also scores the files a package manifest names as its public entry points: package.json main, module, exports and bin (a dist/, lib/ or build/ target is mapped back to its src/ file) and pyproject [project.scripts]; for a library or CLI that is what every user calls. Graphics objects freed in an error path or Drop (gl.delete_texture, deleteFramebuffer, destroy_buffer) are not stored data, and in Rust a delete on a graphics or UI context (gl, gpu, device, renderer, window) is not either. In Rust the Cargo model (cargo_project.py) also adds clap CLIs (derive and builder) to public_api, std::process::Command launches to subprocess and libloading loads to native_code; the subprocess class covers Go, Rust and Python. native_code is FFI and dynamic library loading (libloading, dlopen, LoadLibrary, ctypes, extern \"C\" blocks, #[link]).",
   "classes": {
     "money": {
       "score": 5,
@@ -114,12 +114,14 @@
         "\\b(removeEventListener|removeChild|removeAttribute|removeItem|deleteProperty)\\s*\\(",
         "\\b(Reflect\\.deleteProperty|cookies\\(\\)\\.delete)\\b",
         "\\berase(?-i:(Text|Field|Input|Chars|Characters|Count|Line|Lines|Screen|Display|Trailing|Leading|Backward|Forward|Selection|Selected))\\w*\\s*\\(",
-        "\\bdelete_?session\\w*\\s*\\("
+        "\\bdelete_?session\\w*\\s*\\(",
+        "\\b(delete|destroy|free|release|drop)_?(textures?|buffers?|framebuffers?|renderbuffers?|shaders?|programs?|vertex_?arrays?|samplers?|quer(y|ies)|syncs?|fences?|semaphores?|pipelines?|image_?views?|images?|descriptor_?(pool|set)s?|command_?(pool|buffer)s?|surfaces?|swapchains?|bind_?groups?|render_?targets?|display_?lists?|vaos?|vbos?|fbos?)\\s*\\("
       ],
       "lang_exclude": {
         ".rs": [
           "\\bdrop\\s*\\(",
-          "\\btruncate\\s*\\("
+          "\\btruncate\\s*\\(",
+          "\\b(gl|gpu|device|ctx|context|renderer|painter|encoder|window|ui|egui|surface|display|canvas|frame|backend)\\??\\.(delete|erase|wipe|purge)\\w*\\s*\\("
         ],
         ".go": [
           "(?<![.\\w])delete\\s*\\(\\s*[\\w.\\[\\]()*]+\\s*,",
@@ -209,15 +211,32 @@
         "^\\s*import\\s+\\\"C\\\"\\s*$"
       ]
     },
+    "native_code": {
+      "score": 3,
+      "label": "loads native libraries or calls foreign code (FFI, dynamic loading)",
+      "patterns": [
+        "\\blibloading::|\\bLibrary::new\\s*\\(|\\bdlopen\\s*\\(|\\bLoadLibrary(Ex)?[AW]?\\s*\\(",
+        "\\bctypes\\.(CDLL|WinDLL|OleDLL|PyDLL|LibraryLoader|cdll|windll|oledll|pydll)\\b|\\bffi\\.dlopen\\s*\\(",
+        "\\bplugin\\.Open\\s*\\("
+      ],
+      "raw_patterns": [
+        "\\bextern\\s+\"(C|system|C-unwind|stdcall)\"\\s*\\{",
+        "^\\s*#\\[link\\s*\\("
+      ]
+    },
     "subprocess": {
       "score": 3,
       "label": "runs external processes or opens network listeners",
       "langs": [
-        ".go"
+        ".go",
+        ".rs",
+        ".py"
       ],
       "patterns": [
         "\\bexec\\.Command(Context)?\\s*\\(",
-        "\\bnet\\.Listen(TCP|UDP|Unix|Packet)?\\s*\\(|\\bhttp\\.ListenAndServe(TLS)?\\s*\\(|\\btls\\.Listen\\s*\\("
+        "\\bnet\\.Listen(TCP|UDP|Unix|Packet)?\\s*\\(|\\bhttp\\.ListenAndServe(TLS)?\\s*\\(|\\btls\\.Listen\\s*\\(",
+        "\\bsubprocess\\.(run|Popen|call|check_call|check_output|getoutput|getstatusoutput)\\s*\\(|\\bos\\.(system|popen|exec[lv]p?e?|spawn[lv]p?e?|posix_spawnp?)\\s*\\(|\\basyncio\\.create_subprocess_(exec|shell)\\s*\\(",
+        "\\bstd::process::Command::new\\s*\\(|\\bprocess::Command::new\\s*\\("
       ]
     },
     "compliance": {
@@ -241,7 +260,9 @@
         "\\b(program|cli|yargs|cmd|commander|cac|sade)\\.command\\s*\\(",
         "\\bdefineCommand\\s*\\(",
         "^\\s*@\\w+\\.command\\s*\\(|^\\s*@click\\.(command|group)\\b",
-        "\\b(cli|cobra)\\.Command\\s*\\{|\\bcli\\.App\\s*\\{|\\bcli\\.NewApp\\s*\\("
+        "\\b(cli|cobra)\\.Command\\s*\\{|\\bcli\\.App\\s*\\{|\\bcli\\.NewApp\\s*\\(",
+        "#\\[derive\\([^)]*\\b(Parser|Subcommand)\\b",
+        "\\bclap::Command::new\\s*\\("
       ]
     },
     "entry": {
