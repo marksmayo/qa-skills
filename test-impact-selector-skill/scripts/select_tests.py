@@ -192,7 +192,9 @@ def classify(entry: dict, g_new, g_base) -> str:
         return 'snapshot'
     if entry['kind'] == 'docs' or import_graph.match(path, KINDS['docs']):
         return 'docs'
-    if node.get('test_level'):
+    if node.get('rust_role') == 'bench':
+        return 'bench'
+    if node.get('test_level') and not node.get('inline_tests'):
         return 'test'
     if import_graph.match(path, KINDS['fixture']) or entry['kind'] == 'test':
         return 'shared_fixture'
@@ -255,15 +257,27 @@ def naming_matches(path: str, tests: list[str], package_of) -> list[str]:
 
 class Selector:
     def __init__(self, repo: Path, base_dir: Path, new_dir: Path, scope: dict, mode: str, coverage: list[dict],
-                 journeys: list[dict], history: list[dict], related: dict | None, history_given: bool):
+                 journeys: list[dict], history: list[dict], related: dict | None, history_given: bool,
+                 cargo_metadata: dict | None = None):
         self.repo, self.base_dir, self.new_dir, self.scope, self.mode = repo, base_dir, new_dir, scope, mode
         self.coverage, self.journeys, self.history, self.related = coverage, journeys, history, related
         self.history_given = history_given
         self.go_test_flags: str | None = None
         self.baseline_failures: set[str] = set()
-        self.g_new = import_graph.build(new_dir)
-        self.g_base = import_graph.build(base_dir)
+        # the base tree differs from the changed tree only in the changed paths: build the changed tree's graph,
+        # then the base graph reusing its reads, parses and (when no manifest or configuration changed, and no
+        # file was added, deleted or renamed) its package detection and Cargo model
+        changed = {p for f in scope['files'] for p in (f['path'], f.get('old_path')) if p}
+        same_layout = all(f['status'] == 'modified' for f in scope['files']) and not any(
+            import_graph.match(p, KINDS['build_config']) or import_graph.match(p, KINDS['lockfiles'])
+            or import_graph.match(p, KINDS['ci']) for p in changed)
+        self.g_new = import_graph.Graph(new_dir, cargo_metadata=cargo_metadata).build()
+        import_graph.js_dynamic_targets(self.g_new)
+        self.g_base = import_graph.Graph(base_dir, reuse=self.g_new, changed=changed, reuse_packages=same_layout,
+                                         cargo_metadata=cargo_metadata).build()
+        import_graph.js_dynamic_targets(self.g_base)
         self.tests = self.g_new.tests()
+        self.test_set = set(self.tests)
         self.reasons: dict[str, list[dict]] = {}
         self.blind: list[dict] = []
         self.notes: list[str] = []
@@ -282,7 +296,7 @@ class Selector:
         return out
 
     def add(self, test: str, source: str, evidence: str, changed: str, strength: int | None = None) -> None:
-        if test not in self.tests:
+        if test not in self.test_set:
             return
         rs = self.reasons.setdefault(test, [])
         if any(r['source'] == source and r['changed_path'] == changed for r in rs):
@@ -408,7 +422,7 @@ class Selector:
         bid = f'B{len(self.blind) + 1}'
         widen = self.mode == 'strict' or (self.mode == 'balanced' and kind in HIGH_RISK)
         action = scope if widen else 'labelled'
-        tests = sorted(set(t for t in tests if t in self.tests))
+        tests = sorted(set(t for t in tests if t in self.test_set))
         if widen:
             for t in tests:
                 self.add(t, 'blind_spot', f'{bid} {kind}: {scope}', entry['path'], strength=0)
@@ -416,10 +430,14 @@ class Selector:
                            'widened_to': tests if widen else [], 'would_widen_to': tests, 'note': note})
 
     def package_tests(self, path: str) -> list[str]:
+        """The tests of path's package that a change to it can reach by language (import_graph.same_family): a Rust
+        file's crate's Rust tests, never the Python tests beside them, and a Python or JavaScript file's tests, never
+        Rust or Go ones. A file of no language (data, styles, configuration) reaches every test of the package."""
         if path.endswith('.go') and self.g_new.go_mods:
             return self.go_package_tests(path)
         pkg = self.g_new.package_of(path)
-        return self.tests if pkg == '.' else [t for t in self.tests if self.g_new.package_of(t) == pkg]
+        mine = self.tests if pkg == '.' else [t for t in self.tests if self.g_new.package_of(t) == pkg]
+        return import_graph.same_family(path, mine)
 
     def go_package_tests(self, path: str) -> list[str]:
         """A Go package is a directory: its own _test.go files and the tests that import it; when there are none,
@@ -457,7 +475,7 @@ class Selector:
         files = self.scope['files']
         cov = self.coverage_status()
         changes = []
-        source_files = [p for p, e in self.g_base.files.items() if e['lang'] and not e['test_level']]
+        source_files = [p for p, e in self.g_base.files.items() if e['lang'] and (not e['test_level'] or e.get('inline_tests'))]
         for entry in files:
             kind = classify(entry, self.g_new, self.g_base)
             changes.append({'path': entry['path'], 'old_path': entry.get('old_path'), 'status': entry['status'], 'kind': kind,
@@ -468,6 +486,12 @@ class Selector:
             kind = c['kind']
             path = c['path']
             if kind == 'docs':
+                continue
+            if kind == 'bench':
+                crate = self.g_new.files.get(path, self.g_base.files.get(path, {})).get('crate')
+                self.notes.append(f'{path} belongs to a bench target of {crate}: cargo test does not build or run '
+                                  'benches, so no test is selected for it. Check it still builds with '
+                                  f'`cargo bench -p {crate} --no-run` (or the CI job that runs the benchmarks).')
                 continue
             if kind == 'test':
                 if entry['status'] != 'deleted':
@@ -496,6 +520,11 @@ class Selector:
                     if reach:
                         self.blind_spot(entry, 'shared_fixture', f'Test helper imported by {len(reach)} test file(s).',
                                         'fixture_reach', reach)
+                    elif (self.g_new.files.get(path) or self.g_base.files.get(path) or {}).get('rust_role') == 'fixture_bin':
+                        self.blind_spot(entry, 'shared_fixture', 'Helper binary under tests/ (cargo builds it for the '
+                                        'integration tests; it is not a test target): the tests that launch it are not '
+                                        'visible as imports, so its reach is the tests of its crate.',
+                                        'package', self.package_tests(path))
                     elif PurePosixPath(path).suffix.lower() in KINDS['data_ext']:
                         self.blind_spot(entry, 'shared_fixture', 'Data or manifest file in a test directory that no test '
                                         'imports (a package manifest, a JSON fixture read by path): its reach is the package.',
@@ -504,6 +533,10 @@ class Selector:
                         self.blind_spot(entry, 'shared_fixture', 'Test helper or setup file no test imports: it is probably '
                                         'loaded by runner configuration (setupFiles, globalSetup), so its reach is the package.',
                                         'package', self.package_tests(path))
+            elif kind == 'global_config' and import_graph.is_rust_config(path) and self.g_new.rust_crates:
+                rust = [t for t in self.tests if import_graph.family(t) == 'rust']
+                self.blind_spot(entry, 'global_config', 'Cargo workspace manifest, lockfile or toolchain: it can change how '
+                                'every Rust test builds and runs, and not the tests of other languages.', 'language', rust)
             elif kind == 'global_config':
                 self.blind_spot(entry, 'global_config', 'Lockfile, CI or repository-level build configuration: it can change '
                                 'how every test runs.', 'full_suite', self.tests)
@@ -554,20 +587,45 @@ class Selector:
                 linked = any(r['changed_path'] == path and r['source'] != 'blind_spot' for rs in self.reasons.values() for r in rs)
                 strong = self.selected_for(path)
                 if not strong and entry['status'] != 'deleted':
-                    lang = self.g_new.files.get(path, {}).get('lang')
-                    unparsed = lang and self.g_new.languages.get(lang) == 'no_parser'
-                    self.blind_spot(entry, 'unmapped_source',
-                                    ('No evidence source links this file to a test' if not linked else
-                                     'Only weak evidence (one strength-1 source) links this file to a test')
-                                    + (f' (no import parser for {lang})' if unparsed else '') +
-                                    '. No tests found for it: hand it to ticket-to-tdd or journey-to-tests.',
-                                    'package', self.package_tests(path))
+                    self.unmapped(entry, linked)
         n_changed_src = len([c for c in changed_sources if c['status'] != 'added'])
         if source_files and n_changed_src / len(source_files) > HUGE_SHARE:
             self.blind_spot({'path': '(change)'}, 'huge_change', f'{n_changed_src} of {len(source_files)} source files '
                             f'changed (over {int(HUGE_SHARE * 100)}%): selection would save little, so run the full suite.',
                             'full_suite', self.tests)
         return self.result(changes, cov)
+
+    def unmapped(self, entry: dict, linked: bool) -> None:
+        """An unmapped source file: widened to its package; the note says what is known about its tests, and says
+        "No tests found" only when nothing links it and its package scope holds no test. A file in a language with no
+        import parser whose package has no test that could be found falls back to the full suite."""
+        path = entry['path']
+        node = self.g_new.files.get(path, {})
+        lang = node.get('lang')
+        unparsed = bool(lang) and self.g_new.languages.get(lang) == 'no_parser'
+        tests = self.package_tests(path)
+        weak = sorted({t for t, rs in self.reasons.items() for r in rs if r['changed_path'] == path and r['source'] != 'blind_spot'})
+        importers = sorted({src for src, e in self.g_new.files.items() for u in e.get('unresolved', [])
+                            if path in (u.get('candidates') or [])})
+        parts = ['No evidence source links this file to a test' if not linked else
+                 f'Only weak evidence (one strength-1 source) links this file to a test ({", ".join(weak[:3])})']
+        if unparsed:
+            parts[0] += f' (no import parser for {lang})'
+        if importers:
+            parts.append(f'{len(importers)} file(s) import a module of this name the graph could not resolve '
+                         f'(sys.path or PYTHONPATH set at run time): {", ".join(importers[:4])}')
+        scope = 'package'
+        if not tests and unparsed and self.tests:
+            scope, tests = 'full_suite', list(self.tests)
+            parts.append(f'Its package has no test file this selector could find and {lang} has no import parser, '
+                         'so it widens to the full suite')
+        elif tests:
+            parts.append(f'It widens to the {len(tests)} test file(s) of its package')
+        elif not linked and not importers:
+            parts.append('No tests found for it: hand it to ticket-to-tdd or journey-to-tests')
+        else:
+            parts.append('Its package has no test file of its language to widen to')
+        self.blind_spot(entry, 'unmapped_source', '. '.join(parts) + '.', scope, tests)
 
     def selected_for(self, path: str) -> bool:
         for t, rs in self.reasons.items():
@@ -631,16 +689,71 @@ class Selector:
         command = build_command.build(selected, packages, full, {p['root']: p['test_files'] for p in packages},
                                       {t: self.g_new.files[t]['test_level'] for t in self.tests}, self.max_chars,
                                       scripts=scripts, builds=self.builds_first(changes, selected),
-                                      go_flags=go_flags, go_flags_from=go_from)
+                                      go_flags=go_flags, go_flags_from=go_from, cargo=self.cargo_info(),
+                                      python_runners=self.g_new.python_runners)
         sources = self.sources(changes, cov)
         n_docs = len([c for c in changes if c['kind'] == 'docs'])
-        return {
+        out = {
             'sources': sources, 'changes': changes, 'packages': packages, 'selected': selected,
             'considered_not_selected': considered, 'blind_spots': self.blind,
             'total_tests': len(self.tests), 'not_selected_count': len(self.tests) - len(selected), 'command': command,
             'docs_only': bool(changes) and n_docs == len(changes),
             'notes': self.notes,
         }
+        lc = self.language_coverage(changes)
+        if lc:
+            out['language_coverage'] = lc
+        return out
+
+    def language_coverage(self, changes: list[dict]) -> dict | None:
+        """Which languages the import graph parsed, and the changed files in a language it has no parser for. With
+        any such file, `warning` is set: those files are not traced to tests (each is an unmapped blind spot,
+        widened), and the report must name the language in its limitations. None when every language was parsed."""
+        langs = {**self.g_base.languages, **self.g_new.languages}
+        no_parser = sorted(l for l, s in langs.items() if s == 'no_parser')
+        if not no_parser:
+            return None
+        hit: dict[str, list[str]] = {}
+        for c in changes:
+            if c['kind'] in ('docs', 'bench'):
+                continue
+            node = self.g_new.files.get(c['path']) or self.g_base.files.get(c.get('old_path') or c['path']) or {}
+            if node.get('lang') in no_parser:
+                hit.setdefault(node['lang'], []).append(c['path'])
+        out = {'parsed': sorted(l for l, s in langs.items() if s == 'parsed'), 'no_parser': no_parser,
+               'changed_unparsed': sorted(hit), 'changed_unparsed_files': {l: fs[:10] for l, fs in sorted(hit.items())},
+               'warning': None}
+        if hit:
+            n = sum(len(v) for v in hit.values())
+            out['warning'] = (f'{n} changed file(s) in {", ".join(sorted(hit))} have no import parser here '
+                              f'({", ".join(f for v in hit.values() for f in v[:2])}): nothing traces them to tests, so '
+                              'each is an unmapped blind spot widened to its package (to the full suite when no test '
+                              'of its package could be found), and tests in that language are found by file name '
+                              'only. Name this in the report\'s limitations.')
+        return out
+
+    def cargo_info(self) -> dict | None:
+        """What build_command needs for cargo commands: every Rust test file's libtest ids, each crate's test files,
+        and the CI's own workspace-wide `cargo test` command when there is one."""
+        g = self.g_new
+        if not g.rust_crates:
+            return None
+        crates: dict[str, dict] = {}
+        for f, ts in g.rust_tests.items():
+            for t in ts:
+                c = crates.setdefault(t['crate'], {'dir': t['package'], 'root': t['root'], 'test_files': []})
+                if f not in c['test_files'] and f in self.test_set:
+                    c['test_files'].append(f)
+        workspace = None
+        for gate in g.ci_gates:
+            cmd = gate.get('command') or ''
+            if gate.get('runner') == 'cargo-test' and re.match(r'^cargo\s+test\b', cmd) and \
+                    re.search(r'\s--(workspace|all)\b', cmd) and \
+                    not re.search(r'\s(-p|--package|--features|--all-features)\b|[|&;>]|\s--(\s|$)', cmd):
+                workspace = {'argv': cmd.split(), 'from': f'{gate["file"]}:{gate["line"]}'}
+                break
+        return {'tests': {f: ts for f, ts in g.rust_tests.items() if f in self.test_set}, 'crates': crates,
+                'workspace_command': workspace}
 
     def builds_first(self, changes: list[dict], selected: list[dict]) -> list[dict]:
         """Workspace packages whose changed sources reach selected tests in other packages only through the
@@ -746,22 +859,34 @@ def prepare_trees(repo: Path, work: Path, diff: Path | None, diff_applied: bool,
         change = {'source': 'diff', 'diff': rel_input(diff), 'diff_applied': diff_applied, 'base': None, 'head': None,
                   'diff_sha256': sha256_text(text)}
     else:
-        merge_base = git(repo, 'merge-base', base, 'HEAD').strip()
-        head = git(repo, 'rev-parse', 'HEAD').strip()
-        rng = [f'{merge_base}...HEAD'] if committed_only else [merge_base]
-        text = git(repo, 'diff', '-M', '--no-color', '--no-ext-diff', *rng)
+        # git runs in two rounds of parallel processes (starting a process is the slow part on Windows): the
+        # commits, then the diff, the untracked files and the trees, each tree extracted as soon as it arrives
+        from concurrent.futures import ThreadPoolExecutor
         base_dir = work / 'base'
+        new_dir = work / 'new' if committed_only else repo
         base_dir.mkdir(parents=True)
-        extract(git(repo, 'archive', '--format=tar', merge_base, binary=True), base_dir)
         if committed_only:
-            new_dir = work / 'new'
             new_dir.mkdir(parents=True)
-            extract(git(repo, 'archive', '--format=tar', 'HEAD', binary=True), new_dir)
-        else:
-            new_dir = repo
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            mb = pool.submit(git, repo, 'merge-base', base, 'HEAD')
+            hd = pool.submit(git, repo, 'rev-parse', 'HEAD')
+            merge_base, head = mb.result().strip(), hd.result().strip()
+            rng = [f'{merge_base}...HEAD'] if committed_only else [merge_base]
+            jobs = [pool.submit(lambda: extract(git(repo, 'archive', '--format=tar', merge_base, binary=True),
+                                                base_dir))]
+            if committed_only:
+                jobs.append(pool.submit(lambda: extract(git(repo, 'archive', '--format=tar', 'HEAD', binary=True),
+                                                        new_dir)))
+            diff_job = pool.submit(git, repo, 'diff', '-M', '--no-color', '--no-ext-diff', *rng)
+            untracked_job = None if committed_only else pool.submit(git, repo, 'ls-files', '--others',
+                                                                    '--exclude-standard')
+            text = diff_job.result()
+            untracked = untracked_job.result() if untracked_job else ''
+            for j in jobs:
+                j.result()
         scope_files = diff_scope.scope_from_diff(text, new_dir)
         if not committed_only:
-            for rel in git(repo, 'ls-files', '--others', '--exclude-standard').splitlines():
+            for rel in untracked.splitlines():
                 body = Selector.read(repo, rel)
                 kind, why = diff_scope.classify(rel, '\n'.join((body or '').splitlines()[:5]), body is None, repo)
                 n = len((body or '').splitlines())
@@ -777,7 +902,7 @@ def select(repo: Path, diff: Path | None = None, diff_applied: bool = False, bas
            mode: str = 'strict', coverage: list[Path] | None = None, journeys: Path | None = None,
            history: Path | None = None, related: Path | None = None, max_chars: int = 8000,
            history_entries: list[dict] | None = None, baseline_failures: Path | None = None,
-           go_test_flags: str | None = None) -> dict:
+           go_test_flags: str | None = None, cargo_metadata: Path | None = None) -> dict:
     """Run a selection. history_entries overrides the entries read from --history (replay passes earlier ones only)."""
     repo = repo.resolve()
     cov = load_coverage(coverage or [])
@@ -790,7 +915,8 @@ def select(repo: Path, diff: Path | None = None, diff_applied: bool = False, bas
     with tempfile.TemporaryDirectory(prefix='impact-') as tmp:
         base_dir, new_dir, scope, change = prepare_trees(repo, Path(tmp), diff, diff_applied, base, committed_only)
         sel = Selector(repo, base_dir, new_dir, scope, mode, cov, journey_links(journeys), hist,
-                       json.loads(related.read_text(encoding='utf-8')) if related else None, history_given)
+                       json.loads(related.read_text(encoding='utf-8')) if related else None, history_given,
+                       json.loads(cargo_metadata.read_text(encoding='utf-8')) if cargo_metadata else None)
         sel.max_chars = max_chars
         sel.go_test_flags = go_test_flags
         sel.baseline_failures = load_baseline_failures(baseline_failures)
@@ -799,7 +925,17 @@ def select(repo: Path, diff: Path | None = None, diff_applied: bool = False, bas
                              '(--baseline-failures); their past failures are not co-failure evidence.')
         res = sel.run()
         # committed-only analyses the HEAD tree (git archive): record its hash, not the working tree's
-        code_hash = run_tests.code_hash(new_dir if committed_only and not diff else repo)
+        if committed_only and not diff:
+            # an extracted archive is no git work tree: hash it by the walk rule without starting git to find out
+            # (one process start less; on a busy Windows machine each costs about a second)
+            saved = run_tests.git_files
+            run_tests.git_files = lambda root: None
+            try:
+                code_hash = run_tests.code_hash(new_dir)
+            finally:
+                run_tests.git_files = saved
+        else:
+            code_hash = run_tests.code_hash(repo)
     if mode == 'balanced' and any(s['name'] == 'coverage' and s['status'] == 'stale' for s in res['sources']):
         res['notes'].append('balanced mode with a stale coverage map: refresh the map, or use strict.')
     widened = sorted({t for b in res['blind_spots'] for t in b['widened_to']})
@@ -819,7 +955,8 @@ def select(repo: Path, diff: Path | None = None, diff_applied: bool = False, bas
                        'history': rel_input(history), 'related': rel_input(related), 'max_chars': max_chars,
                        'file_kinds_sha256': kinds_sha,
                        **({'baseline_failures': rel_input(baseline_failures)} if baseline_failures else {}),
-                       **({'go_test_flags': go_test_flags} if go_test_flags is not None else {})},
+                       **({'go_test_flags': go_test_flags} if go_test_flags is not None else {}),
+                       **({'cargo_metadata': rel_input(cargo_metadata)} if cargo_metadata else {})},
             'repo_code_hash': code_hash, 'change': change, 'mode': mode, **res}
 
 
@@ -829,7 +966,8 @@ def args_from_inputs(inputs: dict) -> dict:
             'base': inputs.get('base') or 'main', 'committed_only': inputs.get('committed_only', False), 'mode': inputs['mode'],
             'coverage': [Path(c) for c in inputs.get('coverage', [])], 'journeys': p(inputs.get('journeys')),
             'history': p(inputs.get('history')), 'related': p(inputs.get('related')), 'max_chars': inputs.get('max_chars', 8000),
-            'baseline_failures': p(inputs.get('baseline_failures')), 'go_test_flags': inputs.get('go_test_flags')}
+            'baseline_failures': p(inputs.get('baseline_failures')), 'go_test_flags': inputs.get('go_test_flags'),
+            'cargo_metadata': p(inputs.get('cargo_metadata'))}
 
 
 def main(argv=None) -> int:
@@ -849,11 +987,13 @@ def main(argv=None) -> int:
                     'files or ids, or {"failures": [...]}; left out of co-failure evidence')
     ap.add_argument('--go-test-flags', help='go test flags for the Go command (default: those of the repo\'s CI or '
                     'Makefile `go test` line, e.g. "-race -timeout 25m"); "" for none')
+    ap.add_argument('--cargo-metadata', type=Path, help='`cargo metadata --format-version 1 --no-deps` output: the '
+                    'targets of the crates and features from cargo itself instead of the static reading of the manifests')
     ap.add_argument('--out', type=Path, required=True)
     args = ap.parse_args(argv)
     res = select(args.repo, args.diff, args.diff_applied, args.base, args.committed_only, args.mode, args.coverage,
                  args.journeys, args.history, args.related, args.max_chars, baseline_failures=args.baseline_failures,
-                 go_test_flags=args.go_test_flags)
+                 go_test_flags=args.go_test_flags, cargo_metadata=args.cargo_metadata)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(res, indent=2) + '\n', encoding='utf-8')
     s = res['summary']
@@ -861,6 +1001,12 @@ def main(argv=None) -> int:
           f'{s["blind_spots"]} blind spot(s), evidence completeness {s["evidence_completeness"]} -> {args.out}')
     for c in res['command']['commands']:
         print(f'  (cd {c["cwd"]} && {" ".join(c["argv"])})')
+    for g in res['command'].get('feature_gated', []):
+        print(f'  note: {len(g["tests"])} selected test(s) of {g["crate"]} need --features {g["feature"]}; the commands '
+              'above do not run them', file=sys.stderr)
+    warning = (res.get('language_coverage') or {}).get('warning')
+    if warning:
+        print('WARNING: ' + warning, file=sys.stderr)
     return 0
 
 

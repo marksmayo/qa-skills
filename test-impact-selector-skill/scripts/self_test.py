@@ -363,11 +363,321 @@ def case_committed_only_hashes_head(tmp: Path) -> None:
     assert a['repo_code_hash'] == b['repo_code_hash'], 'repo_code_hash follows the working tree in committed-only mode'
 
 
+# A Cargo workspace ("tide tables") beside Python helper scripts whose unittest tests add scripts/ to sys.path.
+# tides-core is a library with unit tests in #[cfg(test)] modules, an integration test, a feature-gated test and a
+# bench; tides-cli is a clap-style binary depending on tides-core by path, with an integration test, a shared test
+# module and a helper binary under tests/fixtures; tides-chart is an unrelated crate.
+RUST = {
+    'Cargo.toml': '[workspace]\nmembers = ["crates/*"]\nresolver = "2"\n',
+    'Cargo.lock': '# lockfile\nversion = 3\n',
+    'crates/tides-core/Cargo.toml': ('[package]\nname = "tides-core"\nversion = "0.1.0"\nedition = "2021"\n\n'
+                                     '[features]\ndefault = []\ngauge = []\n'),
+    'crates/tides-core/src/lib.rs': ('pub mod height;\npub mod gauge;\n#[cfg(feature = "gauge")]\nmod probe;\n'
+                                     '#[cfg(any(feature = "gauge", test))]\nmod calib;\n\npub fn double(x: i32) -> i32 { x * 2 }\n\n'
+                                     '#[cfg(test)]\nmod tests {\n    #[test]\n    fn doubles() { assert_eq!(super::double(2), 4); }\n}\n'),
+    'crates/tides-core/src/height.rs': ('pub fn metres(ft: f64) -> f64 { ft * 0.3048 }\n\n#[cfg(test)]\nmod tests {\n'
+                                        '    #[test]\n    fn converts() { assert!(super::metres(1.0) > 0.3); }\n}\n'),
+    'crates/tides-core/src/gauge.rs': ('pub fn read() -> i32 { 1 }\n\n#[cfg(all(test, feature = "gauge"))]\nmod hw {\n'
+                                       '    #[test]\n    fn reads_gauge() { assert_eq!(super::read(), 1); }\n}\n'),
+    'crates/tides-core/src/calib.rs': '#[cfg(test)]\nmod tests {\n    #[test]\n    fn calibrates() {}\n}\n',
+    'crates/tides-core/src/probe.rs': '#[cfg(test)]\nmod tests {\n    #[test]\n    fn probes() {}\n}\n',
+    'crates/tides-core/tests/tables.rs': '#[test]\nfn table_doubles() { assert_eq!(tides_core::double(3), 6); }\n',
+    'crates/tides-core/benches/lookup.rs': 'fn main() { let _ = tides_core::double(1); }\n',
+    'crates/tides-cli/Cargo.toml': ('[package]\nname = "tides-cli"\nversion = "0.1.0"\nedition = "2021"\n\n'
+                                    '[[bin]]\nname = "tides"\npath = "src/main.rs"\n\n'
+                                    '[dependencies]\ntides-core = { path = "../tides-core" }\n'),
+    'crates/tides-cli/src/main.rs': 'mod report;\n\nfn main() { println!("{}", report::line(2)); }\n',
+    'crates/tides-cli/src/report.rs': ('pub fn line(n: i32) -> String { format!("{}", tides_core::double(n)) }\n\n'
+                                       '#[cfg(test)]\nmod tests {\n    #[test]\n    fn formats() { assert_eq!(super::line(2), "4"); }\n}\n'),
+    'crates/tides-cli/tests/cli.rs': 'mod common;\n\n#[test]\nfn prints_help() { common::setup(); }\n',
+    'crates/tides-cli/tests/common/mod.rs': 'pub fn setup() {}\n',
+    'crates/tides-cli/tests/fixtures/fake_gauge.rs': 'fn main() { println!("7"); }\n',
+    'crates/tides-chart/Cargo.toml': '[package]\nname = "tides-chart"\nversion = "0.1.0"\nedition = "2021"\n',
+    'crates/tides-chart/src/lib.rs': ('pub fn bar() -> u8 { 1 }\n\n#[cfg(test)]\nmod tests {\n    #[test]\n'
+                                      '    fn draws() { assert_eq!(super::bar(), 1); }\n}\n'),
+    'scripts/scale_recipe.py': 'def scale(q, n):\n    return q * n\n',
+    'scripts/weather_log.py': 'def mean(xs):\n    return sum(xs) / len(xs)\n',
+    'tests/test_scale_recipe.py': ('import sys\nimport unittest\nfrom pathlib import Path\n\n'
+                                   'sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))\n\n'
+                                   'from scale_recipe import scale  # noqa: E402\n\n\nclass ScaleTest(unittest.TestCase):\n'
+                                   '    def test_double(self):\n        self.assertEqual(scale(2, 2), 4)\n'),
+    'tests/test_weather_log.py': ('import os\nimport sys\nimport unittest\n\n'
+                                  'sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))\n\n'
+                                  'import weather_log  # noqa: E402\n\n\nclass MeanTest(unittest.TestCase):\n'
+                                  '    def test_mean(self):\n        self.assertEqual(weather_log.mean([1, 3]), 2)\n'),
+    '.github/workflows/ci.yml': ('jobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n'
+                                 '      - run: cargo test --workspace --locked\n'
+                                 '      - run: python -m unittest discover -s tests\n'),
+}
+CORE_LIB_TESTS = ['crates/tides-core/src/calib.rs', 'crates/tides-core/src/height.rs', 'crates/tides-core/src/lib.rs', 'crates/tides-core/src/probe.rs',
+                  'crates/tides-core/tests/tables.rs']
+CLI_TESTS = ['crates/tides-cli/src/report.rs', 'crates/tides-cli/tests/cli.rs']
+PY_TESTS = ['tests/test_scale_recipe.py', 'tests/test_weather_log.py']
+
+
+def rust_select(tmp: Path, rel: str, new: str, files: dict[str, str] = RUST, **kw) -> dict:
+    import select_tests
+    repo = make_repo(tmp / 'repo', files)
+    d = write(tmp / f'{rel.replace("/", "_")}.diff', diff_of(rel, files[rel], new))
+    return select_tests.select(repo, d, **kw)
+
+
+def case_rust_graph(tmp: Path) -> None:
+    """A Cargo workspace is read with cargo_project: files with #[test] functions in #[cfg(test)] modules and
+    top-level tests/*.rs are test files; a lib file reaches its crate's unit and integration tests and those of the
+    crates that depend on it by path (never an unrelated crate); tests/fixtures helper binaries and benches are not
+    tests."""
+    import import_graph
+    g = import_graph.build(make_repo(tmp / 'repo', RUST))
+    assert g.languages.get('rust') == 'parsed', g.languages
+    tests = [t for t in g.tests() if t.endswith('.rs')]
+    assert 'crates/tides-cli/tests/fixtures/fake_gauge.rs' not in tests, tests
+    assert 'crates/tides-core/benches/lookup.rs' not in tests, tests
+    assert 'crates/tides-cli/tests/common/mod.rs' not in tests, tests
+    assert 'crates/tides-core/src/gauge.rs' in tests, tests
+    reach = sorted(g.tests_reaching('crates/tides-core/src/height.rs'))
+    assert reach == sorted(CORE_LIB_TESTS + ['crates/tides-core/src/gauge.rs'] + CLI_TESTS), reach
+    reach = sorted(g.tests_reaching('crates/tides-cli/src/report.rs'))
+    assert reach == ['crates/tides-cli/src/report.rs'], reach
+    reach = sorted(g.tests_reaching('crates/tides-cli/tests/common/mod.rs'))
+    assert reach == ['crates/tides-cli/tests/cli.rs'], reach
+
+
+def case_select_rust_change(tmp: Path) -> None:
+    """A change to a library file selects its crate's tests and the tests of crates that reach it, with cargo
+    commands built from libtest ids (`cargo test -p <crate> --lib --test <t> -- --exact ...`); no Python test, no
+    unrelated crate, and no unmapped blind spot."""
+    sel = rust_select(tmp, 'crates/tides-core/src/height.rs',
+                      RUST['crates/tides-core/src/height.rs'].replace('0.3048', '0.305'))
+    files = sorted(s['file'] for s in sel['selected'])
+    assert files == sorted(CORE_LIB_TESTS + ['crates/tides-core/src/gauge.rs'] + CLI_TESTS), files
+    assert not [b for b in sel['blind_spots'] if b['kind'] == 'unmapped_source'], sel['blind_spots']
+    cmds = {c['package']: c for c in sel['command']['commands']}
+    assert set(cmds) == {'crates/tides-core', 'crates/tides-cli'}, sel['command']
+    assert all(c['framework'] == 'cargo-test' and c['cwd'] == '.' for c in cmds.values()), cmds
+    assert cmds['crates/tides-core']['argv'] == ['cargo', 'test', '-p', 'tides-core'], cmds['crates/tides-core']
+    cli = cmds['crates/tides-cli']['argv']
+    assert cli == ['cargo', 'test', '-p', 'tides-cli'], cli
+    gated = sel['command'].get('feature_gated') or []
+    gauge = next((x for x in gated if x['feature'] == 'gauge' and x['package'] == 'crates/tides-core'), None)
+    # gated in its own file (cfg on the test module) and by the cfg on its `mod probe;` declaration in lib.rs
+    assert gauge and sorted(gauge['tests']) == ['tides_core::gauge::hw::reads_gauge', 'tides_core::probe::tests::probes'], gated
+    assert not sel['command']['no_runner'], sel['command']
+
+
+def case_rust_exact_ids(tmp: Path) -> None:
+    """A selection of some of a crate's test files gives `-p <crate> --bin|--test <target> -- --exact <paths>`, the
+    same arguments run_tests.py's cargo preset builds from those ids."""
+    import run_tests
+    sel = rust_select(tmp, 'crates/tides-cli/src/report.rs',
+                      RUST['crates/tides-cli/src/report.rs'].replace('"{}"', '"{} m"'))
+    files = sorted(s['file'] for s in sel['selected'])
+    assert files == ['crates/tides-cli/src/report.rs'], files
+    cmd = sel['command']['commands']
+    assert len(cmd) == 1, cmd
+    argv = cmd[0]['argv']
+    assert argv == ['cargo', 'test', '-p', 'tides-cli', '--bin', 'tides', '--', '--exact', 'report::tests::formats'], argv
+    sel_args, names, exact = run_tests.cargo_ids(cmd[0]['test_ids'], tmp / 'repo')
+    assert argv[2:argv.index('--')] == sel_args and argv[argv.index('--exact') + 1:] == names, (sel_args, names)
+
+
+def case_rust_bench_and_fixture(tmp: Path) -> None:
+    """A bench is not source that tests run (cargo test does not run benches): it selects nothing and is no
+    unmapped blind spot. A tests/fixtures helper binary is not a test: a change to it widens to its crate's tests."""
+    sel = rust_select(tmp, 'crates/tides-core/benches/lookup.rs', RUST['crates/tides-core/benches/lookup.rs'] + '// more\n')
+    kinds = {c['path']: c['kind'] for c in sel['changes']}
+    assert kinds['crates/tides-core/benches/lookup.rs'] == 'bench', kinds
+    assert not sel['selected'] and not sel['blind_spots'], (sel['selected'], sel['blind_spots'])
+    sel = rust_select(tmp / 'f', 'crates/tides-cli/tests/fixtures/fake_gauge.rs', 'fn main() { println!("8"); }\n')
+    spot = next(b for b in sel['blind_spots'] if b['path'].endswith('fake_gauge.rs'))
+    assert sorted(spot['widened_to']) == CLI_TESTS, spot
+    assert 'helper binary' in spot['note'].lower(), spot['note']
+
+
+def case_root_cargo_toml_widens_to_rust_only(tmp: Path) -> None:
+    """The root workspace Cargo.toml (or Cargo.lock) widens to every Rust test, not to the Python tests beside it;
+    a Python script change never widens to Rust tests."""
+    sel = rust_select(tmp, 'Cargo.toml', RUST['Cargo.toml'].replace('"2"', '"3"'))
+    spot = next(b for b in sel['blind_spots'] if b['path'] == 'Cargo.toml')
+    assert spot['required_scope'] == 'language', spot
+    assert spot['widened_to'] and all(t.endswith('.rs') for t in spot['widened_to']), spot['widened_to']
+    assert not any(s['file'].endswith('.py') for s in sel['selected']), [s['file'] for s in sel['selected']]
+    py = dict(RUST)
+    py['scripts/stray.py'] = 'X = 1\n'
+    sel = rust_select(tmp / 'p', 'scripts/stray.py', 'X = 2\n', files=py)
+    assert not any(s['file'].endswith('.rs') for s in sel['selected']), [s['file'] for s in sel['selected']]
+
+
+def case_python_sys_path_imports(tmp: Path) -> None:
+    """Test files that insert scripts/ into sys.path and then import a script by its bare name reach that script
+    (pathlib and os.path forms), so a script change selects them instead of reporting "No tests found"."""
+    import import_graph
+    g = import_graph.build(make_repo(tmp / 'repo', RUST))
+    assert sorted(g.tests_reaching('scripts/scale_recipe.py')) == ['tests/test_scale_recipe.py'], g.files['tests/test_scale_recipe.py']
+    assert sorted(g.tests_reaching('scripts/weather_log.py')) == ['tests/test_weather_log.py'], g.files['tests/test_weather_log.py']
+    sel = rust_select(tmp / 's', 'scripts/scale_recipe.py', 'def scale(q, n):\n    return q * n * 1\n')
+    assert [s['file'] for s in sel['selected']] == ['tests/test_scale_recipe.py'], sel['selected']
+    assert not sel['blind_spots'], sel['blind_spots']
+
+
+def case_python_sys_path_unknown_recorded(tmp: Path) -> None:
+    """When sys.path is set from something the graph cannot evaluate, the bare import of a repository module is
+    recorded as unresolved (never a silent missing edge), and the blind spot says so instead of "No tests found"."""
+    import import_graph
+    files = dict(RUST)
+    files['tests/test_weather_log.py'] = ('import os\nimport sys\nimport unittest\n\nsys.path.insert(0, os.environ["LOG_DIR"])\n\n'
+                                          'import weather_log  # noqa: E402\n\n\nclass MeanTest(unittest.TestCase):\n'
+                                          '    def test_mean(self):\n        self.assertEqual(weather_log.mean([1, 3]), 2)\n')
+    g = import_graph.build(make_repo(tmp / 'repo', files))
+    unresolved = g.files['tests/test_weather_log.py']['unresolved']
+    assert any(u['spec'] == 'weather_log' for u in unresolved), g.files['tests/test_weather_log.py']
+    sel = rust_select(tmp / 's', 'scripts/weather_log.py', 'def mean(xs):\n    return sum(xs) / max(len(xs), 1)\n', files=files)
+    spot = next(b for b in sel['blind_spots'] if b['path'] == 'scripts/weather_log.py')
+    assert 'No tests found' not in spot['note'] and 'tests/test_weather_log.py' in spot['note'], spot['note']
+
+
+def case_blind_spot_wording(tmp: Path) -> None:
+    """An unmapped file whose only link is weak (naming) never also says "No tests found for it"."""
+    files = dict(WEB)
+    files['geo.py'] = 'def hops(n):\n    return n - 1\n'
+    files['tests/test_geo.py'] = 'def test_nothing():\n    assert True\n'
+    import select_tests
+    repo = make_repo(tmp / 'repo', files)
+    d = write(tmp / 'g.diff', diff_of('geo.py', files['geo.py'], 'def hops(n):\n    return n - 2\n'))
+    sel = select_tests.select(repo, d)
+    spot = next(b for b in sel['blind_spots'] if b['path'] == 'geo.py')
+    assert 'Only weak evidence' in spot['note'] and 'No tests found' not in spot['note'], spot['note']
+
+
+def case_unittest_command(tmp: Path) -> None:
+    """Python tests run with the repository's runner: unittest when CI runs unittest (file arguments for a subset,
+    CI's own command for the whole suite), not pytest."""
+    sel = rust_select(tmp, 'scripts/scale_recipe.py', 'def scale(q, n):\n    return q * n * 1\n')
+    py = [c for c in sel['command']['commands'] if c['package'] == '.']
+    assert len(py) == 1 and py[0]['framework'] == 'unittest', sel['command']
+    assert py[0]['argv'] == ['python', '-m', 'unittest', 'tests/test_scale_recipe.py'], py[0]
+    files = dict(RUST)
+    files['scripts/shared_util.py'] = 'K = 1\n'
+    for t in PY_TESTS:
+        files[t] = files[t].replace('import unittest\n', 'import unittest\nimport shared_util  # noqa\n', 1)
+    sel = rust_select(tmp / 'f', 'scripts/shared_util.py', 'K = 2\n', files=files)
+    py = [c for c in sel['command']['commands'] if c['package'] == '.']
+    assert len(py) == 1 and py[0]['full_suite'] and py[0]['argv'] == ['python', '-m', 'unittest', 'discover', '-s', 'tests'], py
+
+
+KOTLIN = {
+    'settings.gradle.kts': 'rootProject.name = "logger"\n',
+    'build.gradle.kts': 'plugins { kotlin("jvm") }\n',
+    'src/main/kotlin/station/Logger.kt': 'package station\n\nfun log(x: Int) = x + 1\n',
+    'src/main/kotlin/station/Rain.kt': 'package station\n\nfun rain(x: Int) = x * 2\n',
+    'tools/check.py': 'def ok():\n    return True\n',
+    'tools/test_check.py': 'from check import ok\n\n\ndef test_ok():\n    assert ok()\n',
+}
+
+
+def case_no_parser_language_warns(tmp: Path) -> None:
+    """A change in a language with no import parser sets selection.language_coverage.warning, and when its package
+    has no test files that could be found, the blind spot falls back to the full suite (never 0 tests)."""
+    import select_tests
+    repo = make_repo(tmp / 'repo', KOTLIN)
+    rel = 'src/main/kotlin/station/Rain.kt'
+    d = write(tmp / 'k.diff', diff_of(rel, KOTLIN[rel], KOTLIN[rel].replace('* 2', '* 3')))
+    sel = select_tests.select(repo, d)
+    lc = sel.get('language_coverage') or {}
+    assert lc.get('warning') and 'kotlin' in lc['warning'].lower(), lc
+    assert lc.get('changed_unparsed') == ['kotlin'], lc
+    spot = next(b for b in sel['blind_spots'] if b['path'] == rel)
+    assert spot['widened_to'], spot
+
+
+def case_validator_requires_language_limitation(tmp: Path) -> None:
+    """The validator rejects a report whose selection warns that a changed language has no import parser when no
+    limitation names that language."""
+    import validate_impact_report as v
+    rep = {'metadata': {'mode': 'strict', 'change': {}}, 'sources': [], 'selected': [], 'changes': [], 'blind_spots': [],
+           'total_tests': 0, 'not_selected_count': 0, 'command': {'commands': [], 'split_into': 0},
+           'recommendations': {'full_suite': 'Run the full suite on merge.'}, 'limitations': ['Coverage was not given.'],
+           'summary': {'headline': 'Nothing: 0 of 0 test files.'},
+           'language_coverage': {'warning': 'A changed kotlin file has no import parser.', 'changed_unparsed': ['kotlin']}}
+    errs = v.check(rep, None, None, None)
+    assert any('kotlin' in e for e in errs), errs
+    rep['limitations'].append('Kotlin has no import parser here, so the change was widened, not traced.')
+    errs = v.check(rep, None, None, None)
+    assert not any('kotlin' in e.lower() for e in errs), errs
+
+
+def case_render_rust_and_language_warning(tmp: Path) -> None:
+    """--brief shows a language_coverage warning, feature-gated tests the commands do not run, a `language` blind
+    spot, and counts a cargo command's --exact test names (not its test files)."""
+    ids = [f'tides_core::m{i}::tests::t' for i in range(25)]
+    rep = {'metadata': {'repo': 'tides', 'mode': 'strict', 'change': {'diff': 'c.diff'}},
+           'summary': {'selected': 2, 'total_tests': 4, 'blind_spots': 1, 'evidence_completeness': 0.5,
+                       'headline': 'Two of four test files.', 'recall_status': 'not_assessed'},
+           'command': {'commands': [{'package': 'crates/tides-core', 'cwd': '.', 'framework': 'cargo-test', 'full_suite': False,
+                                     'argv': ['cargo', 'test', '-p', 'tides-core', '--lib', '--', '--exact',
+                                              *[i.partition('::')[2] for i in ids]],
+                                     'tests': 2, 'test_ids': ids, 'part': 1, 'parts': 1}], 'split_into': 1,
+                       'feature_gated': [{'package': 'crates/tides-core', 'crate': 'tides-core', 'feature': 'gauge',
+                                          'tests': ['tides_core::gauge::hw::reads_gauge']}]},
+           'language_coverage': {'parsed': ['rust'], 'no_parser': ['kotlin'], 'changed_unparsed': ['kotlin'],
+                                 'warning': 'One changed kotlin file has no import parser here.'},
+           'selected': [], 'sources': [], 'changes': [], 'recommendations': {'full_suite': 'on merge'},
+           'blind_spots': [{'id': 'B1', 'path': 'Cargo.toml', 'kind': 'global_config', 'action': 'language',
+                            'required_scope': 'language', 'widened_to': ['a.rs'], 'would_widen_to': ['a.rs'],
+                            'note': 'Cargo workspace manifest.'}]}
+    p = write(tmp / 'r.json', json.dumps(rep))
+    r = subprocess.run([sys.executable, str(HERE / 'render_report.py'), str(p), '--brief', '--color', 'never'],
+                       capture_output=True, text=True)
+    out = r.stdout + r.stderr
+    assert '<25 test names>' in out, out
+    assert 'kotlin file has no import parser' in out, out
+    assert '--features gauge' in out, out
+    assert 'every test of its language' in out, out
+
+
+def case_selection_speed(tmp: Path) -> None:
+    """Timing check: on a 400-module repository the selection reads each unchanged file once for both trees
+    (the base tree reuses the changed tree's reads), runs package detection once when no manifest changed, and
+    finishes within the time budget."""
+    import time
+    import import_graph, select_tests
+    files = {'pyproject.toml': '[project]\nname = "logger"\n'}
+    for i in range(200):
+        files[f'logger/m{i}.py'] = f'from logger import m{max(i - 1, 0)}\n\n\ndef f{i}(x):\n    return x + {i}\n'
+        files[f'tests/test_m{i}.py'] = f'from logger.m{i} import f{i}\n\n\ndef test_f():\n    assert f{i}(0) == {i}\n'
+    files['logger/__init__.py'] = ''
+    repo = make_repo(tmp / 'repo', files)
+    d = write(tmp / 'c.diff', diff_of('logger/m5.py', files['logger/m5.py'], files['logger/m5.py'].replace('+ 5', '+ 6')))
+    import detect_conventions
+    runs = []
+    orig = detect_conventions.Detector.run
+
+    def counting(self, *a, **k):
+        runs.append(1)
+        return orig(self, *a, **k)
+    detect_conventions.Detector.run = counting
+    import_graph.READS = 0
+    try:
+        t0 = time.perf_counter()
+        sel = select_tests.select(repo, d)
+        elapsed = time.perf_counter() - t0
+    finally:
+        detect_conventions.Detector.run = orig
+    assert len(sel['selected']) == 195, len(sel['selected'])
+    assert len(runs) == 1, f'package detection ran {len(runs)} times'
+    assert import_graph.READS <= len(files) + 10, f'{import_graph.READS} source reads for {len(files)} files'
+    assert elapsed < 60, f'{elapsed:.1f} s'
+
+
 CASES = [case_import_graph_go, case_select_go_change, case_unmapped_go_widens_within_go, case_naming_same_package,
          case_history_gotestsum_files, case_replay_skips_and_counts_packages, case_replay_from_git_commits,
          case_baseline_failures, case_coverage_map_go_profiles, case_coverage_map_go_run, case_render_go_run_line,
          case_template_render_links_views, case_static_reaches_rendering_tests, case_data_file_in_root_package,
-         case_coverage_core_ctrace, case_normalise_refuses_lost_contexts, case_committed_only_hashes_head]
+         case_coverage_core_ctrace, case_normalise_refuses_lost_contexts, case_committed_only_hashes_head,
+         case_rust_graph, case_select_rust_change, case_rust_exact_ids, case_rust_bench_and_fixture,
+         case_root_cargo_toml_widens_to_rust_only, case_python_sys_path_imports, case_python_sys_path_unknown_recorded,
+         case_blind_spot_wording, case_unittest_command, case_no_parser_language_warns,
+         case_validator_requires_language_limitation, case_render_rust_and_language_warning, case_selection_speed]
 
 
 def main(argv=None) -> int:

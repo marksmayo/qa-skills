@@ -23,8 +23,9 @@ SCHEMA = HERE.parent / 'schemas' / 'impact_report.schema.json'
 KINDS = import_graph.KINDS
 COPIED = ('sources', 'changes', 'selected', 'blind_spots', 'total_tests', 'not_selected_count', 'command')
 EVIDENCE_SOURCES = {'coverage', 'import_graph', 'framework_tools', 'journeys', 'naming', 'co_failure'}
-SCOPES = {'global_config': {'full_suite', 'package'}, 'shared_fixture': {'fixture_reach', 'package'},
-          'dynamic_reference': {'package'}, 'data_or_schema': {'package_and_contract'}, 'unmapped_source': {'package'},
+SCOPES = {'global_config': {'full_suite', 'package', 'language'}, 'shared_fixture': {'fixture_reach', 'package'},
+          'dynamic_reference': {'package'}, 'data_or_schema': {'package_and_contract'},
+          'unmapped_source': {'package', 'full_suite'},
           'deleted_or_renamed': {'importers'}, 'non_code': {'e2e_and_visual'}, 'huge_change': {'full_suite'}}
 HIGH_RISK = {'global_config', 'shared_fixture', 'dynamic_reference', 'deleted_or_renamed', 'huge_change'}
 BANNED = re.compile(r'\bsafe(ly)? to (skip|omit|ignore|drop)\b|\bsafely (skip|skipped|omit|omitted|ignored?)\b|'
@@ -157,6 +158,8 @@ def check(rep: dict, selection: dict | None, replay: dict | None, runs: dict | N
             errs.append('metadata.file_kinds_sha256: differs from the selection')
         if rep['metadata'].get('packages') != selection['packages']:
             errs.append('metadata.packages: differs from the selection')
+        if 'language_coverage' in selection and rep.get('language_coverage') != selection['language_coverage']:
+            errs.append('language_coverage: differs from the selection (copy it unchanged)')
     if len({s['name'] for s in rep['sources']}) != len(rep['sources']) or set(src) != EVIDENCE_SOURCES:
         errs.append(f'sources: need exactly one entry for each of {sorted(EVIDENCE_SOURCES)}')
 
@@ -200,7 +203,7 @@ def check(rep: dict, selection: dict | None, replay: dict | None, runs: dict | N
     # every change linked, a blind spot, or docs
     for c in rep['changes']:
         p = c['path']
-        if c['kind'] == 'docs':
+        if c['kind'] in ('docs', 'bench'):     # a bench target: cargo test never builds or runs it
             continue
         cited = any(r['changed_path'] == p and r['source'] != 'blind_spot' for s in rep['selected'] for r in s['reasons'])
         blind = any(b['path'] == p for b in rep['blind_spots'])
@@ -227,9 +230,19 @@ def check(rep: dict, selection: dict | None, replay: dict | None, runs: dict | N
                 errs.append(f'{where}: full_suite must cover all {len(tests_all)} test files')
             if b['required_scope'] == 'package' and pkg_tests:
                 pkg = max((r for r in pkg_tests if r == '.' or b['path'].startswith(r + '/')), key=len, default='.')
-                want = set(pkg_tests.get(pkg, [])) if pkg != '.' else tests_all
-                if want and set(b['widened_to']) != want:
-                    errs.append(f'{where}: package scope must cover every test in {pkg}')
+                want = set(import_graph.same_family(b['path'], sorted(pkg_tests.get(pkg, []) if pkg != '.' else tests_all)))
+                if import_graph.family(b['path']) == 'go':
+                    # a Go package is a directory: its own tests and its importers', else the module's Go tests
+                    if not set(b['widened_to']) <= want or (want and not b['widened_to']):
+                        errs.append(f'{where}: package scope of a Go file must be Go tests of {pkg}')
+                elif want and set(b['widened_to']) != want:
+                    errs.append(f'{where}: package scope must cover every test in {pkg} that a '
+                                f'{import_graph.family(b["path"]) or "non-code"} file can reach')
+            if b['required_scope'] == 'language' and tests_all:
+                if import_graph.family(b['path']) is None:
+                    errs.append(f'{where}: language scope needs a file of one language')
+                elif set(b['widened_to']) != set(import_graph.same_family(b['path'], sorted(tests_all))):
+                    errs.append(f'{where}: language scope must cover every {import_graph.family(b["path"])} test file')
         else:
             if b['action'] != 'labelled' or b['widened_to']:
                 errs.append(f'{where}: in {mode} mode a {b["kind"]} blind spot is labelled, not widened')
@@ -311,6 +324,15 @@ def check(rep: dict, selection: dict | None, replay: dict | None, runs: dict | N
     if v and v['failures_outside_selection'] and not any(f in rep.get('limitations', []) or
                                                           any(f in t for t in rep.get('limitations', [])) for f in v['failures_outside_selection']):
         errs.append('verify: failures outside the selection are misses; name each one in limitations')
+
+    # a changed file in a language with no import parser: the report must say so
+    lc = rep.get('language_coverage') or (selection or {}).get('language_coverage') or {}
+    if lc.get('warning'):
+        lim = ' '.join(rep.get('limitations', [])).lower()
+        for lang in lc.get('changed_unparsed') or ['(unnamed)']:
+            if lang.lower() not in lim:
+                errs.append(f'limitations: changed {lang} file(s) have no import parser (language_coverage.warning); '
+                            f'name {lang} in a limitation, since those changes were widened, not traced to tests')
 
     # text rules
     for where, text in all_text(rep):
