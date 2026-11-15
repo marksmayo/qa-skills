@@ -142,7 +142,7 @@ appears in the request is rejected.
 
 ## Weakness catalogue
 
-`data/pitfalls.json` has 149 patterns in 18 packs (Python, server-side templates (Jinja, Django,
+`data/pitfalls.json` has 152 patterns in 18 packs (Python, server-side templates (Jinja, Django,
 Nunjucks), JavaScript/TypeScript, Java/Kotlin, Android manifests, iOS, Go, PHP, Ruby, C#, C/C++,
 Rust, GitHub Actions workflows and composite actions, Dockerfiles, Terraform, Azure Bicep/ARM,
 Azure Pipelines, and security headers in `next.config`, `vercel.json`, `netlify.toml` and
@@ -159,7 +159,7 @@ and the matching rules of other tools.
 | Availability | Unbounded result sets and response amplification (every match serialised into one response, no page size or minimum query length), rate limits missing on expensive routes or keyed on a client-set header (`X-Forwarded-For`, `CF-Connecting-IP` with no trusted-proxy count); mostly agent review, with recon leads |
 | Cryptography | Weak hashes and ciphers, ECB, predictable randomness, disabled TLS verification |
 | Data exposure | Secrets in code or history, credentials in logs, verbose errors |
-| Language-specific | Deserialisation (pickle, YAML, Java, .NET, PHP, Ruby), prototype pollution, ReDoS, memory safety in C/C++ |
+| Language-specific | Deserialisation (pickle, YAML, Java, .NET, PHP, Ruby), prototype pollution, ReDoS, memory safety in C/C++ and Rust `unsafe` (documented FFI blocks grouped, low confidence), uncontrolled search paths for executables and libraries (CWE-427: `current_dir()`, relative paths, Windows DLL search order) |
 | Mobile | Exported components and deep links, WebView bridges, cleartext traffic, ATS exceptions, insecure storage |
 | Supply chain and CI | `pull_request_target` checkouts, checkout credentials persisted in a workflow that uploads artifacts, expression injection, unpinned actions, reachable vulnerable dependencies, `curl | sh`; Azure Pipelines every-branch triggers, literal secret variables, branch names and runtime parameters in scripts, service connections outside deployment jobs |
 | Configuration | Debug mode (including debug on by default unless an environment variable is set), public storage, open admin ports, unencrypted storage; Azure public network access on data services, `0.0.0.0` firewall rules ("allow Azure services" admits every tenant), administrator password login, secret parameters without `@secure()`, Key Vault access policies listing every secret, FTP, no `httpsOnly`, TLS below 1.2, account keys in app settings |

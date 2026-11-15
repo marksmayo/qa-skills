@@ -73,7 +73,7 @@ python scripts/recon.py <repo> --out recon.json                   # attack surfa
 #   agent_config (.claude/settings*.json, .mcp.json, .vscode/tasks.json ...); outbound calls matched on code, not strings
 #   every walker: data directories (200+ data files, no code) pruned unopened and listed in skipped_data_dirs;
 #   --exclude-dir DIR (repeatable) leaves out more, --scan-data-dirs reads them
-python scripts/run_scanners.py <repo> --out-dir <out> [--offline] [--osv-local-db <dir>]
+python scripts/run_scanners.py <repo> --out-dir <out> [--offline] [--osv-local-db <dir>] [--cargo-audit-db <dir>]
 #   every applicable open-source scanner: status, time and results; lockfiles listed offline, each tool's covered lockfiles,
 #   advisories recorded as assessed, partial or not assessed; pnpm audit for pnpm workspaces; zizmor online audits with GH_TOKEN
 python scripts/scan_pitfalls.py <repo> --out patterns.json         # 149 CWE-mapped patterns in 18 packs (Jinja/Django templates, Express and Next.js sources, JSON-LD, Node child processes, composite actions, Azure Bicep/ARM and Azure Pipelines, CSP and Cache-Control in next.config/vercel.json/netlify.toml/_headers)
@@ -92,7 +92,7 @@ python scripts/cvss4.py "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/S
 python scripts/validate_security_audit.py security_audit.json --repo <repo> --candidates candidates.json --recon recon.json --write-summary
 python scripts/render_report.py security_audit.json [--brief] [--sarif findings.sarif]   # --sarif writes only the SARIF file
 python scripts/sarif.py read results.sarif                          # normalise any SARIF file
-python scripts/self_test.py                                         # built-in scanners against examples/kite-notes, ferry-ops, quill-cli, beacon-cli, tide-tables and wren-field-guide
+python scripts/self_test.py                                         # built-in scanners against examples/kite-notes, ferry-ops, quill-cli, beacon-cli, tide-tables, wren-field-guide and tidemark-cli
 ```
 
 ## Output
@@ -162,6 +162,17 @@ routes. `self_test.py` checks the Go pattern hits (and none for `exec.CommandCon
 exposure, that a header-name constant is not a secret, and the govulncheck reader, the validator's Go
 test names and `local_copy` verification, and the Go caches in command PoCs.
 
+`examples/tidemark-cli/` is the Rust fixture: a synthetic tide-table CLI crate (clap derive with a
+subcommand per action and arguments bound to environment variables) that finds its plotting helper
+under the working directory, loads a native library from a relative path and a Windows DLL by bare
+name, chooses both through environment variables, wraps FFI calls in `unsafe` blocks with `SAFETY:`
+comments, narrows clamped, float and unchecked integers, and has `#[cfg(test)]` modules, a read-only
+and a write-token CI job, a guarded and an unguarded archive extraction and a `Cargo.lock` with
+RustSec advisories. `self_test.py` checks the pattern hits (the CWE-427 search-path rules, one
+grouped low-confidence `unsafe` candidate, nothing in test modules or for bounded casts), the clap
+and `ENV` entry points (never on a `use` line), flags and leads, the cargo-audit and cargo-deny plans
+and readers, and the validator's tool-output and limitation checks.
+
 ```bash
 python scripts/validate_security_audit.py examples/security_audit.example.json \
     --repo examples/invoicer --candidates examples/run/candidates.json --recon examples/run/recon.json
@@ -216,15 +227,15 @@ python scripts/render_report.py examples/security_audit.example.json --brief
 - `scripts/test_paths.py`: tells test code from product code by path (a package named `e2e` with its own manifest is product code; used by recon and the scans)
 - `scripts/scan_pitfalls.py`: pattern scan
 - `scripts/scan_secrets.py`: secrets in the tree and git history, without values; whether each file is tracked, untracked or gitignored and was ever committed; credential files and paths to them listed separately
-- `scripts/merge_findings.py`: merges SARIF, Bandit, ESLint, dependency and built-in results into candidates; npm advisories get the installed version, range, dev flag and via chain from `package-lock.json` or `pnpm-lock.yaml`; gitleaks history hits keep their commits; govulncheck's JSON stream keeps each advisory's call-graph level (`reachability`: symbol, package or module)
+- `scripts/merge_findings.py`: merges SARIF, Bandit, ESLint, dependency and built-in results into candidates; npm advisories get the installed version, range, dev flag and via chain from `package-lock.json` or `pnpm-lock.yaml`; gitleaks history hits keep their commits; govulncheck's JSON stream keeps each advisory's call-graph level (`reachability`: symbol, package or module); cargo-audit and cargo-deny JSON become crates.io rows with a `kind` (vulnerability, unmaintained, unsound, yanked)
 - `scripts/seed_report.py`: writes the report skeleton (entry points, tools, triage, dependencies) with TODO(seed) placeholders for the judgement
-- `scripts/self_test.py`: checks the built-in scanners against `examples/kite-notes/`, `examples/ferry-ops/`, `examples/quill-cli/`, `examples/beacon-cli/`, `examples/tide-tables/` (with a generated data directory) and `examples/wren-field-guide/`, plus run_poc guard checks, observation evidence, the seeded run_poc row and the empty-findings rendering
+- `scripts/self_test.py`: checks the built-in scanners against `examples/kite-notes/`, `examples/ferry-ops/`, `examples/quill-cli/`, `examples/beacon-cli/`, `examples/tide-tables/` (with a generated data directory), `examples/wren-field-guide/` and `examples/tidemark-cli/`, plus run_poc guard checks, observation evidence, the seeded run_poc row and the empty-findings rendering
 - `scripts/run_poc.py`: safety-linted PoC runner that records evidence: HTTP steps against a local or test target, or command steps in a copy outside the repository
 - `scripts/cvss4.py`: CVSS v4.0 calculator (port of the FIRST reference implementation, BSD-2-Clause)
 - `scripts/validate_security_audit.py`: structure and honesty checks
 - `scripts/render_report.py`: coloured terminal/Markdown report and SARIF export
 - `scripts/sarif.py`: SARIF reader and writer (shared with UI Crash Hunter)
-- `examples/`: sample app, scanner outputs, PoCs, evidence, regression tests, variant rules and report; `kite-notes/`, the Next.js fixture; `ferry-ops/`, the FastAPI, Azure Functions, Bicep/ARM and Azure Pipelines fixture; `quill-cli/`, the Node CLI, MCP server and GitHub Actions fixture; `beacon-cli/`, the Go CLI fixture; `tide-tables/`, the Flask, Jinja and Flask-Limiter fixture; `wren-field-guide/`, a static Next.js App Router content site (pages, metadata routes, a CSP and catch-all caching in next.config headers(), JSON-LD, a service worker, committed agent config)
+- `examples/`: sample app, scanner outputs, PoCs, evidence, regression tests, variant rules and report; `kite-notes/`, the Next.js fixture; `ferry-ops/`, the FastAPI, Azure Functions, Bicep/ARM and Azure Pipelines fixture; `quill-cli/`, the Node CLI, MCP server and GitHub Actions fixture; `beacon-cli/`, the Go CLI fixture; `tide-tables/`, the Flask, Jinja and Flask-Limiter fixture; `wren-field-guide/`, a static Next.js App Router content site (pages, metadata routes, a CSP and catch-all caching in next.config headers(), JSON-LD, a service worker, committed agent config); `tidemark-cli/`, the Rust clap CLI fixture (search paths, FFI, a Cargo.lock with RustSec advisories)
 
 ## Design principles
 

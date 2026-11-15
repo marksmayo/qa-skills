@@ -1,7 +1,7 @@
 ---
 name: code-security-auditor
 description: Audit a codebase for security weaknesses with open-source scanners (Semgrep OSS, Bandit, gosec, Brakeman, gitleaks, osv-scanner, pip-audit, npm audit, zizmor, Trivy, Checkov and more) plus a deep manual review, trace each finding from attacker-controlled input to the dangerous operation, rate it with CVSS v4.0, and write safe reproduction steps, a fix and a regression test. Optionally confirms findings with canary-only proofs of concept against localhost or a test environment the user names. Every candidate is triaged, every tool's status is recorded, and the report never calls the code secure.
-version: 1.6.0
+version: 1.7.0
 ---
 
 # Code Security Auditor
@@ -35,7 +35,11 @@ What sets this apart from asking for a quick review:
    Informational issues go in `observations`, not findings.
 3. **Every candidate is triaged.** Promote it to a finding, record it as an observation, or dismiss
    it with a reason someone else can check (the guard and its line, the invariant, or why the input
-   is not attacker-controlled). "False positive" on its own is not a reason.
+   is not attacker-controlled). "False positive" on its own is not a reason. A triage row links to
+   what it became through `finding`: `"finding": "F-3"` for a promoted candidate and
+   `"finding": "O-1"` (with `decision: observation`) for an observation; there is no separate
+   `observation` field. A grouped candidate (`grouped_lines`, documented FFI `unsafe` blocks in one
+   file) is triaged once, and its reason covers every line in the group.
 4. **Dynamic verification needs permission and a safe target.** Only after the user has explicitly
    agreed, and only against localhost or a test environment they named. Never production unless
    they ask for it in writing; record their words in `verification.production_written_permission`.
@@ -293,7 +297,7 @@ read them too. An input passed through `env:` and used as `"$NAME"` is the safe 
 ### 2. Run the scanners
 
 ```bash
-python scripts/run_scanners.py <repo> --out-dir <out> [--offline] [--osv-local-db <dir>]
+python scripts/run_scanners.py <repo> --out-dir <out> [--offline] [--osv-local-db <dir>] [--cargo-audit-db <dir>]
 ```
 
 Whatever runs, the pinned packages in lockfiles and requirements files are listed offline in
@@ -313,7 +317,20 @@ call-graph level as `reachability`: `symbol` (a vulnerable function is reached; 
 the frames), `package` (imported, no vulnerable symbol reached) or `module` (required, package not
 imported). `seed_report.py` seeds `symbol` as `reachable: yes` (write the finding, or say why the
 path cannot run) and `package`/`module` as `no` with govulncheck's basis; a `-scan package` or
-`-scan module` run proves nothing about symbols and seeds nothing. Without any advisory tool, packages you can see are risky by
+`-scan module` run proves nothing about symbols and seeds nothing. For Rust, cargo-audit runs on each
+`Cargo.lock` (`cargo-audit audit --json`); with `--offline` it runs `--no-fetch --stale` against a
+local RustSec copy (`--cargo-audit-db`, default `CARGO_HOME/advisory-db`) and needs no network, and
+its tool row records the database's advisory count and last update (`advisory_db`). An offline copy
+is only as current as that date: say so in the limitations (`seed_report.py` adds the line). The
+yanked check reads the crates.io index and may fail offline; the error is kept in the row's reason.
+cargo-deny (`check advisories`, JSON on stderr) runs too when installed. `merge_findings.py --deps`
+reads both: vulnerabilities, unmaintained, unsound and yanked crates become `DEP-nnn` rows with a
+`kind` (a yanked release's advisory is `yanked:<crate>@<version>`); an unmaintained crate needs a
+basis like any other row (is there a maintained replacement, does the code use the affected API).
+If you ran an advisory tool by hand, add its row with `output` pointing at the file it wrote and
+`results` as counted there, add every advisory it reported to `dependencies`, and set
+`dependency_advisories` from what it covered: the validator reads that output and rejects a row
+whose file is missing or whose advisories are not in the report. Without any advisory tool, packages you can see are risky by
 reading (an abandoned release line, a known-vulnerable pin) are agent findings with confidence
 `possible`.
 
@@ -335,7 +352,7 @@ anything; a missing tool is recorded, not silently skipped.
 | Multi-language SAST | Semgrep OSS with `p/default` and `p/owasp-top-ten` |
 | Language-specific | Bandit (Python), gosec (Go), Brakeman (Rails), ESLint security plugins (JS/TS, only if the repo has them), Psalm taint analysis (PHP, only if installed in the repo), SpotBugs + FindSecBugs (Java/Kotlin: needs a build, run it there), MobSF (needs a package and a server) |
 | Secrets | gitleaks (including history), plus `scan_secrets.py` |
-| Dependencies | osv-scanner, pip-audit, npm audit, pnpm audit, govulncheck (Go, call-graph aware) |
+| Dependencies | osv-scanner, pip-audit, npm audit, pnpm audit, govulncheck (Go, call-graph aware), cargo-audit and cargo-deny (Rust, RustSec) |
 | CI | zizmor (GitHub Actions workflows and composite actions), Checkov (GitHub Actions and Azure Pipelines), plus the pattern packs |
 | IaC and containers | Trivy, Checkov (Terraform, Bicep, ARM, CloudFormation, Kubernetes, Helm, Dockerfiles, Compose), hadolint |
 
@@ -588,7 +605,24 @@ it. `scan_pitfalls.py` has a `rust` pack (`.rs`) for the usual low-level leads: 
 functions (CWE-119), `from_raw_parts`/`set_len`/`transmute` (CWE-125/787/704), narrowing integer
 casts near size arithmetic (CWE-190/197), `Command::new` (CWE-78), symlink-following filesystem
 calls (CWE-59/22 TOCTOU), and `unwrap()`/`expect()` on parsed input (a panic is a denial of
-service). The `go` pack covers SQL built with Sprintf, shells and variable programs in
+service). Desktop tools and tools that load plugins or helper programs have one more class,
+uncontrolled search paths (CWE-427): `RUST-SEARCH-PATH-CWD` (a path built from
+`env::current_dir()` next to a launch, a library load or an `.exe`/`.dll`/`.so` name),
+`RUST-SEARCH-PATH-RELATIVE` (a relative program or library path such as `"lib/x.so"` or
+`"tools/x.exe"`, which resolves against the working directory) and `RUST-DLL-SEARCH-ORDER` (a DLL
+loaded by bare name or `LoadLibrary` without `LOAD_LIBRARY_SEARCH_*` flags: the Windows search order
+includes the application folder, the PATH and, for a relative path, the working directory). The
+attacker is whoever controls the folder the tool starts in (a cloned repository, a download folder)
+or the environment: exposure `local`, `AV:L` with `UI:P`. The fix resolves from `current_exe()` or an
+absolute configured path. Noise is held down: matches inside `#[cfg(test)]` items and `#[test]`
+functions are skipped (`--include-tests` keeps them), a narrowing cast of a value clamped, `min`'d
+or asserted just before, or of a float (`.floor() as usize`, `x >= 0.0`), is not a candidate, and
+`unsafe` blocks that carry a `// SAFETY:` comment and call foreign code are grouped into one
+low-confidence candidate per file (`grouped_lines`); an undocumented or non-FFI `unsafe` block stays
+on its own. Recon reads Rust crates with the shared Cargo model: clap CLIs and subcommands are entry
+points at their struct and variant lines (never a `use` line), clap arguments are `cli_flags` with
+their bound environment variables, and an environment variable that chooses an executable or a
+library is a `config_input` entry point (method `ENV`) with a review lead. The `go` pack covers SQL built with Sprintf, shells and variable programs in
 `exec.Command` (the context argument of `CommandContext` is not the program), `InsecureSkipVerify`,
 request input in file paths, paths joined from CLI arguments, decoded fields or archive entry names
 without a containment check, `math/rand` for security values (files that import `crypto/rand` are
@@ -681,7 +715,11 @@ and leaves sibling ones to that report.
   rule files exist.
 - `dependency_advisories` (required from schema 1.2): `assessed` or `partial` need a dependency
   tool that ran, `not_assessed` lists no advisories, and anything but `assessed` has a reason, is
-  named in the limitations, and rules out a headline claiming no vulnerable dependencies.
+  named in the limitations, and rules out a headline claiming no vulnerable dependencies. Each
+  dependency tool counted there names an `output` that exists (relative to the report or absolute),
+  its `results` match that file, and every advisory in it is in `dependencies`. No limitation may
+  contradict the status: "Dependency advisories were not assessed" or "no dependency tool ran" is
+  rejected when one ran (a `partial` report may say a named lockfile or ecosystem was not covered).
 - No secret value in the report or the evidence, and nothing written inside the repository. The
   values come from findings with a secret block and from secret candidates that weren't dismissed
   (a dismissed one still counts if it looks like a real key); placeholder words and values under
@@ -691,5 +729,6 @@ and leaves sibling ones to that report.
 - Secret blocks agree with the scanner: a secret it found in history is not reported as absent,
   `no` is not claimed when it could not tell, and `git_status` matches. A `partial` or `errored`
   history scan is named in the limitations.
-- Summary counts recomputed; headlines claiming the code is secure, safe or free of issues are
+- Summary counts recomputed (`--write-summary` also fills each finding's `priority_score` and
+  `priority`); headlines claiming the code is secure, safe or free of issues are
   rejected ("secure" in a technical phrase such as "the Secure cookie flag" is fine).

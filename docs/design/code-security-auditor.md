@@ -1,6 +1,6 @@
 # Design: `code-security-auditor-skill`
 
-Status: Built (v1.6.0), see the "As built" sections at the end. Build order: 5.
+Status: Built (v1.7.0), see the "As built" sections at the end. Build order: 5.
 
 ## Mission
 
@@ -540,3 +540,63 @@ web framework and the language census thrown off by vendored code.
   `security_headers`; whether a generated metadata image route is bounded by its segment's
   `generateStaticParams` is not inferred; constants versus external data in JSON-LD is left to the
   reviewer.
+
+## As built (v1.7.0): fixes from a run on a Rust workspace with Python tooling
+
+- **Rust recon from the shared Cargo model.** `scripts/rust_entries.py` reads crates with
+  `cargo_project.py` (canonical in `shared/scripts/`): each clap CLI is a `cli` entry point at its
+  Parser struct or `Command::new` line (`ROOT`) and each subcommand at its variant (`COMMAND`), a
+  binary without clap at its `fn main`; the line-pattern CLI match is no longer used for `.rs` files
+  when a Cargo model exists, so no handler sits on a `use` line. Clap arguments are `cli_flags` with
+  their bound environment variables. A runtime environment variable that chooses an executable or a
+  library (read within 30 lines of a launch, a library load, a working-directory path or an
+  `.exe`/`.dll`/`.so` literal, or named `*_BIN`, `*_LIB`, `*_DLL`, ...; names behind a const are
+  resolved; PATH, HOME and other platform variables are not) is a `config_input` entry point with
+  method `ENV` and its own lead. Process launches and library loads are leads naming where the file
+  is found: `env::current_dir()`, a relative path (through a const or a `let` default) or a DLL by
+  bare name. Launches and loads in `#[cfg(test)]` code, tests/, benches/ and examples/ are left out.
+- **CWE-427 rules.** `RUST-SEARCH-PATH-CWD`, `RUST-SEARCH-PATH-RELATIVE` and
+  `RUST-DLL-SEARCH-ORDER` (catalogue 1.7.0, 152 patterns) cover executables and libraries found
+  through the working directory, a relative path or the Windows DLL search order; SKILL.md explains
+  the attacker (whoever controls the start folder or the environment) and the fix (`current_exe()`,
+  absolute paths, `LOAD_LIBRARY_SEARCH_*`).
+- **Noise reduction.** New catalogue options: `suppress_in_test_code` (every Rust rule skips
+  `#[cfg(test)]` items and `#[test]` functions unless `--include-tests`), `bounded_cast`
+  (`RUST-INT-TRUNCATION` skips a cast of a value clamped, `min`'d, saturated, `%`'d or asserted in
+  the expression or on the 3 lines above, and float-to-integer casts, which saturate),
+  `group_ffi_safety` (`unsafe` blocks with a `SAFETY:` comment that call foreign code become one
+  candidate per file with `grouped_lines`, `confidence: low` and `group_reason`; merge_findings and
+  seed_report carry them) and `gha_read_only_token` (`GHA-PERSISTED-CREDENTIALS` skips a job whose
+  token, from the job's or the workflow's `permissions`, has no write scope).
+  `PY-ARCHIVE-EXTRACT` skips an extraction with a member-validation call (`validate_members(`,
+  `is_relative_to`, `commonpath`) on the lines above.
+- **Rust dependencies.** `run_scanners.py` runs cargo-audit on each `Cargo.lock` (offline with
+  `--no-fetch --stale` against a local RustSec copy, `--cargo-audit-db`, default
+  `CARGO_HOME/advisory-db`; the row records `advisory_db` with the copy's last update, and stderr
+  errors such as the offline yanked check) and cargo-deny `check advisories` when installed (JSON on
+  stderr, `stderr_to`). `merge_findings.py` reads both into crates.io `DEP-nnn` rows with a `kind`
+  (vulnerability, unmaintained, unsound, notice, yanked as `yanked:<crate>@<version>`). Schema 1.6
+  adds `dependencies[].kind`; seed_report writes 1.6, keeps the kind, and adds a limitation dating
+  an offline database.
+- **Validator.** A dependency tool counted in `dependency_advisories` must name an `output` that
+  exists, whose result count matches and whose advisories are all in `dependencies` (the run had
+  accepted a hand-added cargo-audit row without reading it). A limitation saying advisories were not
+  assessed, or that no dependency tool ran, is rejected when one ran (a partial report may name the
+  lockfile or ecosystem it did not cover); the seeded line for `partial` now reads "only partly
+  assessed". `--write-summary` fills each finding's `priority_score` and `priority`. SKILL.md says a
+  triage row links to an observation through `finding: "O-n"`, and how to record a hand-run advisory
+  tool.
+- **Renderer.** Dismissal groups replace only real file references (a source or config extension,
+  or a `:line`), drop parenthetical asides whole and no longer split on `(`, so `#[cfg(test)]`,
+  `0.0..=1.0` and `crypto/rand` survive. `--brief` prints the tools as one line per status,
+  observations by title and the first three limitations.
+- **Fixture.** `examples/tidemark-cli/` (a synthetic tide-table clap CLI crate: a helper found under
+  the working directory, a relative and a bare-name library load, env-chosen helpers and libraries,
+  documented FFI `unsafe` blocks and one undocumented, clamped, float and unchecked casts,
+  `#[cfg(test)]` modules, a read-only and a write CI job, a guarded and an unguarded extraction, a
+  `Cargo.lock` with RustSec advisories) is checked by `self_test.py` against its `expected.json`.
+- **Not done:** the language census does not count `.slint` UI files (a shared lang_census change);
+  workflow-level `id-token: write` on `pull_request` workflows is not a rule; hostnames and
+  user-profile paths in committed data files are left to review; non-FFI `unsafe` blocks with SAFETY
+  comments (raw pointer casts) stay ungrouped; a pointer cast to `usize` is still a truncation
+  candidate; `PY-SSRF` on loopback and pinned-and-hashed downloads is unchanged.
