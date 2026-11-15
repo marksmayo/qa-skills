@@ -1,6 +1,6 @@
 # Design: `privacy-flow-auditor-skill`
 
-Status: Built (v1.7.0), see the "As built" sections. Build order: 23.
+Status: Built (v1.8.0), see the "As built" sections. Build order: 23.
 
 ## Mission
 
@@ -577,3 +577,40 @@ embeds.
 - **Examples.** Re-validated. `run/static.json` was rescanned: its candidates are unchanged and it gains
   `host_mentions`, `csp` and per-SDK `mentions`; the static-only audit's replay finding gains the
   `categories_basis` its categories always needed.
+
+### v1.8.0: a Rust workspace with Python helper scripts
+
+A static-only run on a Rust workspace (clap CLIs, unit and integration tests) with about thirty Python helper
+scripts and their tests found no candidates and stayed quiet about the Rust it never read.
+
+- **Found:** language coverage fell back to file counts once the scan merged its own counts into `languages`,
+  so 36 Python files (tests and helper scripts among them) outweighed 31 Rust files that held more lines,
+  `status` was `partial` and the validator accepted a report with no Rust limitation; host-name and
+  account-name reads (`platform.node()`, `socket.gethostname()`, `COMPUTERNAME`, `getpass.getuser()`, Rust
+  `hostname`/`whoami`) were not collection points, and no finding type fitted a host name written into
+  committed results and published docs; `urlretrieve` with a module-level URL constant left
+  `outbound_hosts` empty; "Subtitles" in a placeholder was identity (it holds "title"); a regex literal
+  that forbids `fetch(` was an HTTP sink; a 327 KB one-line HTML page took 12 s (each URL mention re-read the
+  whole line for the CSP, consent-gate and consent checks); and "By the code, nothing is sent ..." was
+  rejected in a not_run audit although SKILL.md allows it.
+- **Changed:** `build_coverage` merges the census's line, product, test and tooling splits with the file
+  counts (and with a scanned `dist/`), so product lines decide (`decided_by: lines`). Host-name and
+  account-name reads in Python, JavaScript, TypeScript and Rust are `machine_identifier` collection points
+  (`device_identifier` or `identity`), with variables assigned from them (one step through an object) standing
+  for them in the file; a log line naming one is a `personal_data_in_logs` candidate and a new `file_write`
+  sink naming one an `identifier_in_artifact` candidate (`identifier_written`). New finding type
+  `identifier_in_artifact` with flow basis `committed` (2) and `artifacts` (file and line, re-read; the value
+  never quoted); schema 1.5.0 (1.1.0 to 1.4.0 still valid). `urlretrieve` is an HTTP sink; calls whose host the
+  code does not spell out are listed under `outbound_unresolved`. `data/categories.json` `name_lookalikes`
+  drops words such as "subtitles" before matching. Sink matches inside quoted strings and JavaScript regex
+  literals are dropped. Lines over 2,000 characters are read in windows around each match, and the per-line
+  checks are cached: the synthetic 300 KB page went from 191 s to 0.3 s with the same output. The validator
+  accepts "nothing is sent" and "no third parties" in a not_run audit when the same sentence says it is the
+  code's behaviour; canaries, cookies, honoured consent and capture results still need the run.
+- **Not changed:** Rust is still not scanned for sends, logs or storage, only for what identifies the
+  machine; data already committed to the repository (benchmark outputs, logs) is not searched by the scan,
+  so `identifier_in_artifact` findings from committed files come from review; an object built from an
+  identifier is followed one step only.
+- **Examples.** Re-validated unchanged. A rescan of the clinic sample gives the same candidates, collection
+  points and sinks; only `language_coverage.dominant` (now chosen by lines) and the new empty
+  `outbound_unresolved` differ, so `run/static.json` was left as it was.

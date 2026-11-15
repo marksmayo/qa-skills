@@ -1,7 +1,7 @@
 ---
 name: privacy-flow-auditor
 description: Map where personal data goes in a web app - what it collects, where it stores it, what it logs, and which third parties receive it, and whether that happens before the user consents or after they reject. Combines a static scan of the code (collection points, logging, analytics, session replay, storage, SDKs, mobile permissions) with a live browser capture in three consent states (before a choice, after "Reject all", after "Accept all"), typing synthetic canary values and searching every request, cookie and storage entry for them raw, URL-encoded, Base64 and hashed. Produces a data inventory, recipients, a consent matrix and ranked findings with GDPR, UK GDPR and Australian Privacy Principles references for a privacy professional. Never types or stores real personal data, and never says an app is compliant.
-version: 1.7.0
+version: 1.8.0
 ---
 
 # Privacy flow auditor
@@ -170,8 +170,10 @@ vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), ev
      memory or debug panel is never contact data, whatever "address" it mentions;
    - lists every host that browser or server code sends to with a literal URL (`fetch`, XMLHttpRequest,
      `requests`/`httpx`, an httpx `AsyncClient`'s `build_request`/`send`/`stream`, or a variable assigned a
-     URL literal in the same file) under `outbound_hosts` with its `side` (client or server), vendor or not;
-     each is a recipient to account for in the inventory. A proxy that copies the visitor's request headers
+     URL literal in the same file, a module-level constant included; `urlretrieve` counts) under
+     `outbound_hosts` with its `side` (client or server), vendor or not; each is a recipient to account for
+     in the inventory. A server or tool call whose host the code does not spell out (read from a file, a
+     setting or an argument) is listed under `outbound_unresolved` for the review to trace. A proxy that copies the visitor's request headers
      into an outbound call (`dict(request.headers)`, `request.headers.items()`, `{...req.headers}`) is a
      `header_passthrough` candidate (`side: server`): cookies, Authorization and Referer reach the upstream;
    - treats small app functions that pass a parameter to a logging, analytics or error-tracker call
@@ -190,6 +192,17 @@ vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), ev
      as server code). Sends from command-line tools are recognised in JavaScript, TypeScript, Python and Go
      only; Rust, Java, C# and other compiled tools are not scanned for sends (see the language coverage
      below);
+   - records what identifies the machine or the person using it as `machine_identifier` collection points:
+     the host name (`platform.node()`, `socket.gethostname()`, `os.hostname()`, `COMPUTERNAME`/`HOSTNAME`;
+     category `device_identifier`) and the OS account name or a home path holding it (`getpass.getuser()`,
+     `os.getlogin()`, `Path.home()`, `os.homedir()`, `USERNAME`/`USER`/`LOGNAME`/`HOME`; category
+     `identity`), in Python, JavaScript and TypeScript, and in Rust (`hostname::get`, `whoami`, `home_dir`,
+     `env::var("COMPUTERNAME")`: identifiers only, Rust is still not scanned for sends or logs). A variable
+     assigned from one, or from an object built with one (`data = {"host": host}`), stands for it in that
+     file, so a log line naming it is a `personal_data_in_logs` candidate and a file write naming it
+     (`json.dump`, `write_text`, `.write`, `fs.writeFileSync`) is an `identifier_in_artifact` candidate
+     (`identifier_written`, with `machine_identifiers`): check whether that output file is committed or
+     published (results, scoreboards, logs kept in the repository);
    - reads Go: `log.*`, `slog`, `logrus`, `zap` and `fmt.Fprintf(os.Stderr, ...)` are log sinks and
      `http.Post`/`Get`/`NewRequest` HTTP sinks; command-line flags (`flag.String("email", ...)`, cobra
      `Flags().StringVar`) are collection points (`cli_flag`), so logging one is a candidate. A Go package
@@ -206,10 +219,19 @@ vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), ev
      reason; `--include DIR` forces a scan. A skipped one holding more source than the scan read is named
      in `language_coverage.needs_limitation_dirs` with a warning, and the validator then requires a
      limitation naming it;
-   - counts the repository's source files per language with `lang_census.py` (vendored, bundled and
+   - counts the repository's source files and lines per language with `lang_census.py` (vendored, bundled and
      embedded third-party trees left out) and records `language_coverage` in `static.json`; when most of
-     the code is in a language the scan doesn't read, it prints a warning and the validator requires a
-     limitation that names that language;
+     the product code is in a language the scan doesn't read, it prints a warning and the validator requires a
+     limitation that names that language. Product lines decide (`decided_by: lines`): test files and tooling
+     folders (`scripts/`, `tools/`, `docs/`) are counted apart, so a Rust workspace with many short Python
+     helper scripts and tests is Rust-dominant, and a committed `dist/` the scan reads is merged into the
+     line counts too;
+   - matches a sink only in code: a sink inside a JavaScript regex literal, or a call pattern inside a quoted
+     string (a check that forbids `fetch(`, a list of banned call names), is not a sink; a field name, label or
+     placeholder is matched with everyday look-alike words dropped first (`data/categories.json`
+     `name_lookalikes`: "title" in "Subtitles" is not identity);
+   - reads very long lines (minified or generated HTML and scripts, over 2,000 characters) in windows
+     around each match, so a 300 KB one-line report page costs well under a second;
    - raises Sentry Session Replay with no masking options (`sdk_default_masking`, `masked_by_default`:
      dismissable as `pii_disabled` once the installed version's default is checked) and with no consent
      check nearby (`replay_before_consent`);
@@ -340,6 +362,15 @@ the limitations that the capture covered that page only). The rest still applies
 - **Test the opt-out matrix.** Run with the opt-out unset, set to `1`, `0`, `false` and empty
   (`DO_NOT_TRACK` and the tool's own variable), and record which runs reached the sink. Check that the
   notice, if any, comes before the first send, and whether the update check honours the same opt-out.
+- **Identifiers kept in the repository.** Tools that record the machine they ran on (benchmark and test
+  recorders, report generators) often write the host name or the OS account name (or a home path, which holds
+  it) into result files, logs and generated docs that are committed or published. The scan's
+  `identifier_in_artifact` candidates and `machine_identifier` collection points show where; search the
+  committed outputs for the values the code would write (field names such as `host`, `hostname`,
+  `machine`, `user`, and home-directory paths). Report each as type `identifier_in_artifact`, flow
+  `committed` (2), with `artifacts: [{file, line, what}]` for every committed file and line that holds one
+  (never quote the value) and reach from who can read the repository: 3 when it or its published docs are
+  public, else 1 or 2. Categories are `device_identifier` for a host name and `identity` for an account name.
 - **Report.** A finding found this way is `source: agent`, type `telemetry`, with `domain` (the real
   endpoint's host, from the code) and a basis of the code lines plus `{"evidence": "<sink log>"}`; with
   that runtime evidence it may be `observed`. A send that happens with no choice made sets
@@ -356,7 +387,7 @@ tested, covered, not_covered),
 `metadata` (browser, canary set id, lists, declared processors source, tools), `inventory[]`,
 `recipients[]` (with `declared_as` and blocked request counts), `consent_matrix[]`, `findings[]` (type, title, candidates, categories, fields, vendor,
 recipient kind, consent states, flow basis, reach, sensitivity, flow, score, priority, floor, cap,
-confidence, evidence, references, fix, verification; `source: agent` and `basis` for a finding found by review; `default_on` for a telemetry or beacon send with no choice made; `policy` for a `policy_mismatch`; `categories_basis` when the categories aren't derived), `triage[]`, `headline` (counts, third parties
+confidence, evidence, references, fix, verification; `source: agent` and `basis` for a finding found by review; `default_on` for a telemetry or beacon send with no choice made; `policy` for a `policy_mismatch`; `artifacts` for an `identifier_in_artifact`; `categories_basis` when the categories aren't derived), `triage[]`, `headline` (counts, third parties
 before consent and after rejection - `null` for a state that wasn't tested - `states_not_tested`, special-category
 flows, `recipients_in_findings` (domains the findings name, from code or runtime evidence outside the browser too), statement, disclaimer; `consent_banner: false` and `states_not_applicable` for an app with no banner),
 `metadata.session` (whose signed-in session the capture used), `limitations[]`.
@@ -376,13 +407,15 @@ blocked in the browser, a limitation must say that third parties were blocked. `
 merge's; a `not_run` audit has no observed finding, captured request, consent state, live candidate or
 recipient, says in a limitation that the capture didn't run, and no statement or title claims what only a
 browser run could show; in a not_run audit a clause that says where data goes ("sent only to", "never
-leaves") must say it is what the code does ("by the code", "the static scan"). Agent findings' basis lines
+leaves", "nothing is sent", "no third parties") must say in the same sentence that it is what the code does
+("by the code", "the static scan"); canaries, cookies, consent being honoured and what a capture showed stay
+claims only a browser run can make. Agent findings' basis lines
 are re-read. Limitations must also cover blocked first-party writes, a blocked consent record, a bypassed
 CSP, screenshots in the evidence, and a signed-in session (with `metadata.session`); a storage-state file in
 the evidence fails. File upload points from the scan must be followed up in the inventory, scope or
 limitations: the text must speak of uploads (or attachments, spreadsheets, a dropzone or file input; a bare
 "files" does not count) and, when several files hold upload points, name each of them. A finding with
 `flow_basis: declared_unexpected` needs declared processors (`--declared` at merge, or
-`metadata.declared_processors`) that name its recipient (vendor, alias or parent company, or domain); one that names no recipient is at most `pattern`. `before_consent` from review needs `default_on: true` on a `telemetry` or `first_party_beacon` finding, or a `policy_mismatch` whose policy basis (re-read with `--repo`) promises a consent step; an unsupported `before_consent` names what would support it. Categories beyond the candidates', the fields' and (tracking findings) the vendor category's data, or leaving the vendor category's out, need a `categories_basis`. An inventory recipient needs a live candidate, or a traced or observed finding naming the domain and the field. When the static scan reports that most of the code is in a language it does not analyse (`language_coverage`), a limitation must name that language. With no consent banner, the statement says so. `--write-summary` fills missing ratings and the
+`metadata.declared_processors`) that name its recipient (vendor, alias or parent company, or domain); one that names no recipient is at most `pattern`. `before_consent` from review needs `default_on: true` on a `telemetry` or `first_party_beacon` finding, or a `policy_mismatch` whose policy basis (re-read with `--repo`) promises a consent step; an unsupported `before_consent` names what would support it. Categories beyond the candidates', the fields' and (tracking findings) the vendor category's data, or leaving the vendor category's out, need a `categories_basis`. An inventory recipient needs a live candidate, or a traced or observed finding naming the domain and the field. When the static scan reports that most of the code is in a language it does not analyse (`language_coverage`), a limitation must name that language. `flow_basis: committed` goes with `identifier_in_artifact` only, and that finding needs `artifacts` (file and line of each committed file holding the identifier; the lines are re-read with `--repo`, the value is never quoted). With no consent banner, the statement says so. `--write-summary` fills missing ratings and the
 headline instead of failing on them; `--fix-ratings` rewrites computed rating fields that are wrong and
 lists each change (the rating error shows the arithmetic).
