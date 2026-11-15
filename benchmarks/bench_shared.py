@@ -180,3 +180,21 @@ def test_sarif_build(benchmark):
                 'column': i % 30 + 1, 'cwe': [f'CWE-{79 + i % 5}'], 'tags': ['security']} for i in range(600)]
     log = benchmark(sarif.build, 'bench-tool', '1.0', results)
     assert log['runs'][0]['results']
+
+
+# --- test results ----------------------------------------------------------------------------
+
+JUNIT = sorted([*(ROOT / 'release-readiness-gate-skill' / 'examples' / 'rc-2026.11.2' / 'reports').glob('*.xml'),
+                *(ROOT / 'api-contract-tester-skill' / 'examples' / 'run' / 'schemathesis').glob('*.xml'),
+                *(ROOT / 'test-data-auditor-skill' / 'examples' / 'run' / 'junit').glob('*.xml'),
+                ROOT / 'requirements-traceability-auditor-skill' / 'examples' / 'run' / 'junit.xml'])
+
+
+def test_parse_results_junit(benchmark):
+    """Every run in every skill is read through parse_junit: pytest, Vitest and Schemathesis reports."""
+    import parse_results
+    assert len(JUNIT) > 10
+
+    def run():
+        return [parse_results.parse_junit(p, f'R{i}') for i, p in enumerate(JUNIT)]
+    assert any(cases for cases, _ in benchmark(run))

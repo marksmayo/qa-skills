@@ -73,8 +73,10 @@ self-contained. `python tools/check_shared.py` checks the copies; `--fix` syncs 
 ## Benchmarks
 
 `benchmarks/` holds performance benchmarks for the shared scripts and the heavier skill scanners
-(diff parsing, Journey Markdown, route discovery, PNG decoding, CVSS scoring, pitfall scans), run on
-the example fixtures in this repository. They need pytest and pytest-codspeed, which the skills
+(diff parsing, Journey Markdown, route discovery, JUnit parsing, PNG decoding, CVSS scoring, the
+security, UI, flaky-test, dead-test and test-data scans, surface extraction, the impact import graph,
+ICU messages, criteria lint, WCAG merging, CI log extraction, anomaly detection and evaluation
+validation), run on the example fixtures in this repository. They need pytest and pytest-codspeed, which the skills
 themselves do not; CI runs them on every push and pull request with [CodSpeed](https://codspeed.io).
 
 ```
