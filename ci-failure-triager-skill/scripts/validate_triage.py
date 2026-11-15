@@ -242,6 +242,9 @@ def main() -> int:
             e(f'{w["id"]}: data needs a data signature or a date before the run date')
         if 'annotations' in f['signals'] and f['signals']['annotations'] != sg.get('annotations', []):
             e(f'{w["id"]}: signals.annotations differ from the job\'s annotations in the run (quote them as recorded)')
+        if f['signals'].get('queued_for_s') != sg.get('queued_for_s') and ('queued_for_s' in f['signals'] or 'queued_for_s' in sg):
+            e(f'{w["id"]}: signals.queued_for_s {f["signals"].get("queued_for_s")} should be {sg.get("queued_for_s")} (the time the job waited '
+              'for a runner, from the run)')
         fs_ids = [s['id'] for s in f['signals'].get('signatures', [])]
         if fs_ids not in ([h['id'] for h in sg['signatures']], [h['id'] for h in sgq['signatures']]) or f['signals'].get('rerun') != sg['rerun']:
             e(f'{w["id"]}: signals differ from the run (signatures {[h["id"] for h in sg["signatures"]]}, re-run {sg["rerun"]})')

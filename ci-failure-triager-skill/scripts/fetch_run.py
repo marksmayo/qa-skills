@@ -164,6 +164,22 @@ def never_started(j: dict) -> bool:
             and 'runner_name' in j and not j['runner_name'])
 
 
+def _ts(t: str | None):
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(t.replace('Z', '+00:00')) if t else None
+    except ValueError:
+        return None
+
+
+def queued_for(j: dict) -> int | None:
+    """Seconds a never-started job spent between being queued and the CI stopping it: GitHub gives such a job a
+    started_at and completed_at, so its "duration" (16m, 2h) is time waiting for a runner, never time running."""
+    begin = [x for x in (_ts(j.get('created_at')), _ts(j.get('started_at'))) if x]
+    end = _ts(j.get('completed_at'))
+    return max(0, int((end - min(begin)).total_seconds())) if begin and end else None
+
+
 def annotations_of(raw: Path, job_id) -> tuple[list[dict], dict | None]:
     """(annotations, error record) saved for one job; each annotation as {level, title, message}, untrusted text."""
     p = raw / 'annotations' / f'{job_id}.json'
@@ -354,7 +370,10 @@ def normalise_github(raw: Path, out: Path, repo: str | None) -> dict:
                 d = out / 'junit' / str(n) / x.parent.name / x.name
                 save(d, x.read_bytes())
                 junit.append(d.relative_to(out).as_posix())
+            waited = queued_for(j) if unstarted else None
             jobs.append({'id': j['id'], 'name': j['name'], 'conclusion': j.get('conclusion'), 'url': j.get('html_url'), 'started_at': j.get('started_at'),
+                         **{k: j[k] for k in ('created_at', 'completed_at') if j.get(k)},
+                         **({'queued_for_s': waited} if waited is not None else {}),
                          'steps': [{'number': s['number'], 'name': s['name'], 'conclusion': s.get('conclusion')} for s in j.get('steps', [])],
                          'log': dest_log.relative_to(out).as_posix() if status == 'fetched' else None, 'log_status': status, 'log_error': err,
                          'junit': junit, **({'never_started': True} if unstarted else {}), **({'annotations': notes} if notes else {})})
@@ -665,6 +684,11 @@ def main() -> int:
           f'{len(run["history"])} history run(s) of the same workflow; last green {run["last_green"]} -> {a.out / "run.json"}')
     if run.get('repo_api'):
         print(f'note: requested {run["repo"]}, the API names it {run["repo_api"]} (renamed or transferred)')
+    for j in (run['attempts'][0]['jobs'] if run['attempts'] else []):
+        if j.get('queued_for_s') is not None:
+            m, s = divmod(j['queued_for_s'], 60)
+            print(f'note: job {j["name"]} never started on a runner; its {m // 60}h{m % 60:02d}m{s:02d}s between start and completion is '
+                  'time waiting for a runner, not time running', file=sys.stderr)
     if run['attempts'] and not [j for j in run['attempts'][0]['jobs'] if j.get('conclusion') not in ('skipped', None) and not j.get('never_started')]:
         said = [a['message'] for j in run['attempts'][0]['jobs'] for a in j.get('annotations', [])]
         print(f'WARNING: the run concluded {r["conclusion"]} but no job ran on a runner (a workflow file error, a startup failure, a '

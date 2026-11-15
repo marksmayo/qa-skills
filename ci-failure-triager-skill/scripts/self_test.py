@@ -97,7 +97,8 @@ def triage_from(run: dict, cands: list[dict]) -> dict:
         cls = c['classification']
         t = {'id': f['id'], 'job': f['job'], 'step': f['step'], 'kind': f['kind'], 'test_id': f['test_id'], 'message': f['message'],
              'classification': cls, 'confidence': c['confidence'], 'rule': c['rule'],
-             'signals': {k: c['signals'][k] for k in ('signatures', 'date_markers', 'rerun', 'step_kind', 'consequence_of', 'history_same_commit')},
+             'signals': {k: c['signals'][k] for k in ('signatures', 'date_markers', 'rerun', 'step_kind', 'consequence_of', 'history_same_commit', 'queued_for_s')
+                         if k in c['signals']},
              'log_excerpt': f['log_excerpt'], 'owning_change': {'status': 'not_identified', 'basis': 'no repository in this test'},
              'priority': 'P1' if cls == 'real' else None, 'next_action': 'see the rule'}
         if cls == 'real':
@@ -233,8 +234,9 @@ def never_started_checks(fails: list) -> None:
         s(raw / 'run.json', {'id': 900, 'head_sha': SHA, 'head_branch': 'main', 'event': 'schedule', 'run_attempt': 1, 'workflow_id': 9,
                              'path': '.github/workflows/weekly.yml', 'created_at': '2026-03-02T10:00:00Z', 'run_started_at': '2026-03-02T10:00:00Z',
                              'conclusion': 'failure', 'html_url': 'https://ci.example.test/run/900', 'repository': {'full_name': 'acme/fares'}})
-        s(raw / 'attempts' / '1' / 'jobs.json', {'jobs': [{'id': 91, 'name': 'refresh', 'conclusion': 'failure', 'started_at': '2026-03-02T10:00:01Z',
-                                                          'completed_at': '2026-03-02T10:00:03Z', 'steps': [], 'runner_name': '', 'runner_id': 0,
+        s(raw / 'attempts' / '1' / 'jobs.json', {'jobs': [{'id': 91, 'name': 'refresh', 'conclusion': 'failure', 'created_at': '2026-03-02T10:00:01Z',
+                                                          'started_at': '2026-03-02T10:00:01Z',
+                                                          'completed_at': '2026-03-02T10:16:17Z', 'steps': [], 'runner_name': '', 'runner_id': 0,
                                                           'html_url': 'https://ci.example.test/job/91'}]})
         s(raw / 'logs' / '91.error.json', {'status': 'unavailable', 'http_status': 404, 'error': 'HTTP 404: not found'})
         s(raw / 'annotations' / '91.json', [{'path': '.github', 'start_line': 1, 'annotation_level': 'failure', 'title': '', 'message': NOT_STARTED}])
@@ -256,6 +258,12 @@ def never_started_checks(fails: list) -> None:
         if status != 'not_run' or NOT_STARTED[:40] not in (why or ''):
             fails.append(f'never started: run_status should be not_run with the annotation as the reason (got {status}, {why!r})')
         cands = candidates(run, RUN)
+        # its 16m16s "duration" is time spent waiting for a runner, never time running: say so
+        if job.get('queued_for_s') != 976 or cands[0]['signals'].get('queued_for_s') != 976 \
+                or not all(w in cands[0]['failure']['message'] for w in ('16m16s', 'waiting for a runner')):
+            fails.append(f'never started: the 16m16s between start and completion is queue time and must be named as such '
+                         f'(job queued_for_s {job.get("queued_for_s")}, signals {cands[0]["signals"].get("queued_for_s")}, '
+                         f'message {cands[0]["failure"]["message"]!r})')
         got = [(c['classification'], c['confidence'], [h['id'] for h in c['signals']['signatures']]) for c in cands]
         if got != [('environment', 'indicated', ['ENV-NOT-STARTED'])]:
             fails.append(f'never started: the failure is environment, indicated, by ENV-NOT-STARTED (got {got})')
@@ -275,6 +283,11 @@ def never_started_checks(fails: list) -> None:
         rc, out = validate(bad, td)
         if rc == 0 or 'run_status' not in out:
             fails.append(f'never started: run_status partial for a run whose jobs never started not caught:\n{out}')
+        bad = copy.deepcopy(done)
+        bad['failures'][0]['signals']['queued_for_s'] = 7010
+        rc, out = validate(bad, td)
+        if rc == 0 or 'queued_for_s' not in out:
+            fails.append(f'never started: a queue time that differs from the run not caught:\n{out}')
         bad = copy.deepcopy(done)
         bad['run_status_reason'] = 'The jobs failed early for some reason.'
         rc, out = validate(bad, td)

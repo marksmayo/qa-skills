@@ -130,7 +130,8 @@ def signals(f: dict, run: dict, run_dir: Path, quoted: list[dict] | None = None)
             'signatures': hits, 'date_markers': markers, 'run_date': run_date, 'rerun': rerun, 'rerun_attempt': last['n'] if last['n'] > 1 else None,
             'history_same_commit': hist, 'history_passed_same_commit': any(x['job'] == 'success' for x in hist),
             'step_kind': kind, 'failure_type': f.get('failure_type'), 'log_status': f.get('log_status', 'fetched'),
-            'consequence_of': f.get('consequence_of') or [], **({'annotations': f['annotations']} if f.get('annotations') else {})}
+            'consequence_of': f.get('consequence_of') or [], **({'annotations': f['annotations']} if f.get('annotations') else {}),
+            **({'queued_for_s': f['queued_for_s']} if f.get('queued_for_s') is not None else {})}
 
 
 def decide(sg: dict, owner: dict | None) -> tuple[str, str, str]:

@@ -90,6 +90,13 @@ def frames(text: str) -> list[dict]:
     return out
 
 
+def hms(seconds: int) -> str:
+    """976 -> 16m16s, 7010 -> 1h56m50s, 2 -> 2s."""
+    h, rest = divmod(int(seconds), 3600)
+    m, sec = divmod(rest, 60)
+    return (f'{h}h{m:02d}m{sec:02d}s' if h else f'{m}m{sec:02d}s' if m else f'{sec}s')
+
+
 def step_sections(lines: list[str]) -> list[dict]:
     """Each step's block in a job log, 1-based: GitHub `##[group]Run ...` groups and Azure `##[section]Starting: ...`.
 
@@ -407,7 +414,9 @@ def extract(run_dir: Path, run: dict, attempt: int) -> list[dict]:
         log_status = j.get('log_status') or ('fetched' if lines else 'missing')
         base = {'job': j['name'], 'job_id': j['id'], 'log_status': log_status,
                 # the CI's own explanation of the job (check-run annotations): quoted, untrusted text
-                **({'annotations': [redact(a['message'])[:500] for a in j['annotations']]} if j.get('annotations') else {})}
+                **({'annotations': [redact(a['message'])[:500] for a in j['annotations']]} if j.get('annotations') else {}),
+                # a never-started job's start-to-completion time is queue time, not run time
+                **({'queued_for_s': j['queued_for_s']} if j.get('never_started') and j.get('queued_for_s') is not None else {})}
         cases = []
         for x in j.get('junit', []):
             cs, _ = parse_junit(run_dir / x, f'A{attempt}')
@@ -445,7 +454,9 @@ def extract(run_dir: Path, run: dict, attempt: int) -> list[dict]:
             out.append(f)
         if not cases and not failed_steps:
             out.append({**base, 'step': None, 'kind': 'step', 'source': 'log', 'step_kind': 'other', 'test_id': None, 'test_file': None, 'failure_type': 'job',
-                        'message': (f'job concluded {j["conclusion"]} and never started on a runner (no steps, no log)' if j.get('never_started')
+                        'message': (f'job concluded {j["conclusion"]} and never started on a runner (no steps, no log)'
+                                    + (f'; its {hms(j["queued_for_s"])} between start and completion is time waiting for a runner, not time running'
+                                       if j.get('queued_for_s') is not None else '') if j.get('never_started')
                                     else f'job concluded {j["conclusion"]} with no failed step'), 'frames': [],
                         'log_excerpt': {'path': j.get('log'), 'lines': excerpt(lines, max(1, len(lines) - 7), len(lines), 8) if lines else []}})
     for i, f in enumerate(out, 1):
