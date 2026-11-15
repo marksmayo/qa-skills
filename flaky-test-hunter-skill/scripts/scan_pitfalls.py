@@ -95,7 +95,7 @@ def pytest_collection(root: Path) -> dict:
     return {}
 
 
-def collection_excluded(root: Path, all_files: list[Path] | None = None, data: dict | None = None) -> list[str]:
+def collection_excluded(root: Path, all_files: list[Path] | None = None, data: dict | None = None, rel_fn=None) -> list[str]:
     """Python files the test-name patterns call tests but pytest's configuration never collects: outside every
     `testpaths` entry, or (with no testpaths) named outside `python_files` and not inside a test directory. A root
     script named *_test.py is then product tooling, not a test, and gets only the source-scope checks."""
@@ -109,7 +109,7 @@ def collection_excluded(root: Path, all_files: list[Path] | None = None, data: d
     for p in all_files if all_files is not None else files(root):
         if p.suffix != '.py':
             continue
-        rel = p.relative_to(root).as_posix()
+        rel = rel_fn(p) if rel_fn else p.relative_to(root).as_posix()
         if not any(rx.search(rel) for rx in test_rx):
             continue
         if cfg['testpaths']:
@@ -296,7 +296,7 @@ def unique_name_only(lines: list[str], i: int, lang: str) -> bool:
                               not ASSERTISH.search(statement(lines, k, lang)) for k in uses)
 
 
-def helper_programs(root: Path, data: dict, all_files: list[Path] | None = None) -> set[str]:
+def helper_programs(root: Path, data: dict, all_files: list[Path] | None = None, read_text=None, rel=None) -> set[str]:
     """Files in test directories that are programs the tests launch, not tests: a main entry point and no test in
     the file (a fake server binary under tests/fixtures/, a Python script run as a child). They get only the source
     checks, so their sleeps and clocks are not reported as test smells."""
@@ -306,13 +306,18 @@ def helper_programs(root: Path, data: dict, all_files: list[Path] | None = None)
         lang = data['language_by_suffix'].get(p.suffix)
         if lang not in ('rust', 'python', 'go'):
             continue
-        rel = p.relative_to(root).as_posix()
-        if not any(rx.search(rel) for rx in test_rx):
+        rel_s = rel(p) if rel else p.relative_to(root).as_posix()
+        if not any(rx.search(rel_s) for rx in test_rx):
             continue
-        try:
-            text = p.read_text(encoding='utf-8', errors='replace')
-        except OSError:
-            continue
+        if read_text is not None:                      # the caller's cache: each file is read once per scan
+            text = read_text(p)
+            if text is None:
+                continue
+        else:
+            try:
+                text = p.read_text(encoding='utf-8', errors='replace')
+            except OSError:
+                continue
         if lang == 'rust':
             main = re.search(r'(?m)^\s*(?:pub\s+)?(?:async\s+)?fn\s+main\s*\(', text)
             tests = RUST_TEST_ATTR.search(text)
@@ -323,7 +328,7 @@ def helper_programs(root: Path, data: dict, all_files: list[Path] | None = None)
             main = re.search(r'(?m)^func\s+main\s*\(', text)
             tests = re.search(r'(?m)^func\s+(?:Test|Benchmark|Fuzz|Example)', text)
         if main and not tests:
-            out.add(rel)
+            out.add(rel_s)
     return out
 
 
@@ -416,11 +421,11 @@ def first_match(rx: re.Pattern, lines: list[str]) -> int | None:
     return None
 
 
-def setup_files(root: Path, all_files: list[Path]) -> tuple[set[str], dict[str, str]]:
+def setup_files(root: Path, all_files: list[Path], rel_of=None) -> tuple[set[str], dict[str, str]]:
     """Setup files (named in a Vitest/Jest config or package.json, or by convention) and each config's pool."""
     setups, pools = set(), {}
     for p in all_files:
-        rel = p.relative_to(root).as_posix()
+        rel = rel_of(p) if rel_of else p.relative_to(root).as_posix()
         if SETUP_NAME.search(rel):
             setups.add(rel)
         if not (CONFIG_NAME.search(rel) or rel == 'package.json'):
@@ -484,18 +489,35 @@ def scan(root: Path, data: dict) -> list[dict]:
     project = [s for s in data['smells'] if s.get('scope') == 'thread_setup']
     reload_targets = [s for s in data['smells'] if s.get('scope') == 'reload_target']
     all_files = list(files(root))
-    not_collected = set(collection_excluded(root, all_files, data))
-    helpers = helper_programs(root, data, all_files)
-    setups, pools = setup_files(root, all_files)
+    rels: dict[Path, str] = {}
+
+    def rel_of(p: Path) -> str:                  # each file's relative path, worked out once per scan
+        r = rels.get(p)
+        if r is None:
+            r = rels[p] = p.relative_to(root).as_posix()
+        return r
+    not_collected = set(collection_excluded(root, all_files, data, rel_of))
+    raw: dict[str, str | None] = {}
+
+    def read_raw(p: Path) -> str | None:
+        rel = rel_of(p)
+        if rel not in raw:
+            try:
+                raw[rel] = p.read_text(encoding='utf-8', errors='replace')
+            except OSError:
+                raw[rel] = None
+        return raw[rel]
+    helpers = helper_programs(root, data, all_files, read_raw, rel_of)
+    setups, pools = setup_files(root, all_files, rel_of)
     texts: dict[str, list[str]] = {}
 
     def read(p: Path) -> list[str] | None:
-        rel = p.relative_to(root).as_posix()
+        rel = rel_of(p)
         if rel not in texts:
-            try:
-                texts[rel] = p.read_text(encoding='utf-8', errors='replace').splitlines()
-            except OSError:
+            text = read_raw(p)
+            if text is None:
                 return None
+            texts[rel] = text.splitlines()
         return texts[rel]
 
     # global mitigations: a setup file that stubs the risk for every test
@@ -511,26 +533,28 @@ def scan(root: Path, data: dict) -> list[dict]:
                 break
 
     out = []
+    by_lang: dict[str, list[dict]] = {}
     for p in all_files:
         lang = data['language_by_suffix'].get(p.suffix)
         if not lang:
             continue
-        rel = p.relative_to(root).as_posix()
+        rel = rel_of(p)
         is_test = any(rx.search(rel) for rx in test_rx) and rel not in not_collected and rel not in helpers
         lines = read(p)
         if lines is None:
             continue
         # Rust unit tests live in #[cfg(test)] modules of source files: those lines are test code
         test_lines = rust_test_lines(lines) if lang == 'rust' and not is_test else set()
+        lang_smells = by_lang.get(lang)
+        if lang_smells is None:                  # the line smells of this language, in catalogue order
+            lang_smells = by_lang[lang] = [sm for sm in smells if lang in sm['languages']]
         local_mit, has_req, has_skip, once = {}, {}, {}, set()
         for i, line in enumerate(lines):
             s = line.strip()
             if s.startswith(('#', '//', '*', '/*')) and not s.startswith(('#[', '#![')):
                 continue
             line_test = is_test or i in test_lines
-            for sm in smells:
-                if lang not in sm['languages']:
-                    continue
+            for sm in lang_smells:
                 if (sm.get('scope') == 'source') == line_test:
                     continue
                 if sm.get('code_only'):
@@ -680,16 +704,24 @@ def suite_inventory(root: Path, data: dict | None = None) -> list[dict]:
             rust = None
     test_rx = [re.compile(p) for p in data['test_file_patterns']]
     all_files = list(files(root))
-    helpers = helper_programs(root, data, all_files)
+    raw: dict[Path, str | None] = {}
+
+    def read_raw(p: Path) -> str | None:
+        if p not in raw:
+            try:
+                raw[p] = p.read_text(encoding='utf-8', errors='replace')
+            except OSError:
+                raw[p] = None
+        return raw[p]
+    helpers = helper_programs(root, data, all_files, read_raw)
     counts: dict[str, int] = {}
     for p in all_files:
         lang = data['language_by_suffix'].get(p.suffix)
         rel = p.relative_to(root).as_posix()
         if lang not in STATIC_TEST or rel in helpers or not any(rx.search(rel) for rx in test_rx):
             continue
-        try:
-            text = p.read_text(encoding='utf-8', errors='replace')
-        except OSError:
+        text = read_raw(p)
+        if text is None:
             continue
         counts[lang] = counts.get(lang, 0) + sum(bool(STATIC_TEST[lang].match(l)) for l in text.splitlines())
     out = []
@@ -1086,7 +1118,45 @@ def self_test() -> int:
         for rel, text in RUST_TIDE.items():
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(text, encoding='utf-8')
-        hits = scan(root, data)
+        reads: dict[str, int] = {}
+        real_read_text = Path.read_text
+
+        def counting_read_text(self, *a, **k):
+            if sys._getframe(1).f_code.co_filename == __file__:   # this module's reads, not the shared readers'
+                reads[self.as_posix()] = reads.get(self.as_posix(), 0) + 1
+            return real_read_text(self, *a, **k)
+        real_relative_to, relcalls = Path.relative_to, []
+
+        def counting_relative_to(self, *a, **k):
+            if sys._getframe(1).f_code.co_filename == __file__:
+                relcalls.append(self)
+            return real_relative_to(self, *a, **k)
+        Path.read_text = counting_read_text
+        Path.relative_to = counting_relative_to
+        try:
+            hits = scan(root, data)
+            n_files = sum(1 for _ in files(root))
+            per_file = len(relcalls) / max(1, n_files)
+            Path.relative_to = real_relative_to
+            reread = {k.rsplit('/', 2)[-1]: v for k, v in reads.items() if v > 1}
+            reads.clear()
+            suite_inventory(root)
+            reread_inv = {k.rsplit('/', 2)[-1]: v for k, v in reads.items() if v > 1}
+        finally:
+            Path.read_text = real_read_text
+            Path.relative_to = real_relative_to
+        if reread or reread_inv:
+            lines.append(f'one scan reads each file once: FAILED, read more than once {reread} (scan), '
+                         f'{reread_inv} (suite inventory)')
+            ok = False
+        else:
+            lines.append('one scan reads each file once: ok')
+        if per_file > 1.0:
+            lines.append(f'one scan works out each relative path once: FAILED, {len(relcalls)} relative_to calls '
+                         f'for {n_files} files')
+            ok = False
+        else:
+            lines.append('one scan works out each relative path once: ok')
         got = {(h['smell'], h['file'], h['test']) for h in hits}
         want = {('shared-env-rust', 'src/lib.rs', 'reads_mode_from_env'),
                 ('wall-time-count-assertion', 'tests/cli.rs', 'logs_samples_for_a_duration'),
