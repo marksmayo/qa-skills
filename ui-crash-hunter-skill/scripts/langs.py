@@ -27,27 +27,10 @@ import lang_census  # noqa: E402  (shared copy; edit shared/scripts/lang_census.
 ANALYSED = {'JavaScript', 'TypeScript', 'Vue', 'Svelte', 'Kotlin', 'Java', 'Swift', 'Dart'}
 
 
-# dependency trees are excluded by name; counting their files means walking every installed package (thousands of
-# files beside a 30-file app), so they are listed without being walked (source_files_counted: false)
-DEPENDENCY_TREES = {'node_modules', 'bower_components', 'jspm_packages'}
-
-
 def census(root: Path) -> dict:
-    """lang_census.census, without descending into dependency trees only to count their files."""
-    real = lang_census.count_sources
-
-    def count(d, cap: int = 200000) -> int:
-        return 0 if Path(d).name in DEPENDENCY_TREES else real(d, cap)
-    lang_census.count_sources = count
-    try:
-        c = lang_census.census(root)
-    finally:
-        lang_census.count_sources = real
-    for e in c.get('excluded') or []:
-        if Path(e['path']).name in DEPENDENCY_TREES:
-            e['source_files'] = 0
-            e['source_files_counted'] = False
-    return c
+    """lang_census.census (dependency trees such as node_modules/ are listed without being walked:
+    source_files_counted: false)."""
+    return lang_census.census(root)
 
 
 def vendored_roots(root: Path, files=None) -> list[str]:
