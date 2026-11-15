@@ -8,13 +8,19 @@ Needs `pip install -r requirements.txt` and `playwright install chromium`, plus 
 `fetch_engines.py`. Everything after this step (normalize, merge, validate, render) is stdlib.
 
 Config (JSON):
-    targets            list of URLs (required) or "sitemap": URL
+    targets            list of URLs (required) or "sitemap": URL. A target may be {"url": u, "expect_status": 404}:
+                       an error template users reach (the not-found page) is then audited like any page; any
+                       other 4xx/5xx answer makes a page unreachable. The sample records each page's status.
     crawl              {"max_pages": 25, "same_origin": true, "max_loads": 100}; omit to audit only the targets.
                        The crawl prints each page it loads, loads at most max_loads (default 4 x max_pages) and
                        stops sooner once max_pages templates are found or max_pages loads in a row add none.
                        Non-HTML responses (a linked .txt, XML or JSON file) are skipped, not sampled.
                        "per_pattern": 2 loads at most that many pages of one URL shape (/region/*) while
                        links of an unseen shape wait; run.json crawl.patterns counts loads per shape.
+                       A path rule folds only the last segment of a nested path: give "routes" (the app's
+                       route patterns, ["/", "/about", "/{slug}"]; [id] and :id also read) or "next_app" (a
+                       Next.js project folder, read with next_app.py) for root-level dynamic routes; without
+                       them root-level siblings fold into /* once more than "fold_root_after" (8) are seen.
     keyboard           {"max_presses": 2000}: hard cap on Tab presses per traversal (the budget grows while
                        presses keep reaching new elements); a traversal stopped by it is "partial".
     settle_seconds     10: most time spent settling each load (network quiet 500 ms, then a quiet DOM).
@@ -53,7 +59,10 @@ Config (JSON):
                        `python browser_harness.py capture-session --url <app> --out <file outside the repo>`;
                        its sessionStorage is put back on its origin before the app's scripts run. run.json
                        records only that a session was used (auth.kind), never its contents or path
-    states             [{"url", "name", "viewport"?, "actions": [...], "probes"?: [...]}]
+    states             [{"url", "name", "viewport"?, "actions": [...], "probes"?: [...], "keyboard_start"?}]
+                       each state records focus_after_actions (where focus is once its actions are done) and
+                       its final_url; "keyboard_start": "active_element" starts its keyboard probe from the
+                       focused element ("top": always from the top of the document)
                        actions: {"click": sel} {"hover": sel} {"press": key} {"fill": sel, "value"|"env"}
                                 {"wait": ms} {"wait_for": sel}
     critical_paths     [{"name", "steps": [{"url", "state"?, "label"?}]}]
@@ -92,6 +101,9 @@ NARROW_ONLY = {'reflow'}
 # itself 20 more presses each time a press reaches an element it has not seen (a menu that :focus-within reveals
 # adds its links to the Tab order only once focus enters it), up to this hard cap ("keyboard": {"max_presses": N}).
 KEYBOARD_MAX_PRESSES = 2000
+# focused/unfocused crops kept per keyboard traversal for stops whose indicator changed fewer pixels than half the
+# perimeter (no or a weak indicator), so the agent can look at them
+FOCUS_SHOTS_MAX = 30
 ENGINE_NAMES = ['axe-core', 'ibm-equal-access', 'htmlcs', 'vnu']
 AXE_TAGS = {'2.0': ['wcag2a', 'wcag2aa', 'wcag2aaa'], '2.1': ['wcag2a', 'wcag2aa', 'wcag2aaa', 'wcag21a', 'wcag21aa'],
             '2.2': ['wcag2a', 'wcag2aa', 'wcag2aaa', 'wcag21a', 'wcag21aa', 'wcag22aa']}
@@ -118,6 +130,25 @@ def is_loopback(url: str) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+def normalise_targets(targets) -> tuple[list[str], dict[str, int]]:
+    """Target URLs, and the HTTP status each target listed as {"url", "expect_status"} is expected to answer with.
+
+    A not-found page (or another error template users really reach) answers 404 or 410: listed with
+    "expect_status": 404 it is audited like any page, with its status recorded; without it, a 4xx/5xx answer
+    makes the page unreachable."""
+    urls, expect = [], {}
+    for t in targets or []:
+        if isinstance(t, dict):
+            if not t.get('url'):
+                raise ValueError(f'a target object needs "url": {t}')
+            urls.append(t['url'])
+            if t.get('expect_status') is not None:
+                expect[urldefrag(t['url'])[0]] = int(t['expect_status'])
+        else:
+            urls.append(t)
+    return urls, expect
 
 
 def parse_vp(s: str) -> tuple[int, int]:
@@ -150,14 +181,92 @@ def crawl_pattern(u: str) -> str:
     return '/' + '/'.join(segs) + (('?' + keys) if keys else '')
 
 
-def crawl_pick(queue: list[str], loaded: dict[str, int], per_pattern: int = CRAWL_PER_PATTERN, must=()) -> int:
+# Root-level siblings (/heron-lake, /marsh-walk, ...) are one collection under a root dynamic segment (an App
+# Router app/[slug]/page) once more than this many distinct ones are seen; until then each is its own shape, as a
+# handful of root pages (/about, /contact) are different templates. File names (/index.html) never fold.
+# "crawl": {"fold_root_after": N} changes it; route patterns ("routes" or "next_app") replace the guess.
+FOLD_ROOT_AFTER = 8
+DYNAMIC_SEG = re.compile(r'[{\[:]')
+
+
+def route_regex(route: str):
+    """A route pattern as the app declares it (/{slug}, /guides/{parts*}, /blog/[id] or /blog/:id) as a regex."""
+    out = ''
+    for seg in [x for x in route.strip('/').split('/') if x]:
+        if re.fullmatch(r'\{[^}]+\*\}|\[\[?\.\.\.[^\]]+\]\]?|:[A-Za-z_]\w*[*+]', seg):
+            out += r'(?:/.+)?' if seg.startswith('[[') else r'/.+'
+        elif re.fullmatch(r'\{[^}]+\}|\[[^\]]+\]|:[A-Za-z_]\w*', seg):
+            out += r'/[^/]+'
+        else:
+            out += '/' + re.escape(seg)
+    return re.compile('^' + (out or '/') + '/?$')
+
+
+class Shaper:
+    """The URL shape the crawl orders by (crawl_pattern), with the app's route patterns when they are known
+    (crawl.routes, or crawl.next_app read with next_app.py): a URL takes the static route it equals, else the
+    dynamic route it matches, so /heron-lake and /marsh-walk share /{slug} while /about keeps its own.
+    Without routes, root-level siblings fold into /* once more than fold_root_after of them are observed."""
+
+    def __init__(self, routes=None, fold_root_after: int = FOLD_ROOT_AFTER):
+        routes = list(dict.fromkeys(routes or []))
+        dyn = [r for r in routes if DYNAMIC_SEG.search(r)]
+        self.static = {'/' + r.strip('/') for r in routes if r not in dyn}
+        # more literal segments first: /guides/{x} before /{slug}
+        self.dynamic = sorted(((r, route_regex(r)) for r in dyn),
+                              key=lambda x: (-len([q for q in x[0].split('/') if q and not DYNAMIC_SEG.search(q)]), x[0]))
+        self.routes = routes
+        self.fold_root_after = fold_root_after
+        self.roots: set[str] = set()
+
+    def observe(self, url: str):
+        segs = [x for x in (urlparse(url).path or '/').split('/') if x]
+        if len(segs) == 1 and '.' not in segs[0]:
+            self.roots.add(segs[0])
+
+    @property
+    def folded(self) -> bool:
+        return not self.routes and len(self.roots) > self.fold_root_after
+
+    def shape(self, url: str) -> str:
+        if self.routes:
+            path = '/' + (urlparse(url).path or '/').strip('/')
+            if path in self.static:
+                return path
+            for r, rx in self.dynamic:
+                if rx.match(path):
+                    return r
+            return crawl_pattern(url)
+        segs = [x for x in (urlparse(url).path or '/').split('/') if x]
+        if self.folded and len(segs) == 1 and '.' not in segs[0] and not urlparse(url).query:
+            return '/*'
+        return crawl_pattern(url)
+
+
+def read_routes(repo) -> list[str]:
+    """Page route patterns of the Next.js project(s) in repo, as URLs ({x} and {x*}), via the shared next_app.py."""
+    import next_app
+    info = next_app.read_next_app(str(repo))
+    out = []
+    for proj in info.get('projects') or []:
+        base = (((proj.get('config') or {}).get('settings') or {}).get('basePath'))
+        base = base.get('value') if isinstance(base, dict) else base
+        base = base.rstrip('/') if isinstance(base, str) and base.startswith('/') else ''
+        for r in proj.get('routes') or []:
+            if r.get('kind') in ('page', 'pages_page') and r.get('url'):
+                out.append((base + r['url']).rstrip('/') or '/' if base else r['url'])
+    return sorted(dict.fromkeys(out))
+
+
+def crawl_pick(queue: list[str], loaded: dict[str, int], per_pattern: int = CRAWL_PER_PATTERN, must=(), shape=None) -> int:
     """Index of the next URL to load: a listed target first, then the first URL whose shape has been loaded fewer
     than per_pattern times, else the head of the queue (every shape is saturated: plain breadth-first order)."""
+    shape = shape or crawl_pattern
     for i, u in enumerate(queue):
         if u in must:
             return i
     for i, u in enumerate(queue):
-        if loaded.get(crawl_pattern(u), 0) < per_pattern:
+        if loaded.get(shape(u), 0) < per_pattern:
             return i
     return 0
 
@@ -223,6 +332,24 @@ def scroll_limitation(pages: list[dict]) -> str | None:
             'of each panel: findings on content further down have screenshots that do not show it, and the visual '
             'checks (contrast estimates, focus indicators, reflow) saw only what was in view. Scroll the panel and '
             'check that content by hand, or capture the element.')
+
+
+def third_party_limitation(blocked: list[dict]) -> str | None:
+    """The limitation to report when third-party requests were blocked (third_party "block"): that content (an
+    embedded map, a chat widget, an ad slot, a consent manager loaded from a CDN) was absent from every check."""
+    hosts: dict[str, int] = {}
+    for b in blocked or []:
+        if b.get('reason') == 'third_party':
+            h = urlparse(b.get('url') or '').hostname or '?'
+            hosts[h] = hosts.get(h, 0) + 1
+    if not hosts:
+        return None
+    top = sorted(hosts.items(), key=lambda x: (-x[1], x[0]))
+    n = sum(hosts.values())
+    return (f'{n} third-party request(s) to {len(hosts)} host(s) were blocked ({", ".join(f"{h} ({c})" for h, c in top[:8])}'
+            + (f', and {len(top) - 8} more' if len(top) > 8 else '') + '). Whatever they load (embedded players, maps, chat '
+            'or consent widgets, ads, analytics) was absent from every check; audit it with third_party "allow" or '
+            'allowed_hosts if it is part of the experience under test.')
 
 
 # ---------------------------------------------------------------- PNG diff (stdlib)
@@ -291,7 +418,8 @@ class Runner:
         self.third_party = cfg.get('third_party', 'block')
         self.bypass_csp = bool(cfg.get('bypass_csp', True))
         self.requests = {'seen': 0, 'sent': 0}   # every request the pages made, and those let out (the rest are in blocked)
-        targets = cfg.get('targets') if isinstance(cfg.get('targets'), list) else []
+        self.targets, self.expect_status = normalise_targets(cfg.get('targets') if isinstance(cfg.get('targets'), list) else [])
+        targets = self.targets
         self.site_hosts = {(urlparse(u).hostname or '').lower() for u in targets + [cfg.get('sitemap') or '']} - {''}
         self.site_hosts |= {(urlparse(s.get('url', '')).hostname or '').lower() for s in cfg.get('states') or []} - {''}
         self.site_hosts.add((urlparse(((cfg.get('auth') or {}).get('login') or {}).get('url', '')).hostname or '').lower())
@@ -309,6 +437,10 @@ class Runner:
         self._inflight: dict[int, dict] = {}
         self.crawl_info: dict | None = None
         self.skipped_non_html: list[dict] = []
+        self.route_source: str | None = None
+        self._focus_shots: list | None = None
+        self._shots_dir: Path = out / 'screenshots'
+        self._focus_tag = ''
 
     # engines -------------------------------------------------------------
     def prepare_engines(self):
@@ -390,11 +522,17 @@ class Runner:
                 time.sleep(delay)
                 continue
             ctype = ((resp.headers.get('content-type') if resp else '') or '').split(';')[0].strip().lower()
+            # a listed error template (expect_status: 404) is a page to audit; any other 4xx/5xx is unreachable
+            expected = self.expect_status.get(urldefrag(url)[0])
+            ok = status is None or status < 400 or status == expected
+            extra = {'expected_status': expected} if expected is not None else {}
+            if expected is not None and status != expected:
+                self.events.append({'url': url, 'event': f'expected HTTP {expected}, got {status}', 'at': now()})
             if ctype and ctype not in HTML_TYPES:
                 # a text, XML or JSON file linked from a page: nothing to audit, and no settling to wait for
-                return {'ok': status is None or status < 400, 'status': status, 'final_url': page.url, 'content_type': ctype}
+                return {'ok': ok, 'status': status, 'final_url': page.url, 'content_type': ctype, **extra}
             self.settle(page)
-            return {'ok': status is None or status < 400, 'status': status, 'final_url': page.url, 'content_type': ctype or None}
+            return {'ok': ok, 'status': status, 'final_url': page.url, 'content_type': ctype or None, **extra}
         return {'ok': False, 'status': status, 'error': 'rate limited after retries'}
 
     def track(self, page):
@@ -589,7 +727,8 @@ class Runner:
             html_file.unlink(missing_ok=True)
 
     # probes --------------------------------------------------------------
-    def probe_keyboard(self, page, shots: Path, pid: str, from_active: bool = False) -> dict:
+    def probe_keyboard(self, page, shots: Path, pid: str, from_active: bool = False, start_at: str | None = None) -> dict:
+        self._focus_shots, self._shots_dir, self._focus_tag = [], shots, pid
         targets = page.evaluate('() => window.__qa.focusTargets()')
         focusable = targets['focusable']
         # Sequential focus starts from the top of the document: an invisible starting point is focused at the start
@@ -598,11 +737,22 @@ class Runner:
         # In a named state with a modal open and focus inside it (a search dialog opened with a shortcut), Tab
         # starts from the focused element instead: starting at the top of the body would tab through the page
         # behind the overlay, which a keyboard user never reaches.
+        # A state with "keyboard_start": "active_element" starts from wherever its actions left focus (after a
+        # client-side navigation, a focus manager may move it to <main> or a heading): the next Tab is what a
+        # keyboard user reaches next. With nothing focused (the body), it starts from the top and says so.
         modal = page.evaluate('() => window.__qa.openModal()') if from_active else None
-        start = 'active_element' if modal and modal.get('focus_inside') else 'top_of_document'
+        start_note = None
+        if start_at == 'active_element' and not (modal and modal.get('focus_inside')):
+            modal = None
+            if page.evaluate('() => window.__qa.activeInfo()'):
+                start = 'active_element'
+            else:
+                start, start_note = 'top_of_document', 'keyboard_start active_element: nothing was focused after the actions (body)'
+        else:
+            start = 'active_element' if modal and modal.get('focus_inside') else 'top_of_document'
         if start == 'top_of_document' and not page.evaluate('() => window.__qa.focusStart()'):
             raise RuntimeError('could not set the focus starting point at the top of the document')
-        if start == 'active_element':
+        if start == 'active_element' and modal:
             # only the modal's own controls are expected to be reachable while it is open
             focusable = [f for f in focusable if (f.get('xpath') or '').startswith(modal['xpath'] + '/')]
         hard_cap = max(1, int((self.cfg.get('keyboard') or {}).get('max_presses', KEYBOARD_MAX_PRESSES)))
@@ -690,6 +840,10 @@ class Runner:
             stopped = 'no_tab_stops'
         partial = stopped == 'press_limit' and (bool(unreached) or len(moves) - last_new < 15)
         hover_only = [] if trap or start == 'active_element' else self.hover_only_menus(page, seen)
+        if start == 'active_element' and not modal:
+            # started part-way down the page: what lies before the start point was not traversed, so nothing
+            # is "unreached" and the skip link is not measured
+            unreached = []
         pointer_only = targets['pointer_only'][:50]
         self.add_listeners(page, pointer_only)
         positive = [s for s in stops if s.get('tabindex') and s['tabindex'].lstrip('-').isdigit() and int(s['tabindex']) > 0]
@@ -700,8 +854,9 @@ class Runner:
         first = stops[0] if stops else None
         skip = bool(first and re.search(r'href="#', first.get('html') or '') and re.search(r'skip|main|content', first.get('html') or '', re.I))
         if start == 'active_element':
-            skip = None  # not measured: the traversal started inside the modal
-            pointer_only = [p for p in pointer_only if (p.get('xpath') or '').startswith(modal['xpath'] + '/')]
+            skip = None  # not measured: the traversal started inside the modal or from the focused element
+            if modal:
+                pointer_only = [p for p in pointer_only if (p.get('xpath') or '').startswith(modal['xpath'] + '/')]
         status = {}
         if partial:
             status = {'status': 'partial',
@@ -712,6 +867,8 @@ class Runner:
                 'stops': stops, 'focusable_count': len(focusable), 'unreached': unreached[:50],
                 'pointer_only': pointer_only, 'trap': trap, 'positive_tabindex': positive, 'jumps': jumps[:20],
                 'skip_link_first': skip, 'hover_only': hover_only, 'start': start,
+                **({'start_note': start_note} if start_note else {}),
+                **({'focus_screenshots': len(self._focus_shots)} if self._focus_shots else {}),
                 **({'modal': {k: modal.get(k) for k in ('xpath', 'selector', 'html')}} if modal else {})}
 
     def hover_only_menus(self, page, seen: set) -> list[dict]:
@@ -820,7 +977,9 @@ class Runner:
         return {'x': x, 'y': y, 'width': w, 'height': h} if w > 0 and h > 0 else None
 
     def start_indicator(self, page, info) -> dict:
-        """Screenshot the focused element; finish_indicator() takes the same area once focus has moved on."""
+        """Screenshot the focused element; finish_indicator() takes the same area once focus has moved on.
+        An inline element that wraps (a link over two lines) is measured per line box: its perimeter is the sum of
+        its fragments' perimeters, not that of the box round both lines, which also spans the text between them."""
         clip = self._clip(page, info['rect'])
         if not clip:
             return {'changed_px': None, 'perimeter': None, 'note': 'element outside the viewport'}
@@ -828,6 +987,9 @@ class Runner:
             info['_shot'] = (page.screenshot(clip=clip, animations='disabled', caret='hide'), clip, page.evaluate('() => scrollY'))
         except Exception as e:
             return {'changed_px': None, 'perimeter': None, 'note': type(e).__name__}
+        lines = [r for r in (info.get('rects') or []) if r.get('w', 0) > 0 and r.get('h', 0) > 0]
+        if len(lines) > 1:
+            return {'changed_px': None, 'perimeter': sum(2 * (r['w'] + r['h']) for r in lines), 'line_boxes': len(lines)}
         return {'changed_px': None, 'perimeter': 2 * (info['rect']['w'] + info['rect']['h'])}
 
     def finish_indicator(self, page, info):
@@ -842,7 +1004,18 @@ class Runner:
             plain = page.screenshot(clip=clip, animations='disabled', caret='hide')
             if now_y != sy:
                 page.evaluate('(y) => window.scrollTo(scrollX, y)', now_y)
-            info['indicator']['changed_px'] = changed_pixels(focused, plain)
+            ind = info['indicator']
+            ind['changed_px'] = changed_pixels(focused, plain)
+            # keep the focused and unfocused crops of a stop with no or a weak indicator, so the result can be
+            # checked by eye (capped per traversal; the clip is the element plus 4 px)
+            if ind['changed_px'] < (ind.get('perimeter') or 1) / 2 and self._focus_shots is not None and \
+                    len(self._focus_shots) < FOCUS_SHOTS_MAX:
+                k = len(self._focus_shots) + 1
+                base = f'{self._focus_tag}-focus{k:02d}'
+                (self._shots_dir / f'{base}.png').write_bytes(focused)
+                (self._shots_dir / f'{base}-unfocused.png').write_bytes(plain)
+                ind['screenshot'], ind['screenshot_unfocused'] = f'{base}.png', f'{base}-unfocused.png'
+                self._focus_shots.append(base)
         except Exception as e:
             info['indicator']['note'] = type(e).__name__
 
@@ -889,7 +1062,7 @@ class Runner:
         return page.evaluate('() => window.__qa.targetSize()')
 
     def probe_hover_focus(self, page) -> dict:
-        found, own_box = [], 0
+        found, own_box, skipped = [], 0, []
         cands = page.evaluate('() => window.__qa.hoverCandidates()')
         for c in cands:
             try:
@@ -922,10 +1095,20 @@ class Runner:
                 if len(found) >= 10:
                     break
             except Exception as e:
-                self.events.append({'url': page.url, 'event': f'hover probe skipped an element: {type(e).__name__}', 'at': now()})
+                # named, and the probe is partial: what this element shows on hover was not measured
+                skipped.append({'xpath': c.get('xpath'), 'selector': c.get('selector'), 'html': (c.get('html') or '')[:120],
+                                'error': f'{type(e).__name__}: {str(e).splitlines()[0][:160]}'})
+                self.events.append({'url': page.url, 'event': f"hover probe skipped {c.get('selector') or c.get('xpath')}: "
+                                                              f'{type(e).__name__}', 'at': now()})
         page.mouse.move(1, 1)
         # own_box_changes: elements that appeared only inside the hovered element's own box (not content on hover)
-        return {'checked': len(cands), 'popups': found, 'own_box_changes': own_box}
+        out = {'checked': len(cands) - len(skipped), 'candidates': len(cands), 'popups': found, 'own_box_changes': own_box,
+               'skipped': skipped}
+        if skipped:
+            out.update(status='partial', reason=(f'{len(skipped)} of {len(cands)} hover candidate(s) could not be hovered '
+                                                 f"({', '.join(x['selector'] or x['xpath'] or '?' for x in skipped[:3])}): "
+                                                 'content they show on hover or focus was not checked'))
+        return out
 
     def watch_motion(self, page) -> dict:
         # 2.2.2 concerns movement that lasts more than 5 seconds: compare 5.0 s and 7.5 s after load
@@ -971,8 +1154,23 @@ class Runner:
         return page.evaluate('() => window.__qa.media()')
 
     # exploration ---------------------------------------------------------
+    def shaper(self, crawl: dict) -> Shaper:
+        """crawl.routes (route patterns) or crawl.next_app (a Next.js project folder, read by next_app.py)."""
+        routes, self.route_source = list(crawl.get('routes') or []), None
+        if routes:
+            self.route_source = 'crawl.routes'
+        elif crawl.get('next_app'):
+            try:
+                routes = read_routes(crawl['next_app'])
+                self.route_source = 'next_app' if routes else None
+            except Exception as e:
+                self.events.append({'url': str(crawl['next_app']), 'event': f'route patterns unreadable: {type(e).__name__}: {e}', 'at': now()})
+            if not routes:
+                self.events.append({'url': str(crawl['next_app']), 'event': 'no page routes found; crawl shapes come from URL paths', 'at': now()})
+        return Shaper(routes, int(crawl.get('fold_root_after', FOLD_ROOT_AFTER)))
+
     def explore(self, browser) -> list[dict]:
-        targets = list(self.cfg.get('targets') or [])
+        targets = list(self.targets)
         if self.cfg.get('sitemap'):
             try:
                 xml = urllib.request.urlopen(self.cfg['sitemap'], timeout=30).read().decode('utf-8', 'replace')
@@ -995,6 +1193,9 @@ class Runner:
         since_new, stopped = 0, 'queue empty'
         per_pattern = int((crawl or {}).get('per_pattern', CRAWL_PER_PATTERN))
         shapes: dict[str, int] = {}
+        shaper = self.shaper(crawl or {})
+        for u in queue:
+            shaper.observe(u)
         while queue:
             if len(found) >= limit:
                 stopped = f'load limit ({limit}) reached'
@@ -1006,22 +1207,24 @@ class Runner:
                 if since_new >= max_pages:
                     stopped = f'no new template in the last {since_new} pages'
                     break
-            url = queue.pop(crawl_pick(queue, shapes, per_pattern, must - seen) if crawl else 0)
+            url = queue.pop(crawl_pick(queue, shapes, per_pattern, must - seen, shape=shaper.shape) if crawl else 0)
             if url in seen:
                 continue
             seen.add(url)
-            shapes[crawl_pattern(url)] = shapes.get(crawl_pattern(url), 0) + 1
+            shapes[shaper.shape(url)] = shapes.get(shaper.shape(url), 0) + 1
             print(f'[crawl {len(found) + 1}/{limit}] {url}', file=sys.stderr, flush=True)
             nav = self.goto(page, url)
             if not nav['ok']:
-                found.append({'url': url, 'ok': False, 'error': nav.get('error') or f"HTTP {nav.get('status')}"})
+                found.append({'url': url, 'ok': False, 'status': nav.get('status'),
+                              'error': nav.get('error') or f"HTTP {nav.get('status')}"})
                 continue
             if nav.get('content_type') and nav['content_type'] not in HTML_TYPES:
                 self.skipped_non_html.append({'url': url, 'content_type': nav['content_type']})
                 continue
             info = self.page_info(page)
             f = {'url': url, 'ok': True, 'final_url': nav.get('final_url'), 'title': info['title'],
-                 'template_sig': info['template'], 'captcha': info['captcha']}
+                 'template_sig': info['template'], 'captcha': info['captcha'], 'status': nav.get('status'),
+                 **({'expected_status': nav['expected_status']} if 'expected_status' in nav else {})}
             found.append(f)
             key = template_key(f)
             since_new = 0 if key not in templates else since_new + 1
@@ -1031,11 +1234,15 @@ class Runner:
                     link = urldefrag(link)[0]
                     if urlparse(link).netloc in origin and link not in seen and not NON_PAGE_LINK.search(urlparse(link).path):
                         queue.append(link)
+                        shaper.observe(link)
         ctx.close()
         self.crawl_info = {'loaded': len(found) + len(self.skipped_non_html), 'limit': limit, 'templates': len(templates),
                            'stopped': stopped if crawl else 'no crawl: listed targets only',
                            **({'per_pattern': per_pattern,
-                               'patterns': dict(sorted(shapes.items(), key=lambda x: (-x[1], x[0]))[:30])} if crawl else {}),
+                               'patterns': dict(sorted(shapes.items(), key=lambda x: (-x[1], x[0]))[:30]),
+                               'shapes_from': self.route_source or ('URL path; root-level siblings folded into /* (more than '
+                                                                    f'{shaper.fold_root_after} seen)' if shaper.folded else 'URL path'),
+                               **({'routes': shaper.routes[:100]} if shaper.routes else {})} if crawl else {}),
                            'skipped_non_html': self.skipped_non_html[:50]}
         print(f'[crawl] {self.crawl_info["loaded"]} loaded, {len(templates)} template(s); stopped: {self.crawl_info["stopped"]}',
               file=sys.stderr, flush=True)
@@ -1053,7 +1260,7 @@ class Runner:
         # Every page enters the sample once, labelled by how it entered: critical-path steps and the
         # explicitly listed targets always (template de-duplication never drops them), then one page
         # per template not yet covered (structured), then a seeded random share of what is left.
-        listed = {urldefrag(u)[0] for u in (self.cfg.get('targets') or [])}
+        listed = {urldefrag(u)[0] for u in self.targets}
         sample, chosen = [], set()
         for f in found:
             if f['ok'] and f['url'] in cp_urls and f['url'] not in chosen:
@@ -1106,11 +1313,11 @@ class Runner:
             self.events.append({'url': page.url, 'event': f'overlay dismissal failed: {type(e).__name__}', 'at': now()})
             return False
 
-    def run_probe(self, probe, page, browser, url, vp, shots, aria, tag, from_active: bool = False) -> dict:
+    def run_probe(self, probe, page, browser, url, vp, shots, aria, tag, from_active: bool = False, start_at: str | None = None) -> dict:
         t0 = time.time()
         try:
             if probe in ('keyboard', 'focus_visible'):
-                result = self.probe_keyboard(page, shots, tag, from_active=from_active)
+                result = self.probe_keyboard(page, shots, tag, from_active=from_active, start_at=start_at)
             elif probe == 'resize_text':
                 result = self.probe_resize_text(browser, url, shots, tag)
             elif probe == 'motion':
@@ -1123,6 +1330,10 @@ class Runner:
         except Exception as e:
             result = {'status': 'errored', 'reason': f'{type(e).__name__}: {str(e).splitlines()[0][:300]}'}
         result['seconds'] = round(time.time() - t0, 2)
+        # one line per probe: a page whose probes take a minute and a half no longer looks hung
+        print(f"  [{tag}] {probe}: {result['status']} in {result['seconds']:g}s"
+              + (f" ({result.get('reason', '')[:120]})" if result['status'] != 'ran' and result.get('reason') else ''),
+              file=sys.stderr, flush=True)
         return result
 
     # main loop -----------------------------------------------------------
@@ -1206,6 +1417,25 @@ class Runner:
             checks['viewports'][vp] = vc
         return checks
 
+    def focus_after(self, page, tag: str) -> dict | None:
+        """document.activeElement after a state's actions (None: the body), its indicator area and a crop of it."""
+        try:
+            info = page.evaluate('() => window.__qa.activeInfo()')
+        except Exception as e:
+            return {'error': type(e).__name__}
+        if not info:
+            return None
+        info = {k: info.get(k) for k in ('xpath', 'selector', 'sig', 'html', 'rect', 'tabindex', 'in_dialog', 'obscured')}
+        clip = self._clip(page, info['rect']) if info.get('rect') else None
+        if clip:
+            try:
+                name = f'{tag}-focus.png'
+                page.screenshot(path=str(self.out / 'screenshots' / name), clip=clip, animations='disabled', caret='hide')
+                info['screenshot'] = name
+            except Exception:
+                pass
+        return info
+
     def audit_state(self, browser, pg: dict, vp: str, st: dict) -> dict:
         tag = f"{pg['id']}__{vp}__{st['name']}"
         ctx = self.new_context(browser, vp)
@@ -1222,12 +1452,19 @@ class Runner:
         except Exception as e:
             out['error'] = f'state actions failed: {type(e).__name__}: {str(e).splitlines()[0][:200]}'
             ctx.close(); return out
+        # where focus is once the actions are done (after a client-side navigation: <main>, the new heading, the
+        # body?), with a crop of it, before anything else moves it
+        focus = self.focus_after(page, tag)
         page.screenshot(path=str(self.out / 'screenshots' / f'{tag}.png'), full_page=True)
         record = {'page': pg['id'], 'url': pg['url'], 'final_url': page.url, 'viewport': vp, 'state': st['name'],
-                  'screenshot': f'{tag}.png', 'engines': self.run_engines(page), 'probes': {}}
+                  'screenshot': f'{tag}.png', 'focus_after_actions': focus, 'engines': self.run_engines(page), 'probes': {}}
+        out['final_url'] = page.url
+        out['focus_after_actions'] = (focus or {}).get('selector') or ('body (nothing focused)' if focus is None else None)
         out['engines'] = {k: v['status'] for k, v in record['engines'].items()}
+        start_at = st.get('keyboard_start')
         for probe in sorted(st.get('probes', []), key=lambda p: p == 'motion'):
-            result = self.run_probe(probe, page, browser, pg['url'], vp, self.out / 'screenshots', self.out / 'aria', tag, from_active=True)
+            result = self.run_probe(probe, page, browser, pg['url'], vp, self.out / 'screenshots', self.out / 'aria', tag,
+                                    from_active=start_at != 'top', start_at=start_at)
             record['probes'][probe] = result
             out['probes'][probe] = result['status']
         (self.out / 'raw' / f'{tag}.json').write_text(json.dumps(record, indent=1, ensure_ascii=False), encoding='utf-8')
@@ -1287,7 +1524,10 @@ def main() -> int:
     ap.add_argument('--headed', action='store_true')
     args = ap.parse_args()
     cfg = json.loads(Path(args.config).read_text(encoding='utf-8'))
-    targets = cfg.get('targets') or []
+    try:
+        targets, _ = normalise_targets(cfg.get('targets') or [])
+    except (ValueError, TypeError) as exc:
+        ap.error(str(exc))
     if not targets and not cfg.get('sitemap'):
         ap.error('config needs targets or sitemap')
     stray = [v for v in cfg.get('mobile_viewports') or [] if v not in (cfg.get('viewports') or ['1280x800', '320x640'])]
@@ -1311,6 +1551,9 @@ def main() -> int:
         r.consent_cfg()
     except ValueError as exc:
         ap.error(str(exc))
+    for st in cfg.get('states') or []:
+        if st.get('keyboard_start') not in (None, 'active_element', 'top'):
+            ap.error(f'state {st.get("name")}: keyboard_start must be "active_element" or "top"')
     r.prepare_engines()
     started = now()
     with sync_playwright() as p:
@@ -1345,7 +1588,8 @@ def main() -> int:
            'wcag_version': r.version, 'level': r.level, 'browser': {'name': 'chromium', 'version': browser_version},
            'playwright': pw_version, 'engines': r.engine_status, 'probes': r.probes, 'viewports': r.viewports,
            'mobile_viewports': r.mobile_viewports,
-           'sample': [{k: s.get(k) for k in ('id', 'url', 'final_url', 'title', 'template', 'template_key', 'reason', 'error', 'captcha')} for s in sample],
+           'sample': [{k: s.get(k) for k in ('id', 'url', 'final_url', 'title', 'template', 'template_key', 'reason', 'error', 'captcha', 'status')}
+                      | ({'expected_status': s['expected_status']} if s.get('expected_status') is not None else {}) for s in sample],
            'unsampled': getattr(r, 'unsampled', []), 'pages': pages, 'blocked_requests': r.blocked, 'events': r.events,
            'authorised_by': cfg.get('authorised_by') or ('loopback target' if all(is_loopback(u) for u in targets) else None),
            'auth_used': bool(auth_used), 'mode': 'plan_only' if args.plan_only else 'audit',
@@ -1353,9 +1597,10 @@ def main() -> int:
            'settle': {'cap_seconds': r.settle_seconds, 'long_lived_seconds': r.long_lived_seconds}}
     scroll_note = scroll_limitation([{'id': p.get('page'), 'url': p.get('url'), 'inner_scroll': p.get('inner_scroll')}
                                      for p in pages])
-    run['limitations'] = [scroll_note] if scroll_note else []
-    if scroll_note:
-        print(f'WARN: {scroll_note}', file=sys.stderr)
+    tp_note = third_party_limitation(r.blocked)
+    run['limitations'] = [x for x in (scroll_note, tp_note) if x]
+    for x in run['limitations']:
+        print(f'WARN: {x}', file=sys.stderr)
     (out / 'run.json').write_text(json.dumps(run, indent=1, ensure_ascii=False), encoding='utf-8')
     print(json.dumps({'mode': run['mode'], 'pages': len(sample),
                       'reachable': sum(1 for s in sample if s['reason'] != 'unreachable'),

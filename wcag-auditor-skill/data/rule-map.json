@@ -10,13 +10,115 @@
   "htmlcs: the SC is encoded in the message code (Principle1.Guideline1_1.1_1_1.H37 -> 1.1.1); no ACT ids.",
   "vnu: messages are supporting evidence for 4.1.1 (2.0/2.1) and 4.1.2 only.",
   "probe: result codes emitted by run_audit.py.",
-  "overrides: entries where the engines' metadata is corrected for this skill, each with its reason; build_rule_map.py re-applies them."
+  "overrides: entries where the engines' metadata is corrected for this skill, each with its reason; build_rule_map.py re-applies them. A `pattern` names the failure pattern the rule implies, where its SC has several (merge_findings.py uses it as the default)."
  ],
  "overrides": {
   "ibm": {
    "img_alt_redundant": {
     "kind": "best_practice",
     "reason": "Alt text that repeats adjacent link text is redundant, not missing: a best practice like axe's image-redundant-alt. IBM files it under the 1.1.1 and 2.4.4 checkpoints, which made it a 1.1.1 failure with the unnamed-functional-image pattern."
+   },
+   "text_block_heading": {
+    "pattern": "1.3.1-visual-heading-not-marked",
+    "reason": "Text styled as a heading but not marked up as one is the visual-heading pattern (moderate), not an unassociated form group."
+   },
+   "svg_graphics_labelled": {
+    "pattern": "1.1.1-informative-image-no-alt",
+    "reason": "An svg graphic with no accessible name is an image with no text alternative (serious); if it is decorative the agent re-files it as decorative-not-hidden, and if it is a control's only content as functional."
+   },
+   "page_title_exists": {
+    "pattern": "2.4.2-no-title",
+    "reason": "The rule tests that a title exists and is not empty: the no-title pattern, not an undescriptive title."
+   },
+   "html_lang_exists": {
+    "pattern": "3.1.1-no-page-lang",
+    "reason": "The rule tests that the html element has a lang attribute: the no-page-lang pattern."
+   },
+   "a_text_purpose": {
+    "pattern": "2.4.4-link-no-name",
+    "reason": "The rule tests that a link has an accessible name: the link-no-name pattern, not an unclear purpose."
+   },
+   "table_headers_exists": {
+    "pattern": "1.3.1-table-headers-missing",
+    "reason": "The rule tests table header associations: the table-headers pattern."
+   }
+  },
+  "axe": {
+   "link-in-text-block": {
+    "pattern": "1.4.1-color-only-link",
+    "reason": "A link told apart from the text round it by colour alone is the colour-only link pattern (moderate), not a colour-only state (serious)."
+   },
+   "document-title": {
+    "pattern": "2.4.2-no-title",
+    "reason": "The rule tests that a title exists and is not empty: the no-title pattern, not an undescriptive title."
+   },
+   "html-has-lang": {
+    "pattern": "3.1.1-no-page-lang",
+    "reason": "The rule tests that the html element has a lang attribute: the no-page-lang pattern."
+   },
+   "meta-refresh": {
+    "pattern": "2.2.1-meta-refresh",
+    "reason": "The rule tests meta refresh timing: the meta-refresh pattern, not another time limit."
+   },
+   "link-name": {
+    "pattern": "2.4.4-link-no-name",
+    "reason": "The rule tests that a link has an accessible name: the link-no-name pattern, not an unclear purpose."
+   },
+   "button-name": {
+    "pattern": "4.1.2-control-no-name",
+    "reason": "The rule tests that a control has an accessible name: the control-no-name pattern."
+   },
+   "input-button-name": {
+    "pattern": "4.1.2-control-no-name",
+    "reason": "The rule tests that a control has an accessible name: the control-no-name pattern."
+   },
+   "select-name": {
+    "pattern": "4.1.2-control-no-name",
+    "reason": "The rule tests that a control has an accessible name: the control-no-name pattern."
+   },
+   "aria-command-name": {
+    "pattern": "4.1.2-control-no-name",
+    "reason": "The rule tests that a control has an accessible name: the control-no-name pattern."
+   },
+   "aria-input-field-name": {
+    "pattern": "4.1.2-control-no-name",
+    "reason": "The rule tests that a control has an accessible name: the control-no-name pattern."
+   },
+   "aria-toggle-field-name": {
+    "pattern": "4.1.2-control-no-name",
+    "reason": "The rule tests that a control has an accessible name: the control-no-name pattern."
+   },
+   "td-headers-attr": {
+    "pattern": "1.3.1-table-headers-missing",
+    "reason": "The rule tests table header associations: the table-headers pattern."
+   },
+   "th-has-data-cells": {
+    "pattern": "1.3.1-table-headers-missing",
+    "reason": "The rule tests table header associations: the table-headers pattern."
+   },
+   "list": {
+    "pattern": "1.3.1-aria-structure-invalid",
+    "reason": "The rule tests required list or ARIA parent/child structure: the invalid-structure pattern."
+   },
+   "listitem": {
+    "pattern": "1.3.1-aria-structure-invalid",
+    "reason": "The rule tests required list or ARIA parent/child structure: the invalid-structure pattern."
+   },
+   "definition-list": {
+    "pattern": "1.3.1-aria-structure-invalid",
+    "reason": "The rule tests required list or ARIA parent/child structure: the invalid-structure pattern."
+   },
+   "dlitem": {
+    "pattern": "1.3.1-aria-structure-invalid",
+    "reason": "The rule tests required list or ARIA parent/child structure: the invalid-structure pattern."
+   },
+   "aria-required-children": {
+    "pattern": "1.3.1-aria-structure-invalid",
+    "reason": "The rule tests required list or ARIA parent/child structure: the invalid-structure pattern."
+   },
+   "aria-required-parent": {
+    "pattern": "1.3.1-aria-structure-invalid",
+    "reason": "The rule tests required list or ARIA parent/child structure: the invalid-structure pattern."
    }
   }
  },
@@ -76,7 +178,9 @@
    ],
    "kind": "wcag",
    "obsolete": false,
-   "help": "ARIA commands must have an accessible name"
+   "help": "ARIA commands must have an accessible name",
+   "pattern": "4.1.2-control-no-name",
+   "override": "The rule tests that a control has an accessible name: the control-no-name pattern."
   },
   "aria-conditional-attr": {
    "sc": [
@@ -137,7 +241,9 @@
    ],
    "kind": "wcag",
    "obsolete": false,
-   "help": "ARIA input fields must have an accessible name"
+   "help": "ARIA input fields must have an accessible name",
+   "pattern": "4.1.2-control-no-name",
+   "override": "The rule tests that a control has an accessible name: the control-no-name pattern."
   },
   "aria-meter-name": {
    "sc": [
@@ -189,7 +295,9 @@
    ],
    "kind": "wcag",
    "obsolete": false,
-   "help": "Certain ARIA roles must contain particular children"
+   "help": "Certain ARIA roles must contain particular children",
+   "pattern": "1.3.1-aria-structure-invalid",
+   "override": "The rule tests required list or ARIA parent/child structure: the invalid-structure pattern."
   },
   "aria-required-parent": {
    "sc": [
@@ -200,7 +308,9 @@
    ],
    "kind": "wcag",
    "obsolete": false,
-   "help": "Certain ARIA roles must be contained by particular parents"
+   "help": "Certain ARIA roles must be contained by particular parents",
+   "pattern": "1.3.1-aria-structure-invalid",
+   "override": "The rule tests required list or ARIA parent/child structure: the invalid-structure pattern."
   },
   "aria-roledescription": {
    "sc": [
@@ -247,7 +357,9 @@
    ],
    "kind": "wcag",
    "obsolete": false,
-   "help": "ARIA toggle fields must have an accessible name"
+   "help": "ARIA toggle fields must have an accessible name",
+   "pattern": "4.1.2-control-no-name",
+   "override": "The rule tests that a control has an accessible name: the control-no-name pattern."
   },
   "aria-tooltip-name": {
    "sc": [
@@ -342,7 +454,9 @@
    ],
    "kind": "wcag",
    "obsolete": false,
-   "help": "Buttons must have discernible text"
+   "help": "Buttons must have discernible text",
+   "pattern": "4.1.2-control-no-name",
+   "override": "The rule tests that a control has an accessible name: the control-no-name pattern."
   },
   "bypass": {
    "sc": [
@@ -400,7 +514,9 @@
    "act": [],
    "kind": "wcag",
    "obsolete": false,
-   "help": "<dl> elements must only directly contain properly-ordered <dt> and <dd> groups, <script>, <template> or <div> elements"
+   "help": "<dl> elements must only directly contain properly-ordered <dt> and <dd> groups, <script>, <template> or <div> elements",
+   "pattern": "1.3.1-aria-structure-invalid",
+   "override": "The rule tests required list or ARIA parent/child structure: the invalid-structure pattern."
   },
   "dlitem": {
    "sc": [
@@ -409,7 +525,9 @@
    "act": [],
    "kind": "wcag",
    "obsolete": false,
-   "help": "<dt> and <dd> elements must be contained by a <dl>"
+   "help": "<dt> and <dd> elements must be contained by a <dl>",
+   "pattern": "1.3.1-aria-structure-invalid",
+   "override": "The rule tests required list or ARIA parent/child structure: the invalid-structure pattern."
   },
   "document-title": {
    "sc": [
@@ -420,7 +538,9 @@
    ],
    "kind": "wcag",
    "obsolete": false,
-   "help": "Documents must have <title> element to aid in navigation"
+   "help": "Documents must have <title> element to aid in navigation",
+   "pattern": "2.4.2-no-title",
+   "override": "The rule tests that a title exists and is not empty: the no-title pattern, not an undescriptive title."
   },
   "duplicate-id-active": {
    "sc": [
@@ -550,7 +670,9 @@
    ],
    "kind": "wcag",
    "obsolete": false,
-   "help": "<html> element must have a lang attribute"
+   "help": "<html> element must have a lang attribute",
+   "pattern": "3.1.1-no-page-lang",
+   "override": "The rule tests that the html element has a lang attribute: the no-page-lang pattern."
   },
   "html-lang-valid": {
    "sc": [
@@ -612,7 +734,9 @@
    ],
    "kind": "wcag",
    "obsolete": false,
-   "help": "Input buttons must have discernible text"
+   "help": "Input buttons must have discernible text",
+   "pattern": "4.1.2-control-no-name",
+   "override": "The rule tests that a control has an accessible name: the control-no-name pattern."
   },
   "input-image-alt": {
    "sc": [
@@ -725,7 +849,9 @@
    "act": [],
    "kind": "wcag",
    "obsolete": false,
-   "help": "Links must be distinguishable without relying on color"
+   "help": "Links must be distinguishable without relying on color",
+   "pattern": "1.4.1-color-only-link",
+   "override": "A link told apart from the text round it by colour alone is the colour-only link pattern (moderate), not a colour-only state (serious)."
   },
   "link-name": {
    "sc": [
@@ -737,7 +863,9 @@
    ],
    "kind": "wcag",
    "obsolete": false,
-   "help": "Links must have discernible text"
+   "help": "Links must have discernible text",
+   "pattern": "2.4.4-link-no-name",
+   "override": "The rule tests that a link has an accessible name: the link-no-name pattern, not an unclear purpose."
   },
   "list": {
    "sc": [
@@ -746,7 +874,9 @@
    "act": [],
    "kind": "wcag",
    "obsolete": false,
-   "help": "<ul> and <ol> must only directly contain <li>, <script> or <template> elements"
+   "help": "<ul> and <ol> must only directly contain <li>, <script> or <template> elements",
+   "pattern": "1.3.1-aria-structure-invalid",
+   "override": "The rule tests required list or ARIA parent/child structure: the invalid-structure pattern."
   },
   "listitem": {
    "sc": [
@@ -755,7 +885,9 @@
    "act": [],
    "kind": "wcag",
    "obsolete": false,
-   "help": "<li> elements must be contained in a <ul> or <ol>"
+   "help": "<li> elements must be contained in a <ul> or <ol>",
+   "pattern": "1.3.1-aria-structure-invalid",
+   "override": "The rule tests required list or ARIA parent/child structure: the invalid-structure pattern."
   },
   "marquee": {
    "sc": [
@@ -788,7 +920,9 @@
    ],
    "kind": "wcag",
    "obsolete": false,
-   "help": "Delayed refresh under 20 hours must not be used"
+   "help": "Delayed refresh under 20 hours must not be used",
+   "pattern": "2.2.1-meta-refresh",
+   "override": "The rule tests meta refresh timing: the meta-refresh pattern, not another time limit."
   },
   "meta-viewport-large": {
    "sc": [],
@@ -912,7 +1046,9 @@
    ],
    "kind": "wcag",
    "obsolete": false,
-   "help": "Select element must have an accessible name"
+   "help": "Select element must have an accessible name",
+   "pattern": "4.1.2-control-no-name",
+   "override": "The rule tests that a control has an accessible name: the control-no-name pattern."
   },
   "server-side-image-map": {
    "sc": [
@@ -1000,7 +1136,9 @@
    ],
    "kind": "wcag",
    "obsolete": false,
-   "help": "Table cell headers attributes must refer to other <th> elements in the same table"
+   "help": "Table cell headers attributes must refer to other <th> elements in the same table",
+   "pattern": "1.3.1-table-headers-missing",
+   "override": "The rule tests table header associations: the table-headers pattern."
   },
   "th-has-data-cells": {
    "sc": [
@@ -1011,7 +1149,9 @@
    ],
    "kind": "wcag",
    "obsolete": false,
-   "help": "Table headers in a data table must refer to data cells"
+   "help": "Table headers in a data table must refer to data cells",
+   "pattern": "1.3.1-table-headers-missing",
+   "override": "The rule tests table header associations: the table-headers pattern."
   },
   "valid-lang": {
    "sc": [
@@ -1052,7 +1192,9 @@
    "act": [
     "c487ae"
    ],
-   "kind": "wcag"
+   "kind": "wcag",
+   "pattern": "2.4.4-link-no-name",
+   "override": "The rule tests that a link has an accessible name: the link-no-name pattern, not an unclear purpose."
   },
   "applet_alt_exists": {
    "sc": [
@@ -1661,7 +1803,9 @@
     "5b7ae0",
     "b5c3f8"
    ],
-   "kind": "wcag"
+   "kind": "wcag",
+   "pattern": "3.1.1-no-page-lang",
+   "override": "The rule tests that the html element has a lang attribute: the no-page-lang pattern."
   },
   "html_lang_valid": {
    "sc": [
@@ -1978,7 +2122,9 @@
    "act": [
     "2779a5"
    ],
-   "kind": "wcag"
+   "kind": "wcag",
+   "pattern": "2.4.2-no-title",
+   "override": "The rule tests that a title exists and is not empty: the no-title pattern, not an undescriptive title."
   },
   "page_title_valid": {
    "sc": [
@@ -2090,7 +2236,9 @@
    "act": [
     "7d6734"
    ],
-   "kind": "wcag"
+   "kind": "wcag",
+   "pattern": "1.1.1-informative-image-no-alt",
+   "override": "An svg graphic with no accessible name is an image with no text alternative (serious); if it is decorative the agent re-files it as decorative-not-hidden, and if it is a control's only content as functional."
   },
   "table_aria_descendants": {
    "sc": [
@@ -2118,7 +2266,9 @@
     "1.3.1"
    ],
    "act": [],
-   "kind": "wcag"
+   "kind": "wcag",
+   "pattern": "1.3.1-table-headers-missing",
+   "override": "The rule tests table header associations: the table-headers pattern."
   },
   "table_headers_ref_valid": {
    "sc": [
@@ -2176,7 +2326,9 @@
     "1.3.1"
    ],
    "act": [],
-   "kind": "wcag"
+   "kind": "wcag",
+   "pattern": "1.3.1-visual-heading-not-marked",
+   "override": "Text styled as a heading but not marked up as one is the visual-heading pattern (moderate), not an unassociated form group."
   },
   "text_contrast_sufficient": {
    "sc": [
