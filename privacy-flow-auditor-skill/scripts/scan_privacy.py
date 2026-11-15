@@ -81,12 +81,14 @@ from match_canaries import Matcher  # noqa: E402
 import next_app  # noqa: E402
 from domains import registrable  # noqa: E402
 import lang_census  # noqa: E402
+import cargo_project  # noqa: E402
 
 DATA = HERE.parent / 'data'
 CATS = json.loads((DATA / 'categories.json').read_text(encoding='utf-8'))
 SINKS = json.loads((DATA / 'sinks.json').read_text(encoding='utf-8'))
 LANG = {'.py': 'py', '.js': 'js', '.mjs': 'js', '.cjs': 'js', '.jsx': 'js', '.ts': 'ts', '.tsx': 'ts', '.mts': 'ts', '.cts': 'ts',
-        '.html': 'html', '.htm': 'html', '.jinja': 'html', '.jinja2': 'html', '.j2': 'html', '.njk': 'html', '.twig': 'html', '.java': 'java', '.kt': 'kt', '.swift': 'swift', '.m': 'm', '.rb': 'rb', '.go': 'go'}
+        '.html': 'html', '.htm': 'html', '.jinja': 'html', '.jinja2': 'html', '.j2': 'html', '.njk': 'html', '.twig': 'html', '.java': 'java', '.kt': 'kt', '.swift': 'swift', '.m': 'm', '.rb': 'rb', '.go': 'go',
+        '.rs': 'rs'}
 # the languages lang_census counts that this scan reads: sinks, collection points and sends (Java, Kotlin, Swift and
 # Objective-C get logging and storage sinks only, besides manifests and usage strings)
 ANALYSED = {'Python', 'JavaScript', 'TypeScript', 'Go', 'Ruby', 'Java', 'Kotlin', 'Swift', 'Objective-C', 'Vue', 'Svelte'}
@@ -116,6 +118,7 @@ BROWSER_FILE = re.compile(r'\bdocument\.|\bwindow\.|\blocalStorage\b|["\']use cl
 TEST_FILE = re.compile(r'[._-](test|spec|e2e)\.(js|jsx|ts|tsx|mjs|cjs|mts|cts|py|rb)$|^test_.*\.py$|_test\.(py|go)$', re.I)
 REDACT = Matcher({'id': 'none', 'fields': {}})
 GENERIC = set(CATS.get('generic_property_names', {}).get('names', []))
+LOOKALIKES = set(CATS.get('name_lookalikes', {}).get('words', []))
 VENDOR_DATA = json.loads((DATA / 'vendors.json').read_text(encoding='utf-8'))
 VENDOR_DOMAINS = {d: v['vendor'] for d, v in VENDOR_DATA['domains'].items()}
 VENDOR_CATEGORY = {d: v['category'] for d, v in VENDOR_DATA['domains'].items()}
@@ -200,6 +203,40 @@ GO_IDENTIFIERS = {'os.Hostname': r'\bos\.Hostname\(', 'user.Current': r'\buser\.
 GO_HASH = re.compile(r'\b(sha256|sha1|sha512|md5|hmac|fnv)\.')
 TELEMETRY_PATH = re.compile(r'(^|/)(telemetry|analytics|metrics|usage|tracking|stats|crash(report)?s?)(/|$)', re.I)
 GO_FLAG = re.compile(r'\b(?:flag|\w+\.(?:Persistent)?Flags\(\))\.(?:String|StringP|StringVar|StringVarP)\(\s*(?:&[\w.]+\s*,\s*)?"(?P<name>[\w-]+)"')
+# what identifies the machine or the person using it, read by scripts and tools: the host name (a device identifier) and
+# the OS account name or a home-directory path holding it (identity). Each read is a machine_identifier collection point;
+# a variable assigned from one (or from an object built with one) stands for it in that file, so a log line or a file
+# write naming it is a candidate. field -> (pattern, category), per language.
+MACHINE_IDS = {
+    'py': {'platform.node': (r'\bplatform\.node\(\)', 'device_identifier'), 'platform.uname': (r'\bplatform\.uname\(\)', 'device_identifier'),
+           'socket.gethostname': (r'\bsocket\.gethostname\(\)', 'device_identifier'), 'socket.getfqdn': (r'\bsocket\.getfqdn\(\)', 'device_identifier'),
+           'os.uname': (r'\bos\.uname\(\)', 'device_identifier'), 'getpass.getuser': (r'\bgetpass\.getuser\(\)', 'identity'),
+           'os.getlogin': (r'\bos\.getlogin\(\)', 'identity'), 'Path.home': (r'\bPath\.home\(\)', 'identity'),
+           'os.path.expanduser': (r'''\bexpanduser\(\s*["']~''', 'identity')},
+    'js': {'os.hostname': (r'\bos\.hostname\(\)', 'device_identifier'), 'os.userInfo': (r'\bos\.userInfo\(', 'identity'),
+           'os.homedir': (r'\bos\.homedir\(\)', 'identity')},
+    'rs': {'hostname::get': (r'\bhostname::get\(', 'device_identifier'), 'gethostname': (r'\bgethostname\(', 'device_identifier'),
+           'whoami::hostname': (r'\bwhoami::(?:fallible::)?(?:hostname|devicename)\(', 'device_identifier'),
+           'whoami::username': (r'\bwhoami::(?:fallible::)?(?:username|realname)\(', 'identity'),
+           'home_dir': (r'\b(?:dirs|home|env)::home_dir\(', 'identity')},
+}
+MACHINE_IDS['ts'] = MACHINE_IDS['js']
+# environment variables holding the host name or the account name (Windows and POSIX)
+MACHINE_ENV = {'COMPUTERNAME': 'device_identifier', 'HOSTNAME': 'device_identifier', 'USERDOMAIN': 'device_identifier',
+               'USERNAME': 'identity', 'USER': 'identity', 'LOGNAME': 'identity', 'USERPROFILE': 'identity', 'HOME': 'identity'}
+MACHINE_ENV_READ = {
+    'py': re.compile(r'''\bos\.(?:environ(?:\.get)?\s*[\[(]|getenv\()\s*["'](?P<name>[A-Z_]+)["']'''),
+    'js': re.compile(r'''\bprocess\.env(?:\.(?P<name>[A-Z_]+)\b|\[\s*["'](?P<name2>[A-Z_]+)["']\s*\])'''),
+}
+MACHINE_ENV_READ['ts'] = MACHINE_ENV_READ['js']
+ASSIGN_PY = re.compile(r'^[ \t]*([A-Za-z_]\w*)\s*(?::[^=\n]+)?=(?!=)\s*([^\n]+)', re.M)
+ASSIGN_JS = re.compile(r'\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]+)?=(?!=)\s*([^;\n]+)')
+# a call to the app's own paths ("/api/...", "./data.json") or to loopback: not an unresolved outbound host
+RELATIVE_URL = re.compile(r'''["'`](?:\.{0,2}/(?!/)|https?://(?:localhost|127\.0\.0\.1)\b)''')
+# a line longer than this (minified or generated HTML and scripts) is read in windows around each match: the CSP,
+# consent-gate and consent-check tests look at WINDOW characters either side, never the whole line per mention
+LONG_LINE = 2000
+WINDOW = 600
 NOT_RECIPIENT = re.compile(r'(^|\.)(localhost|example\.(com|org|net)|[\w-]+\.(test|invalid|local|localhost|example))$|^127\.|^0\.0\.0\.0$'
                            r'|(^|\.)(w3\.org|xmlsoap\.org|json-schema\.org)$|^schemas\.', re.I)
 
@@ -238,14 +275,32 @@ def is_server_file(rel: str, text: str, cli_packages: set[str] = frozenset()) ->
     return any(p == '' or rel.startswith(p + '/') for p in cli_packages)
 
 
-def consent_nearby(T, n: int, back: int = 15) -> bool:
-    """A consent check on one of the lines before line n (an if, &&, ternary or early return mentioning consent)."""
-    lo = max(1, n - back)
-    for k in range(lo, n + 1):
-        ln = T.line(k)
-        if CONSENT_RX.search(ln) and re.search(r'\bif\b|&&|\?|\breturn\b|\bwhen\b|function\s+\w*consent', ln, re.I):
+CONSENT_GUARD = re.compile(r'\bif\b|&&|\?|\breturn\b|\bwhen\b|function\s+\w*consent', re.I)
+
+
+def consent_nearby(T, n: int, back: int = 15, off: int | None = None) -> bool:
+    """A consent check on one of the lines before line n (an if, &&, ternary or early return mentioning consent).
+    On a very long line (minified code) only the text just before off counts, so each mention costs a bounded window,
+    not the whole line; results for ordinary lines are cached per file."""
+    if off is not None and T.line_len(n) > LONG_LINE:
+        w = T.near(n, off, before=WINDOW * 2, after=0)
+        if CONSENT_RX.search(w) and CONSENT_GUARD.search(w):
             return True
-    return False
+        n -= 1          # the earlier lines are ordinary ones (or their tails)
+        if n < 1:
+            return False
+    key = (n, back)
+    if key in T.consent_cache:
+        return T.consent_cache[key]
+    lo = max(1, n - back)
+    hit = False
+    for k in range(lo, n + 1):
+        ln = T.line(k) if T.line_len(k) <= LONG_LINE else T.line_tail(k, WINDOW * 2)
+        if CONSENT_RX.search(ln) and CONSENT_GUARD.search(ln):
+            hit = True
+            break
+    T.consent_cache[key] = hit
+    return hit
 
 
 def call_span(text: str, m) -> tuple[str, int]:
@@ -274,13 +329,60 @@ class Text:
     def __init__(self, text: str):
         self.text = text
         self.starts = [0] + [m.end() for m in re.finditer('\n', text)]
+        self.consent_cache: dict = {}
+        self.line_cache: dict = {}
 
     def line_of(self, off: int) -> int:
         return bisect.bisect_right(self.starts, off)
 
+    def _end(self, n: int) -> int:
+        return self.starts[n] - 1 if n < len(self.starts) else len(self.text)
+
     def line(self, n: int) -> str:
-        end = self.starts[n] - 1 if n < len(self.starts) else len(self.text)
-        return self.text[self.starts[n - 1]:end].rstrip('\r')
+        return self.text[self.starts[n - 1]:self._end(n)].rstrip('\r')
+
+    def line_len(self, n: int) -> int:
+        return self._end(n) - self.starts[n - 1]
+
+    def near(self, n: int, off: int, before: int = WINDOW, after: int = WINDOW) -> str:
+        """The text of line n around offset off (at most before + after characters): what a per-mention check reads on a
+        very long line, so a minified file costs a bounded window per mention instead of the whole line each time."""
+        s, e = self.starts[n - 1], self._end(n)
+        return self.text[max(s, off - before):min(e, off + after)]
+
+    def line_tail(self, n: int, width: int) -> str:
+        e = self._end(n)
+        return self.text[max(self.starts[n - 1], e - width):e]
+
+    def local(self, off: int) -> str:
+        """Line of off when it is an ordinary line (cached), else the window around off on a very long line."""
+        n = self.line_of(off)
+        if self.line_len(n) > LONG_LINE:
+            return self.near(n, off)
+        if n not in self.line_cache:
+            self.line_cache[n] = self.line(n)
+        return self.line_cache[n]
+
+
+# quoted strings and (JavaScript) regex literals on one line: a sink pattern matched inside one is text, not a call
+# (a check that forbids `fetch(` in a regex, a list of banned call names)
+LITERAL_JS = re.compile(r'''"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|(?:^|(?<=[(,=:!&|?;{}\[])|(?<=\breturn))\s*'''
+                        r'''/(?![/*])(?:[^/\\\n\[]|\\.|\[(?:[^\]\\\n]|\\.)*\])+/[a-z]*''')
+LITERAL_PY = re.compile(r'''"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*\'''')
+
+
+def in_literal(T, off: int, lang: str) -> str | None:
+    """'regex' or 'string' when offset off lies inside a JavaScript regex literal or a quoted string on its line (JS, TS,
+    Python; ordinary lines only), else None. Template literals are left alone: their interpolations are code."""
+    rx = LITERAL_JS if lang in ('js', 'ts') else LITERAL_PY if lang == 'py' else None
+    n = T.line_of(off)
+    if rx is None or T.line_len(n) > LONG_LINE:
+        return None
+    key = ('lit', n)
+    if key not in T.line_cache:
+        T.line_cache[key] = [(m.start(), m.end(), 'string' if m.group(0)[0] in '"\'' else 'regex') for m in rx.finditer(T.line(n))]
+    col = off - T.starts[n - 1]
+    return next((k for s, e, k in T.line_cache[key] if s <= col < e and not (k == 'string' and col == s)), None)
 
 
 def code_view(line: str) -> str:
@@ -313,6 +415,10 @@ def classify(*names: str) -> str | None:
         if not n:
             continue
         low = n.lower().replace('-', '_')
+        if LOOKALIKES:   # everyday words holding a pattern inside them ("title" in "subtitles") are dropped first
+            low = '_'.join(t for t in re.split(r'[_\s]+', low) if t not in LOOKALIKES)
+            if not low:
+                continue
         for cat, c in CATS['categories'].items():
             hit = any(low == p or low.startswith(p + '_') or low.endswith('_' + p) or (len(p) > 4 and p in low) for p in c['names']) \
                 or low in c.get('autocomplete', []) or low in c.get('types', [])
@@ -585,10 +691,10 @@ def preceding_label(text: str, off: int, el_id: str | None) -> str | None:
 def sink_entry(rel: str, T, text: str, m, n: int, sid: str, kind: str, vendor: str | None, server_file: bool) -> dict:
     """A sink at line n. Its code view covers the whole argument span of the call (an object literal spread over
     the following lines still names its keys), and records the last line when the call spans several."""
-    line = T.line(n)
+    line = T.line(n) if T.line_len(n) <= LONG_LINE else T.near(n, m.start(), before=0)  # a minified line: from the match on
     span, end = call_span(text, m)
     e = {'file': rel, 'line': n, 'sink': sid, 'kind': kind, 'vendor': vendor, 'excerpt': REDACT.redact(line.strip())[:160],
-         '_view': code_view(line) + ' ' + code_view(span), '_consent': consent_nearby(T, n), '_raw': span or line}
+         '_view': code_view(line) + ' ' + code_view(span), '_consent': consent_nearby(T, n, off=m.start()), '_raw': span or line}
     last = T.line_of(max(m.start(), end - 1))
     if span and last > n:
         e['end_line'] = last
@@ -677,6 +783,42 @@ def file_point(rel: str, line: int, name: str | None, accept: str | None, kind: 
     return e
 
 
+def machine_ids(rel: str, lang: str, text: str, T, env_reads: list | None = None) -> tuple[list[dict], dict]:
+    """Host-name and account-name reads in one file (MACHINE_IDS, MACHINE_ENV; Rust env reads from cargo_project), as
+    machine_identifier collection points, and the names that stand for them in the file: the read itself and each variable
+    assigned from it, or from an expression naming such a variable (one step: data = {"host": host}). Returns the points
+    and {name: set of fields}."""
+    hits = []
+    for f, (rx, cat) in MACHINE_IDS.get(lang, {}).items():
+        hits += [(m.start(), f, cat) for m in re.finditer(rx, text)]
+    erx = MACHINE_ENV_READ.get(lang)
+    for m in (erx.finditer(text) if erx else ()):
+        nm = m.group('name') or m.groupdict().get('name2')
+        if nm in MACHINE_ENV:
+            hits.append((m.start(), nm, MACHINE_ENV[nm]))
+    for e in env_reads or []:
+        if e.get('name') in MACHINE_ENV and 0 < e.get('line', 0) <= len(T.starts):
+            hits.append((T.starts[e['line'] - 1], e['name'], MACHINE_ENV[e['name']]))
+    points, seen = [], set()
+    for off, f, cat in sorted(hits):
+        n = T.line_of(off)
+        if (n, f) in seen:
+            continue
+        seen.add((n, f))
+        points.append({'file': rel, 'line': n, 'kind': 'machine_identifier', 'field': f, 'category': cat,
+                       'note': 'the host name identifies the machine' if cat == 'device_identifier' else
+                               "the OS account name (or a home-directory path holding it) often is the person's name"})
+    names: dict = {f: {f} for _, f, _ in hits}
+    assign = ASSIGN_PY if lang == 'py' else ASSIGN_JS if lang in ('js', 'ts') else None
+    for _ in range(2 if assign and names else 0):
+        for m in assign.finditer(text):
+            v, view = m.group(1), code_view(m.group(2))
+            got = set().union(*(fs for k, fs in names.items() if k != v and names_field(view, k)))
+            if got:
+                names.setdefault(v, set()).update(got)
+    return points, names
+
+
 def scope_words(text: str) -> list[str]:
     """OAuth scopes written as string literals in scope: / scopes: settings (openid, profile, email, ...); names of
     constants and spreads are not scopes and are left out."""
@@ -733,15 +875,28 @@ def build_coverage(repo: Path, cen: dict, build_dirs: list[dict]) -> dict:
     c = dict(cen)
     langs = dict(c.get('languages') or {})
     excluded = list(c.get('excluded') or [])
+    # the per-language line and file splits are merged with the file counts, so language_coverage keeps its line rule
+    # (product lines decide; tests and tooling folders counted apart) instead of falling back to file counts
+    splits = ('lines', 'product_files', 'test_files', 'test_lines', 'tooling_files', 'tooling_lines')
+    merged = {k: dict(c.get(k) or {}) for k in splits}
     for x in build_dirs:
         if x['decision'] != 'scanned':
             continue
         sub = lang_census.census(repo / x['dir'].rstrip('/'))
         for k, v in sub['languages'].items():
             langs[k] = langs.get(k, 0) + v
+        for key in splits:
+            for k, v in (sub.get(key) or {}).items():
+                merged[key][k] = merged[key].get(k, 0) + v
+        if not any((sub.get(key) or {}) for key in ('product_files', 'test_files', 'tooling_files')):
+            for k, v in sub['languages'].items():   # a census without the splits: its files count as product files
+                merged['product_files'][k] = merged['product_files'].get(k, 0) + v
         excluded = [e for e in excluded if e['path'] + '/' != x['dir']]
+    c.update(merged)
     c['languages'] = dict(sorted(langs.items(), key=lambda kv: (-kv[1], kv[0])))
-    c['dominant'] = next(iter(c['languages']), None)
+    lines = merged['lines']
+    c['dominant'] = (max(lines, key=lambda k: (lines[k], k)) if c.get('dominant_by') == 'lines' and sum(lines.values())
+                     else next(iter(c['languages']), None))
     c['excluded'], c['excluded_source_files'] = excluded, sum(e['source_files'] for e in excluded)
     cov = lang_census.language_coverage(c, ANALYSED, tool='scan_privacy.py', what='privacy scan')
     cov['needs_limitation'] = [cov['dominant_unsupported_language']] if cov['status'] == 'unsupported_dominant' else []
@@ -836,6 +991,7 @@ def main() -> int:
     replay_inits, server_sends, wrappers, texts_meta = [], [], {}, {}
     get_forms, consent_defaults = [], []    # GET forms with a free-text input; consent-mode defaults (file:line)
     aliases: dict[str, dict] = {}
+    machine_names: dict[str, dict] = {}   # file -> {name: host-name or account-name fields it stands for}
     sink_rx = [(s, re.compile(s['pattern'], re.M), s.get('hints') or []) for s in SINKS['sinks']]
     chint = SINKS.get('collection_hints', {})
     xhint = SINKS.get('collection_hints_extra', {})
@@ -908,6 +1064,12 @@ def main() -> int:
             continue
         text = p.read_text(encoding='utf-8', errors='replace')
         T = Text(text)
+        if lang == 'rs':
+            # Rust is not analysed for sends, logs or storage (language_coverage says so); only what identifies the machine
+            # or the account is read (hostname, whoami, home_dir, env vars such as COMPUTERNAME and USERNAME)
+            env = (cargo_project.scan_file(p, rel).get('env') or []) if 'env' in text else []
+            collection += machine_ids(rel, 'rs', text, T, env)[0]
+            continue
         generated = bool(GENERATED_NAME.search(p.name))
         if not generated and lang in ('js', 'ts') and size > 20000:  # a bundle: few, very long lines
             generated = max(b - a_ for a_, b in zip(T.starts, T.starts[1:] + [len(text) + 1])) > 5000
@@ -918,23 +1080,32 @@ def main() -> int:
         seen_mention: set = set()
         hint_spans: list = []   # (start, end, kind) of <link rel="preconnect|dns-prefetch|preload..."> tags
         csp_spans: list = []    # (start, end) of <meta http-equiv="Content-Security-Policy"> tags
+        csp_lines: dict = {}
+
+        def csp_at(off: int) -> bool:
+            """The text around off names a CSP directive (its line, or a window of a very long line); cached per line."""
+            n_ = T.line_of(off)
+            if T.line_len(n_) > LONG_LINE:
+                return bool(CSP_LINE.search(T.near(n_, off)))
+            if n_ not in csp_lines:
+                csp_lines[n_] = bool(CSP_LINE.search(T.line(n_)))
+            return csp_lines[n_]
 
         def script(host, off, source, extra=None, literal=False):
             host = (urlparse('//' + host).hostname or host).lower()  # no port, query or fragment
             n = T.line_of(off)
-            ln = T.line(n)
             kind = source if source in HINT_KINDS else 'loader' if source in LOADER_SOURCES else 'reference'
             if literal:  # a URL literal inside a resource hint or a CSP string loads nothing
                 hint = next((k for s_, e_, k in hint_spans if s_ <= off < e_), None)
                 if hint:
                     kind = source = hint
-                elif CSP_LINE.search(ln) or any(s_ <= off < e_ for s_, e_ in csp_spans):
+                elif csp_at(off) or any(s_ <= off < e_ for s_, e_ in csp_spans):
                     kind = source = 'csp'
             if (n, host) in seen_mention:
                 return
             seen_mention.add((n, host))
             e = {'file': rel, 'line': n, 'host': host, 'kind': kind, 'source': source, 'vendor': vendor_entry(host).get('vendor'),
-                 '_consent': consent_nearby(T, n) or bool(GATED_TAG.search(ln))}
+                 '_consent': consent_nearby(T, n, off=off) or bool(GATED_TAG.search(T.local(off)))}
             e.update(extra or {})
             mentions.append(e)
         if lang in ('html', 'js', 'ts') and '<link' in low:
@@ -984,14 +1155,20 @@ def main() -> int:
         if '//' in text and lang in ('html', 'js', 'ts', 'py', 'rb', 'go'):
             # every host the text names outside a CSP string: a CSP allowance none of them names is reported as unused
             for m in ANY_HOST.finditer(text):
-                if not CSP_LINE.search(T.line(T.line_of(m.start()))):
-                    used_hosts.add(m.group(1).lower())
+                h_ = m.group(1).lower()
+                if h_ not in used_hosts and not csp_at(m.start()):
+                    used_hosts.add(h_)
         for m in (re.finditer(r'\bimportScripts\(\s*["\'`](https?:)?//([^/"\'`:]+)', text) if 'importScripts(' in text else ()):
             script(m.group(2), m.start(), 'importScripts')
         if generated:
             skipped.append({'file': rel, 'bytes': size, 'reason': 'minified or generated (scanned for SDK hosts only)'})
             continue
         texts[rel] = text
+        if lang in ('py', 'js', 'ts'):
+            pts, nm_ = machine_ids(rel, lang, text, T)
+            collection += pts
+            if nm_:
+                machine_names[rel] = nm_
         if lang in ('js', 'ts') and p.suffix.lower() in ('.jsx', '.tsx', '.js', '.ts') and re.search(r'<[A-Za-z]', text):
             for off, tag in jsx_tags(text, SINKS['collection']['jsx_input']):
                 ty = jsx_attr(tag, 'type')
@@ -1105,7 +1282,10 @@ def main() -> int:
                 continue
             for m in rx.finditer(text):
                 n = T.line_of(m.start())
-                if (sk['id'], n) in seen_lines:
+                # a sink matched inside a regex literal, or a call pattern (fetch(, logger.info() inside a quoted string, is
+                # text, not a call; patterns meant to match string text (a Set-Cookie header name) still count in strings
+                lit = in_literal(T, m.start(), lang)
+                if (sk['id'], n) in seen_lines or lit == 'regex' or (lit == 'string' and m.group(0).endswith('(')):
                     continue
                 seen_lines.add((sk['id'], n))
                 sinks.append(sink_entry(rel, T, text, m, n, sk['id'], sk['kind'], sk.get('vendor'), server_file))
@@ -1272,7 +1452,8 @@ def main() -> int:
     sinks.sort(key=lambda x: (x['file'], x['line'], order.get(x['sink'], len(order)), x['sink']))
     collection.sort(key=lambda x: (x['file'], x['line']))
     # fields known from collection points; variables in the same file that hold them are named after them here
-    fields = {c['field']: c['category'] for c in collection if c.get('field') and c.get('category')}
+    fields = {c['field']: c['category'] for c in collection if c.get('field') and c.get('category') and c['kind'] != 'machine_identifier'}
+    machine_cat = {c['field']: c['category'] for c in collection if c['kind'] == 'machine_identifier'}
     id_points: dict = {}
     for c in collection:
         if c['kind'] in ('identity_read', 'identity_provider'):
@@ -1359,12 +1540,24 @@ def main() -> int:
                 for mm in PROFILE_OBJECT.finditer(view):  # a whole user or profile object logged
                     ident[mm.group(1)] = 'identity'
                     from_object.append(mm.group(1))
+            machine = set()   # the host name or account name, read in this file, named on the sink line (directly or by a variable)
+            for k, fs in (machine_names.get(s['file']) or {}).items():
+                if names_field(view, k):
+                    machine |= fs
+            for f in machine:
+                ident[f] = machine_cat.get(f) or 'device_identifier'
+            if s['kind'] == 'file_write':
+                if not machine:
+                    continue   # a file write is a candidate only for what identifies the machine or the account
+                names = set()
+                ident = {f: ident[f] for f in machine}
             named = sorted(names | set(ident))
             if not named:
                 continue
             if s['kind'] == 'http' and set(named) <= TOKEN_FIELDS:
                 continue  # a bearer token sent to an API is how sign-in works, not a disclosure
-            typ = {'log': 'personal_data_in_logs', 'storage': 'insecure_storage', 'replay': 'session_replay_unmasked'}.get(s['kind'], 'personal_data_to_third_party')
+            typ = {'log': 'personal_data_in_logs', 'storage': 'insecure_storage', 'replay': 'session_replay_unmasked',
+                   'file_write': 'identifier_in_artifact'}.get(s['kind'], 'personal_data_to_third_party')
             cats = sorted({fields.get(f) or ident[f] for f in named})
             if typ == 'personal_data_in_logs' and any(c in CATS['special'] for c in cats):
                 typ = 'sensitive_category_flow'
@@ -1381,6 +1574,14 @@ def main() -> int:
                     src_[f] = f'{pt["file"]}:{pt["line"]} ({pt["kind"]})'
             if src_:
                 extra['identity_source'] = src_
+            if machine:
+                extra['machine_identifiers'] = sorted(machine)
+                if s['kind'] == 'file_write':
+                    extra['subtype'] = 'identifier_written'
+                extra['note'] = ('the host name or OS account name of the machine running the code' + (
+                    ' is written to a file: if that file is committed or published (results, scoreboards, logs kept in the '
+                    'repository), everyone who reads the repository sees it; check which output files are committed'
+                    if s['kind'] == 'file_write' else ' is named here; trace where the line ends up'))
             if from_object:
                 extra['read_from_object'] = sorted(set(from_object))
                 extra['note'] = ('not collected by a form: read from an object (an API response, a stored profile, a whole user '
@@ -1507,6 +1708,7 @@ def main() -> int:
     # hosts that browser and server code send to with a literal URL (fetch, XMLHttpRequest, an HTTP client): every one is a
     # possible recipient for the inventory, vendor or not; a URL held in a variable assigned a literal in the same file counts
     seen_out = {(h['host'], h['file']) for h in outbound_hosts}
+    outbound_unresolved: list[dict] = []
     for s in sinks:
         if s['kind'] != 'http' or s['file'] not in texts:
             continue
@@ -1516,6 +1718,10 @@ def main() -> int:
             am = re.search(r'(?m)^[ \t]*(?:export\s+)?(?:const|let|var)?\s*' + re.escape(v) + r'\s*(?::[^=\n]+)?=[^=\n][^\n]*', text)
             if am:
                 hosts += [m.group(1) for m in URL_LIT.finditer(am.group(0))]
+        if not hosts and s.get('side') == 'server' and not RELATIVE_URL.search(s['_raw']):
+            # server or tool code calling out to a host the code does not spell out (read from a file, a setting or an
+            # argument): a recipient nobody can name from the scan, listed so the review traces it
+            outbound_unresolved.append({'file': s['file'], 'line': s['line'], 'via': s['sink'], 'excerpt': s['excerpt']})
         for host in hosts:
             host = (urlparse('//' + host).hostname or host).lower()
             if NOT_RECIPIENT.search(host) or DOC_HOST.match(host) or (host, s['file']) in seen_out:
@@ -1605,11 +1811,11 @@ def main() -> int:
            'test_named_dirs_scanned': [{'dir': d + '/', 'reason': 'holds a package manifest (a product package)' if any(
                (repo / d / m).is_file() for m in PACKAGE_MANIFESTS) else 'named after a test tool but holds no test files'} for d in kept_dirs],
            'wrappers': sorted(wrappers.values(), key=lambda w: (w['file'] or '', w['line'] or 0, w['name'])), 'candidates': candidates,
-           'outbound_hosts': outbound_hosts, 'build_output_dirs': build_dirs, 'language_coverage': coverage,
+           'outbound_hosts': outbound_hosts, 'outbound_unresolved': outbound_unresolved, 'build_output_dirs': build_dirs, 'language_coverage': coverage,
            'host_mentions': sorted(mentions, key=lambda m: (m['host'], m['file'], m['line'])), 'csp': csp_out}
     # the validator rejects any email, phone or card-like value in the evidence: redact every remaining string
     # (labels, placeholders, notes) the same way, whatever pattern put it there; paths are left alone
-    for k in ('collection', 'sinks', 'sdks', 'permissions', 'wrappers', 'candidates', 'host_mentions'):
+    for k in ('collection', 'sinks', 'sdks', 'permissions', 'wrappers', 'candidates', 'host_mentions', 'outbound_unresolved'):
         out[k] = redact_strings(out[k])
     a.out.parent.mkdir(parents=True, exist_ok=True)
     if coverage.get('warning'):
