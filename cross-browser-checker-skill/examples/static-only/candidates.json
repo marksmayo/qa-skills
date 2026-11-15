@@ -1176,6 +1176,7 @@
      "samsung"
     ],
     "fallback": false,
+    "degrades": "harmlessly in most uses: engines without them ignore the rule (default scrollbars, search and spin buttons; a framework reset such as Tailwind preflight uses them only to normalise)",
     "status": "possible",
     "linked_differences": []
    }

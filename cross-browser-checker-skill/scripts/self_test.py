@@ -341,6 +341,176 @@ def round8_compare_checks() -> list[str]:
     return fails
 
 
+def _mk(page, eng, n, elements, vp='1280x800', **kw):
+    r = {'page': page, 'viewport': vp, 'engine': eng, 'run': n, 'run_status': 'ran', 'ok': True, 'elements': elements,
+         'images': [], 'page_errors': [], 'console_errors': [], 'failed_requests': [], 'steps': [], 'overflow_x': False,
+         'size': [1280, 2000]}
+    r.update(kw)
+    return r
+
+
+def _el(sig, box, tag='div', text='x', font='Verdana', **kw):
+    return {'sig': sig, 'tag': tag, 'type': None, 'text': text, 'box': box, 'font': font, **kw}
+
+
+def environment_checks() -> list[str]:
+    """A plain-http loopback site whose CSP says upgrade-insecure-requests: one engine rewrites every subresource to
+    https and they all fail. That is one environment cause, the runs are not captured (no comparison is made for that
+    engine), and nothing is matched to an engine-build limitation. A blank run among good reruns is a failed run, not
+    hundreds of flaky entries."""
+    fails = []
+    screen = getattr(ce, 'screen_runs', None)
+    env_of = getattr(ce, 'environment', None)
+    if screen is None or env_of is None:
+        return ['compare_engines.py has no screen_runs()/environment(): a run whose requests were upgraded to https and '
+                'failed, or a blank run, is compared as a good run']
+    page = [_el('main', [0, 0, 1280, 900], tag='main'), _el('main>h1', [20, 20, 600, 40], tag='h1', text='Bikes',
+                                                          font='ui-sans-serif, system-ui, sans-serif')]
+    bare = [_el('main', [0, 0, 1280, 300], tag='main'), _el('main>h1', [8, 8, 300, 37], tag='h1', text='Bikes',
+                                                           font='-webkit-standard')]
+    runs = []
+    for p in ('home', 'about'):
+        for e in ('chromium', 'firefox', 'webkit'):
+            for n in (1, 2, 3):
+                wk = e == 'webkit'
+                runs.append(_mk(p, e, n, bare if wk else page, csp_upgrade_insecure_requests=True, failed_requests=[
+                    'GET https://127.0.0.1:8681/_next/static/css/app.css (SSL connect error)',
+                    'GET https://127.0.0.1:8681/_next/static/chunks/main.js (SSL connect error)'] if wk else []))
+    doc = {'site': 'http://127.0.0.1:8681/', 'engines': [{'name': e, 'status': 'ran'} for e in ('chromium', 'firefox', 'webkit')],
+           'reruns': 3, 'platform': 'win32', 'runs': runs}
+    screened = screen(doc)
+    env = env_of(doc)
+    if len(env) != 1 or env[0].get('cause') != 'https_upgrade' or env[0].get('engines') != ['webkit'] or \
+            'upgrade-insecure-requests' not in env[0].get('detail', ''):
+        fails.append(f'requests upgraded to https on an http site are not one environment cause naming the CSP: {env}')
+    if any(r['run_status'] == 'ran' for r in doc['runs'] if r['engine'] == 'webkit') or len(screened) != 6:
+        fails.append(f'webkit runs whose own requests were upgraded and failed are still recorded as ran: {screened}')
+    diffs, flaky, dismissed = ce.compare(doc, Path(tempfile.gettempdir()), 'chromium', 1)
+    cands = ce.candidates(diffs, dismissed, doc, None, None, set())
+    if any('webkit' in c['engines'] for c in cands) or any(c['build_limitations'] for c in cands):
+        fails.append(f'an environment failure became engine differences: {[(c["subkind"], c["engines"], c["build_limitations"]) for c in cands]}')
+    cmp = ce.comparisons(doc, 'chromium')
+    if cmp['made'] != 2 or not all('https' in (x['reason'] or '') for x in cmp['not_made']):
+        fails.append(f'the webkit comparisons are not "not made" with the https reason: {cmp}')
+    # the serif-controls limitation must look at the engine's face, not "serif" inside the reference's ui-sans-serif
+    lim = ce.build_limitations({'engines': ['webkit'], 'subkind': 'font_family_differs', 'element': 'h1',
+                                'detail': '3 element(s) draw in font family "arial" in webkit but "ui-sans-serif, system-ui" '
+                                          'in chromium', 'messages': {}}, 'win32')
+    if 'webkit-windows-serif-controls' in lim:
+        fails.append('a sans face in WebKit matches the serif-controls limitation because the reference says ui-sans-serif')
+    # a stylesheet that failed to load in the engine explains its default face: no build limitation
+    runs = []
+    for e in ('chromium', 'webkit'):
+        for n in (1, 2):
+            wk = e == 'webkit'
+            runs.append(_mk('home', e, n, [_el('button.go', [10, 10, 80, 30], tag='button', font='Times New Roman' if wk else 'Verdana')],
+                            failed_requests=['GET http://127.0.0.1:8681/site.css (Could not connect)'] if wk else []))
+    doc = {'site': 'http://127.0.0.1:8681/', 'engines': [{'name': 'chromium'}, {'name': 'webkit'}], 'reruns': 2,
+           'platform': 'win32', 'runs': runs}
+    diffs, flaky, dismissed = ce.compare(doc, Path(tempfile.gettempdir()), 'chromium', 1)
+    cands = ce.candidates(diffs, dismissed, doc, None, None, set())
+    fam = [c for c in cands if c['subkind'] == 'font_family_differs']
+    if not fam or fam[0]['build_limitations']:
+        fails.append(f'a default face that follows from a failed stylesheet is matched to a build limitation: '
+                     f'{[(c["subkind"], c["build_limitations"]) for c in fam]}')
+    # 4. a blank rerun (75 elements against 555 in its siblings): one failed run, not one flaky entry per element
+    full = [_el(f'main>p:nth-of-type({i})', [0, 30 * i, 600, 20], tag='p') for i in range(1, 80)]
+    blank = full[:4]
+    runs = []
+    for e in ('chromium', 'webkit'):
+        for n in (1, 2, 3):
+            runs.append(_mk('home', e, n, blank if (e == 'webkit' and n == 3) else full,
+                            **({'uniformity': {'dominant_share': 0.995, 'uniform': True}} if (e == 'webkit' and n == 3) else
+                               {'uniformity': {'dominant_share': 0.7, 'uniform': False}})))
+    doc = {'site': 'http://127.0.0.1:8681/', 'engines': [{'name': 'chromium'}, {'name': 'webkit'}], 'reruns': 3,
+           'platform': 'win32', 'runs': runs}
+    screened = screen(doc)
+    diffs, flaky, dismissed = ce.compare(doc, Path(tempfile.gettempdir()), 'chromium', 1)
+    cmp = ce.comparisons(doc, 'chromium')
+    if len(screened) != 1 or flaky or 'blank' not in (cmp['not_made'][0]['reason'] if cmp['not_made'] else ''):
+        fails.append(f'a blank rerun is not one failed run (screened {screened}, {len(flaky)} flaky, not made {cmp["not_made"]})')
+    # capture retries a screened run once and keeps the retry when it is good
+    retry = getattr(capture, 'retry_outliers', None)
+    if retry is None:
+        fails.append('capture.py has no retry_outliers(): a blank run is never captured again')
+    else:
+        group = [dict(r) for r in runs if r['engine'] == 'webkit']
+        for r in group:
+            r.update(run_status='ran', ok=True, error=None)
+            r.pop('screened', None)
+        out = retry(group, lambda r: dict(r, elements=full, uniformity={'dominant_share': 0.7, 'uniform': False}))
+        if [r['run_status'] for r in out] != ['ran'] * 3 or not out[2].get('retried'):
+            fails.append(f'a blank run retried with a good result is not kept as ran with a "retried" note: '
+                         f'{[(r["run_status"], r.get("retried")) for r in out]}')
+    return fails
+
+
+def round10_compare_checks() -> list[str]:
+    """Box differences that can be promoted, a decoded dark photo, the system-ui face in WebKit on Windows, an SVG
+    stroke box, and an aborted framework image request."""
+    fails = []
+    # 2. a repeatable box difference: its runs record "differs", so the reference's outcomes are not the engine's
+    runs = []
+    for e in ('chromium', 'firefox'):
+        for n in (1, 2, 3):
+            runs.append(_mk('home', e, n, [_el('main>ul.sources', [0, 100, 600, 80 if e == 'firefox' else 120], tag='ul')]))
+    doc = {'engines': [{'name': 'chromium'}, {'name': 'firefox'}], 'reruns': 3, 'platform': 'win32', 'runs': runs}
+    diffs, flaky, dismissed = ce.compare(doc, Path(tempfile.gettempdir()), 'chromium', 1)
+    cands = ce.candidates(diffs, dismissed, doc, None, None, set())
+    box = [c for c in cands if c['subkind'] == 'box_differs']
+    if not box or box[0]['runs'].get('home|chromium') == box[0]['runs'].get('home|firefox'):
+        fails.append(f'a box difference records the same outcomes for both engines, so it can never be promoted: '
+                     f'{[c["runs"] for c in box]}')
+    # 5a. a dark photo WebKit decoded and drew: the ink metric is not "not rendered"
+    runs = []
+    for e, v in (('chromium', 0.982), ('webkit', 0.259)):
+        for n in (1, 2):
+            runs.append(_mk('home', e, n, [_el('main>a>img.thumb', [0, 0, 390, 260], tag='img', text='')], _inks=[v],
+                            images=[{'sig': 'main>a>img.thumb', 'src': '/img/trail.jpg', 'complete': True, 'natural': [390, 260]}]))
+    doc = {'engines': [{'name': 'chromium'}, {'name': 'webkit'}], 'reruns': 2, 'platform': 'win32', 'runs': runs}
+    real = ce.all_inks
+    ce.all_inks = fake_inks
+    try:
+        diffs, flaky, dismissed = ce.compare(doc, Path(tempfile.gettempdir()), 'chromium', 1)
+    finally:
+        ce.all_inks = real
+    if any(d['subkind'] == 'content_not_rendered' for d in diffs):
+        fails.append('a decoded photo drawn by both engines is content_not_rendered because its most common colour differs')
+    # 5b. the same computed family resolving to another face (system-ui in Windows WebKit)
+    fam = 'ui-sans-serif, system-ui, sans-serif'
+    runs = []
+    for e in ('chromium', 'webkit'):
+        for n in (1, 2):
+            wk = e == 'webkit'
+            runs.append(_mk('home', e, n, [_el('main>p.lead', [0, 0, 600, 48 if wk else 24], tag='p', font=fam)],
+                            faces={fam: 1180.5 if wk else 1101.0}))
+    doc = {'engines': [{'name': 'chromium'}, {'name': 'webkit'}], 'reruns': 2, 'platform': 'win32', 'runs': runs}
+    diffs, flaky, dismissed = ce.compare(doc, Path(tempfile.gettempdir()), 'chromium', 1)
+    cands = ce.candidates(diffs, dismissed, doc, None, None, set())
+    face = [c for c in cands if c['subkind'] == 'font_family_differs']
+    if not face or 'webkit-windows-system-ui' not in face[0]['build_limitations']:
+        fails.append(f'system-ui resolving to another face in WebKit is not a font difference with its build limitation: '
+                     f'{[(c["subkind"], c["build_limitations"]) for c in cands]}')
+    box = [c for c in cands if c['subkind'] == 'box_differs']
+    if box and 'webkit-windows-system-ui' not in box[0]['build_limitations']:
+        fails.append(f'a box resized by the other face does not inherit the limitation: {box[0]["build_limitations"]}')
+    # 5c. Firefox includes an SVG shape's stroke in its box
+    runs = []
+    for e in ('chromium', 'firefox'):
+        for n in (1, 2):
+            ff = e == 'firefox'
+            runs.append(_mk('home', e, n, [_el('svg.ring>circle', [92, 92, 112, 112] if ff else [100, 100, 96, 96],
+                                               tag='circle', text='', stroke=16)]))
+    doc = {'engines': [{'name': 'chromium'}, {'name': 'firefox'}], 'reruns': 2, 'platform': 'win32', 'runs': runs}
+    diffs, flaky, dismissed = ce.compare(doc, Path(tempfile.gettempdir()), 'chromium', 1)
+    if any(d.get('element') == 'svg.ring>circle' for d in diffs):
+        fails.append('an SVG circle whose box includes its stroke in one engine is a layout difference')
+    # 5d. an image request a framework cancels when it swaps a srcset candidate
+    if not ce.benign_failure('GET http://127.0.0.1:8681/_next/image?url=%2Fa.jpg&w=640&q=75 (net::ERR_ABORTED)'):
+        fails.append('an aborted /_next/image request is compared as a failed request')
+    return fails
+
+
 def grouping_checks() -> list[str]:
     """Repeated cards (nth-of-type siblings) across two viewports, an undecoded AVIF in each with the fallback the page
     shows instead, the same console error on two pages, and a 400 response logged by two engines only."""
@@ -416,6 +586,7 @@ SNAP_PAGE = """<!doctype html><html><head><style>body { font-family: Verdana, sa
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.6) }</style></head><body>
 <p class="intro">Runs</p><button class="btn">Filter</button>
 <div class="panel" id="detail">""" + ''.join(f'<p>Step {i}</p>' for i in range(30)) + """</div>
+<svg class="ring" width="120" height="120"><circle cx="60" cy="60" r="40" stroke="#333" stroke-width="16" fill="none"/></svg>
 <div class="modal"></div></body></html>"""
 
 
@@ -444,6 +615,12 @@ def snapshot_checks() -> tuple[list[str], str]:
     if snap.get('inner') != [800, 600] or snap.get('fullscreen') is not False:
         fails.append(f'the snapshot does not record the effective viewport and fullscreen state: inner {snap.get("inner")}, '
                      f'fullscreen {snap.get("fullscreen")}')
+    faces = snap.get('faces') or {}
+    if not any('Verdana' in k and isinstance(v, (int, float)) and v > 0 for k, v in faces.items()):
+        fails.append(f'the snapshot does not measure the face each font family resolves to (faces): {faces}')
+    circle = by.get('circle') or {}
+    if circle.get('stroke') != 16:
+        fails.append(f'the snapshot does not record the stroke width of an SVG shape: {circle}')
     sc = snap.get('scrollers') or []
     if not any(s.get('sig') == '#detail' and s.get('hidden_px', 0) > 100 for s in sc):
         fails.append(f'the snapshot does not record the inner scroll panel #detail: {sc}')
@@ -550,12 +727,145 @@ def validator_render_checks() -> list[str]:
     return fails
 
 
+def verdict_checks() -> list[str]:
+    """A cautious verdict (inconclusive) with nothing promoted is accepted, and --write-summary fills the computed fields
+    without overwriting the agent's verdict."""
+    fails = []
+    rep = json.loads((EXAMPLES / 'report.example.json').read_text(encoding='utf-8'))
+    ids = [t['candidate_id'] for t in rep['triage']]
+    rep['differences'] = []
+    rep['triage'] = [{'candidate_id': c, 'decision': 'needs_review', 'difference_id': None,
+                      'reason': 'held back for a second look at the screenshots of both engines'} for c in ids]
+    rep['needs_review'] = [{'candidate_id': c, 'reason': 'compare the screenshots again in a real browser'} for c in ids]
+    rep['headline']['verdict'] = 'inconclusive'
+    rep['headline']['summary'] = ('Inconclusive: 5 candidates need review before any is called a difference; '
+                                  'real Safari and devices were not tested.')
+    for k in ('severity_counts', 'flaky_count', 'checks', 'evidence_completeness', 'overall_confidence'):
+        rep['headline'].pop(k, None)
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / 'r.json'
+        p.write_text(json.dumps(rep), encoding='utf-8')
+        args = [sys.executable, '-B', str(HERE / 'validate_report.py'), str(p), '--runs', str(EXAMPLES / 'run' / 'capture' / 'runs.json'),
+                '--candidates', str(EXAMPLES / 'run' / 'candidates.json'), '--jobs', '1',
+                '--features', str(EXAMPLES / 'run' / 'features.json')]
+        r = subprocess.run(args + ['--write-summary'], capture_output=True, text=True, encoding='utf-8', cwd=SKILL)
+        got = json.loads(p.read_text(encoding='utf-8'))['headline'].get('verdict')
+        if r.returncode != 0 or got != 'inconclusive':
+            fails.append(f'an inconclusive verdict with nothing promoted is rejected or overwritten by --write-summary '
+                         f'(exit {r.returncode}, verdict now {got!r}): {r.stdout.strip()[-200:]!r}')
+        # webkit's requests upgraded to https on the plain-http site: the report must name the environment cause
+        runs = json.loads((EXAMPLES / 'run' / 'capture' / 'runs.json').read_text(encoding='utf-8'))
+        site = runs['site'].rstrip('/')
+        for x in runs['runs']:
+            if x['engine'] == 'webkit':
+                x['failed_requests'] = (x.get('failed_requests') or []) + [
+                    'GET ' + site.replace('http://', 'https://') + '/style.css (SSL connect error)']
+        (Path(tmp) / 'runs.json').write_text(json.dumps(runs), encoding='utf-8')
+        r = subprocess.run([sys.executable, '-B', str(HERE / 'validate_report.py'), str(EXAMPLES / 'report.example.json'),
+                            '--runs', str(Path(tmp) / 'runs.json'), '--candidates', str(EXAMPLES / 'run' / 'candidates.json'),
+                            '--jobs', '1', '--features', str(EXAMPLES / 'run' / 'features.json')],
+                           capture_output=True, text=True, encoding='utf-8', cwd=SKILL)
+        if r.returncode == 0 or 'upgrade-insecure-requests' not in r.stdout or 'environment' not in r.stdout:
+            fails.append(f'validate_report.py accepted a report silent about requests upgraded to https on an http site: '
+                         f'{r.stdout.strip()[-200:]!r}')
+        # differences promoted but the agent wrote no_differences_detected: an error, never silently rewritten
+        rep2 = json.loads((EXAMPLES / 'report.example.json').read_text(encoding='utf-8'))
+        rep2['headline']['verdict'] = 'no_differences_detected'
+        p.write_text(json.dumps(rep2), encoding='utf-8')
+        r = subprocess.run(args + ['--write-summary'], capture_output=True, text=True, encoding='utf-8', cwd=SKILL)
+        got = json.loads(p.read_text(encoding='utf-8'))['headline'].get('verdict')
+        if r.returncode == 0 or got != 'no_differences_detected':
+            fails.append(f'--write-summary rewrote or accepted a verdict that contradicts the differences: exit {r.returncode}, '
+                         f'verdict now {got!r}')
+    return fails
+
+
+NEXT_TREE = {
+    'package.json': json.dumps({'name': 'bike-shop', 'dependencies': {'next': '15.3.0', 'react': '19.0.0'},
+                                'devDependencies': {'tailwindcss': '4.1.0'}}),
+    'next.config.ts': 'const nextConfig = { async headers() { return [] } };\nexport default nextConfig;\n'
+                      'const s = structuredClone({});\n',
+    'eslint.config.mjs': 'const all = [].toSorted();\nexport default all;\n',
+    'postcss.config.mjs': 'export default { plugins: { "@tailwindcss/postcss": {} } };\nObject.groupBy([], x => x);\n',
+    'next-env.d.ts': '/// <reference types="next" />\n',
+    'src/app/layout.tsx': 'export default function L({ children }) { return <html><body>{children}</body></html> }\n',
+    'src/app/page.tsx': 'export default function P() { return <h1 className="text-balance">Bikes</h1> }\n',
+    'src/app/nav.tsx': '"use client";\nexport function Nav() { const l = [1, 2].findLast(x => x); return <nav>{l}</nav> }\n',
+    'src/app/robots.ts': 'export default function robots() { return { rules: [].toSorted() } }\n',
+    'src/app/feed.xml/route.ts': 'export async function GET() { const x = structuredClone({}); return new Response("") }\n',
+    'src/app/[slug]/opengraph-image.tsx': 'import { ImageResponse } from "next/og";\n'
+                                          'export default function I() { const g = Object.groupBy([], x => x); return new ImageResponse(<div />) }\n',
+    'src/lib/server-data.ts': 'import "server-only";\nexport const rows = [].toSorted();\n',
+    '.next/static/chunks/main.js': 'self.x = 1;\n',
+    '.next/static/css/app.css': '.a{color:red}\n',
+}
+
+
+def next_scan_checks() -> tuple[list[str], str]:
+    """A Next.js App Router project: route handlers, generated metadata routes, config files, type declarations and
+    server-only modules don't ship to browsers; .next is the built CSS read with --built-css, its JS is not scanned (and
+    the scan says so); minified built CSS with a guarded and an unguarded use keeps them apart; browserslist
+    `<browser> all`."""
+    try:
+        from fetch_data import asset_path
+        asset_path('web-features'); asset_path('caniuse-db')
+    except (FileNotFoundError, ImportError, KeyError):
+        return [], 'skipped (feature data not cached: fetch_data.py)'
+    fails = []
+    import browserslist_lite as bl
+    res = bl.Resolver(json.loads(asset_path('caniuse-db').read_text(encoding='utf-8'))).resolve('> 0.3%, not op_mini all, ie all')
+    if res['unresolved']:
+        fails.append(f'browserslist "<browser> all" is unresolved: {res["unresolved"]}')
+    filler = ''.join(f'.f{i}{{margin:{i}px}}' for i in range(120))
+    built = (filler + '@supports (color:oklch(0 0 0)){.card{color:oklch(50% .1 200)}}.price{color:oklch(60% .1 100)}'
+             '.bar{--tw-gradient-position:to right in oklab}' + filler + '\n')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / 'bike-shop'
+        for rel, text in NEXT_TREE.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        (root / '.next/static/css/app.css').write_text(built, encoding='utf-8')
+        out = Path(tmp) / 'features.json'
+        r = subprocess.run([sys.executable, '-B', str(HERE / 'feature_scan.py'), '--repo', str(root), '--out', str(out),
+                            '--query', 'chrome >= 109, firefox >= 115, safari >= 15'], capture_output=True, text=True, encoding='utf-8')
+        try:
+            d = json.loads(out.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return [f'feature_scan.py failed: {r.stderr[-300:]}'], 'ran'
+        scanned = set((d.get('scanned_files') or {}).get('files') or [])
+        server = {'next.config.ts', 'eslint.config.mjs', 'postcss.config.mjs', 'next-env.d.ts', 'src/app/robots.ts',
+                  'src/app/feed.xml/route.ts', 'src/app/[slug]/opengraph-image.tsx', 'src/lib/server-data.ts'}
+        if scanned & server:
+            fails.append(f'server-only files were scanned as browser code: {sorted(scanned & server)}')
+        if not {'src/app/page.tsx', 'src/app/nav.tsx'} <= scanned:
+            fails.append(f'App Router pages and client components were not scanned: {sorted(scanned)}')
+        listed = {x.get('path') if isinstance(x, dict) else x for x in (d.get('skipped') or {}).get('server_only') or []}
+        if not server <= listed:
+            fails.append(f'skipped.server_only does not list the server-only files: {sorted(listed)}')
+        ex = [x for x in (d.get('skipped') or {}).get('excluded_with_code') or [] if x.get('path') == '.next']
+        if ex and not ex[0].get('served_by'):
+            fails.append(f'.next is listed as excluded code with no note that its CSS was scanned: {ex}')
+        if not any('.next' in x and 'JavaScript' in x for x in d.get('limitations') or []):
+            fails.append(f'no limitation says the built JavaScript in .next was not scanned: {d.get("limitations")}')
+        feats = {f['feature']: f for f in d['features']}
+        ok = feats.get('oklab')
+        if not ok or ok['fallback'] or '.price' not in ok['files'][0]['snippet'] or ok['files'][0].get('fallback') is not False \
+                or not ok['files'][0].get('guarded'):
+            fails.append(f'a guarded and an unguarded oklch() on one minified line are not kept apart (unguarded snippet, '
+                         f'guarded count): {ok and ok["files"]}')
+        if 'gradient-interpolation' not in feats or (ok and any('in oklab' in u['snippet'] for u in ok['files'])):
+            fails.append(f'gradient "in oklab" interpolation is read as an oklab() colour, not gradient interpolation: '
+                         f'{sorted(feats)}')
+    return fails, 'ran'
+
+
 def main() -> int:
     ok = True
     for name, fn in (('feature_scan.py: Go string constants, vendored trees, language guard', feature_scan_checks),
                      ('feature_scan.py: a Flask site with Jinja templates, a data directory, --exclude', flask_scan_checks),
                      ('feature_scan.py: a served dist/ folder, --include, app APIs, an Emscripten loader', served_dist_checks),
-                     ('capture.py snapshot: font family, occlusion, inner scroll panels', snapshot_checks)):
+                     ('capture.py snapshot: font family, occlusion, inner scroll panels', snapshot_checks),
+                     ('feature_scan.py: Next.js server-only files, built JS, guarded uses, browserslist all', next_scan_checks)):
         fails, how = fn()
         ok &= not fails
         print(f"self-test {'passed' if not fails else 'FAILED'}: {name} ({how})" + ''.join(f'\n  - {f}' for f in fails))
@@ -563,6 +873,10 @@ def main() -> int:
                      ('compare_engines.py: grouping repeats, inherited limitations, logged HTTP errors', grouping_checks),
                      ('compare_engines.py: viewport, media aborts, second ink pass, font limits, inline reflow, '
                       'same everywhere', round8_compare_checks),
+                     ('compare_engines.py: https upgrade as one environment cause, blank reruns, failed stylesheet', environment_checks),
+                     ('compare_engines.py: promotable boxes, decoded photo, system-ui face, SVG stroke, image aborts',
+                      round10_compare_checks),
+                     ('validate_report.py: a cautious verdict, --write-summary keeps the verdict', verdict_checks),
                      ('validate_report.py --features and render_report.py --brief', validator_render_checks)):
         fails = fn()
         ok &= not fails
