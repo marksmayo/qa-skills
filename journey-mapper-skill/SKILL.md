@@ -1,7 +1,7 @@
 ---
 name: journey-mapper
 description: Map the user journeys of an application by reading its codebase (web, mobile and API), and write them as prioritised, evidence-linked Journey Markdown files ready to be turned into automated tests. Accounts for every route, screen, endpoint, entry point and goal event it finds, reports coverage honestly, and never presents behaviour inferred from code as intended behaviour.
-version: 1.4.0
+version: 1.5.0
 ---
 
 # Journey Mapper
@@ -131,6 +131,26 @@ repository. Details worth knowing:
 - **Intercepting routes** (`(.)x`, `(..)x`, `(...)x`) are reported under the route they
   intercept, with detector `next-intercepting-route` and a note. They are a second way to render
   that route (usually a modal on client-side navigation), so cover them with a variant.
+- **Next.js file conventions** are read with the shared Next.js reader. Metadata routes
+  (`robots.ts`, `sitemap.ts`, `manifest.ts`, `favicon.ico`, `icon`, `apple-icon`,
+  `opengraph-image`, `twitter-image`) are `GET` endpoints with detector `next-metadata-route` and
+  domain `site-files`; an Open Graph or Twitter image is added to the page metadata of its segment
+  automatically, so a sharing-preview journey reads it from the page head (a note says so). A page
+  or route handler with segment config carries `segment_config` and a note:
+  `generateStaticParams` with `dynamicParams = false` means only the generated values are pages and
+  any other value answers 404, a variant every journey through that route needs;
+  `export const dynamic`/`revalidate` say when content changes. A route with no static segment
+  (`/:slug`) gets a domain from its page component (`SightingPage` becomes `sighting`) or a telling
+  parameter name, with a note that it was guessed. `context.route_states` lists `not-found`,
+  `error`, `loading` (and `template`, `default`, `global-error`, `forbidden`, `unauthorized`) files
+  per segment: the 404, error and loading variants. `context.third_party_scripts` lists
+  `next/script` and `<script>` loaders and connection hints to other hosts (with `strategy` and
+  line); a limitation says when an analytics loader is present but no goal event was found (page
+  views only: ask which outcomes matter, don't invent goals). `context.service_workers` lists each
+  worker, its registration and fetch strategies, and `context.public_files` the non-media files
+  served from `public/` (`/manifest.json`, `/ads.txt`, verification files). A journey whose run
+  depends on a third party or the worker names it as a precondition; tests written from the
+  journeys block both by default.
 - **Goals** include calls to tracking wrappers: functions that forward their first parameter to a
   known analytics call (e.g. `trackMixpanelEvent('sign_up_completed')`), found automatically and
   listed in `context.goal_wrappers` with where they are defined. If the app tracks through a
@@ -211,8 +231,9 @@ repository. Details worth knowing:
   make a journey `automated`), `services`, `guards` (each Next.js
   `middleware.ts`/`proxy.ts`: its `matcher` values, lists of path prefixes such as
   `AUTH_REQUIRED`, path checks and redirects, by line), `layouts` (each App Router layout with
-  lines that look like guards), `path_aliases` (`tsconfig`/`jsconfig` `paths`) and
-  `goal_wrappers`.
+  lines that look like guards), `path_aliases` (`tsconfig`/`jsconfig` `paths`),
+  `goal_wrappers`, and for Next.js `route_states`, `third_party_scripts`, `service_workers` and
+  `public_files` (above).
 
 The extractor is heuristic. Then:
 
@@ -323,15 +344,6 @@ Every surface item must end up in exactly one bucket:
 | Bucket | When |
 |---|---|
 | Covered | Listed in at least one journey's `covers` |
-
-A journey whose subject is a cross-cutting guard (an authentication middleware in
-`context.guards`) rather than a route may have empty `covers` with a `covers_reason` saying so; do
-not pad it with routes it does not reach.
-
-**Observed is not inferred.** `expect` is what the code implies. When you ran the app (a loopback
-probe, a browser capture), record what it showed on the step as `observed: {"result", "run", "at"}`
-(the run's evidence file and when it ran), so a reader can tell observation from inference; the
-validator checks all three are there.
 | Orphan `no_user_path_found` | User-facing, but you couldn't trace a path to it |
 | Orphan `not_user_facing` | Health checks, webhooks, internal or machine-to-machine endpoints |
 | Orphan `out_of_scope` | Belongs to a domain excluded from this run. The item's `domain` (or the orphan's own `domain`, when the item's proposed one is wrong) must be outside `run_scope.domains` |
@@ -341,6 +353,18 @@ validator checks all three are there.
 | Unreachable `dead` | No navigation, link, redirect or call reaches it (cite the evidence of absence you checked) |
 | Unreachable `flag_off` | Only reachable behind a flag that is off by default everywhere (cite the flag default) |
 | Unreachable `guarded_unreachable` | Behind a guard no real user can satisfy |
+
+A journey whose subject is a cross-cutting guard (an authentication middleware in
+`context.guards`) rather than a route may have empty `covers` with a `covers_reason` saying so; do
+not pad it with routes it does not reach.
+
+**Observed is not inferred.** `expect` is what the code implies. When you ran the app (a loopback
+probe, a browser capture), record what it showed on the step as `observed: {"result", "run", "at"}`:
+`run` is the run's evidence file, relative to the map's directory (keep it under the output
+directory, e.g. `journeys/run/probe/home.txt` is `run/probe/home.txt`), and `at` is when it ran. The
+validator checks all three are there and that the run file exists. `write_journeys.py` writes each
+observation as its own Evidence entry of the step (`Step N: Observed <at> (run ...): <result>`), never
+into the Expect, and `render_report.py` lists observed steps apart from the inferred ones.
 
 Admin-only and internal-tool paths are **not** unreachable. Map them as journeys with the right
 persona.

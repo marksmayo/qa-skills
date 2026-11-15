@@ -208,3 +208,36 @@ Found on a FastAPI server serving a committed, framework-less front end from `di
 - Not done: the Markdown journey format (shared) does not render `observed`; click handlers are not
   traced; an `unintended_exposure` orphan reason.
 
+### v1.5.0: a Next.js App Router content site with no tests
+
+Found on a Next.js App Router content site (a root dynamic segment with `generateStaticParams` and
+`dynamicParams = false`, generated metadata routes, not-found/error/loading files, `next/script`
+analytics and ad loaders, a service worker in `public/`). Red/green checks in
+`extract_surface.py --self-test` (`self_test_next`, a synthetic bird-watching site),
+`validate_journey_map.py --self-test`, and new `write_journeys.py --self-test` and
+`render_report.py --self-test`.
+
+- Metadata routes were missing (a third of the real surface added by hand): the extractor now reads
+  the project with the shared `next_app.py` and emits `robots`, `sitemap`, `manifest`, `favicon`,
+  `icon`, `apple-icon`, `opengraph-image` and `twitter-image` as `GET` endpoints (detector
+  `next-metadata-route`, domain `site-files`, a note on how each is used).
+- A root dynamic route had no domain: one is proposed from the page component's name (or a telling
+  parameter name) with a note. Pages and handlers carry `segment_config`, and a note spells out
+  `generateStaticParams` with `dynamicParams = false` (other values are 404) and
+  `dynamic`/`revalidate`.
+- `context.route_states` (not-found, error, loading and the other segment files, or the default
+  404 when there is no not-found file), `context.third_party_scripts` (with a limitation when an
+  analytics loader exists and no goal event was found, and one asking tests to block third
+  parties), `context.service_workers` (with a note to block them in tests that route requests) and
+  `context.public_files`.
+- `observed` was dropped after validation: `write_journeys.py` writes it as an Evidence entry of
+  the step (the shared Journey Markdown format has no `Observed` line yet, and an indented line
+  would be read as part of the Expect), `render_report.py` lists observed steps and counts them in
+  `--brief`, and the validator checks `observed.run` exists relative to the map's directory.
+- SKILL.md Step 8: two paragraphs had split the bucket table; the validator self-test now checks
+  the table names every orphan and unreachable reason.
+- RUBRIC: a privacy or cookie notice that captures nothing is P2 (P1 when consent or a privacy
+  request happens there); reading the main content is the core value of a content site.
+- Not done: an `**Observed:**` line in the shared Journey Markdown format (JOURNEY_FORMAT.md and
+  `journey_md.py` parse and render), which would replace the Evidence entry.
+
