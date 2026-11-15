@@ -2,6 +2,9 @@
 """Render an i18n report as a terminal/Markdown report with optional ANSI colour.
 
     python render_report.py report.json [--color auto|always|never] [--brief]
+
+--brief prints the verdict, the findings one per line, the items that need review (the first 15, then a count) and
+the limitations.
 """
 from __future__ import annotations
 import argparse, json, os, sys
@@ -10,6 +13,7 @@ from pathlib import Path
 RESET = "\033[0m"; BOLD = "\033[1m"; DIM = "\033[2m"
 RED = "\033[31m"; GREEN = "\033[32m"; YELLOW = "\033[33m"; CYAN = "\033[36m"
 SEV = {'Critical': RED + BOLD, 'High': RED, 'Medium': YELLOW, 'Low': CYAN}
+BRIEF_REVIEW = 15      # needs-review items listed in --brief (the rest are counted)
 
 
 def supports_color(mode: str) -> bool:
@@ -31,6 +35,8 @@ def main() -> int:
     P = (lambda s, st: f'{st}{s}{RESET}') if supports_color(a.color) else (lambda s, st: s)
     sc, hl = d['scope'], d['headline']
     verdict = P('ISSUES FOUND', RED + BOLD) if hl['verdict'] == 'issues_found' else \
+        P('READINESS ONLY', YELLOW + BOLD) + ' (single-locale product: localisation checks not assessed; readiness ' \
+        'findings for a future locale)' if hl['verdict'] == 'readiness_only' else \
         P('NOT ASSESSED', YELLOW + BOLD) + ' (no translation resources or code were analysed)' if hl['verdict'] == 'not_assessed' else \
         P('NONE DETECTED', GREEN + BOLD) + ' (for the locales, files and pages checked)'
     locs = ', '.join(f'{l["code"]} ({l["status"]}{": " + l["reason"] if l["reason"] else ""})' for l in sc['locales'])
@@ -45,6 +51,14 @@ def main() -> int:
         out.append('')
         out += [f'{P(f["id"], BOLD)} {P(f["priority"] + " " + f["severity"], SEV[f["severity"]])} {f["kind"]} [{", ".join(f["locales"])}]: {f["title"]}'
                 for f in d['findings']]
+        if d['needs_review']:
+            shown = d['needs_review'][:BRIEF_REVIEW]
+            out += ['', P(f'Needs review ({len(d["needs_review"])})', BOLD)] + \
+                [f'- {n["candidate_id"]}: {n["reason"]}' for n in shown]
+            if len(d['needs_review']) > len(shown):
+                out.append(f'- ... and {len(d["needs_review"]) - len(shown)} more (full report without --brief)')
+        if d['limitations']:
+            out += ['', P('Limitations', BOLD)] + [f'- {x}' for x in d['limitations']]
         print('\n'.join(out))
         return 0
     if d['findings']:

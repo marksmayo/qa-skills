@@ -229,7 +229,8 @@ kl km kn ko kr ks ku kv kw ky la lb lg li ln lo lt lu lv mg mh mi mk ml mn mr ms
 os pa pi pl ps pt qu rm rn ro ru rw sa sc sd se sg si sk sl sm sn so sq sr ss st su sv sw ta te tg th ti tk tl tn to tr ts tt tw ty
 ug uk ur uz ve vi vo wa wo xh yi yo za zh zu'''.split())
 # codes that are also common English words or file names (io.js, is.js, id.js): a locale only in a locale folder
-AMBIGUOUS = {'io', 'is', 'it', 'as', 'or', 'to', 'no', 'an', 'am', 'be', 'id', 'ms', 'my', 'so', 'na', 'oc', 'os', 'ch'}
+AMBIGUOUS = {'io', 'is', 'it', 'as', 'or', 'to', 'no', 'an', 'am', 'be', 'id', 'ms', 'my', 'so', 'na', 'oc', 'os', 'ch',
+             'sw'}  # sw: a service worker (sw.js) far more often than Swahili outside a locale folder
 LOCALE_DIR = re.compile(r'(?i)locale|i18n|l10n|lang|translation|messages|intl')
 
 

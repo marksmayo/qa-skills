@@ -24,7 +24,11 @@ look-alikes, text grows 30-50% (short strings grow more) and each message is wra
 ICU arguments, plural keys and # are left alone. Without `resources`, a text-node walk does it after load (it
 can't reach attributes or text added later), and the run records which method was used. A text walk brackets
 every text node, hard-coded or not, so it cannot find untranslated text: `pseudo.untranslated_check` is then
-`not_assessed` and the validator counts the evidence as partial.
+`not_assessed` and the validator counts the evidence as partial. On a product with no resource file or i18n library
+at all (resources.json has no set) the text walk is the only possible mode, so this gap is permanent there:
+`pseudo.only_mode` is true and the reason says so. Visually-hidden text (the sr-only idiom: a 1px box clipped with
+clip: rect(0 0 0 0) or clip-path: inset(50%)) and anything inside it is not measured, so a skip link or a route
+announcer is never truncation.
 
 Measured per run (each with a full-page screenshot):
   truncation      an element whose text is wider than its box while overflow is hidden or clipped (px overflow);
@@ -60,11 +64,24 @@ SNAP = r"""
                width: document.documentElement.clientWidth, texts: [], sided: []};
   const sel = (el) => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (el.className && typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\s+/)[0] : '')
                       + (el.parentElement ? ':in(' + (el.parentElement.id ? '#' + el.parentElement.id : el.parentElement.tagName.toLowerCase()) + ')' : '');
+  // The visually-hidden (sr-only) idiom keeps text for screen readers in a 1px box clipped to nothing: its overflow is
+  // hidden on purpose, so neither it nor anything inside it is measured.
+  const hiddenMemo = new Map();
+  const clipped = (cs, r) => /rect\(\s*0(px)?[\s,]+0(px)?[\s,]+0(px)?[\s,]+0(px)?\s*\)/.test(cs.clip || '') ||
+                             /inset\(\s*50%/.test(cs.clipPath || '') ||
+                             (r.width <= 1 && r.height <= 1 && (cs.overflow === 'hidden' || cs.overflowX === 'hidden' || cs.overflowX === 'clip'));
+  const visuallyHidden = (el) => {
+    if (!el || el === document.body || el === document.documentElement) return false;
+    if (hiddenMemo.has(el)) return hiddenMemo.get(el);
+    const v = clipped(getComputedStyle(el), el.getBoundingClientRect()) || visuallyHidden(el.parentElement);
+    hiddenMemo.set(el, v);
+    return v;
+  };
   const textEls = [];
   for (const el of document.querySelectorAll('body *')) {
     const own = [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('').replace(/\s+/g, ' ').trim();
     const r = el.getBoundingClientRect();
-    if (r.width < 1 || r.height < 1) continue;
+    if (r.width < 1 || r.height < 1 || visuallyHidden(el)) continue;
     const cs = getComputedStyle(el);
     if (cs.visibility === 'hidden' || cs.display === 'none') continue;
     if (own && /[^\s\u00b7\u2022|]/.test(own)) textEls.push(el);
@@ -106,7 +123,7 @@ SNAP = r"""
   for (const el of document.querySelectorAll('input[placeholder], textarea[placeholder], input[type=submit][value], input[type=button][value]')) {
     const r = el.getBoundingClientRect();
     const cs = getComputedStyle(el);
-    if (r.width < 1 || cs.display === 'none' || cs.visibility === 'hidden') continue;
+    if (r.width < 1 || cs.display === 'none' || cs.visibility === 'hidden' || visuallyHidden(el)) continue;
     const text = el.getAttribute('placeholder') || el.value || '';
     if (!text.trim()) continue;
     cv.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
@@ -176,10 +193,18 @@ TEXT_WALK_REASON = ('the pseudo-locale was a text walk after load (no resource p
                     'text added later were not pseudo-localised')
 
 
-def pseudo_record(method: str | None) -> dict:
-    """What the pseudo-locale run could check: a text walk can't find untranslated text."""
+NO_RESOURCES_NOTE = ('; the product has no translation resource file or i18n library, so a text walk is the only possible '
+                     'pseudo mode here and untranslated text can never be assessed this way: it stays not assessed until '
+                     'the text moves into messages')
+
+
+def pseudo_record(method: str | None, no_resources: bool = False) -> dict:
+    """What the pseudo-locale run could check: a text walk can't find untranslated text. With no resources at all
+    (no resource set in resources.json) the text walk is the only mode, so the gap is permanent, not a setup choice."""
     if method == 'text_walk':
-        return {'method': method, 'untranslated_check': 'not_assessed', 'reason': TEXT_WALK_REASON}
+        return {'method': method, 'untranslated_check': 'not_assessed',
+                'reason': TEXT_WALK_REASON + (NO_RESOURCES_NOTE if no_resources else ''),
+                **({'only_mode': True} if no_resources else {})}
     return {'method': method, 'untranslated_check': 'ran' if method else 'not_run', 'reason': None if method else 'no pseudo run'}
 
 
@@ -340,12 +365,14 @@ def main() -> int:
             doc['auth'] = {'method': h.auth_info['method']}   # that a session was used; never its contents or path
         # which locales have resources
         available, keys = {}, set()
+        no_resources = False
         if not res_pat:
             shipped = None
             if a.resources:
                 rd = json.loads(a.resources.read_text(encoding='utf-8'))
                 shipped = {(rd['source_locale'] if l in ('default', 'template') else l)
                            for s in rd['sets'].values() for l in s['locales']}
+                no_resources = not rd['sets']
             available, assumed_not_run = availability(cfg, shipped)
             doc['not_run'] += assumed_not_run
             doc['availability'] = 'resources.json' if shipped is not None else 'assumed from locales (no resource pattern)'
@@ -399,14 +426,14 @@ def main() -> int:
                         h.close_page(page)
                     if mode == 'pseudo':
                         doc['pseudo_method'] = rec['method']
-                        doc['pseudo'] = pseudo_record(rec['method'])
+                        doc['pseudo'] = pseudo_record(rec['method'], no_resources)
                     doc['runs'].append(rec)
                     print(f'{p["name"]} {vp} {mode} {loc}: {len(rec["findings"])} finding(s)', file=sys.stderr)
         # requests the harness refused (third parties, writes): evidence that blocking was on and what it cost
         doc['blocked_requests'] = [{k: b.get(k) for k in ('method', 'url', 'reason')} for b in h.blocked[:200]]
         doc['requests'] = {'seen': h.requests.get('seen'), 'sent': h.requests.get('sent'), 'blocked': dict(h.requests.get('blocked') or {})}
     if doc.get('pseudo', {}).get('untranslated_check') == 'not_assessed':
-        print(f'render_locales.py: NOTE {TEXT_WALK_REASON}', file=sys.stderr)
+        print(f'render_locales.py: NOTE {doc["pseudo"]["reason"]}', file=sys.stderr)
     a.out.mkdir(parents=True, exist_ok=True)
     (a.out / 'runtime.json').write_text(json.dumps(doc, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
     return 0

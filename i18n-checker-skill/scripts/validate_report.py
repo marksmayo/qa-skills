@@ -15,11 +15,23 @@ Fails when:
   * the summary says "fully localised", "fully translated" or similar, or translation_quality isn't untested
     without reviewer evidence; an untranslated finding has high confidence;
   * the proposed patch is marked applied, its file is missing, or its keys don't match the missing JSON keys;
-  * key coverage or headline counts differ from the inputs.
+  * key coverage or headline counts differ from the inputs, or the summary's counts ("13 issues", "2 High",
+    "55 need review", "4 dismissed") differ from the report;
+  * the summary or a finding title claims readiness the evidence can't show: "RTL-ready" (or "supports RTL") with no
+    RTL locale checked, and "ready for localisation", "localisation-ready", "ready for any language" at all (tools
+    show problems, never readiness);
+  * a dismissal's reason is vague (shorter than 25 characters, or "false positive" / "not needed" / "not relevant"
+    with nothing checkable: no quoted text, file or line);
+  * the limitations leave out what wasn't checked: a not_run or excluded locale (by code or name), resource files
+    that were not parsed, a text-walk pseudo-locale, or the absence of any translation resource / second locale;
+  * a single-locale product (candidates.json `single_locale`: no locale ships besides the source) has a verdict
+    other than `readiness_only` (or the more cautious `not_assessed`), or a summary that doesn't say only one
+    locale ships.
 
 Evidence is `partial` (and confidence at most medium) when a locale wasn't checked, something needs review, unused
 keys weren't assessed, a resource file wasn't parsed, no resource set was found, the code scan read no file, or the
-pseudo-locale was a text walk (which can't tell hard-coded text from translated text). When neither resources nor
+pseudo-locale was a text walk (which can't tell hard-coded text from translated text), or the product is
+single-locale. For a single-locale product the verdict is `readiness_only`. When neither resources nor
 code were analysed and nothing rendered, the verdict is `not_assessed` and confidence low. A headline more cautious
 than the computed one (partial for complete, a lower confidence, not_assessed for none_detected) is accepted.
 """
@@ -35,6 +47,101 @@ import schema_check  # noqa: E402
 CLAIMS = re.compile(r'\b(fully|completely|100\s*%)\s+(locali[sz]ed|translated|internationali[sz]ed)\b|\btranslation (is )?complete\b|\ball strings (are )?translated\b', re.I)
 FIELDS = ('kind', 'status', 'locales', 'severity', 'confidence', 'priority', 'score', 'reach', 'leverage', 'locations', 'keys')
 CONF = {'high': 2, 'medium': 1, 'low': 0}
+NEG = re.compile(r"(?:\bnot|n't|\bnever|\bno longer|\bwithout)\W+(?:\w+\W+){0,2}$", re.I)
+RTL_CLAIM = re.compile(r'\bRTL[- ](?:ready|safe|compatible|proof)\b|\bready for RTL\b|\bsupports? (?:full )?RTL\b|'
+                       r'\bRTL (?:is |was )?(?:fully )?(?:supported|handled|fine|correct|ok)\b|\bmirrors? correctly\b', re.I)
+READY_CLAIM = re.compile(r'\bready (?:for|to be) (?:locali[sz]\w*|translat\w*|internationali[sz]\w*|any language|all languages|'
+                         r'other languages|every language|new languages)|\b(?:locali[sz]ation|translation|i18n|l10n|'
+                         r'internationali[sz]ation)[- ]ready\b|\b(?:supports?|works in|handles) (?:any|all|every) languages?\b|'
+                         r'\bfully internationali[sz]ed\b', re.I)
+VAGUE = re.compile(r"^\W*(?:false[- ]positive|not (?:needed|relevant|applicable|an issue|a problem|important|required|"
+                   r"necessary|a bug)|irrelevant|n/?a|ok|fine|ignored?|won'?t fix|out of scope|by design|expected|noise|"
+                   r"unimportant|not i18n)\b", re.I)
+CHECKABLE = re.compile(r'''['"“‘`]\S|\b[\w./-]+\.\w{1,5}(?::\d+)?\b|\bline \d+|\b(?:brand|product|proper) (?:name|noun)''', re.I)
+NO_RES = re.compile(r'\bno (?:translation |locale |message |i18n |language )?(?:resources?|catalog(?:ue)?s?|translation files?|'
+                    r'message files?|locale files?|i18n library)\b|\bwithout (?:any )?(?:translation )?resources\b|'
+                    r'\bsingle[- ]locale\b|\bno (?:second|other|further) (?:locale|language)\b', re.I)
+LANG_NAMES = {'ar': 'Arabic', 'he': 'Hebrew', 'fa': 'Persian', 'ur': 'Urdu', 'de': 'German', 'fr': 'French', 'es': 'Spanish',
+              'it': 'Italian', 'pt': 'Portuguese', 'nl': 'Dutch', 'sv': 'Swedish', 'da': 'Danish', 'nb': 'Norwegian',
+              'no': 'Norwegian', 'fi': 'Finnish', 'pl': 'Polish', 'cs': 'Czech', 'ru': 'Russian', 'uk': 'Ukrainian',
+              'el': 'Greek', 'tr': 'Turkish', 'ja': 'Japanese', 'zh': 'Chinese', 'ko': 'Korean', 'hi': 'Hindi', 'th': 'Thai',
+              'vi': 'Vietnamese', 'id': 'Indonesian', 'ms': 'Malay', 'hu': 'Hungarian', 'ro': 'Romanian', 'bg': 'Bulgarian',
+              'sw': 'Swahili', 'en': 'English', 'ca': 'Catalan', 'hr': 'Croatian', 'sr': 'Serbian', 'sk': 'Slovak'}
+_NAMES = '|'.join(sorted(set(LANG_NAMES.values())))
+SINGLE = re.compile(r'\bsingle[- ]locale\b|\b(?:one|a single) (?:locale|language)\b|\bno (?:second|other|further) '
+                    r'(?:locale|language)\b|\b(?:' + _NAMES + r')[- ]only\b|\bonly (?:in )?(?:' + _NAMES + r')\b', re.I)
+COUNT_NOUN = r'(issues?|findings?|problems?)'
+
+
+def single_locale(cands_doc: dict) -> bool:
+    """No locale ships besides the source (older candidates.json without the flag: no shipped locale)."""
+    if 'single_locale' in cands_doc:
+        return bool(cands_doc['single_locale'])
+    return not cands_doc.get('shipped_locales')
+
+
+def claim_errors(text: str, where: str, rtl_checked: bool) -> list[str]:
+    """Readiness the evidence can't show. A negated claim ("not RTL-ready") is fine."""
+    errs = []
+    for m in RTL_CLAIM.finditer(text):
+        if not rtl_checked and not NEG.search(text[max(0, m.start() - 30):m.start()]):
+            errs.append(f'{where} claims {m.group(0)!r}, but no RTL locale was checked: say RTL was not assessed')
+    for m in READY_CLAIM.finditer(text):
+        if not NEG.search(text[max(0, m.start() - 30):m.start()]):
+            errs.append(f'{where} claims {m.group(0)!r}: tools show localisation problems, never that a product is ready for '
+                        'localisation; scope the claim to what was checked')
+    return errs
+
+
+def summary_count_errors(summary: str, rep: dict) -> list[str]:
+    """Counts the summary states must equal the report's."""
+    errs = []
+    sev = lambda level: sum(1 for f in rep['findings'] if f['severity'] == level)  # noqa: E731
+    for m in re.finditer(r'\b(\d+)\s+(?:(Critical|High|Medium|Low)\s+)?(?:([\w-]+)\s+)?' + COUNT_NOUN + r'\b', summary):
+        n, level, qual = int(m.group(1)), m.group(2), (m.group(3) or '').lower()
+        if level:
+            if n != sev(level):
+                errs.append(f'headline.summary says {n} {level} {m.group(4)}, but the report has {sev(level)} {level} finding(s)')
+        elif qual in ('readiness', 'agent', 'static', 'runtime', 'confirmed', 'possible', 'more', 'other', 'android', 'web'):
+            continue
+        elif n != len(rep['findings']):
+            errs.append(f'headline.summary says {n} {m.group(4)}, but the report has {len(rep["findings"])} finding(s)')
+    for m in re.finditer(r'\b(\d+)\s+(Critical|High|Medium|Low)\b(?!\s+(?:[\w-]+\s+)?' + COUNT_NOUN + r'\b)', summary):
+        if int(m.group(1)) != sev(m.group(2)):
+            errs.append(f'headline.summary says {m.group(1)} {m.group(2)}, but the report has {sev(m.group(2))} {m.group(2)} '
+                        'finding(s)')
+    for m in re.finditer(r'\b(\d+)\s+(?:[\w-]+\s+){0,2}?(?:need|needs|needing|awaiting|left for)\s+(?:a\s+)?review\b', summary):
+        if int(m.group(1)) != len(rep['needs_review']):
+            errs.append(f'headline.summary says {m.group(1)} need review, but needs_review has {len(rep["needs_review"])}')
+    dismissed = sum(1 for t in rep['triage'] if t['decision'] == 'dismissed')
+    for m in re.finditer(r'\b(\d+)\s+(?:[\w-]+\s+){0,2}?(?:were\s+|are\s+)?dismissed\b', summary):
+        if int(m.group(1)) != dismissed:
+            errs.append(f'headline.summary says {m.group(1)} dismissed, but triage dismissed {dismissed}')
+    return errs
+
+
+def limitation_errors(rep: dict, res: dict, rt: dict | None, single: bool) -> list[str]:
+    """SKILL.md rule 9: what wasn't checked must be in limitations."""
+    errs, lim = [], ' '.join(rep['limitations'])
+    for l in rep['scope']['locales']:
+        if l['status'] in ('not_run', 'excluded'):
+            code = l['code']
+            name = LANG_NAMES.get(code.split('-')[0].lower())
+            if not re.search(r'(?<![\w-])' + re.escape(code) + r'(?![\w-])', lim, re.I) and not (name and name.lower() in lim.lower()):
+                errs.append(f'limitations: {code} is {l["status"]} but no limitation names it')
+    np = [x['file'] for x in res.get('not_parsed') or []]
+    if np and not re.search(r'not (?:been )?(?:parsed|read)|unparsed|could not (?:be )?(?:parsed|read)', lim, re.I) and \
+            not all(f in lim for f in np):
+        errs.append(f'limitations: {len(np)} file(s) that look like resources were not parsed ({", ".join(np[:3])}) and no '
+                    'limitation says so')
+    text_walk = (rt or {}).get('pseudo_method') == 'text_walk' or ((rep['scope'].get('pseudo') or {}).get('method') == 'text_walk')
+    if text_walk and not re.search(r'text[- ]walk', lim, re.I):
+        errs.append('limitations: the pseudo-locale was a text walk (untranslated text not assessed, attributes and later '
+                    'text not pseudo-localised) and no limitation says so')
+    if (not res.get('sets') or single) and not (NO_RES.search(lim) or SINGLE.search(lim)):
+        errs.append('limitations: no translation resource set or second locale exists, and no limitation says so (key, '
+                    'placeholder and plural checks were not assessed)')
+    return errs
 
 
 def load(p: Path):
@@ -48,11 +155,13 @@ def expected_headline(rep: dict, cands_doc: dict, keys: dict, res: dict, rt: dic
     rendered = bool(rt and any(r.get('ok') for r in rt.get('runs', [])))
     text_walk = (rt or {}).get('pseudo_method') == 'text_walk' or ((rep['scope'].get('pseudo') or {}).get('method') == 'text_walk')
     nothing = no_sets and no_code and not rendered
-    exp = {'verdict': 'issues_found' if rep['findings'] else 'not_assessed' if nothing else 'none_detected',
+    single = single_locale(cands_doc)
+    exp = {'verdict': 'not_assessed' if nothing else 'readiness_only' if single else
+           'issues_found' if rep['findings'] else 'none_detected',
            'severity_counts': dict(Counter(f['severity'] for f in rep['findings'])), 'key_coverage': keys['key_coverage']}
     partial = any(l['status'] != 'checked' for l in rep['scope']['locales']) or bool(rep['needs_review']) or \
         any(u['status'] == 'not_assessed' for u in keys['unused_check']) or bool(res.get('not_parsed')) or \
-        no_sets or no_code or text_walk
+        no_sets or no_code or text_walk or single
     exp['evidence_completeness'] = 'partial' if partial else 'complete'
     exp['overall_confidence'] = 'low' if nothing else \
         'medium' if partial or any(f['confidence'] != 'high' for f in rep['findings']) else 'high'
@@ -66,7 +175,7 @@ def cautious_enough(k: str, have, want) -> bool:
     if k == 'overall_confidence':
         return CONF.get(have, 9) <= CONF[want]
     if k == 'verdict':
-        return want == 'none_detected' and have == 'not_assessed'
+        return want in ('none_detected', 'readiness_only') and have == 'not_assessed'
     return False
 
 
@@ -109,9 +218,16 @@ def validate(rep: dict, cands_doc: dict, keys: dict, res: dict, repo: Path, rt: 
                 errs.append(f'triage: {t["candidate_id"]} is promoted to {t["finding_id"]}, which is not its finding')
         elif t['finding_id'] is not None:
             errs.append(f'triage: {t["candidate_id"]} is {t["decision"]} but names {t["finding_id"]}')
+        if t['decision'] == 'dismissed':
+            why = t['reason'].strip()
+            if len(why) < 25 or (VAGUE.search(why) and not CHECKABLE.search(why)):
+                errs.append(f'triage: {t["candidate_id"]} is dismissed with a vague reason ({why!r}); say what makes it '
+                            'safe to drop (the text, the file or line, why it is never translated)')
         if t['decision'] == 'needs_review' and t['candidate_id'] not in {n['candidate_id'] for n in rep['needs_review']}:
             errs.append(f'triage: {t["candidate_id"]} is needs_review but not in needs_review[]')
 
+    rtl_codes = {c.split('-')[0] for c in rep['scope'].get('rtl_locales') or []} | {'ar', 'he', 'fa', 'ur', 'yi', 'ps', 'sd', 'ug', 'dv'}
+    rtl_checked = any(l['status'] == 'checked' and l['code'].split('-')[0] in rtl_codes for l in rep['scope']['locales'])
     # findings
     for f in rep['findings']:
         if f.get('source') == 'agent':
@@ -147,6 +263,7 @@ def validate(rep: dict, cands_doc: dict, keys: dict, res: dict, repo: Path, rt: 
             errs.append(f'{f["id"]}: an untranslated finding is never high confidence (some strings are the same in both languages)')
         if CLAIMS.search(f['title'] + ' ' + f['remediation']):
             errs.append(f'{f["id"]}: claims the product is fully localised')
+        errs += claim_errors(f['title'], f'{f["id"]}.title', rtl_checked)
 
     # locales
     shipped = set(cands_doc['shipped_locales']) | {cands_doc['source_locale']}
@@ -189,6 +306,13 @@ def validate(rep: dict, cands_doc: dict, keys: dict, res: dict, repo: Path, rt: 
                 errs.append(f'headline.{k} is {hl[k]!r}; expected {v!r}')
     if CLAIMS.search(hl['summary']):
         errs.append('headline.summary claims the product is fully localised; the best verdict is none_detected, scoped')
+    errs += claim_errors(hl['summary'], 'headline.summary', rtl_checked)
+    errs += summary_count_errors(hl['summary'], rep)
+    single = single_locale(cands_doc)
+    if hl['verdict'] == 'readiness_only' and not SINGLE.search(hl['summary']):
+        errs.append('headline.summary: a readiness_only verdict must say the product ships a single locale '
+                    '("single-locale", "English only", "no second locale")')
+    errs += limitation_errors(rep, res, rt, single)
     return errs
 
 

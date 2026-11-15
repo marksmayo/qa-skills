@@ -12,7 +12,12 @@ Links (a runtime finding joins the static candidate it confirms; unlinked runtim
   format in a locale               -> the code that formats numbers/currency or dates by hand
   truncation                       -> fixed_width CSS whose selector matches the element
   rtl_mirroring (physical spacing) -> rtl_physical CSS whose rule matches the element
+  rtl_mirroring (arrow glyph)      -> rtl_physical arrow drawn as text on that line (the page's own file first)
 A static candidate a runtime finding confirms becomes `confirmed`; heuristic ones without one stay `possible`.
+
+A single-locale product (no locale ships besides the source: no second locale in any resource set and none rendered)
+is marked `single_locale: true`: its findings are readiness findings for a future locale, so hard-coded text is Low,
+and the validator expects the verdict `readiness_only`.
 
 Ratings follow RUBRIC.md. The patch adds each missing key to its locale file with the source text copied in, for
 translation; it is a proposal and is never applied.
@@ -49,8 +54,10 @@ def selector_matches(css_sel: str | None, element: str) -> bool:
     return all(t in el_toks or (not t.startswith(('.', '#')) and el.startswith(t)) for t in toks)
 
 
-def severity(c: dict) -> str:
+def severity(c: dict, single_locale: bool = False) -> str:
     k = c['kind']
+    if k == 'hardcoded_string' and single_locale:
+        return 'Low'          # readiness: nothing is shown in another language yet
     if k == 'icu_syntax':
         return 'Critical'
     if k == 'plural_categories':
@@ -101,6 +108,7 @@ def main() -> int:
     rendered = {r['locale'] for r in (rt or {}).get('runs', []) if r.get('ok') and r.get('mode') in ('locale', 'rtl')}
     shipped = sorted(({(res['source_locale'] if l in ('default', 'template') else l) for s in res['sets'].values() for l in s['locales']}
                       | rendered) - {res['source_locale']})
+    single_locale = not shipped
     cands: list[dict] = []
     # static key findings
     grouped: dict[tuple, dict] = {}
@@ -155,6 +163,11 @@ def main() -> int:
                     target = next((c for c in cands if c['kind'] == 'format' and ('date' in ' '.join(c['details'])) == is_date), None)
                 elif f['kind'] == 'truncation':
                     target = next((c for c in cands if c['kind'] == 'fixed_width' and selector_matches(c.get('selector'), f['element'])), None)
+                elif f['kind'] == 'rtl_mirroring' and 'glyph' in f['measure']:
+                    arrows = [c for c in cands if c['kind'] == 'rtl_physical' and any(
+                        glyph_on(open_line(repo, l), f['measure']['glyph']) for l in c['locations'])]
+                    target = next((c for c in arrows if any(page_file(r['page'], l['file']) for l in c['locations'])),
+                                  arrows[0] if arrows else None)
                 elif f['kind'] == 'rtl_mirroring' and 'property' in f['measure']:
                     target = next((c for c in cands if c['kind'] == 'rtl_physical' and selector_matches(c.get('selector'), f['element'])
                                    and f['measure']['property'].split('-width')[0] in ' '.join(c['details'] + [c.get('selector') or ''] +
@@ -185,7 +198,7 @@ def main() -> int:
         pages = {e['page'] for e in c['evidence']}
         files = {l['file'] for l in c['locations']}
         c['leverage'] = 2 if len(pages) >= 2 or (c['kind'] == 'hardcoded_string' and len(files) >= 2) else 1
-        c['severity'] = severity(c)
+        c['severity'] = severity(c, single_locale)
         c['confidence'] = confidence(c)
         c['score'] = WEIGHT[c['severity']] * c['reach'] * c['leverage']
         c['priority'] = 'P0' if c['score'] >= 24 else 'P1' if c['score'] >= 12 else 'P2' if c['score'] >= 6 else 'P3'
@@ -201,7 +214,7 @@ def main() -> int:
     if a.patch and patch:
         a.patch.write_text(patch['text'], encoding='utf-8')
     skipped = {s['dir']: s for s in (res.get('skipped_dirs') or []) + (code.get('skipped_dirs') or [])}
-    out = {'source_locale': res['source_locale'], 'shipped_locales': shipped, 'candidates': cands,
+    out = {'source_locale': res['source_locale'], 'shipped_locales': shipped, 'single_locale': single_locale, 'candidates': cands,
            'proposed_patch': {'path': a.patch.name, 'keys_added': patch['keys_added'], 'applied': False} if patch else None,
            # what the static steps read, so the validator can tell "nothing found" from "nothing analysed"
            'inputs': {'resource_sets': len(res['sets']), 'resource_files_not_parsed': len(res.get('not_parsed') or []),
@@ -210,7 +223,23 @@ def main() -> int:
                       'skipped_dirs': [skipped[k] for k in sorted(skipped)]}}
     a.out.write_text(json.dumps(out, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
     print(f'{len(cands)} candidate(s) -> {a.out}', file=sys.stderr)
+    if single_locale:
+        print('merge_findings.py: NOTE single-locale product (no locale ships besides the source): localisation checks '
+              'are not assessed; the findings are readiness findings and the verdict is readiness_only', file=sys.stderr)
     return 0
+
+
+ARROW_ENTITY = {'→': '&rarr;', '←': '&larr;', '›': '&rsaquo;', '‹': '&lsaquo;', '»': '&raquo;', '⇒': '&rArr;'}
+
+
+def glyph_on(line: str, glyphs: str) -> bool:
+    return any(g in line or (ARROW_ENTITY.get(g) and ARROW_ENTITY[g] in line) for g in glyphs)
+
+
+def page_file(page: str, file: str) -> bool:
+    """A runtime page name that is the file's own page (events -> events.html, home -> index.html)."""
+    stem = Path(file).stem.lower()
+    return stem == page.lower() or (stem == 'index' and page.lower() in ('home', 'index', 'start'))
 
 
 def open_line(repo: Path, loc: dict) -> str:
