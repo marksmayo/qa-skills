@@ -54,10 +54,16 @@ def _kw(call: ast.Call, *names):
 MAIN_GUARD = re.compile(r'^__name__\s*==\s*[\'"]__main__[\'"]$')
 
 
-def if_conditions(tree) -> list[tuple[int, int, str]]:
+def _nodes(m) -> list:
+    """Every node of a module, from the list py_routes walked once (same order as ast.walk), else walked now."""
+    nodes = getattr(m, 'nodes', None)
+    return nodes if nodes is not None else list(ast.walk(m.tree))
+
+
+def if_conditions(tree, nodes=None) -> list[tuple[int, int, str]]:
     """(first line, last line, condition) for each if body and else branch, outermost first."""
     out = []
-    for node in ast.walk(tree):
+    for node in (nodes if nodes is not None else ast.walk(tree)):
         if not isinstance(node, ast.If):
             continue
         test = _unparse(node.test)
@@ -82,7 +88,19 @@ class Conditions:
 
     def __init__(self, project):
         self.project = project
-        self.by_rel = {m.rel: if_conditions(m.tree) for m in project.modules.values()}
+        self.by_rel = {m.rel: if_conditions(m.tree, _nodes(m)) for m in project.modules.values()}
+
+    @classmethod
+    def of(cls, project) -> 'Conditions':
+        """The project's conditions, computed once and kept on the project."""
+        cached = getattr(project, '_py_extras_conditions', None)
+        if cached is None:
+            cached = cls(project)
+            try:
+                project._py_extras_conditions = cached
+            except AttributeError:   # a project type that takes no attributes: compute each time
+                pass
+        return cached
 
     def at(self, rel: str, line: int) -> str | None:
         return condition_at(self.by_rel.get(rel, []), line)
@@ -107,7 +125,7 @@ def join_conditions(parts) -> str | None:
 def route_conditions(project) -> dict[tuple[str, int, str], str]:
     """{(file, decorator line, mount prefix): condition} for every route declaration that sits under an if, or whose
     router is included under one (`if args.uploads: app.include_router(uploads.router)`)."""
-    conds = Conditions(project)
+    conds = Conditions.of(project)
     out = {}
     for h in project.hits():
         m, call, key = h['module'], h['call'], h['key']
@@ -132,10 +150,10 @@ def _join(*parts: str) -> str:
 def static_mounts(project, root: Path | None = None) -> list[dict]:
     """StaticFiles mounts and Flask static folders as routes: {method, path, file, line, framework, directory,
     function, condition?, prefix_status}."""
-    conds = Conditions(project)
+    conds = Conditions.of(project)
     out = []
     for m in project.modules.values():
-        for node in ast.walk(m.tree):
+        for node in _nodes(m):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'mount' and node.args:
                 app = node.args[1] if len(node.args) > 1 else _kw(node, 'app')
                 if not (isinstance(app, ast.Call) and (_name(app.func) or '').endswith('StaticFiles')):
@@ -172,10 +190,10 @@ def static_mounts(project, root: Path | None = None) -> list[dict]:
 
 def middleware(project) -> list[dict]:
     """app.add_middleware(Cls, ...) and @app.middleware("http") functions: {file, line, class, owner, condition?}."""
-    conds = Conditions(project)
+    conds = Conditions.of(project)
     out = []
     for m in project.modules.values():
-        for node in ast.walk(m.tree):
+        for node in _nodes(m):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'add_middleware' \
                     and node.args:
                 cls = _name(node.args[0]) or _unparse(node.args[0])
@@ -212,7 +230,8 @@ def command_lines(project) -> list[dict]:
     ({command: 'prog name', file, line, framework 'sys.argv'})."""
     out = []
     for m in project.modules.values():
-        calls = [n for n in ast.walk(m.tree) if isinstance(n, ast.Call)]
+        nodes = _nodes(m)
+        calls = [n for n in nodes if isinstance(n, ast.Call)]
         parsers = [c for c in calls if _name(c.func) == 'ArgumentParser']
         subs = [c for c in calls if isinstance(c.func, ast.Attribute) and c.func.attr in ('add_subparsers', 'add_parser')]
         if parsers and not subs:
@@ -226,11 +245,11 @@ def command_lines(project) -> list[dict]:
                 out.append({'command': _prog(m, parsers[0]), 'options': opts, 'file': m.rel, 'line': parsers[0].lineno,
                             'framework': 'argparse'})
         names = set()
-        for n in ast.walk(m.tree):
+        for n in nodes:
             if isinstance(n, ast.Assign) and _is_argv1(n.value):
                 names |= {t.id for t in n.targets if isinstance(t, ast.Name)}
         seen = set()
-        for n in ast.walk(m.tree):
+        for n in nodes:
             if not (isinstance(n, ast.Compare) and len(n.ops) == 1):
                 continue
             left = n.left
@@ -446,6 +465,31 @@ def self_test() -> int:
     cl = {c['command'] for c in command_lines(proj)}
     if not {'srv', 'srv a', 'srv b'} <= cl:
         fails.append(f'command lines: {cl}')
+    # every pass reuses the node list py_routes walked once, and the if-conditions are computed once per project
+    proj2 = py_routes.Project({'srv.py': src})
+    trees = {id(m.tree) for m in proj2.modules.values()}
+    real_walk, walked, built = ast.walk, [], []
+    real_if = globals()['if_conditions']
+
+    def counting_walk(node):
+        if id(node) in trees:
+            walked.append(node)
+        return real_walk(node)
+
+    def counting_if(tree, nodes=None):
+        built.append(tree)
+        return real_if(tree, nodes)
+    ast.walk, globals()['if_conditions'] = counting_walk, counting_if
+    try:
+        again = (static_mounts(proj2), middleware(proj2), command_lines(proj2), route_conditions(proj2))
+    finally:
+        ast.walk, globals()['if_conditions'] = real_walk, real_if
+    if walked:
+        fails.append(f'the passes walk a module tree again ({len(walked)} walks) instead of reusing its node list')
+    if len(built) > len(trees):
+        fails.append(f'if-conditions computed {len(built)} times for {len(trees)} module(s)')
+    if again[:3] != (st, mw, command_lines(proj)):
+        fails.append(f'reusing the node list changed the results: {again[:3]}')
     for rx, want in (('^/x/(.*)', '/x/{param:path}'), ('^/api/([^/]+)/info$', '/api/{param}/info'), ('^/x$', '/x')):
         if _regex_path(rx)[0] != want:
             fails.append(f'_regex_path({rx!r}) = {_regex_path(rx)[0]!r}, want {want!r}')

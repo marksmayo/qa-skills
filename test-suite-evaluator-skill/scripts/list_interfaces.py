@@ -269,7 +269,7 @@ def python_interfaces(root: Path, files: list[str]) -> tuple[list[dict], list[st
                          f'function shape), which is not a supported framework: not read as an interface; check by hand '
                          f'whether it is deployed or retired')
     name = lambda key: f'{dotted(key[0])}:{key[1]}'  # noqa: E731
-    conds = py_extras.Conditions(project)
+    conds = py_extras.Conditions.of(project)
     out = []
     for h in project.hits():
         m, fn, call, attr, key = h['module'], h['fn'], h['call'], h['attr'], h['key']
