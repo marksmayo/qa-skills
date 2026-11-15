@@ -1,6 +1,6 @@
 # Design: `risk-based-test-planner-skill`
 
-Status: Built (v1.7.0), see "As built" at the end. Build order: 13.
+Status: Built (v1.8.0), see "As built" at the end. Build order: 13.
 
 ## Mission
 
@@ -525,3 +525,27 @@ Where the build differs from the design above, and what the example showed.
   - Not done: `diff_scope.py` classing an ad network's `ads.txt` as docs (shared file); `complexity.py`
     still walks the filesystem rather than `git ls-files` (harmless: `.d.ts` is skipped). The sample
     repository's scores are unchanged; `risk.json` gained `scope_deleted` and `unreferenced`.
+- **v1.8.0 (a Rust workspace with Python tooling):** a Cargo workspace whose helper scripts were
+  about half the code. Red/green checks in `score_risk.py --self-test` (`cargo_workspace_checks`, a
+  synthetic weather-station workspace with three crates and Python scripts, and new surface idioms)
+  and `validate_test_plan.py --self-test`.
+  - **Second language**: a language other than the areas' own that holds 30% or more of the code's
+    lines and sits mostly outside the default areas gets areas by directory (`area_basis` says
+    "second language: ..."); with `--areas` that leave it out (or only in `unassigned`) a loud
+    warning names it, and the validator requires the plan to name the language. A virtual
+    workspace's root `Cargo.toml` is not a root package.
+  - **Rust tests**: inline `#[cfg(test)]` modules (any depth, any cfg that turns on with `test`) are
+    test lines of their area, not code and not a surface (the old cut dropped only a trailing module
+    and everything after it); a module declared under a test cfg (with `#[path]` too) is a test file;
+    integration tests count for every workspace crate they name by path; `tests/fixtures` helper
+    binaries are `tests_not_counted`; Cargo benches are excluded as benchmark code.
+  - **Surfaces**: clap CLIs, `std::process::Command` and `libloading` from the shared Cargo model;
+    the process class covers Rust and Python (`subprocess`, `os.system`); a new `native_code` class
+    (3) for FFI and dynamic loading; freeing GPU or UI objects (`gl.delete_texture`,
+    `destroy_buffer`, a delete on a `gl`/`device`/`window` receiver in Rust) is not data destruction.
+  - **Warnings and validator**: UI markup (Slint, QML, XAML, Qt Designer, GTK, Kivy) is named with
+    its areas; the surface-only warning tells a desktop or CLI app to judge impact per area by hand;
+    the validator requires each `scope_outside_areas` directory with changed lines to be named in
+    the plan; `--write-summary` checks the schema before writing and writes nothing when it fails.
+  - Not changed: a per-run random credential for a loopback service still matches the secrets class
+    (SKILL.md says judging it down is fair). The sample repository's scores are unchanged.
