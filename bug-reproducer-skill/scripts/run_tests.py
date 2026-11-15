@@ -302,6 +302,7 @@ def git_files(root: Path) -> list[str] | None:
             return None
     except OSError:
         pass
+    try:
         res = subprocess.run(['git', '-C', str(root), '-c', 'core.quotepath=off', 'ls-files', '-co', '--exclude-standard', '-z'],
                              capture_output=True, timeout=120)
     except (OSError, subprocess.SubprocessError):
@@ -2086,6 +2087,16 @@ def self_test() -> int:
         finally:
             subprocess.run = real_run
         no_git_above = not any((p / '.git').exists() for p in [Path(d).resolve(), *Path(d).resolve().parents])
+        try:   # inside a real git work tree (this repository) it lists files instead of failing
+            in_repo = git_files(Path(__file__).resolve().parent)
+            in_repo_err = None
+        except Exception as exc:  # noqa: BLE001 - the check reports the error
+            in_repo, in_repo_err = None, f'{type(exc).__name__}: {exc}'
+        if subprocess.run(['git', '--version'], capture_output=True).returncode == 0 \
+                and (Path(__file__).resolve().parent / '..' / '..' / '.git').exists():
+            checks.append(('git_files lists the files of the git work tree it runs in',
+                           in_repo_err is None and bool(in_repo) and any(r.endswith('run_tests.py') for r in in_repo),
+                           in_repo_err or (in_repo or [])[:3]))
         checks.append(('git_files starts no git process when no .git exists above the path',
                        not no_git_above or (got is None and not calls), (no_git_above, got, calls)))
     checks += pytest_self_checks()
