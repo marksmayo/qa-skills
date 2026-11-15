@@ -1,5 +1,5 @@
 {
-  "pitfalls_version": "1.2.0",
+  "pitfalls_version": "1.7.0",
   "smells": [
     {
       "id": "SM-1",
@@ -117,6 +117,28 @@
       "test": "test_health_endpoint_status_code",
       "in_test_file": true,
       "mitigation": null
+    }
+  ],
+  "pytest_collection": {
+    "config": "pyproject.toml",
+    "testpaths": [
+      "tests"
+    ],
+    "python_files": [],
+    "not_collected": []
+  },
+  "suites": [
+    {
+      "language": "python",
+      "test_files": 8,
+      "tests": 16,
+      "count_source": "static count of test definitions",
+      "presets": [
+        "pytest"
+      ],
+      "ci_gates": [
+        ".github/workflows/ci.yml:12 python -m pytest -n auto --junitxml=junit.xml"
+      ]
     }
   ]
 }

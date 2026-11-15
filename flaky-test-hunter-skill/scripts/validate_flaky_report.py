@@ -214,13 +214,72 @@ def summary_numbers(d: dict, runs_data: dict, runs: dict) -> dict:
         by_pr[f['priority']] += 1
     ran = sum(v['status'] == 'ran' for v in d['variations'])
     planned = sum(v['status'] in ('ran', 'not_run') for v in d['variations'])
+    completeness = round(ran / planned * suite_share(d['metadata'].get('suites')), 2) if planned else 0.0
+    single = sum(bool((r.get('variation') or {}).get('isolate')) for r in runs.values())
     return {'tests_run': sum(t['status'] != 'not_run' for t in tests), 'flaky': count('flaky'),
             'consistently_failing': count('consistently_failing'), 'not_observed_flaky': count('not_observed_flaky'),
             'not_run': count('not_run'),
             **({'platform_dependent': count('platform_dependent')} if count('platform_dependent') else {}),
             'by_cause': dict(sorted(by_cause.items())), 'by_priority': by_pr,
-            'total_runs': len(runs), 'wall_minutes': round(sum(r.get('duration_s', 0) for r in runs.values()) / 60, 1),
-            'evidence_completeness': round(ran / planned, 2) if planned else 0.0}
+            'total_runs': len(runs),
+            **({'single_test_runs': single} if single and version_at_least(d, (1, 3, 0)) else {}),
+            'wall_minutes': round(sum(r.get('duration_s', 0) for r in runs.values()) / 60, 1),
+            'evidence_completeness': completeness}
+
+
+def version_at_least(d: dict, v: tuple) -> bool:
+    try:
+        return tuple(int(x) for x in str(d.get('schema_version', '0')).split('.')) >= v
+    except ValueError:
+        return False
+
+
+def suite_share(suites: list | None) -> float:
+    """The share of the repository's tests that had per-test runs: tests of suites that ran over all suites' tests
+    (static counts), or suites that ran over all suites when a count is unknown. 1.0 when the report lists no suites
+    (one language, as before schema 1.3.0)."""
+    if not suites:
+        return 1.0
+    counts = [s.get('tests') for s in suites]
+    if all(isinstance(n, int) for n in counts) and sum(counts):
+        return sum(s['tests'] for s in suites if s['status'] == 'ran') / sum(counts)
+    return sum(s['status'] == 'ran' for s in suites) / len(suites)
+
+
+def suite_errors(d: dict, runs_data: dict | None, runs: dict | None, smells: dict | None) -> tuple[list[str], list[str]]:
+    """metadata.suites against the runs (a suite that ran has counted runs of its presets with test cases; one that
+    did not, has none) and against scan_pitfalls.py's inventory (every language it found tests in is listed)."""
+    errs, warns = [], []
+    suites = d['metadata'].get('suites') or []
+    langs = [s['language'] for s in suites]
+    for l in sorted({l for l in langs if langs.count(l) > 1}):
+        errs.append(f'metadata.suites lists {l} more than once')
+    if runs is not None:
+        with_cases = {c['run_id'] for c in runs_data['cases'] if c['status'] != 'skipped'}
+        counted = [r for r in runs.values() if r['id'] in with_cases]
+        for s in suites:
+            mine = [r['id'] for r in counted if r.get('preset') in s['presets']]
+            if s['status'] == 'ran' and not mine:
+                errs.append(f"metadata.suites {s['language']} is recorded as ran, but no counted run with test results "
+                            f"used its presets ({', '.join(s['presets']) or 'none named'}); record it as not_run with the reason")
+            if s['status'] == 'not_run' and mine:
+                errs.append(f"metadata.suites {s['language']} is recorded as not_run, but {len(mine)} counted run(s) used "
+                            f"its presets ({', '.join(mine[:3])}); record it as ran")
+        if suites:
+            stray = sorted({r.get('preset') or '(no preset)' for r in counted} - {p for s in suites for p in s['presets']})
+            if stray:
+                warns.append(f"runs with preset(s) {', '.join(stray)} belong to no suite in metadata.suites")
+    found = [s['language'] for s in (smells or {}).get('suites') or [] if s.get('tests') or s.get('test_files')]
+    if len(found) > 1 and not suites:
+        errs.append(f"metadata.suites: the scan found tests in {len(found)} languages ({', '.join(found)}); list each "
+                    'as ran or not_run with the reason, so a language with no per-test runs counts against evidence '
+                    'completeness')
+    elif suites:
+        for l in found:
+            if l not in langs:
+                errs.append(f'metadata.suites does not list {l}, which the scan found tests in (ran or not_run, with '
+                            'the reason)')
+    return errs, warns
 
 
 def write_summary(d: dict, runs_data: dict) -> None:
@@ -608,12 +667,29 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
             for k in ('rate_factor', 'gate', 'masking', 'score', 'priority'):
                 if f[k] != exp[k]:
                     errs.append(f'{at}: {k} is {f[k]!r} but the rubric gives {exp[k]!r}')
+        # a smell's test with no counted run: nothing was observed, so it is not_run, never not_observed
+        for s in d['static_smells']:
+            if not s['test'] or s['status'] not in ('not_observed', 'not_run'):
+                continue
+            ran_as = [tid for tid, t in rc.items() if t['runs'] and smell_in_test(tid, t['file'], s)]
+            if s['status'] == 'not_observed' and not ran_as:
+                errs.append(f"smell {s['smell_id']} ({s['file']} :: {s['test']}) is not_observed, but its test never ran "
+                            'in the counted runs: record it as not_run')
+            elif s['status'] == 'not_run' and ran_as:
+                errs.append(f"smell {s['smell_id']} is not_run, but its test ran in {sum(rc[t]['runs'] for t in ran_as)} "
+                            f"counted run(s) ({ran_as[0]}): record it as not_observed with the run count, or link it")
         exp_sum = summary_numbers(d, runs_data, runs)
         for k, v in exp_sum.items():
-            if d['summary'][k] != v:
-                errs.append(f'summary.{k} is {d["summary"][k]!r} but the runs give {v!r}')
+            if d['summary'].get(k) != v:
+                errs.append(f'summary.{k} is {d["summary"].get(k)!r} but the runs give {v!r}')
+        for k in ('single_test_runs', 'platform_dependent'):
+            if k in d['summary'] and k not in exp_sum:
+                errs.append(f'summary.{k} is {d["summary"][k]!r} but the runs give none')
     else:
         warns.append('no --runs given; counts, statuses and experiments were not re-checked')
+    se, sw = suite_errors(d, runs_data, runs if runs_data is not None else None, smells)
+    errs += se
+    warns += sw
 
     if bisect is not None:
         for b in (bisect if isinstance(bisect, list) else [bisect]):
@@ -740,11 +816,13 @@ def self_test() -> int:
     import copy
     fails: list[str] = []
 
-    def run(name: str, mutate, want_valid: bool, want_text: str = '') -> None:
+    def run(name: str, mutate, want_valid: bool, want_text: str = '', smells: dict | None = None, after=None) -> None:
         rep, runs = _self_fixture()
         mutate(rep, runs)
         write_summary(rep, runs)
-        errs, _ = check(rep, runs, None, None)
+        if after:
+            after(rep)
+        errs, _ = check(rep, runs, smells, None)
         ok = (not errs) if want_valid else any(want_text in e for e in errs)
         if not ok:
             fails.append(f'{name}: expected {"VALID" if want_valid else "an error naming " + repr(want_text)}, got '
@@ -864,6 +942,79 @@ def self_test() -> int:
         headline_priority('1 of 2 tests flaked across 3 runs: 2 P3 flakes.'), False, 'P3')
     run('a headline saying no flake has a priority that one has is an error',
         headline_priority('1 of 2 tests flaked across 3 runs, no P3 flakes.'), False, 'P3')
+
+    # Smells whose test never ran: not_observed would claim runs that never happened.
+    def unrun_smell(status):
+        def mutate(rep, runs):
+            rep['static_smells'].append({'smell_id': 'SM-1', 'smell': 'fixed-sleep-rust', 'file': 'tests/cli.rs',
+                                         'line': 12, 'test': 'logs_samples', 'cause': 'async_wait', 'status': status,
+                                         'flake_id': None, 'note': 'cargo test was not run in this review.'})
+        return mutate
+    run('a smell whose test never ran cannot be not_observed', unrun_smell('not_observed'), False, 'never ran')
+    run('a smell whose test never ran is not_run', unrun_smell('not_run'), True)
+
+    def ran_smell_not_run(rep, runs):
+        go_smell(rep, runs)
+        rep['static_smells'][0].update({'test': 'TestTax', 'status': 'not_run', 'flake_id': None})
+    run('a smell whose test ran is not not_run', ran_smell_not_run, False, 'ran in')
+
+    # Suites: a language half of the suite with no per-test runs lowers evidence completeness.
+    def suites(rep, runs):
+        rep['schema_version'] = '1.3.0'
+        for r in runs['runs']:
+            r['preset'] = 'go-test'
+        rep['metadata']['suites'] = [
+            {'language': 'go', 'tests': 2, 'presets': ['go-test'], 'status': 'ran', 'reason': 'go test -json ./...'},
+            {'language': 'rust', 'tests': 6, 'presets': ['cargo'], 'status': 'not_run',
+             'reason': 'cargo test was not run: no toolchain on this host.'}]
+    run('suites: a not-run language half is valid when completeness counts it', suites, True)
+
+    def completeness_is(want):
+        def after(rep):
+            if rep['summary']['evidence_completeness'] != want:
+                fails.append(f"suites: evidence completeness {rep['summary']['evidence_completeness']}, want {want}")
+        return after
+    run('suites: completeness is variations x tests run / tests', suites, True, after=completeness_is(0.25))
+    run('suites: a report claiming full completeness with a language not run is an error', suites, False,
+        'evidence_completeness', after=lambda rep: rep['summary'].update(evidence_completeness=1.0))
+
+    def suite_without_runs(rep, runs):
+        suites(rep, runs)
+        rep['metadata']['suites'][1]['status'] = 'ran'
+    run('suites: a suite recorded as ran needs runs of its presets', suite_without_runs, False, 'rust')
+
+    def suite_runs_not_recorded(rep, runs):
+        suites(rep, runs)
+        rep['metadata']['suites'][0]['status'] = 'not_run'
+    run('suites: a suite whose presets ran is not not_run', suite_runs_not_recorded, False, 'go')
+
+    inventory = {'smells': [], 'suites': [{'language': 'go', 'tests': 2}, {'language': 'rust', 'tests': 6}]}
+
+    def suites_missing(rep, runs):
+        suites(rep, runs)
+        del rep['metadata']['suites'][1]
+    run('suites: every language the scan found tests in is in metadata.suites', suites_missing, False, 'rust',
+        smells=inventory)
+    run('suites: a one-language report needs no suites when the scan found one language', lambda r, x: None, True,
+        smells={'smells': [], 'suites': [{'language': 'go', 'tests': 2}]})
+    run('suites: a two-language scan needs metadata.suites', lambda r, x: None, False, 'metadata.suites',
+        smells=inventory)
+
+    # Single-test runs (--isolate) are counted apart from suite runs in the summary.
+    def isolated(rep, runs):
+        rep['schema_version'] = '1.3.0'
+        for k, tid in enumerate(('TestTotal', 'TestTax'), 1):
+            runs['runs'].append({'id': f'I-{k}', 'label': 'isolate', 'code_hash': SELF_HASH, 'duration_s': 1.0,
+                                 'totals': {'tests': 1}, 'variation': {'env': {}, 'isolate': True}, 'platform': 'linux'})
+            runs['cases'].append({'run_id': f'I-{k}', 'id': f'{SELF_MOD}::{tid}', 'file': None, 'status': 'passed'})
+        rep['variations'].append({'kind': 'isolate', 'status': 'ran', 'labels': ['isolate'], 'reason': 'Each alone.'})
+
+    def single_runs_are(want):
+        def after(rep):
+            if rep['summary'].get('single_test_runs') != want:
+                fails.append(f"isolate: single_test_runs {rep['summary'].get('single_test_runs')}, want {want}")
+        return after
+    run('isolate runs are counted apart in the summary', isolated, True, after=single_runs_are(2))
 
     if fails:
         print('validate_flaky_report self-test FAILED:\n  - ' + '\n  - '.join(fails))
