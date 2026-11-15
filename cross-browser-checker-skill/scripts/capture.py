@@ -41,7 +41,13 @@ Every run also records http_errors ("<status> <url>" for each response of 400 or
 engine writes about an HTTP error response is compared with the responses every engine received.
 
 A run that couldn't load, inject or capture has run_status "errored" (or "skipped") with the error text; an
-engine none of whose runs captured is "errored", never "ran".
+engine none of whose runs captured is "errored", never "ran". A run that loaded but can't be compared is errored
+too (compare_engines.screen_runs): one whose own requests to the site were upgraded to https and failed (a CSP
+upgrade-insecure-requests on a plain-http target; capture records csp_upgrade_insecure_requests and warns), and a
+blank or incomplete rerun (far fewer elements than its sibling reruns, or a one-colour screenshot when theirs
+aren't: each run records the screenshot's `uniformity`), which is captured once more first (`retried`). Each run
+also records `faces` (per computed font family, the width of a test string drawn with it) and each SVG shape its
+`stroke` width.
 
 A page or a state may carry "viewports", a subset of the top-level list, to run only there (a mobile
 menu state at the mobile width only); a state inherits its page's. The planned checks (page or state

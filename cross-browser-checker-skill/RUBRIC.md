@@ -17,6 +17,21 @@ Dismissed automatically, with the reason recorded:
 | Native control rendering | An input, button, select or textarea drawn at another size (not moved over 16 px) |
 | Consequence | A box that changed size because a difference inside it did; a box resized with its container (same width change); an element moved because a box above it grew; an input's box when its type fell back; an element inside another missing element |
 | Cumulative drift | An element that only moved (no size change) when the nearest element above it, overlapping it horizontally, moved by nearly the same amount (within 16 px both ways): small text-metric differences add up down a long page. A step of more than 16 px between neighbours stays a difference, and what's below it moves with it |
+| SVG stroke | An SVG shape (circle, rect, path, ...) whose box grew evenly on every side by its stroke width (one engine includes the stroke in its box) |
+| Decoded photo | Low ink on an `<img>` the engine decoded (natural size) and drew with 5% ink or more: the ink metric on photographic content |
+| Benign request | A media or image request the engine or page cancelled (`ERR_ABORTED`, `NS_BINDING_ABORTED`: a srcset candidate swapped, `/_next/image` replaced) and Firefox's `NS_ERROR_PARSED_DATA_CACHED`, listed in `benign_requests` |
+
+A difference's runs record whether it held in each run: the reference's are all false, the affected
+engine's all true (a box difference too), so a promoted box difference passes the validator's check
+that the two sides differ.
+
+Runs that captured but can't be compared are screened before comparing (`screen_runs`), recorded
+`errored` with the reason, and their comparisons are not made: a run whose own requests to the site
+were upgraded to https and failed (an environment cause: a CSP `upgrade-insecure-requests` on a
+plain-http target; one `environment` entry, never one difference per request), and a blank or
+incomplete rerun (under half its sibling reruns' median element count and 20 or more fewer, or a
+one-colour screenshot when theirs aren't). One bad load is then one comparison not made, never
+hundreds of flaky entries.
 
 Content not rendered: the element's ink (pixels more than 60 levels from its most common colour,
 ignoring a 2 px border) is under 40% of the reference's in every run, and the reference shows at least 2%. When the reference shows
@@ -64,15 +79,19 @@ fallback check is in the same file. Status: `possible`, `confirmed_at_runtime` (
 whose error message names the feature, or whose element matches the feature's CSS selector, in an
 engine family that lacks it), or `not_assessed` (no data). Utility classes (Tailwind) count as uses
 of the feature they generate; a pattern with `emits_fallback` (the framework writes a prefixed
-alternative too) has a fallback.
+alternative too) has a fallback. In minified built CSS only the `@supports` block around a use counts,
+and the guarded and unguarded uses of one line are separate entries (the unguarded first, with
+`guarded` counting the others), so the snippet shown is the use without a fallback.
 
 ## Headline
 
 - **Verdict:** `differences_found` with at least one promoted difference; otherwise `inconclusive`
   when any planned engine-versus-reference comparison wasn't made (an engine `not_run` or `errored`,
-  or a run of either side errored or skipped: a comparison needs every rerun captured on both
-  sides), or no comparison was made at all (an empty plan, a static-only report); otherwise
-  `no_differences_detected`. No comparison made is never "no differences".
+  or a run of either side errored, skipped or screened: a comparison needs every rerun captured on
+  both sides), or no comparison was made at all (an empty plan, a static-only report); otherwise
+  `no_differences_detected`, or the more cautious `inconclusive` (candidates held for review, flaky
+  entries), whose summary must say why. No comparison made is never "no differences". The verdict is
+  the agent's: `--write-summary` fills the other headline fields and never rewrites it.
 - **Run status:** `complete` when every planned run ran and every comparison was made, `partial`
   otherwise (with the reason), `not_run` for a static-only report (feature scan only: every engine
   `not_run`, verdict `inconclusive`, confidence low, every feature finding `possible` or

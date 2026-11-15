@@ -82,6 +82,16 @@ A committed front end in `dist/`, `build/` or `public/` that the server serves a
 `StaticFiles` mount, `express.static`) may be left out as build output by the shared census: every folder
 left out is in `skipped.pruned`, the warning names the ones holding code and what serves them, and
 `--include dist` scans it.
+A Next.js project's server-only files (route handlers, generated metadata routes such as `robots.ts` and
+`opengraph-image.tsx`, middleware, tool configuration, `*.d.ts`, `server-only` modules) are left out and listed
+in `skipped.server_only`; its built CSS in `.next/static/css` is scanned, its built JavaScript is not (a
+limitation says so).
+
+A plain-http target whose Content-Security-Policy says `upgrade-insecure-requests` breaks WebKit (it fetches the
+site's own subresources over https): capture warns, those runs are `errored`, and `candidates.json` names one
+`environment` cause instead of dozens of differences. A blank or incomplete rerun is captured once more and, if
+still blank, `errored` (`screened_runs`), never compared. The verdict is the agent's: `--write-summary` fills the
+computed headline fields and never changes it.
 
 Static only (no browser): the feature scan, then a candidates file with every engine `not_run`, and a
 report with `run_status: "not_run"`, validated without `--runs`:
@@ -125,7 +135,7 @@ python scripts/validate_report.py examples/report.static.example.json --candidat
 - `scripts/feature_scan.py`: static feature scan against the targets
 - `scripts/compare_engines.py`: differences, flaky, automatic dismissals, ratings, feature links
 - `scripts/validate_report.py`, `scripts/render_report.py`, `scripts/schema_check.py`
-- `scripts/browser_harness.py`, `scripts/png_io.py`: shared copies (edit them in `shared/`)
+- `scripts/browser_harness.py`, `scripts/png_io.py`, `scripts/lang_census.py`, `scripts/next_app.py`: shared copies (edit them in `shared/`)
 - `examples/`: the site, targets, run and report
 
 ## Design principles

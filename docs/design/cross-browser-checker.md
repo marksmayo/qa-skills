@@ -432,3 +432,43 @@ Where the build differs from the design above, and what the example showed.
     needs-review items and flaky entries.
   - The example's candidates and features gained the new keys (same five candidates, same triage).
   - Not done: `capture.py --only` to recapture one state (every change still reruns the whole plan).
+- **v1.7.0** (a Next.js App Router site with Tailwind 4, a CSP in `next.config` headers() ending in
+  `upgrade-insecure-requests`, served by `next start` on plain-http loopback, Windows):
+  - *The CSP upgraded WebKit's requests*: Playwright WebKit fetched every subresource over https from the
+    http server and rendered unstyled pages; capture recorded them `ran`, and the comparison produced
+    about fifty candidates (one per failed chunk, font and box differences) with the default face matched
+    to the serif-controls limitation because the reference's `ui-sans-serif` contains "serif". Now
+    capture records `csp_upgrade_insecure_requests` and warns, `compare_engines.screen_runs` marks runs
+    whose own requests were upgraded to https and failed `errored`, `environment` names one
+    `https_upgrade` cause, and the validator requires a limitation naming it. The serif limitation
+    matches the engine's face only, and not when the engine's stylesheet failed to load (`not_if`).
+    Reproduced on a synthetic page with the header: WebKit errored with the cause, Chromium ran.
+  - *Box differences could never be promoted*: their runs recorded presence (true on both sides), which
+    the validator rejects as "same outcomes". They now record that the box differed (reference false).
+  - *The verdict*: the validator required `no_differences_detected` when nothing was promoted and
+    `--write-summary` overwrote the agent's verdict. `inconclusive` is now accepted as the cautious
+    verdict (with a summary saying why), and `--write-summary` never writes the verdict.
+  - *A blank WebKit rerun made 569 flaky entries*: capture records each screenshot's `uniformity`,
+    retries a rerun far below its siblings (element count, or a one-colour screenshot when theirs
+    aren't) once, and errors it if still blank; compare_engines screens older captures the same way.
+    A dark page is one colour for 98% of its pixels, so uniformity counts only against the reruns.
+  - *False positives*: a decoded dark photo read as "not rendered" by the ink metric (now dismissed when
+    the image decoded and keeps 5% ink); Windows WebKit's `system-ui` face (same computed family string:
+    capture now measures a test string per family, `faces`, and a different width is a
+    `font_family_differs` with the new `webkit-windows-system-ui` limitation); Firefox's SVG boxes that
+    include the stroke (dismissed when the box grew evenly by the stroke width, recorded as `stroke`);
+    aborted `/_next/image` and other image requests (benign).
+  - *Feature scan*: server-only Next.js files (route handlers, generated metadata routes, middleware,
+    instrumentation, from the shared `next_app.py`), tool configuration, `*.d.ts` and `server-only`
+    modules are listed in `skipped.server_only`, not scanned; `.next` is noted as build output whose CSS
+    was read, with a limitation that its JavaScript was not; minified built CSS keeps guarded and
+    unguarded uses apart (unguarded first, `guarded` count) and counts only the `@supports` around a use;
+    `oklab` matches `oklab(`/`oklch(` colours and the new `gradient-interpolation` pattern takes
+    `in oklab` gradient colour spaces; `::-webkit-` findings carry `degrades`. `browserslist_lite.py`
+    resolves `<browser> all`.
+  - SKILL.md: environment and blank runs, service workers never in control on a fresh context, App
+    Router prefetching inflating request counts.
+  - The example's candidates gained the box `runs` change in its dismissals and its features the
+    `degrades` note (same five candidates, same triage).
+  - Not done: stripping `upgrade-insecure-requests` in the shared harness when `bypass_csp` is on (a
+    shared change); flaky entries left by a rerun the screen doesn't catch are still listed one by one.
