@@ -60,6 +60,9 @@ SOURCE_EXT = {'.py', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.go', '.rs',
               '.svelte', '.sql'}
 CONFIG_EXT = {'.toml', '.cfg', '.ini', '.yaml', '.yml', '.json', '.lock', '.xml', '.gradle', '.properties', '.env'}
 DOCS_EXT = {'.md', '.rst', '.txt', '.adoc'}
+# well-known files a site serves as they are (ad seller lists, security contacts, crawler hints): data, not docs
+SERVED_SITE_FILES = {'ads.txt', 'app-ads.txt', 'security.txt', 'humans.txt', 'robots.txt', 'llms.txt', 'sellers.json'}
+SERVED_DIR = re.compile(r'/(public|static|wwwroot|www|htdocs)/')
 # Web assets: server-side templates, static HTML pages and stylesheets are product code a change can break, and data
 # records the app loads are product data; each gets its own kind rather than 'other' or 'config'.
 TEMPLATE_EXT = {'.jinja', '.jinja2', '.j2', '.njk', '.hbs', '.handlebars', '.mustache', '.erb', '.ejs', '.twig',
@@ -509,6 +512,8 @@ def classify(path: str, head: str, binary: bool, root: Path | str | None = None)
     web = web_asset_kind(path, root)
     if web:
         return web[0], web[1] + note
+    if name in SERVED_SITE_FILES and (SERVED_DIR.search('/' + path) or '/.well-known/' in '/' + path):
+        return 'data', 'served site file (published as it is by the web server)'
     if ext in DOCS_EXT or path.startswith('docs/'):
         return 'docs', 'documentation'
     if ext in CONFIG_EXT or name in ('dockerfile', 'makefile', '.gitignore', '.gitattributes'):
@@ -893,6 +898,12 @@ def self_test() -> int:
         'spa/package.json': '{"scripts": {"build": "vite build"}}',
         'spa/src/main.js': 'export const a = 1\n',
         'spa/dist/assets/index.js': 'export const a = 1\n',
+        # well-known site files a web server serves as they are: data the site publishes, not documentation
+        'shop/public/ads.txt': 'example.test, pub-0000, DIRECT\n',
+        'shop/public/app-ads.txt': 'example.test, pub-0000, DIRECT\n',
+        'shop/public/.well-known/security.txt': 'Contact: mailto:security@example.test\n',
+        'shop/static/humans.txt': 'Team: bike shop\n',
+        'shop/NOTES.txt': 'release notes\n',
     }
     files.update({f'site/recipes/r{i:03d}.json': '{"name": "soup"}' for i in range(210)})
     expect = {   # path -> (kind, reason fragment)
@@ -927,6 +938,11 @@ def self_test() -> int:
         'web/dist/glue.js': ('generated', 'Emscripten'),
         'spa/src/main.js': ('source', ''),
         'spa/dist/assets/index.js': ('generated', 'vite'),
+        'shop/public/ads.txt': ('data', 'served site file'),
+        'shop/public/app-ads.txt': ('data', 'served site file'),
+        'shop/public/.well-known/security.txt': ('data', 'served site file'),
+        'shop/static/humans.txt': ('data', 'served site file'),
+        'shop/NOTES.txt': ('docs', 'documentation'),
     }
     failed = 0
     with tempfile.TemporaryDirectory() as d:
