@@ -236,33 +236,44 @@ def cargo_commands(files: list[str], cargo: dict, max_chars: int) -> tuple[list[
                 commands.append({**base, 'full_suite': True, 'argv': ['cargo', 'test', '-p', crate], 'tests': len(mine),
                                  'part': 1, 'parts': 1})
                 continue
-            ids = []
+            ids, param = [], set()
             for f in mine:
                 ids += [t['id'] for t in tests[f] if t['id'] not in ids]
+                param |= {t['id'] for t in tests[f] if t.get('parameterised')}
             kind_of = {t['id']: (t['target_kind'], t['target']) for f in mine for t in tests[f]}
 
-            def argv_of(chunk: list[str]) -> list[str]:
+            def argv_of(chunk: list[str], exact: bool) -> list[str]:
                 sel: list[list[str]] = []
                 for i in chunk:
                     kind, target = kind_of[i]
                     flag = ['--lib'] if kind == 'lib' else [f'--{kind}', target]
                     if flag not in sel:
                         sel.append(flag)
-                return ['cargo', 'test', '-p', crate, *[x for f in sel for x in f], '--', '--exact',
-                        *[i.partition('::')[2] for i in chunk]]
-            chunks, cur = [], []
-            for i in ids:
-                if cur and len(' '.join(argv_of(cur + [i]))) > max_chars:
-                    chunks.append(cur)
-                    cur = [i]
-                else:
-                    cur.append(i)
-            if cur:
-                chunks.append(cur)
-            for n, chunk in enumerate(chunks, 1):
+                return ['cargo', 'test', '-p', crate, *[x for f in sel for x in f], '--',
+                        *(['--exact'] if exact else []), *[i.partition('::')[2] for i in chunk]]
+            # #[rstest] / #[test_case] functions are modules of generated tests (`fn::case_1`): --exact would match
+            # none, so they run as name filters (a substring match) in commands of their own
+            chunks = []
+            for exact, group in ((True, [i for i in ids if i not in param]), (False, sorted(i for i in ids if i in param))):
+                cur: list[str] = []
+                for i in group:
+                    if cur and len(' '.join(argv_of(cur + [i], exact))) > max_chars:
+                        chunks.append((exact, cur))
+                        cur = [i]
+                    else:
+                        cur.append(i)
+                if cur:
+                    chunks.append((exact, cur))
+            for n, (exact, chunk) in enumerate(chunks, 1):
                 files_in = sorted({f for f in mine if any(t['id'] in chunk for t in tests[f])})
-                commands.append({**base, 'full_suite': False, 'argv': argv_of(chunk), 'tests': len(files_in),
-                                 'test_ids': chunk, 'part': n, 'parts': len(chunks)})
+                cmd = {**base, 'full_suite': False, 'argv': argv_of(chunk, exact), 'tests': len(files_in),
+                       'test_ids': chunk, 'part': n, 'parts': len(chunks)}
+                if not exact:
+                    cmd['note'] = ('parameterised tests (#[rstest], #[test_case]) generate child tests named '
+                                   '<fn>::<case>, which --exact <fn> would not match: these names are substring '
+                                   'filters without --exact, so they run every case and may also run other tests '
+                                   'whose names contain them')
+                commands.append(cmd)
     return commands, sorted(gated.values(), key=lambda g: (g['crate'], g['feature'])), unknown
 
 

@@ -92,6 +92,8 @@ def main() -> int:
             what = {'go-testing': 'packages', 'cargo-test': 'test names'}.get(cmd.get('framework'), 'test files')
             argv = argv[:len(argv) - n_args] + [f'<{n_args} {what}>']
         out.append(f'    (cd {cmd["cwd"]} && {" ".join(argv)}){part}')
+        if cmd.get('note'):
+            out.append(f'    # {cmd["note"]}')
     for pkg, why in d['command'].get('no_runner_reasons', {}).items():
         out.append(f'    # {pkg}: no command, {why}')
     for g in d['command'].get('feature_gated', []):

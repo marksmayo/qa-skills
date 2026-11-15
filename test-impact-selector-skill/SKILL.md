@@ -159,7 +159,11 @@ script) and their `#[test]` functions. No cargo or build is needed.
   Rust test file selected runs the CI's own `cargo test --workspace ...` line (or `cargo test
   --workspace`); a whole crate `cargo test -p <crate>`; otherwise
   `cargo test -p <crate> --lib|--bin <b>|--test <t> -- --exact <paths>`, with the ids in
-  `test_ids` for `run_tests.py --preset cargo --tests`. Tests behind a cargo feature the crate does not enable by default, directly or through the features its defaults enable (a
+  `test_ids` for `run_tests.py --preset cargo --tests`. `#[rstest]` and `#[test_case]` functions
+  generate child tests (`<fn>::case_1...`) that `--exact <fn>` would not match: they get commands
+  of their own without `--exact` (name filters, which may also run tests whose names contain them),
+  with a `note` saying so; repeat it when you hand the command over. Tests behind a cargo feature
+  the crate does not enable by default, directly or through the features its defaults enable (a
   `#[cfg(feature = "x")]` on the test, its module, or the `mod` declaration in its own target
   that includes it; `any(feature = "x", test)` does not gate) are listed in
   `command.feature_gated`. The commands do not run them, so say so and give the `--features`

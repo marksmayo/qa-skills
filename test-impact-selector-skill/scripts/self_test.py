@@ -503,6 +503,26 @@ def case_rust_bin_module_selects_integration_tests(tmp: Path) -> None:
     assert files == CLI_TESTS, files
 
 
+RSTEST_CLI = ('mod common;\n\nuse rstest::rstest;\n\n#[test]\nfn prints_help() { common::setup(); }\n\n'
+              '#[rstest]\n#[case(1)]\n#[case(2)]\nfn scales(#[case] n: i32) { assert!(n > 0); }\n\n'
+              '#[test_case::test_case(3 ; "three")]\nfn rounds(n: i32) { assert!(n > 0); }\n')
+
+
+def case_rust_parameterised_tests_prefix_matched(tmp: Path) -> None:
+    """#[rstest] and #[test_case] generate child tests (`scales::case_1`), so `--exact scales` would run none of
+    them: a partial selection runs them as name filters without --exact, in their own command with a note, and
+    keeps --exact for plain #[test] functions."""
+    files = dict(RUST)
+    files['crates/tides-cli/tests/cli.rs'] = RSTEST_CLI
+    sel = rust_select(tmp, 'crates/tides-cli/tests/common/mod.rs', 'pub fn setup() { let _ = 1; }\n', files=files)
+    cmds = [c for c in sel['command']['commands'] if c['package'] == 'crates/tides-cli']
+    argvs = sorted(c['argv'] for c in cmds)
+    assert argvs == [['cargo', 'test', '-p', 'tides-cli', '--test', 'cli', '--', '--exact', 'prints_help'],
+                     ['cargo', 'test', '-p', 'tides-cli', '--test', 'cli', '--', 'rounds', 'scales']], argvs
+    pre = next(c for c in cmds if '--exact' not in c['argv'])
+    assert 'parameteris' in pre.get('note', '') and '--exact' in pre['note'], pre
+
+
 def case_rust_default_features_transitive(tmp: Path) -> None:
     """Features the default set enables transitively (default = ["std"], std = ["alloc"]) are enabled: a test
     under cfg(feature = "alloc") is not feature_gated; one under a feature nothing enables still is."""
@@ -737,7 +757,7 @@ CASES = [case_import_graph_go, case_select_go_change, case_unmapped_go_widens_wi
          case_template_render_links_views, case_static_reaches_rendering_tests, case_data_file_in_root_package,
          case_coverage_core_ctrace, case_normalise_refuses_lost_contexts, case_committed_only_hashes_head,
          case_rust_graph, case_select_rust_change, case_rust_exact_ids, case_rust_bench_and_fixture,
-         case_rust_bin_module_selects_integration_tests,
+         case_rust_bin_module_selects_integration_tests, case_rust_parameterised_tests_prefix_matched,
          case_rust_default_features_transitive, case_rust_cfg_keyed_by_target, case_rust_files_scanned_once,
          case_root_cargo_toml_widens_to_rust_only, case_python_sys_path_imports, case_python_sys_path_unknown_recorded,
          case_blind_spot_wording, case_unittest_command, case_no_parser_language_warns,

@@ -140,7 +140,8 @@
             "properties": {
               "package": {"type": "string"}, "cwd": {"type": "string"}, "framework": {"type": "string"},
               "argv": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "full_suite": {"type": "boolean"},
-              "tests": {"type": "integer"}, "part": {"type": "integer"}, "parts": {"type": "integer"}
+              "tests": {"type": "integer"}, "part": {"type": "integer"}, "parts": {"type": "integer"},
+              "note": {"type": "string", "description": "a caveat about this command, such as name filters without --exact for parameterised Rust tests"}
             }
           }
         },
