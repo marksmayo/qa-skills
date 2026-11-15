@@ -98,7 +98,7 @@ def main(argv=None) -> int:
 
     report = {
         'metadata': {'repository': repo.name, 'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-                     'skill_version': '1.0.0', 'journeys_source': [Path(p).as_posix() for p in args.journeys],
+                     'skill_version': '1.1.0', 'journeys_source': [Path(p).as_posix() for p in args.journeys],
                      'frameworks': [], 'platforms': [], 'target': None, 'repeat': 3,
                      'approval': {'gate': 'on', 'plan_approved': False},
                      'filters': {k: getattr(args, k) for k in ('priority', 'domain', 'platform', 'id') if getattr(args, k)}},

@@ -10,6 +10,14 @@ With --repo (recommended) the validator also re-reads the journeys and test file
   - checks a passing test's file is byte-for-byte the file that passed its stability runs
 
 --write-summary recomputes the summary counts in place (the headline is kept) before validating.
+The headline must give the Expects verified out of the total and name suspected bugs, flaky, blocked and failing
+tests when there are any. Approval says who approved (metadata.approval.approved_by: user, delegated with a note,
+unattended); manifests need approved_by user or delegated (approved_by_user is refused when no person approved the
+run in the session); a bootstrapped framework (metadata.bootstrap) needs its config listed and an approver.
+Warnings: case files that do not join to the mapped test path, and tests that block neither third parties nor
+service workers.
+
+    python validate_report.py --self-test
 Exit code 0 when valid, 1 when invalid.
 """
 from __future__ import annotations
@@ -30,6 +38,7 @@ MANIFEST_NAMES = {'package.json', 'package-lock.json', 'yarn.lock', 'pnpm-lock.y
                   'Cargo.toml', 'Cargo.lock', 'pubspec.yaml', 'pubspec.lock', 'Podfile', 'Podfile.lock', 'Package.swift'}
 BANNED = re.compile(r'\b(bug[- ]free|no bugs|fully tested|complete coverage|fully covered|100% (tested|covered))\b', re.I)
 LINTED_KINDS = {'test', 'step_definitions', 'page_object', 'fixture', 'helper'}
+APPROVERS = {'user', 'delegated', 'unattended'}
 
 def file_sha(p: Path) -> str | None:
     try:
@@ -81,6 +90,29 @@ def check(d: dict, repo: Path | None) -> tuple[list[str], list[str]]:
     approval = md.get('approval') or {}
     if approval.get('gate', 'on') == 'on' and d['files_changed'] and not approval.get('plan_approved'):
         E('files were written but metadata.approval.plan_approved is false (approval gate is on)')
+    # who approved: a person in the session (user), a person in advance through the brief, ticket or instruction that
+    # started the run (delegated, named in the note), or no one (unattended)
+    run_approver = approval.get('approved_by')
+    if run_approver is not None and run_approver not in APPROVERS:
+        E(f'metadata.approval.approved_by must be one of {sorted(APPROVERS)}, not {run_approver!r}')
+    if run_approver == 'delegated' and not norm(approval.get('note')):
+        E('metadata.approval.approved_by is delegated: the note must name who delegated it and where '
+          '(the brief, ticket or instruction that started the run)')
+    if run_approver == 'unattended' and approval.get('plan_approved'):
+        E('metadata.approval.approved_by is unattended (no one approved) but plan_approved is true')
+    boot = md.get('bootstrap')
+    if boot is not None:
+        if not isinstance(boot, dict) or not boot.get('framework') or not boot.get('config'):
+            E('metadata.bootstrap needs framework and config (the framework set up, and its config file)')
+        else:
+            if boot['config'] not in {f.get('path') for f in d['files_changed']}:
+                E(f"metadata.bootstrap.config {boot['config']} is not listed in files_changed")
+            who = boot.get('approved_by')
+            if who not in ('user', 'delegated'):
+                E(f"metadata.bootstrap.approved_by must be user or delegated, not {who!r}: a framework is never "
+                  'installed without someone agreeing to it')
+            elif who == 'delegated' and not norm(boot.get('note') or approval.get('note')):
+                E('metadata.bootstrap is approved by delegation: name who delegated it in its note')
 
     # ---- journeys ----
     journeys = {}
@@ -136,6 +168,13 @@ def check(d: dict, repo: Path | None) -> tuple[list[str], list[str]]:
             if not listed:
                 E(f'{where}: marked not_automatable but the journey does not list it under "Not automatable"; '
                   f'assert it, record a testability gap, or ask for the journey to be updated')
+        if c == 'asserted':
+            listed = e.get('journey_lists_not_automatable')
+            if key[0] in parsed:
+                listed = any(n['target'] == key[1] for n in parsed[key[0]]['not_automatable'])
+            if listed and not norm(e.get('reason')):
+                E(f'{where}: asserted, but the journey lists it as not automatable: say in reason which part is '
+                  f'asserted and which part is left unverified')
         for a in e.get('assertions', []):
             if not a.get('file') or not isinstance(a.get('line'), int):
                 E(f'{where}: assertion reference needs file and line'); continue
@@ -202,6 +241,7 @@ def check(d: dict, repo: Path | None) -> tuple[list[str], list[str]]:
         return tuple((p, fh[p]) for p in [test_path] + helpers if p in fh)
 
     results = {}
+    case_file_warned: set = set()
     for r in d['results']:
         tid = r.get('test_id')
         if tid in results:
@@ -224,6 +264,12 @@ def check(d: dict, repo: Path | None) -> tuple[list[str], list[str]]:
                 E(f"{tid}: case {a.get('case_id')!r} not found in run {a.get('run_id')}")
             elif case.get('status') != a.get('outcome'):
                 E(f"{tid}: attempt outcome {a.get('outcome')} but run {a.get('run_id')} recorded {case.get('status')}")
+            if case and case.get('file') and r.get('test_path') and case['file'] not in case_file_warned:
+                cf, tp = str(case['file']), str(r['test_path'])
+                if cf != tp and not tp.endswith('/' + cf):
+                    case_file_warned.add(case['file'])
+                    W(f"{tid}: case file {cf!r} in run {a.get('run_id')} is not the test path {tp!r}; record cases with "
+                      f"parse_results.py --files-root <repo> (and --test-dir) so they join to the mapping")
             if a.get('outcome') in ('failed', 'error') and not a.get('classification'):
                 E(f"{tid}: failed attempt in {a.get('run_id')} is not classified (fail_product, fail_test or blocked_env)")
             hashes.append(fingerprint(run, r.get('test_path')))
@@ -304,8 +350,19 @@ def check(d: dict, repo: Path | None) -> tuple[list[str], list[str]]:
         E('files_changed lists a path more than once')
     for p, f in changed.items():
         name = Path(p).name
-        if (f.get('kind') == 'manifest' or name in MANIFEST_NAMES) and not f.get('approved_by_user'):
-            E(f'{p}: dependency manifest changed without approved_by_user (never install without asking)')
+        if f.get('kind') == 'manifest' or name in MANIFEST_NAMES:
+            who = f.get('approved_by')
+            if f.get('approved_by_user') and run_approver in ('delegated', 'unattended'):
+                E(f'{p}: approved_by_user is true but no person approved this run in the session (approval.approved_by '
+                  f'is {run_approver}); record approved_by: delegated with a note naming who allowed the install')
+            elif who is not None and who not in APPROVERS:
+                E(f'{p}: approved_by must be one of {sorted(APPROVERS)}, not {who!r}')
+            elif who == 'delegated' and not norm(f.get('note')):
+                E(f'{p}: dependency manifest changed by delegated approval: the note must name who allowed the install '
+                  f'and where (the brief, ticket or instruction)')
+            elif not (f.get('approved_by_user') or who in ('user', 'delegated')):
+                E(f'{p}: dependency manifest changed without approval (approved_by user or delegated; never install '
+                  f'without asking)')
         if repo and not (repo / p).exists():
             E(f'{p}: listed in files_changed but not found')
     if d.get('journey_updates') and not any(f.get('kind') == 'journey' for f in d['files_changed']):
@@ -339,6 +396,16 @@ def check(d: dict, repo: Path | None) -> tuple[list[str], list[str]]:
                     E(f"lint {p}:{x['line']}: {x['rule']}: {x['message']}")
         if d['lint'].get('ran') and d['lint'].get('errors', 0) != total:
             W(f"report says lint found {d['lint'].get('errors')} error(s); re-lint found {total}")
+        # the written tests, their helpers and the framework config, read together: third parties and service workers
+        net = [repo / p for p, f in changed.items()
+               if f.get('kind') in LINTED_KINDS | {'config'} and (repo / p).is_file() and lint_tests.lang_of(repo / p)]
+        net_results = [{'tests': [], 'findings': []} for _ in net]
+        for i, p in enumerate(net):
+            if changed[p.relative_to(repo).as_posix()].get('kind') in ('test', 'step_definitions'):
+                net_results[i]['tests'] = lint_tests.lint_file(p)['tests']
+        lint_tests.network_findings(net, net_results)
+        for x in (x for r in net_results for x in r['findings']):
+            W(f"lint: {x['rule']}: {x['message']}")
     else:
         if not d['lint'].get('ran'):
             E('lint.ran is false: run lint_tests.py on the written tests (or validate with --repo)')
@@ -356,11 +423,127 @@ def check(d: dict, repo: Path | None) -> tuple[list[str], list[str]]:
         E('summary.headline is required')
     elif BANNED.search(s['headline']):
         E(f"summary.headline overclaims: {BANNED.search(s['headline']).group(0)!r}")
+    else:
+        h = s['headline']
+        v, t = calc['expects_verified'], calc['expects_total']
+        if not re.search(rf'(?<!\d){v}\s*(?:of|/|out of)\s*{t}(?!\d)', h):
+            E(f'summary.headline must give the Expects verified by passing, stable tests out of the total '
+              f'("{v} of {t} Expects verified"), got {h[:80]!r}')
+        problems = [(calc['results'].get('fail_product'), r'\bbugs?\b', 'the suspected bug(s)'),
+                    (calc['results'].get('flaky'), r'\bflaky\b', 'the flaky test(s)'),
+                    (calc['results'].get('blocked_env'), r'\bblocked\b', 'the blocked test(s)'),
+                    (calc['results'].get('fail_test'), r'\bfail(?:ing|ed|s)?\b|\bbroken\b', 'the failing test(s)')]
+        missing = [label for n, rx, label in problems if n and not re.search(rx, h, re.I)]
+        if missing:
+            E(f"summary.headline must lead with problems: it does not mention {', '.join(missing)}")
     if calc['results'].get('flaky'):
         W(f"{calc['results']['flaky']} flaky test(s) are not counted as done")
     return errors, warnings
 
+def self_test() -> int:
+    """Negative cases on a copy of the shipped example (validated without --repo): each must be reported."""
+    import copy
+    example = Path(__file__).resolve().parent.parent / 'examples' / 'journey_tests_report.example.json'
+    base = json.loads(example.read_text(encoding='utf-8'))
+    checks = []
+
+    def run(d):
+        try:
+            return (*check(d, None), None)
+        except Exception as exc:  # noqa: BLE001 - a crash is a failed check
+            return None, None, f'{type(exc).__name__}: {exc}'
+
+    def case(name, mutate, want_error=None, want_warning=None, valid=False):
+        d = copy.deepcopy(base)
+        mutate(d)
+        errs, warns, crash = run(d)
+        if crash:
+            checks.append((name, False, crash)); return
+        if valid:
+            ok = not errs
+        elif want_error:
+            ok = any(want_error in e for e in errs)
+        else:
+            ok = True
+        if want_warning:
+            ok = ok and any(want_warning in w for w in warns)
+        checks.append((name, ok, errs if not valid else errs or warns))
+
+    case('the shipped example is valid', lambda d: None, valid=True)
+
+    def headline(text):
+        return lambda d: d['summary'].__setitem__('headline', text)
+    case('a placeholder headline is refused', headline('PLACEHOLDER'), want_error='summary.headline')
+    case('a headline without verified/total Expects is refused',
+         headline('6 tests written; 1 suspected bug, 1 flaky, 1 blocked.'), want_error='verified')
+    case('a headline that hides the suspected bug, flaky and blocked tests is refused',
+         headline('7 of 13 Expects verified by passing, stable tests.'), want_error='lead with')
+
+    def approval(**kw):
+        return lambda d: d['metadata']['approval'].update(kw)
+    case('a delegated approval without a note naming who delegated it is refused',
+         approval(approved_by='delegated', note=''), want_error='delegated')
+    case('a delegated approval with a note is valid',
+         approval(approved_by='delegated', note='The brief that started this run allowed the plan and the install.'),
+         valid=True)
+    case('an unattended run cannot claim an approved plan', approval(approved_by='unattended'), want_error='unattended')
+    case('an unknown approved_by is refused', approval(approved_by='someone'), want_error='approved_by')
+
+    def manifest(entry, **appr):
+        def f(d):
+            d['metadata']['approval'].update(appr)
+            d['files_changed'].append({'path': 'web/package.json', 'change': 'modified', 'kind': 'manifest', **entry})
+        return f
+    brief = 'The brief that started this run allowed adding @playwright/test.'
+    case('a manifest change approved by delegation, with a note, is valid',
+         manifest({'approved_by': 'delegated', 'note': brief}, approved_by='delegated', note=brief), valid=True)
+    case('a manifest change approved by delegation without a note is refused',
+         manifest({'approved_by': 'delegated'}, approved_by='delegated', note=brief), want_error='package.json')
+    case('a manifest change in an unattended run is refused',
+         manifest({'approved_by': 'unattended'}), want_error='package.json')
+    case('approved_by_user on a manifest while the run was approved by delegation is refused',
+         manifest({'approved_by_user': True}, approved_by='delegated', note=brief), want_error='approved_by_user')
+
+    def bootstrap(b, files=()):
+        def f(d):
+            d['metadata']['bootstrap'] = b
+            d['files_changed'].extend(files)
+            d['metadata']['conventions_source'] = 'chosen: no e2e framework found; Playwright bootstrapped'
+        return f
+    pw = {'framework': 'playwright', 'config': 'web/playwright.config.ts', 'approved_by': 'user'}
+    case('a bootstrapped framework whose config is not in files_changed is refused', bootstrap(pw),
+         want_error='bootstrap')
+    case('a bootstrapped framework with its config listed is valid',
+         bootstrap(pw, [{'path': 'web/playwright.config.ts', 'change': 'added', 'kind': 'config'}]), valid=True)
+    case('a bootstrap nobody approved is refused',
+         bootstrap({**pw, 'approved_by': 'unattended'},
+                   [{'path': 'web/playwright.config.ts', 'change': 'added', 'kind': 'config'}]), want_error='bootstrap')
+
+    def partial(d):
+        e = next(x for x in d['step_coverage'] if x['coverage'] == 'asserted')
+        e['journey_lists_not_automatable'] = True
+        e.pop('reason', None)
+    case('an Expect the journey lists as not automatable, asserted without saying which part is left out, is refused',
+         partial, want_error='not automatable')
+
+    def win_case(d):
+        r = next(r for r in d['results'] if r['status'] == 'pass')
+        a = r['attempts'][0]
+        c = next(c for c in d['cases'] if c['run_id'] == a['run_id'] and c['id'] == a['case_id'])
+        c['file'] = c['file'].replace('/', '\\')
+    case('a case file that is not the repository-relative test path is warned about', win_case,
+         want_warning='--files-root')
+
+    failed = 0
+    for name, ok, extra in checks:
+        failed += not ok
+        print(f"{'PASS' if ok else 'FAIL'} {name}" + ('' if ok else f'  [{extra}]'))
+    print(f'{failed} failed' if failed else 'ALL PASS')
+    return 1 if failed else 0
+
 def main(argv=None) -> int:
+    if '--self-test' in (argv if argv is not None else sys.argv[1:]):
+        return self_test()
     ap = argparse.ArgumentParser(description='Validate a Journey to Tests report.')
     ap.add_argument('report')
     ap.add_argument('--repo', help='repository root, to re-check journeys, test files and hashes')

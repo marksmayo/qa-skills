@@ -31,7 +31,18 @@
             "gate": {"enum": ["on", "off"]},
             "plan_approved": {"type": "boolean"},
             "approved_at": {"type": "string"},
-            "note": {"type": "string"}
+            "approved_by": {"enum": ["user", "delegated", "unattended"], "description": "Who approved the plan: a person in this session (user); a person in advance, through the brief, ticket or instruction that started the run (delegated: the note names it); or no one (unattended: plan_approved is false). Absent in reports before 1.1.0, where it means user."},
+            "note": {"type": "string", "description": "What was approved; for a delegated approval, who delegated it and where."}
+          }
+        },
+        "bootstrap": {
+          "type": "object", "required": ["framework", "config", "approved_by"],
+          "description": "Set when the repository had no suitable test framework and one was set up after agreement (SKILL.md, Bootstrapping a framework). The conventions were then chosen, not found, and conventions_source says so.",
+          "properties": {
+            "framework": {"type": "string"}, "version": {"type": "string"},
+            "config": {"type": "string", "description": "The framework config file written; it must be listed in files_changed."},
+            "approved_by": {"enum": ["user", "delegated"]}, "note": {"type": "string"},
+            "browser": {"type": "string", "description": "The browser used when the framework's pinned revision was not installed (an installed one reused through launchOptions.executablePath)."}
           }
         },
         "filters": {"type": "object"},
@@ -206,15 +217,20 @@
           "path": {"type": "string"},
           "change": {"enum": ["added", "modified"]},
           "kind": {"enum": ["test", "page_object", "fixture", "helper", "step_definitions", "config", "journey", "manifest"]},
-          "approved_by_user": {"type": "boolean"},
+          "approved_by_user": {"type": "boolean", "description": "A person approved this manifest change in the session (the pre-1.1.0 form of approved_by: user). Refused when metadata.approval.approved_by is delegated or unattended."},
+          "approved_by": {"enum": ["user", "delegated", "unattended"], "description": "Who approved this manifest change; delegated needs a note naming who allowed it, and unattended is refused."},
           "note": {"type": "string"}
         }
       }
     },
     "lint": {
       "type": "object", "required": ["ran"],
+      "description": "As printed by lint_tests.py --json (ran, errors, warnings, findings; its per-file files list may be kept or dropped).",
       "properties": {"ran": {"type": "boolean"}, "errors": {"type": "integer"}, "warnings": {"type": "integer"},
-                     "findings": {"type": "array"}}
+                     "findings": {"type": "array", "items": {"type": "object", "properties": {
+                       "file": {"type": "string"}, "rule": {"type": "string"}, "level": {"enum": ["error", "warning"]},
+                       "line": {"type": ["integer", "null"]}, "test": {"type": ["string", "null"]}, "message": {"type": "string"}}}},
+                     "files": {"type": "array"}}
     },
     "journey_updates": {
       "type": "array",
@@ -237,7 +253,7 @@
         "results": {"type": "object", "properties": {"pass": {"type": "integer"}, "fail_product": {"type": "integer"},
                     "fail_test": {"type": "integer"}, "blocked_env": {"type": "integer"}, "flaky": {"type": "integer"},
                     "not_run": {"type": "integer"}}},
-        "headline": {"type": "string"}
+        "headline": {"type": "string", "description": "One sentence that names the suspected bugs, flaky, blocked and failing tests when there are any, and gives the Expects verified by passing, stable tests out of the total (\"7 of 13 Expects verified\"); the validator checks both."}
       }
     }
   }
