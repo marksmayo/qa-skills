@@ -109,7 +109,7 @@ def declared_covers(names: list[str], rep: dict, cfile: dict) -> bool:
 
 ORDER = ['P0', 'P1', 'P2', 'P3']
 FLOW = {'undeclared_third_party': 3, 'before_consent': 3, 'after_reject': 3, 'declared_unexpected': 2, 'logs': 2,
-        'insecure_storage': 2, 'url': 2, 'no_use': 1}
+        'insecure_storage': 2, 'url': 2, 'committed': 2, 'no_use': 1}
 TRANSFER = {'personal_data_to_third_party', 'session_replay_unmasked', 'undeclared_processor', 'cross_border_transfer',
             'tracking_before_consent', 'tracking_after_reject', 'telemetry'}
 # sends that need no form and no click: a review finding may rate them before_consent when it shows they are on by
@@ -123,8 +123,12 @@ BANNED = re.compile(r'\b(is|are|fully|now|be)\s+compliant\b|\bGDPR[- ]ready\b|\b
 SECRET = re.compile(r'AKIA[0-9A-Z]{16}|sk_live_[0-9a-zA-Z]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|xox[bp]-[0-9A-Za-z-]{10,}|ghp_[0-9A-Za-z]{30,}')
 CSRF_COOKIE = re.compile(r'csrf|xsrf', re.I)
 # a statement that only a browser run could support, in an audit whose browser run did not happen
-RUNTIME_CLAIM = re.compile(r'\b(no|none of the|zero)\s+(third[- ]part(y|ies)|trackers?|tracking|requests?|vendors?|canar(y|ies)|cookies?)\b'
-                           r'|\bconsent (is|was) (respected|honou?red)\b|\bnothing (is|was) sent\b|\b(capture|live run|browser run) (showed|found|confirmed)\b', re.I)
+RUNTIME_CLAIM = re.compile(r'\b(no|none of the|zero)\s+(canar(y|ies)|cookies?)\b'
+                           r'|\bconsent (is|was) (respected|honou?red)\b|\b(capture|live run|browser run) (showed|found|confirmed)\b', re.I)
+# where data goes (or doesn't): the code can show it too, so in a not_run audit it is fine in a sentence that says it is
+# what the code does ("By the code, nothing is sent to ..."; SKILL.md, What the validator enforces)
+CODE_ABLE_CLAIM = re.compile(r'\b(no|none of the|zero)\s+(third[- ]part(y|ies)|trackers?|tracking|requests?|vendors?)\b'
+                             r'|\bnothing (is|was) sent\b', re.I)
 SKIP_DIRS = {'node_modules', '.git', '.next', '.nuxt', 'dist', 'build', 'out', 'coverage', '.venv', 'venv', '__pycache__', '.turbo', '.cache'}
 SOURCE_SUFFIXES = ('.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx', '.html', '.htm', '.py', '.vue', '.svelte', '.rb', '.json')
 IMAGES = ('.png', '.jpg', '.jpeg', '.webp')
@@ -406,6 +410,22 @@ def main() -> int:
         if f['flow_basis'] not in FLOW:
             e(f'{fid}: flow_basis {f["flow_basis"]!r}')
             continue
+        # a host name or account name the code writes into files kept in the repository (results, scoreboards, logs):
+        # the finding names where it landed, and each location is re-read; the value itself is never quoted
+        if (f['flow_basis'] == 'committed') != (f['type'] == 'identifier_in_artifact'):
+            e(f'{fid}: flow_basis committed goes with type identifier_in_artifact (an identifier written into a committed file), '
+              f'not with {f["type"]} / {f["flow_basis"]}')
+        if f['type'] == 'identifier_in_artifact':
+            arts = f.get('artifacts')
+            if not isinstance(arts, list) or not arts or not all(isinstance(x, dict) and x.get('file') and isinstance(x.get('line'), int) for x in arts):
+                e(f'{fid}: identifier_in_artifact needs artifacts: [{{file, line, what}}] naming each committed file and line that holds the '
+                  'identifier (the value itself is not quoted)')
+            elif a.repo:
+                for x in arts:
+                    p_ = a.repo / x['file']
+                    n_ = len(p_.read_text(encoding='utf-8', errors='replace').splitlines()) if p_.is_file() else 0
+                    if not 1 <= x['line'] <= n_:
+                        e(f'{fid}: artifact {x["file"]}:{x["line"]} not found in the repository')
         if f['reach'] not in (1, 2, 3):
             e(f'{fid}: reach {f["reach"]}')
             continue
@@ -732,6 +752,11 @@ def main() -> int:
             mm = RUNTIME_CLAIM.search(text)
             if mm:
                 e(f'{where} says {mm.group(0)!r}, which only a browser run could show; the run did not happen (not_run)')
+            for sent in re.split(r'(?<=[.;!?])\s+', text):
+                mm = CODE_ABLE_CLAIM.search(sent)
+                if mm and not CODE_QUALIFIER.search(sent):
+                    e(f'{where} says {mm.group(0)!r}, which only a browser run could show; the run did not happen (not_run). '
+                      'If the code shows it, say so in the same sentence ("by the code", "the static scan")')
     # requests the browser blocked never reached the vendor: the report must say what that hides
     blocked = cfile.get('blocked_domains') or sorted({r['host'] for s_ in cap['states'] for r in s_.get('requests', []) if r.get('blocked') == 'third_party'})
     if blocked and not any(re.search(r'\bblock', x, re.I) and re.search(r'third[- ]part|vendor', x, re.I) for x in rep['limitations']):

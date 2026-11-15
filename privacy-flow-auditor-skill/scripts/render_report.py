@@ -93,6 +93,8 @@ def main() -> int:
             if pol:
                 where = f'`{pol["file"]}:{pol["line"]}`' if pol.get('file') else pol.get('url', '')
                 out.append(f'- Policy promise ({pol.get("promise")}): {where} "{pol.get("excerpt", "")}"')
+            for x in f.get('artifacts') or []:
+                out.append(f'- Written into: `{x["file"]}:{x["line"]}`' + (f' ({x["what"]})' if x.get('what') else ''))
             if f.get('categories_basis'):
                 out.append(f'- Categories: {f["categories_basis"]}')
             if f.get('consent_states'):
