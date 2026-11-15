@@ -950,7 +950,7 @@ def _crate(cdir: Path, root: Path, ws: dict, notes: list) -> dict | None:
                 all_rs.append((Path(dp) / f).relative_to(cdir).as_posix())
     target_paths = {t['path'][len(pre):] for t in targets}
     for f in sorted(all_rs):
-        sc = cache.get(f) or scan_file(cdir / f, f)
+        sc = cache[f] if f in cache else scan_file(cdir / f, f)
         cache[f] = sc
         frel = pre + f
         tg = file_targets.get(f, [])
@@ -1743,6 +1743,20 @@ def self_test() -> int:
           'plain #[test] is not', pt == {'doubles': True, 'positive': True, 'sums': True, 'grams': True,
                                          'plain': False}, pt)
     shutil.rmtree(par, ignore_errors=True)
+    # a file that cannot be read scans as {}; it is still scanned once per crate, never again
+    calls: dict[str, int] = {}
+    real_scan = globals()['scan_file']
+
+    def counting_scan(path, rel):
+        calls[rel] = calls.get(rel, 0) + 1
+        return {} if rel == 'src/lib.rs' else real_scan(path, rel)
+    globals()['scan_file'] = counting_scan
+    try:
+        read_cargo(d / 'crates' / 'tides-core')
+    finally:
+        globals()['scan_file'] = real_scan
+    check('an unreadable file (an empty scan) is scanned once, not again for every walk', calls.get('src/lib.rs') == 1,
+          calls)
     failed = 0
     for name, ok, extra in checks:
         failed += not ok
