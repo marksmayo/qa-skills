@@ -18,6 +18,8 @@ Library use:
     m['is_cargo'], m['workspace'], m['crates']        # see read_cargo() for the full shape
     cargo_project.test_ids(m)                         # ['<target>::<path::name>', ...], the ids run_tests.py records
     cargo_project.targets_reaching(m, 'crates/a/src/x.rs')   # test targets whose build includes that file
+    cargo_project.target_files(m)                     # {'<crate>:<kind>:<name>': {files of that target}}
+    cargo_project.cfg_features(['all(feature = "x", test)'])  # (['x'], []): the features a cfg list gates on
     cargo_project.test_lines(text)                    # {line numbers} of #[cfg(test)] items and #[test] functions
 
 clap builder CLIs follow the builder's nesting: an argument or command belongs to the command whose call encloses it,
@@ -676,6 +678,76 @@ def _builder_owner(x: dict, commands: list[dict]):
     return best
 
 
+def _cfg_parse(expr: str):
+    """A cfg expression as a tree: ('pred', name, value or None) or (all|any|not, [children]); None when unreadable."""
+    toks = re.findall(r'"(?:[^"\\]|\\.)*"|[A-Za-z_][\w]*|[(),=]', expr)
+    pos = 0
+
+    def node():
+        nonlocal pos
+        if pos >= len(toks):
+            raise ValueError('end')
+        name = toks[pos]
+        pos += 1
+        if name in ('all', 'any', 'not') and pos < len(toks) and toks[pos] == '(':
+            pos += 1
+            kids = []
+            while pos < len(toks) and toks[pos] != ')':
+                kids.append(node())
+                if pos < len(toks) and toks[pos] == ',':
+                    pos += 1
+            pos += 1
+            return (name, kids)
+        if pos + 1 < len(toks) and toks[pos] == '=':
+            pos += 2
+            return ('pred', name, toks[pos - 1].strip('"'))
+        return ('pred', name, None)
+    try:
+        tree = node()
+        return tree if pos == len(toks) else None
+    except (ValueError, IndexError):
+        return None
+
+
+def _cfg_need(n) -> tuple[set, list]:
+    """(features every configuration that compiles this needs, [groups of features of which one is needed])."""
+    if n[0] == 'pred':
+        return ({n[2]} if n[1] == 'feature' and n[2] else set()), []
+    if n[0] == 'not':
+        return set(), []
+    kids = [_cfg_need(k) for k in n[1]]
+    if n[0] == 'all':
+        req, alts = set(), []
+        for r, a in kids:
+            req |= r
+            alts += a
+        return req, alts
+    # any(...): ungated when one branch needs no feature; else what every branch needs, and the rest as alternatives
+    if not kids or any(not r and not a for r, a in kids):
+        return set(), []
+    common = set.intersection(*[r for r, _ in kids]) if all(r for r, _ in kids) else set()
+    rest = sorted({f for r, a in kids for f in (r - common) | {x for g in a for x in g}})
+    return common, ([rest] if rest else [])
+
+
+def cfg_features(cfgs: list[str]) -> tuple[list[str], list[list[str]]]:
+    """(features, features_any) for a list of cfg expressions that all apply (an item's own and its modules'):
+    features every build that compiles the item enables (feature = "x", all(feature = "x", test)), and groups of
+    which at least one must be enabled (any(feature = "a", feature = "b")). not(feature = "x") and
+    any(feature = "x", test) gate on no feature. An expression that cannot be parsed falls back to every feature
+    named in it."""
+    req, alts = set(), []
+    for cf in cfgs:
+        tree = _cfg_parse(cf)
+        if tree is None:
+            req |= set(FEATURE.findall(cf))
+            continue
+        r, a = _cfg_need(tree)
+        req |= r
+        alts += [g for g in a if g not in alts]
+    return sorted(req), [g for g in alts if not set(g) & req]
+
+
 def _builder_items(text: str) -> list[dict]:
     """The clap builder items of one Rust source text (for tests)."""
     res = {'process': [], 'relpaths': [], 'builder': [], 'libload': [], 'env': []}
@@ -805,15 +877,18 @@ def _deps(man: dict, cdir: Path, root: Path, ws_deps: dict) -> tuple[list[str], 
     return sorted(names), path_deps
 
 
-def _module_walk(cdir: Path, root_file: str, cache: dict) -> dict[str, str]:
-    """{file (crate-relative): module path} for every file reached from a target's root file through `mod x;`."""
+def _module_walk(cdir: Path, root_file: str, cache: dict, file_cfg: dict | None = None) -> dict[str, str]:
+    """{file (crate-relative): module path} for every file reached from a target's root file through `mod x;`.
+    file_cfg, when given, is filled with {file: [cfg exprs of the `mod x;` declarations on the way to it]}."""
     out: dict[str, str] = {}
-    todo = [(root_file, '', True)]
+    todo = [(root_file, '', True, [])]
     while todo:
-        rel, mod, is_root = todo.pop()
+        rel, mod, is_root, cfg = todo.pop()
         if rel in out or not (cdir / rel).is_file():
             continue
         out[rel] = mod
+        if file_cfg is not None:
+            file_cfg.setdefault(rel, cfg)
         sc = cache.get(rel)
         if sc is None:
             sc = cache[rel] = scan_file(cdir / rel, rel)
@@ -828,7 +903,7 @@ def _module_walk(cdir: Path, root_file: str, cache: dict) -> dict[str, str]:
                 cand = [str(sub / f'{d["name"]}.rs'), str(sub / d['name'] / 'mod.rs')]
             hit = next((c for c in cand if (cdir / c).is_file()), None)
             if hit:
-                todo.append((os.path.normpath(hit).replace('\\', '/'), modpath, False))
+                todo.append((os.path.normpath(hit).replace('\\', '/'), modpath, False, cfg + list(d.get('cfg') or [])))
     return out
 
 
@@ -854,9 +929,13 @@ def _crate(cdir: Path, root: Path, ws: dict, notes: list) -> dict | None:
     cache: dict = {}
     file_targets: dict[str, list] = {}
     file_module: dict[str, str] = {}
+    file_cfg: dict[str, list] = {}
+    c['target_files'] = {}
     for t in targets:
         local = t['path'][len(pre):]
-        for f, mod in _module_walk(cdir, local, cache).items():
+        walked = _module_walk(cdir, local, cache, file_cfg)
+        c['target_files'][f"{t['kind']}:{t['name']}"] = sorted(pre + f for f in walked)
+        for f, mod in walked.items():
             file_targets.setdefault(f, []).append(t)
             file_module.setdefault(f, mod)
     # every .rs file of the crate: scanned once; files no target reaches are listed
@@ -892,10 +971,11 @@ def _crate(cdir: Path, root: Path, ws: dict, notes: list) -> dict | None:
             full = '::'.join(x for x in [modpath, t['name']] if x)
             kind = 'unit' if test_tg and test_tg['kind'] in ('lib', 'bin') else (
                 'integration' if test_tg and test_tg['kind'] == 'test' else (test_tg or {}).get('kind', 'unknown'))
-            feats = sorted({x for cf in t['cfg'] for x in FEATURE.findall(cf)})
+            cfgs = list(file_cfg.get(f, [])) + list(t['cfg'])
+            feats, feats_any = cfg_features(cfgs)
             c['tests'].append({'name': full, 'fn': t['name'], 'file': frel, 'line': t['line'], 'kind': kind,
                                'module': modpath, 'ignored': t['ignored'], 'should_panic': t['should_panic'],
-                               'cfg': t['cfg'], 'features': feats,
+                               'cfg': cfgs, 'features': feats, 'features_any': feats_any,
                                'target': test_tg['name'] if test_tg else None,
                                'target_kind': test_tg['kind'] if test_tg else None,
                                'id': f'{test_tg["name"]}::{full}' if test_tg else None})
@@ -904,7 +984,8 @@ def _crate(cdir: Path, root: Path, ws: dict, notes: list) -> dict | None:
             for d in sc.get('doctests', []):
                 c['tests'].append({'name': f'{f} - {mod or c["name"]} (line {d["line"]})', 'fn': None, 'file': frel,
                                    'line': d['line'], 'kind': 'doc', 'module': mod, 'ignored': d['ignored'],
-                                   'no_run': d['no_run'], 'cfg': [], 'features': [], 'target': lib_t['name'],
+                                   'no_run': d['no_run'], 'cfg': [], 'features': [], 'features_any': [],
+                                   'target': lib_t['name'],
                                    'target_kind': 'lib', 'id': None})
         for u in sc.get('unsafe', []):
             c['unsafe'].append({'file': frel, **u})
@@ -1018,9 +1099,12 @@ def read_cargo(repo, metadata: dict | None = None) -> dict:
                features: {default, optional, all}, deps: [names], path_deps: [{name, alias, dir, kind}],
                targets: [{kind lib|bin|test|bench|example|build, name, path, required_features, harness,
                           autodiscovered}],
+               target_files: {'<kind>:<name>': [files in that target's module tree]},
                fixture_bins: [{file, name, declared, note}],
                tests: [{name (libtest path), fn, file, line, kind unit|integration|doc, module, ignored,
-                        should_panic, cfg: [cfg exprs of the fn and its modules], features, target, target_kind,
+                        should_panic, cfg: [cfg exprs of the fn, its inline modules and the `mod x;`
+                        declarations that include its file], features (required: see cfg_features), features_any
+                        ([[a, b]]: one of them needed), target, target_kind,
                         id: '<target>::<name>' (None for doc tests)}],
                clis: [{bin, target, file, line, style derive|builder, name, struct, parent,
                        commands: [{name, line, parent, file, ...}],
@@ -1094,6 +1178,13 @@ def _apply_metadata(out: dict, meta: dict, root: Path, notes: list) -> None:
                             if kind != 'bench' else True, 'autodiscovered': None, 'from': 'cargo metadata'})
         if targets:
             c['targets'] = targets
+            pre = '' if c['dir'] == '.' else c['dir'] + '/'
+            cache: dict = {}
+            c['target_files'] = {}
+            for t in targets:
+                local = t['path'][len(pre):] if isinstance(t['path'], str) and t['path'].startswith(pre) else None
+                walked = _module_walk(cdir, local, cache) if local else {}
+                c['target_files'][f"{t['kind']}:{t['name']}"] = sorted(pre + f for f in walked)
         feats = p.get('features')
         if isinstance(feats, dict):
             c['features'] = _features({'features': feats})
@@ -1106,25 +1197,81 @@ def test_ids(model: dict) -> list[str]:
     return [t['id'] for c in model.get('crates', []) for t in c['tests'] if t.get('id')]
 
 
-def targets_reaching(model: dict, file: str) -> list[dict]:
-    """[{crate, target, kind}] whose build includes file (repo-relative): the crate's targets whose module tree holds
-    it, plus every test, bench and example target of that crate and of the crates that depend on it by path when it
-    belongs to a library (they link the library)."""
+def target_files(model: dict) -> dict[str, set[str]]:
+    """{'<crate>:<kind>:<name>': {repo-relative files}}: the files each target's module tree holds (its root file and
+    every file reached through `mod x;`). Read from the model (crates' `target_files`); for a model made before that
+    field existed, walked again from the repository on disk."""
+    out: dict[str, set[str]] = {}
+    root = Path(model.get('repo') or '.')
+    for c in model.get('crates', []):
+        tf = c.get('target_files')
+        if tf is None:
+            pre = '' if c['dir'] == '.' else c['dir'] + '/'
+            cache: dict = {}
+            tf = {}
+            for t in c['targets']:
+                p = t.get('path') or ''
+                tf[f"{t['kind']}:{t['name']}"] = sorted(pre + f for f in _module_walk(root / c['dir'], p[len(pre):], cache)) \
+                    if p.startswith(pre) else []
+        for k, files in tf.items():
+            out[f"{c['name']}:{k}"] = set(files)
+    return out
+
+
+def targets_reaching(model: dict, file: str, include_bench_examples: bool = False) -> list[dict]:
+    """[{crate, target, kind, why}] whose build includes file (repo-relative), for test selection:
+
+    - 'contains': the targets whose module tree holds the file (target_files);
+    - 'links_lib': when it is in the crate's library, every lib, bin and test target of that crate (they link it);
+    - 'path_dependent': the lib, bin and test targets of the crates that depend on that crate by path, followed
+      transitively through normal dependencies (a dev-dependency adds its crate's targets but goes no further);
+    - 'runs_bin': when it is in a binary only (a module of src/main.rs, no library holding it), the crate's
+      integration tests, which cargo builds that binary for and which may run it; never the dependents, which cannot
+      link a binary.
+
+    Bench and example targets are left out unless include_bench_examples (cargo test does not run them). The crate
+    owning the file is the one with the deepest directory holding it."""
     file = file.replace('\\', '/').strip('/')
-    owner = next((c for c in model.get('crates', []) if c['dir'] == '.' or file.startswith(c['dir'] + '/')), None)
-    if not owner:
+    crates = model.get('crates', [])
+    holders = [c for c in crates if c['dir'] == '.' or file.startswith(c['dir'] + '/')]
+    if not holders:
         return []
-    out = []
-    in_lib = file not in owner['unreached_files'] and not any(
-        file == t['path'] for t in owner['targets'] if t['kind'] in ('test', 'bench', 'example', 'bin'))
-    for t in owner['targets']:
-        if file == t['path'] or (in_lib and t['kind'] in ('lib', 'test', 'bench', 'example')):
-            out.append({'crate': owner['name'], 'target': t['name'], 'kind': t['kind']})
-    if in_lib:
-        for c in model.get('crates', []):
-            if any(d['name'] == owner['name'] for d in c['path_deps']):
-                out += [{'crate': c['name'], 'target': t['name'], 'kind': t['kind']} for t in c['targets']
-                        if t['kind'] != 'build']
+    owner = max(holders, key=lambda c: 0 if c['dir'] == '.' else len(c['dir']))
+    tf = target_files(model)
+    skip = set() if include_bench_examples else {'bench', 'example'}
+    out, seen = [], set()
+
+    def add(c, t, why):
+        k = (c['name'], t['kind'], t['name'])
+        if t['kind'] in skip or k in seen:
+            return
+        seen.add(k)
+        out.append({'crate': c['name'], 'target': t['name'], 'kind': t['kind'], 'why': why})
+    direct = [t for t in owner['targets'] if file == t.get('path')
+              or file in tf.get(f"{owner['name']}:{t['kind']}:{t['name']}", ())]
+    for t in direct:
+        add(owner, t, 'contains')
+    if any(t['kind'] == 'lib' for t in direct):
+        for t in owner['targets']:
+            if t['kind'] in ('lib', 'bin', 'test', 'bench', 'example'):
+                add(owner, t, 'links_lib')
+        todo, done = [owner['name']], {owner['name']}
+        while todo:
+            name = todo.pop()
+            for c in crates:
+                links = [d for d in c['path_deps'] if d['name'] == name]
+                if not links or c['name'] in done:
+                    continue
+                for t in c['targets']:
+                    if t['kind'] != 'build':
+                        add(c, t, 'path_dependent')
+                if any(d.get('kind') != 'dev-dependencies' for d in links):
+                    done.add(c['name'])
+                    todo.append(c['name'])
+    elif any(t['kind'] == 'bin' for t in direct):
+        for t in owner['targets']:
+            if t['kind'] == 'test':
+                add(owner, t, 'runs_bin')
     return out
 
 
@@ -1166,7 +1313,36 @@ FIXTURE = {
         '    #[test]\n'
         '    fn draws_chart() { let s = "fn fake() { #[test] }"; let _ = s; }\n'
         '}\n'
-        'mod native;\n'),
+        'mod native;\n'
+        '#[cfg(feature = "chart")]\n'
+        'mod charting;\n'
+        '#[cfg(any(feature = "metric", test))]\n'
+        'mod either;\n'),
+    'crates/tides-core/src/charting.rs': (
+        '#[cfg(test)]\n'
+        'mod tests {\n'
+        '    #[test]\n'
+        '    fn plots() {}\n'
+        '}\n'),
+    'crates/tides-core/src/either.rs': (
+        '#[cfg(test)]\n'
+        'mod tests {\n'
+        '    #[test]\n'
+        '    fn runs() {}\n'
+        '}\n'
+        '#[cfg(all(feature = "metric", test))]\n'
+        'mod gated {\n'
+        '    #[test]\n'
+        '    fn gated() {}\n'
+        '}\n'
+        '#[cfg(test)]\n'
+        '#[cfg(not(feature = "chart"))]\n'
+        '#[test]\n'
+        'fn no_chart() {}\n'
+        '#[cfg(test)]\n'
+        '#[cfg(any(feature = "metric", feature = "chart"))]\n'
+        '#[test]\n'
+        'fn either_feature() {}\n'),
     'crates/tides-core/src/native.rs': (
         'use std::path::{Path, PathBuf};\n'
         'use std::process::Command;\n'
@@ -1279,7 +1455,16 @@ FIXTURE = {
         'mod tests {\n'
         '    #[test]\n'
         '    fn parses() {}\n'
-        '}\n'),
+        '}\n'
+        'mod runner;\n'),
+    'crates/tides-cli/src/runner.rs': 'pub fn go() {}\n',
+    'crates/tides-chart/Cargo.toml': ('[package]\nname = "tides-chart"\nversion = "0.1.0"\nedition = "2024"\n\n'
+                                      '[dependencies]\ntides-core = { path = "../tides-core" }\n'),
+    'crates/tides-chart/src/lib.rs': 'pub fn chart() {}\n',
+    'crates/tides-app/Cargo.toml': ('[package]\nname = "tides-app"\nversion = "0.1.0"\nedition = "2024"\n\n'
+                                    '[dependencies]\ntides-chart = { path = "../tides-chart" }\n'),
+    'crates/tides-app/src/lib.rs': 'pub fn app() {}\n',
+    'crates/tides-app/tests/app.rs': 'fn helper() {}\n',
     'crates/tides-cli/src/bin/tidectl.rs': (
         'use clap::{Arg, Command};\n'
         '\n'
@@ -1325,7 +1510,7 @@ def self_test() -> int:
     crates = {c['name']: c for c in m.get('crates', [])}
     core, cli = crates.get('tides-core', {}), crates.get('tides-cli', {})
     check('a virtual workspace with two member crates', m.get('is_cargo') and (m.get('workspace') or {}).get('virtual')
-          and (m.get('workspace') or {}).get('members') == ['crates/tides-cli', 'crates/tides-core'], m.get('workspace'))
+          and (m.get('workspace') or {}).get('members') == ['crates/tides-app', 'crates/tides-chart', 'crates/tides-cli', 'crates/tides-core'], m.get('workspace'))
     check('edition.workspace = true resolves to the workspace edition', core.get('edition') == '2024', core.get('edition'))
     check('features: default, optional (not enabled by default) and all',
           core.get('features') == {'default': ['metric'], 'optional': ['chart'], 'all': ['chart', 'metric']},
@@ -1344,7 +1529,8 @@ def self_test() -> int:
           and fb.get('crates/tides-cli/tests/fixtures/echo_station.rs', {}).get('declared') is False
           and 'crates/tides-cli/tests/common/mod.rs' not in fb, fb)
     tests = {t['id']: t for c in m.get('crates', []) for t in c['tests'] if t.get('id')}
-    want = {'tides_core::tests::doubles', 'tides_core::tests::reads_gauge', 'tides_core::tests::draws_chart',
+    want = {'tides_core::charting::tests::plots', 'tides_core::either::tests::runs', 'tides_core::either::gated::gated',
+            'tides_core::either::no_chart', 'tides_core::either::either_feature', 'tides_core::tests::doubles', 'tides_core::tests::reads_gauge', 'tides_core::tests::draws_chart',
             'tides_core::height::tests::converts', 'tides::tests::parses', 'cli::prints_help', 'cli::slow_station'}
     check('test ids are <target>::<module path::name> for unit and integration tests', set(tests) == want, sorted(tests))
     check('#[ignore] (with or without a reason) is recorded',
@@ -1460,6 +1646,31 @@ def self_test() -> int:
     reach = {(r['crate'], r['target']) for r in targets_reaching(m, 'crates/tides-core/src/height.rs')}
     check('targets_reaching: a library file reaches its lib and the dependent crate\'s targets',
           ('tides-core', 'tides_core') in reach and ('tides-cli', 'cli') in reach, reach)
+    check('targets_reaching: path-dependents are followed transitively; bench and example targets only on request',
+          ('tides-app', 'app') in reach and ('tides-chart', 'tides_chart') in reach
+          and not {('tides-cli', 'lookup'), ('tides-cli', 'demo')} & reach
+          and {('tides-cli', 'lookup'), ('tides-cli', 'demo')} <= {
+              (r['crate'], r['target']) for r in targets_reaching(m, 'crates/tides-core/src/height.rs',
+                                                                  include_bench_examples=True)}, sorted(reach))
+    rr = {(r['crate'], r['target']) for r in targets_reaching(m, 'crates/tides-cli/src/runner.rs')}
+    check('targets_reaching: a module of a bin-only target is not a library file: its bin and the crate\'s '
+          'integration tests (which may run the bin), never the lib\'s dependents or other bins',
+          ('tides-cli', 'tides') in rr and ('tides-cli', 'cli') in rr and ('tides-cli', 'tidectl') not in rr
+          and not any(c != 'tides-cli' for c, _ in rr), sorted(rr))
+    tfs = globals().get('target_files')
+    tf = tfs(m) if tfs else {}
+    check('target_files(model): the files each target\'s module tree holds, keyed <crate>:<kind>:<name>',
+          'crates/tides-core/src/height.rs' in tf.get('tides-core:lib:tides_core', set())
+          and 'crates/tides-cli/src/runner.rs' in tf.get('tides-cli:bin:tides', set())
+          and 'crates/tides-cli/src/runner.rs' not in tf.get('tides-cli:bin:tidectl', set()), sorted(tf))
+    feats = {t['fn']: t['features'] for t in core.get('tests', []) if t.get('fn')}
+    check('test features: the cfg on the `mod x;` that includes a file gates its tests; any(feature, test) does not '
+          'gate, all(feature, test) does, not(feature) does not',
+          feats.get('plots') == ['chart'] and feats.get('runs') == [] and feats.get('gated') == ['metric']
+          and feats.get('no_chart') == [] and feats.get('draws_chart') == ['chart'], feats)
+    ef = next((t for t in core.get('tests', []) if t.get('fn') == 'either_feature'), {})
+    check('test features: any(feature = a, feature = b) is recorded as alternatives, not as both required',
+          ef.get('features') == [] and ef.get('features_any') == [['chart', 'metric']], ef)
     check('test_ids lists the ids', set(test_ids(m)) == want, None) if 'error' not in m else None
     empty = Path(tempfile.mkdtemp(prefix='cargo-none-'))
     check('no Cargo.toml: is_cargo false and the CLI exits 3', read_cargo(empty)['is_cargo'] is False
