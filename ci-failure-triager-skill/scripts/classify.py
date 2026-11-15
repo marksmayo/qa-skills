@@ -34,7 +34,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from parse_results import parse_junit  # noqa: E402
-from extract_failures import console_tests, match_sections, step_sections  # noqa: E402
+from extract_failures import log_tests, match_sections, step_sections  # noqa: E402
 
 SIG = json.loads((HERE.parent / 'data' / 'signatures.json').read_text(encoding='utf-8'))
 COMPILED = [(s, re.compile(s['pattern'], re.I)) for s in SIG['signatures']]
@@ -42,7 +42,7 @@ DATE = re.compile(r'\b(20\d\d-\d\d-\d\d)\b')
 
 
 def _console_rerun(f: dict, job: dict, run_dir: Path) -> str:
-    """The re-run outcome of a test read from console output (no JUnit)."""
+    """The re-run outcome of a test read from console output (no JUnit): Vitest, Jest, node:test, go test, cargo test or nextest."""
     if job['conclusion'] == 'success':
         return 'passed'
     if not job.get('log') or not (run_dir / job['log']).exists():
@@ -52,7 +52,7 @@ def _console_rerun(f: dict, job: dict, run_dir: Path) -> str:
     ids = set()
     for sec, _ in match_sections(step_sections(lines), failed):
         if sec:
-            ids |= {c['test_id'] for c in console_tests(lines, sec['body'], sec['end'])}
+            ids |= {c['test_id'] for c in log_tests(lines, sec['body'], sec['end'])}
     if f['test_id'] in ids:
         return 'failed'
     st = next((s for s in job['steps'] if s['name'] == f['step']), None)

@@ -157,6 +157,70 @@ def go_signature_checks(fails: list) -> None:
             fails.append(f'go signatures: {text[:60]!r} matched {ids}, expected {sid}')
 
 
+def rust_run_checks(fails: list) -> None:
+    """A synthetic GitHub Actions recording of a Rust workspace's CI (cargo test, nextest, a compile error, clippy -D
+    warnings, cargo fmt --check, coverage gates), normalised by fetch_run.py: every failing test is its own failure with
+    the class its evidence gives, the step failures carry their kind, a re-run that fails the same test again is read
+    from the re-run's log, and the triage validates."""
+    global RUN
+    import io, contextlib
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        raw, RUN = td / 'raw', td / 'run'
+        s = fetch_run.save
+        s(raw / 'run.json', {'id': 950, 'head_sha': SHA, 'head_branch': 'main', 'event': 'push', 'run_attempt': 2, 'workflow_id': 12,
+                             'path': '.github/workflows/checks.yml', 'created_at': '2026-03-02T10:00:00Z', 'run_started_at': '2026-03-02T10:00:00Z',
+                             'conclusion': 'failure', 'html_url': 'https://ci.example.test/run/950',
+                             'repository': {'full_name': 'acme/tides', 'default_branch': 'main'}})
+        a1, a2 = [], []
+        for i, (name, (script, step, body)) in enumerate(extract_failures.RUST_LOGS.items(), 1):
+            jid = 9500 + i
+            j = {'id': jid, 'name': name, 'conclusion': 'failure', 'started_at': '2026-03-02T10:01:00Z', 'completed_at': '2026-03-02T10:05:00Z',
+                 'runner_name': 'hosted 1', 'html_url': f'https://ci.example.test/job/{jid}',
+                 'steps': [{'number': 1, 'name': 'Set up job', 'conclusion': 'success'}, {'number': 2, 'name': step, 'conclusion': 'failure'}]}
+            a1.append(j)
+            s(raw / 'logs' / f'{jid}.txt', extract_failures._gh_log([(script, [script], body)]))
+            if name == 'rust-test':       # re-run: the same job ran again and the unit test failed again
+                a2.append(dict(j, id=jid + 100, started_at='2026-03-02T11:01:00Z'))
+                s(raw / 'logs' / f'{jid + 100}.txt', extract_failures._gh_log([(script, [script], body)]))
+            else:
+                a2.append(j)
+        s(raw / 'attempts' / '1' / 'jobs.json', {'jobs': a1})
+        s(raw / 'attempts' / '2' / 'jobs.json', {'jobs': a2})
+        s(raw / 'attempts' / '2' / 'run.json', {'triggering_actor': {'login': 'maintainer-a'}})
+        s(raw / 'history.json', {'workflow_runs': []})
+        with contextlib.redirect_stderr(io.StringIO()):
+            run = fetch_run.normalise_github(raw, RUN, 'acme/tides')
+        run['source'] = 'recorded'
+        s(RUN / 'run.json', run)
+        r = subprocess.run([sys.executable, str(HERE / 'rerun.py'), '--run', str(RUN), '--observed'], capture_output=True, text=True, encoding='utf-8')
+        if r.returncode:
+            fails.append(f'rust run: rerun.py --observed failed: {r.stderr}')
+            return
+        cands = candidates(run, RUN)
+        got = {(c['failure']['job'], c['failure']['test_id']): (c['classification'], c['confidence'], c['failure']['failure_type'],
+                                                               [h['id'] for h in c['signals']['signatures'] if h['class'] == 'real'][:1], c['signals']['rerun'])
+               for c in cands}
+        want = {('rust-test', 'tides_core::tables::tests::rounds_half_metre'): ('real', 'indicated', 'assertion', [], 'failed'),
+                ('rust-test', 'cli::rejects_unknown_port'): ('real', 'indicated', 'error', [], 'failed'),
+                ('rust-nextest', 'tides_core::tables::tests::rounds_half_metre'): ('real', 'indicated', 'assertion', [], 'job_not_rerun'),
+                ('rust-nextest', 'cli::waits_for_feed'): ('unclassified', 'low', 'timeout', [], 'job_not_rerun'),
+                ('rust-compile', None): ('real', 'indicated', 'compile', ['REAL-COMPILE'], 'job_not_rerun'),
+                ('rust-clippy', None): ('real', 'indicated', 'lint', ['REAL-LINT'], 'job_not_rerun'),
+                ('rust-fmt', None): ('real', 'indicated', 'format', ['REAL-FORMAT'], 'job_not_rerun'),
+                ('rust-coverage', None): ('real', 'indicated', 'coverage_gate', ['REAL-COVERAGE'], 'job_not_rerun'),
+                ('rust-tarpaulin', None): ('real', 'indicated', 'coverage_gate', ['REAL-COVERAGE'], 'job_not_rerun')}
+        for k in sorted(set(want) | set(got), key=str):
+            if got.get(k) != want.get(k):
+                fails.append(f'rust run: {k} gave {got.get(k)}, expected {want.get(k)}')
+        t = triage_from(run, cands)
+        t['summary']['headline'] = 'Nine failures in the Rust checks: two failing tests, a compile error, a lint, formatting and two coverage gates.'
+        t['limitations'] = ['No repository was given, so no owning change is identified.']
+        rc, out = finish(t, td)
+        if rc:
+            fails.append(f'rust run: the triage should validate:\n{out}')
+
+
 def mini_run(d: Path, jobs: list[tuple[str, str, list[str]]], history=None) -> dict:
     """A normalised one-attempt run in d: jobs are (name, step name, log output lines)."""
     rjobs = []
@@ -460,6 +524,7 @@ def main() -> int:
     go_signature_checks(fails)
     no_jobs_checks(fails)
     never_started_checks(fails)
+    rust_run_checks(fails)
     agent_test_and_local_runs_checks(fails)
     owning_change_checks(fails)
     for mod in (fetch_run, extract_failures):
