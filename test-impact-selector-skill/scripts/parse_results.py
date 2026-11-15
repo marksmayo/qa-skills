@@ -38,10 +38,11 @@ error case with the `build_failed` signal, never a failed test named TestMain.
 
 Rust: `--libtest FILE` (or parse_libtest / libtest_to_junit) reads `cargo test` output, libtest's text format or
 its `--format json` lines. Ids are `<target>::<path::name>`, the target found from cargo's `Running <source>
-(<binary>)` line: the binary's file name is the same for a package's lib and its same-named bin (dashes made
-underscores), so the source path decides (a lib for src/lib.rs, a bin for src/main.rs and src/bin/, an integration
-test's file stem with its dashes), and with `--cargo-repo` (or a Cargo project at `--files-root`) the target names are
-cargo_project.py's, so runtime ids equal its static ids (`doctest:<crate>` for doc tests); a failed
+(<binary>)` line. The binary's file name is the same for a package's lib and its same-named bin (dashes made
+underscores), so with `--cargo-repo` (or a Cargo project at `--files-root`) the source path picks the target in
+cargo_project.py's model and runtime ids equal its static ids (`<crate>/<target>` where two crates share a name;
+files repository-relative); without it ids keep the binary's name and each case records its target_kind (lib, bin,
+test) from the path, with package-relative files marked `file_base: package` (`doctest:<crate>` for doc tests); a failed
 test carries its panic message and the panic's file, an assertion panic is `assertion` and any other panic `error`;
 a test binary that died before its summary line becomes `<target>::(crashed)`, an error case with the `crash`
 signal. nextest_target(binary_id) maps a cargo-nextest binary id to the same target name.
@@ -546,8 +547,9 @@ def libtest_binary(src: str, binary: str, cargo: dict | None = None, unittests: 
     target name with dashes made underscores, the same for a package's lib and its same-named bin, so the target is
     found from the source path cargo prints (relative to the package): through the cargo_project.read_cargo model
     when given (its target names, so runtime ids equal the static ones; candidates lists every (crate, target) that
-    fits), else from the path itself (a bin for src/main.rs and src/bin/, an integration test's file stem with its
-    dashes)."""
+    fits); without the model the target keeps the binary's name, as earlier runs and CI log readers record it
+    (run_tests.cargo_ids reads such ids), and only the kind comes from the path (a bin for src/main.rs and
+    src/bin/, a test for tests/)."""
     deps = libtest_target(binary)
     src = (src or '').replace('\\', '/').strip('`')
     out = {'target': deps, 'kind': _src_kind(src, unittests), 'candidates': []}
@@ -561,10 +563,6 @@ def libtest_binary(src: str, binary: str, cargo: dict | None = None, unittests: 
         _, t = out['candidates'][0]
         out['target'], out['kind'] = t['name'], t['kind']
         return out
-    p = PurePosixPath(src)
-    stem = p.parent.name if p.name == 'main.rs' and src != 'src/main.rs' else p.stem
-    if src not in ('src/main.rs', 'src/lib.rs') and _norm_target(stem) == deps:
-        out['target'] = stem
     return out
 
 
@@ -1136,8 +1134,8 @@ def libtest_workspace_checks() -> list:
                 sorted(ids) or notes))
     plain, _ = fn(LIBTEST_WS_OUTPUT, 'W')
     by = {c['id']: c for c in plain}
-    out.append(('libtest (no model): an integration test keeps its file stem\'s dashes; a src/main.rs binary is '
-                'recorded as a bin', 'round-trip::reads_back' in by and any(
+    out.append(('libtest (no model): ids keep the binary\'s name as earlier runs and CI log readers have it '
+                '(round_trip); a src/main.rs binary is recorded as a bin', 'round_trip::reads_back' in by and any(
                     c['name'] == 'tests::parses_args' and c.get('target_kind') == 'bin' for c in plain),
                 sorted((c['id'], c.get('target_kind')) for c in plain)))
     want = {'tide-log/cli::prints_help', 'tide-log/cli::writes_log', 'tidectl/cli::prints_help',
