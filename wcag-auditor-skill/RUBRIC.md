@@ -33,7 +33,9 @@ states; only 3.1.1), `partial` (automation finds some failures but never proves 
 
 1. **Start at the failure pattern's default** (`failure_patterns[].default_severity`). Patterns
    describe how an SC fails, not the SC itself: an unnamed functional image is Critical, alt text
-   that isn't equivalent is Moderate, both under 1.1.1.
+   that isn't equivalent is Moderate, both under 1.1.1. A candidate's `pattern` is the one its rule
+   implies; when the rule implies none, `pattern_choices` lists the SC's patterns and you choose the one
+   that matches what you see. Never take the most severe pattern of the SC because it is there.
 2. **Critical path: one level up** when the finding is on a critical-path step and affects what
    the step needs (the booking form's fields, not the site logo on that page). A finding on the
    step that does not affect it keeps `critical_path` with `affects_step: false` and a `reason`:
@@ -96,7 +98,10 @@ with `not_established` it must say conformance is not established.
 `evidence_completeness` = checks that ran / checks planned, over `run.json` `checks` (each
 sampled page x viewport x required engine and applicable probe). Blocked pages and missing
 engines count as planned and not ran, and so does a `partial` probe (the keyboard traversal
-stopped at its press limit before a full pass).
+stopped at its press limit before a full pass, or a hover probe that could not hover some candidates).
+A page that was never reached is a missing page, named in `limitations`: its blocked rows lower
+completeness but don't stop an SC passing on the probes that ran on every reached page. List error
+templates users really reach (the not-found page) with `expect_status` so they are audited.
 
 Named states add rows (with `state`): their engines and their own probes count like the initial
 page's.

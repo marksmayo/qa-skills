@@ -222,7 +222,7 @@ wcag-auditor-skill/
   examples/audit.example.json
 ```
 
-## As built (v1.1.0, updated to v1.5.0)
+## As built (v1.1.0, updated to v1.6.0)
 
 Differences from the draft above, and decisions made while building:
 
@@ -459,3 +459,42 @@ Differences from the draft above, and decisions made while building:
     unchanged and the report (schema 1.0) validates as before.
   - Not done: a pointer-only full-viewport element with a `window` listener is still `cantTell`
     (needs a press-and-watch probe), and 3.1.2 (language of parts) has no automated check.
+- **Found on a Next.js App Router content site (a root-level dynamic segment, a not-found page, a focus
+  manager, next/script analytics loaders), fixed (v1.6.0, schema 1.5)**:
+  - A page answering 404 could never be audited, and its 27 blocked rows vetoed every probe-based pass.
+    A target may be `{"url", "expect_status": 404}`: the error template is then audited, its status
+    recorded in the sample (`status`, `expected_status`). The validator no longer lets blocked rows of a
+    page that was never reached veto a probe pass (a missing page is not a failed probe), but now
+    requires every unreachable or blocked sample page to be named in `limitations`; blocked and errored
+    rows of reached pages still veto, and all of them still count against completeness.
+  - `crawl.per_pattern` grouped nothing under a root dynamic segment (`/heron-lake`, `/marsh-walk`, each
+    its own shape). `Shaper` takes the app's route patterns (`crawl.routes`, or `crawl.next_app` read by
+    the shared `next_app.py`): static routes keep their shape, dynamic ones share theirs. Without
+    routes, root-level siblings fold into `/*` once more than `crawl.fold_root_after` (8) are seen
+    (file names such as `index.html` never fold); `run.json crawl.shapes_from` says which rule applied.
+  - A state that navigated client-side was filed under its start page. normalize files its results
+    under the sampled page with the final URL (`via`: start page and state), or keeps the page with
+    `ended_on`; instances in the candidates and the report carry them.
+  - States now record `focus_after_actions` (selector, snippet, crop, `null` for the body) and
+    `final_url`; `"keyboard_start": "active_element"` starts the traversal from the focused element in
+    any state (from the top with a `start_note` when nothing is focused).
+  - The default failure pattern was the most severe of the SC (axe `link-in-text-block` became a
+    colour-only state). It is now the rule's (`pattern` in rule-map overrides for 25 rules), or the
+    SC's only pattern, or none with `pattern_choices`. The example's candidates were regenerated: 24
+    now have no default pattern; ids and the triage are unchanged.
+  - A link wrapping onto two lines measured its indicator against the box round both lines (a weak
+    indicator for a full ring). probes.js records the line boxes (`rects`) and the perimeter is their
+    sum (`line_boxes`). Stops with no or a weak indicator keep focused and unfocused crops (30 per
+    traversal), cited as the candidate's screenshot.
+  - The hover probe skipped an `.sr-only` skip link per page with an anonymous TimeoutError and still
+    reported `ran`. Visually hidden elements are not candidates; an element that cannot be hovered is
+    named in `skipped` and makes the probe `partial`.
+  - SKILL.md said to copy `blocked_requests` "as recorded", which the schema refused (objects). The
+    schema takes run.json's objects for `blocked_requests` and `events`.
+  - Smaller: `render_report.py --markdown`; an `agent_review` pass whose note cites probe results is
+    rejected (it would sidestep the probe-coverage check); run.json `limitations` names blocked
+    third-party hosts; one progress line per probe; svg elements resolve from their xpath (their
+    component was `document`); IBM's ACT `7d6734` is dropped for an svg with no explicit graphics role.
+  - The example run (schema 1.0 report) was not re-captured: items and candidates were regenerated
+    from it and the report validates unchanged. Not done: `link-in-text-block` still has no ACT rule,
+    so a measured failure of it alone stays medium confidence (by design).

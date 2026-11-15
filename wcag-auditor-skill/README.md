@@ -84,8 +84,8 @@ python scripts/run_audit.py --config audit_config.json --out <run> [--plan-only]
 python scripts/normalize.py <run> --out <run>/items.json
 python scripts/merge_findings.py <run>/items.json --run <run> --out <run>/candidates.json
 python scripts/validate_audit.py audit.json --run <run> --candidates <run>/candidates.json --write-summary  # --repo <site source> re-reads agent findings' basis
-python scripts/self_test.py   # merge self-test, template grouping, inner scroll panels (Playwright), validator cases
-python scripts/render_report.py audit.json [--brief]
+python scripts/self_test.py   # merge self-test, template grouping, crawl shapes, inner scroll panels and probes (Playwright, loopback port 8660), validator cases
+python scripts/render_report.py audit.json [--brief] [--markdown audit.md]
 ```
 
 | Priority | Meaning |
@@ -100,7 +100,7 @@ leverage (one fix covers several instances).
 
 ## Output
 
-`audit.json`, described by `schemas/audit.schema.json` (`schema_version` `"1.4"`; `"1.0"` to `"1.3"` reports still validate):
+`audit.json`, described by `schemas/audit.schema.json` (`schema_version` `"1.5"`; `"1.0"` to `"1.4"` reports still validate):
 
 | Section | Content |
 |---|---|
