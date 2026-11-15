@@ -33,8 +33,10 @@ Rust: when the repository (or a top-level folder) holds a Cargo.toml, cargo_proj
 their targets and their tests. A file holding #[test] functions (in a #[cfg(test)] module or a tests/*.rs
 target) is a test file; helper binaries under tests/fixtures and benches are not. A file's build is the
 targets whose module tree (`mod x;`) holds it: a library file reaches its crate's lib, bin and test targets
-and those of every crate that depends on it by path (transitively); a binary's module reaches that binary's
-unit tests only. Each test file of a reached target gets an edge to the file (`via` names the target).
+and those of every crate that depends on it by path (normal dependencies transitively, a dev-dependency one
+step); a binary's module reaches that binary's unit tests and its crate's integration tests (which may run the
+binary). The targets come from cargo_project.targets_reaching, so each .rs file is scanned once per graph.
+Each test file of a reached target gets an edge to the file (`via` names the target).
 
 Python test files that put a folder on sys.path (`sys.path.insert(0, str(Path(__file__).parent.parent /
 "scripts"))`, `os.path.join(os.path.dirname(__file__), "..", "scripts")`, also in a conftest.py above them)
@@ -57,7 +59,9 @@ import detect_conventions  # noqa: E402
 
 READS = 0   # source files read by graphs in this process (the self-test's timing check counts them)
 STDLIB = set(getattr(sys, 'stdlib_module_names', ())) | {'__future__'}
-RUST_CONFIG = {'Cargo.toml', 'Cargo.lock', 'rust-toolchain', 'rust-toolchain.toml', '.cargo/config', '.cargo/config.toml'}
+# attributes that turn one test function into several libtest tests named `fn::case...` (rstest, test-case)
+PARAM_ATTR = re.compile(r'#\[\s*(?:[\w:]+::)?(rstest|test_case|test_matrix|case|values)\b')
+RUST_CONFIG = {'Cargo.toml','Cargo.lock', 'rust-toolchain', 'rust-toolchain.toml', '.cargo/config', '.cargo/config.toml'}
 CODE_EXT = {'.py', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.mts', '.cts', '.vue', '.svelte', '.java', '.kt', '.kts',
             '.cs', '.swift', '.dart', '.rb', '.php', '.scala', '.m'}
 
@@ -248,47 +252,6 @@ def eval_path(node, here: str, names: dict, depth: int = 0) -> str | None:
                 return None
             return _norm('/'.join([v, *rest]))
     return None
-
-
-CFG_TOKEN = re.compile(r'\s*(?:(all|any|not)\s*\(|(\))|(,)|([A-Za-z_][\w]*)\s*(?:=\s*"([^"]*)")?)')
-
-
-def cfg_gates(expr: str, enabled: set[str]) -> list[str]:
-    """The cargo features a `#[cfg(...)]` expression needs beyond `enabled` when compiling tests: [] when it holds
-    with `test` set and only the enabled features (`any(feature = "x", test)` does), else the features it names.
-    Other predicates (target_os, unix, debug_assertions) are taken as satisfiable."""
-    pos = 0
-    names: list[str] = []
-
-    def parse():
-        nonlocal pos
-        m = CFG_TOKEN.match(expr, pos)
-        if not m:
-            raise ValueError(expr)
-        pos = m.end()
-        if m.group(1):
-            op, vals = m.group(1), []
-            while True:
-                m2 = CFG_TOKEN.match(expr, pos)
-                if m2 and m2.group(2):
-                    pos = m2.end()
-                    break
-                if m2 and m2.group(3):
-                    pos = m2.end()
-                    continue
-                vals.append(parse())
-            return all(vals) if op == 'all' else any(vals) if op == 'any' else not (vals[0] if vals else False)
-        if m.group(4):
-            if m.group(4) == 'feature' and m.group(5) is not None:
-                names.append(m.group(5))
-                return m.group(5) in enabled
-            return True             # test, unix, target_os = "...": can hold when the tests are compiled
-        raise ValueError(expr)
-    try:
-        ok = parse()
-    except (ValueError, IndexError, RecursionError):
-        return sorted({f for f in re.findall(r'feature\s*=\s*"([^"]+)"', expr) if f not in enabled})
-    return [] if ok else sorted({f for f in names if f not in enabled})
 
 
 def _norm(p: str) -> str | None:
@@ -538,72 +501,32 @@ class Graph:
             self._rust_reach, self._rust_files = o._rust_reach, o._rust_files
             return dict(o._rust_files)
         import cargo_project
+        fixture: set[str] = set()
+        # the (crate, target, kind) whose module tree holds each file, from the shared reader's target_files: each
+        # .rs file is scanned once, by cargo_project.read_cargo
+        own: dict[str, list[tuple[str, str, str]]] = {}
+        model_of: dict[str, tuple[dict, str]] = {}
         for top in tops:
             m = cargo_project.read_cargo(self.root / top, self.cargo_metadata if top == '.' else None)
             pre = '' if top == '.' else top + '/'
+            for key, tfiles in cargo_project.target_files(m).items():
+                crate, kind, name = key.split(':', 2)
+                for f in tfiles:
+                    own.setdefault(pre + f, []).append((crate, name, kind))
             for c in m['crates']:
-                c['dir'] = top if c['dir'] == '.' else pre + c['dir']
-                c['manifest'] = pre + c['manifest']
-                for t in c['targets']:
-                    if t.get('path'):
-                        t['path'] = pre + t['path']
-                for x in c['fixture_bins'] + c['tests']:
-                    x['file'] = pre + x['file']
-                c['unreached_files'] = [pre + f for f in c['unreached_files']]
-                c['root'] = top
-                self.rust_crates[c['name']] = c
+                # the graph's copy, with repository-relative paths; the shared model keeps its own (targets_reaching)
+                pc = {**c, 'dir': top if c['dir'] == '.' else pre + c['dir'], 'manifest': pre + c['manifest'],
+                      'targets': [{**t, **({'path': pre + t['path']} if t.get('path') else {})} for t in c['targets']],
+                      'fixture_bins': [{**x, 'file': pre + x['file']} for x in c['fixture_bins']],
+                      'tests': [{**x, 'file': pre + x['file']} for x in c['tests']],
+                      'unreached_files': [pre + f for f in c['unreached_files']], 'root': top}
+                self.rust_crates[pc['name']] = pc
+                fixture |= {x['file'] for x in pc['fixture_bins']}
+                model_of[pc['name']] = (m, pre)
+                self._add_rust_tests(pc)
             self.cargo_models.append({'root': top, 'workspace': m['workspace'], 'notes': m['notes']})
-        # the targets each file belongs to: the module tree (`mod x;`) of each target's root file
-        own: dict[str, list[tuple[str, str, str]]] = {}
-        for c in self.rust_crates.values():
-            cdir = self.root if c['dir'] == '.' else self.root / c['dir']
-            pre = '' if c['dir'] == '.' else c['dir'] + '/'
-            cache: dict = {}
-            for t in c['targets']:
-                if not t.get('path') or not t['path'].startswith(pre):
-                    continue
-                local = t['path'][len(pre):]
-                try:
-                    tree = cargo_project._module_walk(cdir, local, cache)
-                except Exception:  # noqa: BLE001 - a helper of the shared reader; fall back to the target's root file
-                    tree = {local: ''}
-                for f in tree:
-                    own.setdefault(pre + f, []).append((c['name'], t['name'], t['kind']))
-        # the crates that depend on each crate by path, transitively (they link its library)
-        dependents: dict[str, set[str]] = {n: set() for n in self.rust_crates}
-        for c in self.rust_crates.values():
-            for d in c['path_deps']:
-                if d['name'] in dependents and d['name'] != c['name']:
-                    dependents[d['name']].add(c['name'])
-        closure: dict[str, list[str]] = {}
-        for n in self.rust_crates:
-            seen, todo = set(), [n]
-            while todo:
-                for x in dependents.get(todo.pop(), ()):
-                    if x not in seen and x != n:
-                        seen.add(x)
-                        todo.append(x)
-            closure[n] = sorted(seen)
-        for c in self.rust_crates.values():
-            default = set(c['features'].get('default') or [])
-            # a test is gated by the cfg of its function and modules, including the `mod x;` declarations in other
-            # files; `any(feature = "x", test)` does not gate it (cfg_gates)
-            decl: dict[str, list[str]] = {}
-            for md in c['modules']:
-                decl.setdefault(md['module'], []).extend(md['cfg'])
-            for t in c['tests']:
-                parts = t['module'].split('::') if t.get('module') else []
-                exprs = list(t.get('cfg') or [])
-                for i in range(1, len(parts) + 1):
-                    exprs += decl.get('::'.join(parts[:i]), [])
-                t['features'] = sorted({f for e in exprs for f in cfg_gates(e, default)})
-                if t.get('id'):
-                    self.rust_tests.setdefault(t['file'], []).append({
-                        'crate': c['name'], 'package': c['dir'], 'root': c['root'], 'target': t['target'],
-                        'target_kind': t['target_kind'], 'id': t['id'], 'name': t['name'], 'ignored': t['ignored'],
-                        'features': [f for f in t['features'] if f not in default]})
-        fixture = {x['file'] for c in self.rust_crates.values() for x in c['fixture_bins']}
         by_depth = sorted(self.rust_crates.values(), key=lambda c: -len(c['dir']))
+        reach_of: dict[tuple, list[tuple[str, str, str]]] = {}   # targets_reaching once per set of holding targets
         out: dict[str, dict] = {}
         for path in paths:
             if not path.endswith('.rs'):
@@ -616,12 +539,22 @@ class Graph:
             role = ('lib' if 'lib' in kinds else 'build' if 'build' in kinds else 'bin' if 'bin' in kinds else
                     'test_target' if 'test' in kinds else 'bench' if 'bench' in kinds else 'example' if 'example' in kinds
                     else 'fixture_bin' if path in fixture else 'unreached')
-            if role in ('lib', 'build'):
-                reach = [(name, t['name'], t['kind']) for name in [crate['name'], *closure[crate['name']]]
-                         for t in self.rust_crates[name]['targets'] if t['kind'] in ('lib', 'bin', 'test')]
-            else:
-                reach = [x for x in mine if x[2] in ('lib', 'bin', 'test')]
-            self._rust_reach[path] = reach
+            key = (crate['name'], tuple(sorted(mine)))
+            if key not in reach_of:
+                m, pre = model_of[crate['name']]
+                if role == 'build':
+                    # the build script runs before every target of its crate: what its lib and bins reach
+                    starts = [t['path'] for t in crate['targets'] if t['kind'] in ('lib', 'bin') and t.get('path')]
+                else:
+                    starts = [path] if mine else []
+                hit: list[tuple[str, str, str]] = []
+                for s in starts:
+                    for r in cargo_project.targets_reaching(m, s[len(pre):]):
+                        x = (r['crate'], r['target'], r['kind'])
+                        if r['kind'] in ('lib', 'bin', 'test') and x not in hit:
+                            hit.append(x)
+                reach_of[key] = hit
+            self._rust_reach[path] = reach_of[key]
             tests = self.rust_tests.get(path, [])
             level = None
             if tests:
@@ -630,6 +563,48 @@ class Graph:
                          **({'inline_tests': True} if level == 'unit' else {})}
         self._rust_files = out
         return out
+
+    def _add_rust_tests(self, pc: dict) -> None:
+        """Record the crate's tests per file. A test's gating features come from the shared reader (features and
+        features_any: its own cfg, its inline modules' and the `mod x;` declarations on the way to its file in its
+        own target's module tree); those the crate enables by default (transitively: default = ["std"] with
+        std = ["alloc"] enables alloc) do not gate it."""
+        import cargo_project
+        feats = pc['features']
+        enabled = (set(feats.get('all') or []) - set(feats.get('optional') or [])) | set(feats.get('default') or [])
+        for t in pc['tests']:
+            if not t.get('id'):
+                continue
+            if 'features' in t:
+                need, groups = t['features'], t.get('features_any') or []
+            else:
+                need, groups = cargo_project.cfg_features(t.get('cfg') or [])
+            gated = {f for f in need if f not in enabled}
+            for g in groups:
+                if not set(g) & enabled:
+                    gated |= set(g)
+            self.rust_tests.setdefault(t['file'], []).append({
+                'crate': pc['name'], 'package': pc['dir'], 'root': pc['root'], 'target': t['target'],
+                'target_kind': t['target_kind'], 'id': t['id'], 'name': t['name'], 'ignored': t['ignored'],
+                'features': sorted(gated), 'parameterised': self._parameterised(t['file'], t['line'])})
+
+    def _parameterised(self, path: str, line: int) -> bool:
+        """True when the test function at `line` carries an attribute that generates child tests (#[rstest],
+        #[test_case], #[test_matrix]): libtest names them `fn::case_1...`, so `--exact fn` runs none of them."""
+        lines = (self.text(path) or '').splitlines()
+        i = line - 2
+        while 0 <= i < len(lines):
+            s = lines[i].strip()
+            if not s or s.startswith('//'):
+                i -= 1
+                continue
+            if PARAM_ATTR.match(s):
+                return True
+            if s.startswith('#[') or s.endswith((']', ')', ',')):
+                i -= 1               # another attribute, or the tail of one spread over several lines
+                continue
+            break
+        return False
 
     def rust_edges(self) -> None:
         """Each test file of a target whose build includes a .rs file gets an edge to it (`via` names the target)."""

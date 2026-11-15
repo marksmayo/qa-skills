@@ -1,7 +1,7 @@
 ---
 name: test-impact-selector
 description: Given a change (a branch, a commit range or a diff), pick which tests to run, give every selected test its reasons and evidence (coverage of a changed line, an import chain, a journey link, naming, co-failure history), and list every change that no evidence can bound as a blind spot that widens the selection (strict by default). Outputs ready-to-run commands per package and framework, an optional CI snippet for the user to add, and, when past runs are available, measured recall with a Wilson interval from replaying history. Never calls unselected tests "safe to skip".
-version: 1.4.0
+version: 1.5.0
 ---
 
 # Test impact selector
@@ -141,10 +141,14 @@ script) and their `#[test]` functions. No cargo or build is needed.
   `tests/*.rs` target (integration tests). Helper binaries under `tests/fixtures/` are not tests;
   a change to one widens to its crate's tests. A shared module such as `tests/common/mod.rs`
   reaches the integration tests that include it.
-- A file's build is the targets whose module tree (`mod x;`) holds it. A library file reaches its
-  crate's lib, bin and test targets and those of every crate that depends on it by path, however
-  indirectly. A binary's module reaches that binary's unit tests only. Each test file of a reached
-  target is import-graph evidence (`via: cargo <kind> target <crate>/<target>`).
+- A file's build is the targets whose module tree (`mod x;`) holds it (`cargo_project.py`'s
+  `targets_reaching`). A library file reaches its crate's lib, bin and test targets and those of
+  every crate that depends on it by path (through normal dependencies transitively; a
+  dev-dependency adds its crate's tests but goes no further). A binary's module (no library holding
+  it) reaches that binary's unit tests and its crate's integration tests, which cargo builds the
+  binary for and which may run it (`CARGO_BIN_EXE_<name>`, assert_cmd). A build script reaches
+  what its crate's library and binaries reach. Each test file of a reached target is import-graph
+  evidence (`via: cargo <kind> target <crate>/<target>`).
 - A bench file is kind `bench`: `cargo test` does not build or run benches, so it selects nothing
   and the notes say to check it with `cargo bench -p <crate> --no-run`.
 - The workspace `Cargo.toml`, `Cargo.lock`, `rust-toolchain(.toml)` and `.cargo/config(.toml)`
@@ -155,9 +159,9 @@ script) and their `#[test]` functions. No cargo or build is needed.
   Rust test file selected runs the CI's own `cargo test --workspace ...` line (or `cargo test
   --workspace`); a whole crate `cargo test -p <crate>`; otherwise
   `cargo test -p <crate> --lib|--bin <b>|--test <t> -- --exact <paths>`, with the ids in
-  `test_ids` for `run_tests.py --preset cargo --tests`. Tests behind a cargo feature the crate
-  does not enable by default (a `#[cfg(feature = "x")]` on the test, its module, or the `mod`
-  declaration that includes it; `any(feature = "x", test)` does not gate) are listed in
+  `test_ids` for `run_tests.py --preset cargo --tests`. Tests behind a cargo feature the crate does not enable by default, directly or through the features its defaults enable (a
+  `#[cfg(feature = "x")]` on the test, its module, or the `mod` declaration in its own target
+  that includes it; `any(feature = "x", test)` does not gate) are listed in
   `command.feature_gated`. The commands do not run them, so say so and give the `--features`
   command the CI uses for them.
 - `--cargo-metadata <file>` (the output of `cargo metadata --format-version 1 --no-deps`, if the

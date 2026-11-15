@@ -19,7 +19,8 @@ Every change that evidence can't bound is listed as a blind spot, with what was 
 
 Rust workspaces are read from their manifests and `mod` trees (no cargo needed): a change to a
 library selects its crate's unit tests (`#[cfg(test)]` modules) and the integration tests of every
-crate that reaches it, with `cargo test -p <crate> ... -- --exact` commands. Python commands use
+crate that reaches it; a change to a binary's module also selects its crate's integration tests,
+which run the binary. Commands are `cargo test -p <crate> ... -- --exact`. Python commands use
 the repository's runner (`unittest` when CI runs it). A changed file in a language with no import
 parser is a loud warning the report must repeat, never a quiet empty selection.
 

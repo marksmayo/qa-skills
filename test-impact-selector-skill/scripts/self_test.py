@@ -437,8 +437,8 @@ def case_rust_graph(tmp: Path) -> None:
     assert 'crates/tides-core/src/gauge.rs' in tests, tests
     reach = sorted(g.tests_reaching('crates/tides-core/src/height.rs'))
     assert reach == sorted(CORE_LIB_TESTS + ['crates/tides-core/src/gauge.rs'] + CLI_TESTS), reach
-    reach = sorted(g.tests_reaching('crates/tides-cli/src/report.rs'))
-    assert reach == ['crates/tides-cli/src/report.rs'], reach
+    reach = sorted(g.tests_reaching('crates/tides-cli/src/report.rs'))     # a binary's module: its integration tests run it
+    assert reach == CLI_TESTS, reach
     reach = sorted(g.tests_reaching('crates/tides-cli/tests/common/mod.rs'))
     assert reach == ['crates/tides-cli/tests/cli.rs'], reach
 
@@ -469,14 +469,13 @@ def case_rust_exact_ids(tmp: Path) -> None:
     """A selection of some of a crate's test files gives `-p <crate> --bin|--test <target> -- --exact <paths>`, the
     same arguments run_tests.py's cargo preset builds from those ids."""
     import run_tests
-    sel = rust_select(tmp, 'crates/tides-cli/src/report.rs',
-                      RUST['crates/tides-cli/src/report.rs'].replace('"{}"', '"{} m"'))
+    sel = rust_select(tmp, 'crates/tides-cli/tests/common/mod.rs', 'pub fn setup() { let _ = 1; }\n')
     files = sorted(s['file'] for s in sel['selected'])
-    assert files == ['crates/tides-cli/src/report.rs'], files
+    assert files == ['crates/tides-cli/tests/cli.rs'], files
     cmd = sel['command']['commands']
     assert len(cmd) == 1, cmd
     argv = cmd[0]['argv']
-    assert argv == ['cargo', 'test', '-p', 'tides-cli', '--bin', 'tides', '--', '--exact', 'report::tests::formats'], argv
+    assert argv == ['cargo', 'test', '-p', 'tides-cli', '--test', 'cli', '--', '--exact', 'prints_help'], argv
     sel_args, names, exact = run_tests.cargo_ids(cmd[0]['test_ids'], tmp / 'repo')
     assert argv[2:argv.index('--')] == sel_args and argv[argv.index('--exact') + 1:] == names, (sel_args, names)
 
@@ -492,6 +491,69 @@ def case_rust_bench_and_fixture(tmp: Path) -> None:
     spot = next(b for b in sel['blind_spots'] if b['path'].endswith('fake_gauge.rs'))
     assert sorted(spot['widened_to']) == CLI_TESTS, spot
     assert 'helper binary' in spot['note'].lower(), spot['note']
+
+
+def case_rust_bin_module_selects_integration_tests(tmp: Path) -> None:
+    """A change to a module of a binary only (src/report.rs under src/main.rs, no library) selects the binary's own
+    unit tests and the crate's integration tests, which cargo builds the binary for and which may run it
+    (CARGO_BIN_EXE_<name>, assert_cmd): targets_reaching's 'runs_bin'."""
+    sel = rust_select(tmp, 'crates/tides-cli/src/report.rs',
+                      RUST['crates/tides-cli/src/report.rs'].replace('"{}"', '"{} m"'))
+    files = sorted(s['file'] for s in sel['selected'])
+    assert files == CLI_TESTS, files
+
+
+def case_rust_default_features_transitive(tmp: Path) -> None:
+    """Features the default set enables transitively (default = ["std"], std = ["alloc"]) are enabled: a test
+    under cfg(feature = "alloc") is not feature_gated; one under a feature nothing enables still is."""
+    files = dict(RUST)
+    files['crates/tides-core/Cargo.toml'] = ('[package]\nname = "tides-core"\nversion = "0.1.0"\nedition = "2021"\n\n'
+                                             '[features]\ndefault = ["std"]\nstd = ["alloc"]\nalloc = []\ngauge = []\n')
+    files['crates/tides-core/src/lib.rs'] = 'pub mod buffer;\n' + RUST['crates/tides-core/src/lib.rs']
+    files['crates/tides-core/src/buffer.rs'] = ('pub fn fill() -> u8 { 1 }\n\n#[cfg(all(test, feature = "alloc"))]\n'
+                                                'mod tests {\n    #[test]\n    fn fills() { assert_eq!(super::fill(), 1); }\n}\n')
+    sel = rust_select(tmp, 'crates/tides-core/src/height.rs',
+                      RUST['crates/tides-core/src/height.rs'].replace('0.3048', '0.305'), files=files)
+    assert 'crates/tides-core/src/buffer.rs' in [s['file'] for s in sel['selected']], sel['selected']
+    gated = {g['feature'] for g in sel['command'].get('feature_gated') or []}
+    assert gated == {'gauge'}, sel['command'].get('feature_gated')
+
+
+def case_rust_cfg_keyed_by_target(tmp: Path) -> None:
+    """The cfg on a `mod tests;` declaration in the library gates only the library's tests module, never an inline
+    `mod tests` of the binary with the same module path."""
+    import import_graph
+    files = dict(RUST)
+    files['crates/tides-cli/Cargo.toml'] = RUST['crates/tides-cli/Cargo.toml'].replace(
+        '[[bin]]', '[features]\nslow = []\n\n[[bin]]')
+    files['crates/tides-cli/src/lib.rs'] = 'pub fn one() -> u8 { 1 }\n\n#[cfg(feature = "slow")]\nmod tests;\n'
+    files['crates/tides-cli/src/tests.rs'] = '#[test]\nfn slow_one() { assert_eq!(super::one(), 1); }\n'
+    files['crates/tides-cli/src/main.rs'] = (RUST['crates/tides-cli/src/main.rs'] +
+                                             '\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn runs() {}\n}\n')
+    g = import_graph.build(make_repo(tmp / 'repo', files))
+    feats = {t['id']: t['features'] for ts in g.rust_tests.values() for t in ts}
+    assert feats.get('tides::tests::runs') == [], feats
+    assert feats.get('tides_cli::tests::slow_one') == ['slow'], feats
+
+
+def case_rust_files_scanned_once(tmp: Path) -> None:
+    """Building the graph scans each Rust file once: the shared reader's module trees are reused, not walked
+    again with a scan cache of the graph's own."""
+    import collections
+    import import_graph
+    import cargo_project
+    counts: collections.Counter = collections.Counter()
+    orig = cargo_project.scan_file
+
+    def counting(path, rel):
+        counts[Path(path).resolve()] += 1
+        return orig(path, rel)
+    cargo_project.scan_file = counting
+    try:
+        import_graph.build(make_repo(tmp / 'repo', RUST))
+    finally:
+        cargo_project.scan_file = orig
+    assert counts and max(counts.values()) == 1, {str(k): v for k, v in counts.items() if v > 1}
 
 
 def case_root_cargo_toml_widens_to_rust_only(tmp: Path) -> None:
@@ -675,6 +737,8 @@ CASES = [case_import_graph_go, case_select_go_change, case_unmapped_go_widens_wi
          case_template_render_links_views, case_static_reaches_rendering_tests, case_data_file_in_root_package,
          case_coverage_core_ctrace, case_normalise_refuses_lost_contexts, case_committed_only_hashes_head,
          case_rust_graph, case_select_rust_change, case_rust_exact_ids, case_rust_bench_and_fixture,
+         case_rust_bin_module_selects_integration_tests,
+         case_rust_default_features_transitive, case_rust_cfg_keyed_by_target, case_rust_files_scanned_once,
          case_root_cargo_toml_widens_to_rust_only, case_python_sys_path_imports, case_python_sys_path_unknown_recorded,
          case_blind_spot_wording, case_unittest_command, case_no_parser_language_warns,
          case_validator_requires_language_limitation, case_render_rust_and_language_warning, case_selection_speed]
