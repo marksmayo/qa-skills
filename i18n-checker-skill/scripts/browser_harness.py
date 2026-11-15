@@ -53,7 +53,11 @@ Config (dict):
                           is not guarded in Chromium, and dns_guard.note says so. false turns it off.
     targets               URLs whose hosts are part of the site under test (goto() adds each host it visits)
     allowed_hosts         further hosts to let through: ["cdn.example.com", "*.example-cdn.net"]
-    service_workers       allow (default) or block, for every page unless new_page() says otherwise
+    service_workers       allow (default) or block, for every page unless new_page() says otherwise. Allowed
+                          workers are same-origin by definition; Chromium routes their requests through the
+                          guard (and h.log(page)['service_workers'] lists the workers that started), Firefox and
+                          WebKit do not, and http_cache keep does not either: metadata()['service_workers']
+                          records the mode, the modes pages used, the workers seen and requests_guarded
     rate_limit_seconds    0.5 between page loads; 429/503 back off (Retry-After) up to max_retries times
     settle_seconds        8 (default): the longest goto() waits for the network to go quiet after load. Event
                           streams, WebSockets and requests open over 2 s (long polls, a dev server's reload
@@ -86,6 +90,8 @@ Config (dict):
 
 Actions (act): {"click": sel} {"dblclick": sel} {"hover": sel} {"press": key} {"fill": sel, "value"|"env"}
 {"select": sel, "value"} {"check": sel} {"uncheck": sel} {"wait": ms} {"wait_for": sel} {"goto": url}
+{"back": true} {"forward": true} {"reload": true} (history steps; Playwright disables the back/forward cache, so a
+back step is never a bfcache restore)
 
 Throttling uses the Chrome DevTools Protocol, so it is Chromium only; on another browser it is
 recorded as not applied. Network presets: slow3g (400 kbit/s, 400 ms), fast3g (1.6 Mbit/s, 150 ms),
@@ -105,6 +111,16 @@ Requests the page's own CSP stopped never reach the harness (unless bypass_csp),
 worker fetches may not be routed. h.metadata() returns the run settings a report should state
 (browser, version, read_only, bypass_csp, third_party, allowed hosts, request budget, init
 scripts, launch arguments, prefs, retry policy, stop) with the request counts.
+
+Blocked requests: metadata()['blocked_urls'] lists the third-party URLs the harness aborted (query stripped), and
+h.blocked_by_harness(url_or_message) says whether a failed request, or a console message naming it, was one of them.
+Only Chromium reports net::ERR_BLOCKED_BY_CLIENT; Firefox reports an aborted crossorigin script as "Cross-Origin
+Request Blocked ... CORS request did not succeed" or an NS_ERROR, so match the URL, not the error text. Each
+h.log(page)['failed_requests'] entry carries blocked_by_harness.
+
+Blank captures: image_uniformity(png_bytes) returns {dominant_share, colours, uniform}: the share of pixels in the
+most common (quantised) colour. A capture that is near-uniform (default 0.98) is probably blank (a page that did not
+paint); comparing its element count or height with the same page's other runs is the caller's job.
 
 retry_decision(status, retry_after, attempt, ...) is the 429/503 policy goto() uses, for skills
 that send requests themselves (page.goto, fetch): it returns ("retry", seconds), ("stop", why)
@@ -260,6 +276,24 @@ def changed_pixels(a: bytes, b: bytes, threshold: int = 40) -> int:
     return n
 
 
+def image_uniformity(data: bytes, threshold: float = 0.98, step: int = 4) -> dict:
+    """How uniform a PNG capture is: {dominant_share, colours, uniform, sampled}. Pixels are sampled every `step`
+    pixels in both directions and quantised to 32 levels per channel; dominant_share is the share of samples in the
+    most common colour, and uniform is dominant_share >= threshold (a blank or unpainted page)."""
+    w, h, bpp, rows = png_pixels(data)
+    counts: dict = {}
+    n = 0
+    for y in range(0, h, step):
+        line = rows[y]
+        for x in range(0, w, step):
+            i = x * bpp
+            key = (line[i] >> 3, line[i + 1] >> 3, line[i + 2] >> 3)
+            counts[key] = counts.get(key, 0) + 1
+            n += 1
+    share = max(counts.values()) / n if n else 1.0
+    return {'dominant_share': round(share, 4), 'colours': len(counts), 'uniform': share >= threshold, 'sampled': n}
+
+
 def png_encode(width: int, height: int, rows: list[bytes], bpp: int = 3) -> bytes:
     """Encode raw RGB (bpp 3) or RGBA (bpp 4) rows as a PNG (no filtering)."""
     def chunk(typ: bytes, body: bytes) -> bytes:
@@ -412,7 +446,43 @@ class Harness:
                 'stopped': self.stopped, 'requests': {**self.requests, 'blocked': dict(self.requests['blocked']),
                                                       'by_method': dict(self.requests['by_method'])},
                 'auth': dict(self.auth_info) if self.auth_info else None, 'trace_with_auth': self.trace_with_auth,
-                'dns_guard': dict(self.dns_guard), 'http_cache': self.http_cache_info()}
+                'dns_guard': dict(self.dns_guard), 'http_cache': self.http_cache_info(),
+                'service_workers': self.service_worker_info(),
+                'blocked_urls': sorted({b['url'] for b in self.blocked if b['reason'] == 'third_party'})}
+
+    def service_worker_info(self) -> dict:
+        """Whether pages could register service workers, per-page overrides, the workers seen (Chromium reports them),
+        and whether the harness's guard saw the workers' own requests."""
+        modes = sorted({lg['applied'].get('service_workers') for lg in self._logs.values()
+                        if isinstance(lg.get('applied'), dict) and lg['applied'].get('service_workers')} | {self.service_workers})
+        seen = sorted({u for lg in self._logs.values() for u in lg.get('service_workers') or []})
+        info = {'mode': self.service_workers, 'modes_used': modes, 'workers_seen': seen, 'requests_guarded': True}
+        if 'allow' not in modes:
+            info['note'] = 'service workers were blocked: pages ran as on a first visit without a worker'
+        elif self.keep_cache:
+            info['requests_guarded'] = False
+            info['note'] = ('http_cache keep guards each page over CDP, so requests a service worker makes are not '
+                            'intercepted (third-party names stay unresolvable through the DNS guard)')
+        elif self.browser_name != 'chromium':
+            info['requests_guarded'] = False
+            info['note'] = (f'Playwright routes service-worker requests in Chromium only: in {self.browser_name} a '
+                            "worker's own fetches bypass the harness guard (third-party and write blocks)")
+        else:
+            info['note'] = ('service workers allowed: Chromium routes their requests through the guard; workers_seen '
+                            'lists the ones that started')
+        return info
+
+    def blocked_by_harness(self, url_or_message: str) -> bool:
+        """True when a failed request, or a browser message naming one, was the harness's own third-party block, in
+        any engine: Chromium says net::ERR_BLOCKED_BY_CLIENT, but Firefox reports an aborted crossorigin script as a
+        CORS failure or NS_ERROR and WebKit as a load error, so match the URL against metadata()['blocked_urls']."""
+        text = url_or_message or ''
+        if not text:
+            return False
+        urls = {b['url'] for b in self.blocked if b['reason'] == 'third_party'}
+        if text.split('?')[0].split('#')[0] in urls:
+            return True
+        return any(u and u in text for u in urls)
 
     def http_cache_info(self) -> dict:
         """Whether the browser's HTTP cache worked in this run (a warm-cache measurement needs mode kept)."""
@@ -553,7 +623,7 @@ class Harness:
         page = ctx.new_page()
         if self.keep_cache:
             self._attach_fetch_guard(ctx, page)
-        log = {'console': [], 'page_errors': [], 'failed_requests': [], 'viewports': [],
+        log = {'console': [], 'page_errors': [], 'failed_requests': [], 'viewports': [], 'service_workers': [],
                'http_cache': 'kept' if self.keep_cache else 'disabled',
                'applied': {'viewport': viewport, 'timezone': timezone,
                                                                                     'locale': locale, 'clock': clock,
@@ -570,7 +640,10 @@ class Harness:
         page.on('console', lambda m: log['console'].append({'type': m.type, 'text': m.text}))
         page.on('pageerror', lambda e: log['page_errors'].append({'name': getattr(e, 'name', 'Error'), 'message': str(e)}))
         page.on('requestfailed', lambda r: log['failed_requests'].append({'method': r.method, 'url': r.url.split('?')[0],
-                                                                          'failure': r.failure}))
+                                                                          'failure': r.failure,
+                                                                          'blocked_by_harness': self.blocked_by_harness(r.url)}))
+        if service_workers == 'allow' and self.browser_name == 'chromium':   # workers that start in this page's context
+            ctx.on('serviceworker', lambda w: log['service_workers'].append(w.url.split('?')[0]))
         inflight: dict = {}
         self._inflight[id(page)] = inflight
         page.on('request', lambda r: inflight.__setitem__(r, time.monotonic())
@@ -736,6 +809,10 @@ class Harness:
                 page.check(a['check'], timeout=5000)
             elif 'uncheck' in a:
                 page.uncheck(a['uncheck'], timeout=5000)
+            elif 'back' in a or 'forward' in a or 'reload' in a:   # browser history (a client-side or full navigation)
+                fn = page.go_back if 'back' in a else page.go_forward if 'forward' in a else page.reload
+                fn(timeout=45000)
+                self.settle(page)
             elif 'wait' in a:
                 page.wait_for_timeout(int(a['wait']))
             elif 'wait_for' in a:
@@ -933,6 +1010,68 @@ def _cache_and_viewport_checks() -> list:
     return checks
 
 
+def _sw_block_blank_checks() -> list:
+    """No browser: service-worker settings in metadata, telling the harness's own blocks from the app's failures
+    (Firefox reports a blocked script as a CORS failure, not ERR_BLOCKED_BY_CLIENT), blank-capture uniformity, and
+    history actions."""
+    checks = []
+    try:
+        m = Harness({}).metadata().get('service_workers') or {}
+    except Exception as e:   # noqa: BLE001
+        m = {'error': repr(e)}
+    checks.append(('metadata records the service-worker mode (allow unless set)', m.get('mode') == 'allow' and m.get('requests_guarded') is True, m))
+    try:
+        m = Harness({'service_workers': 'allow', 'browser': 'firefox'}).metadata().get('service_workers') or {}
+    except Exception as e:   # noqa: BLE001
+        m = {'error': repr(e)}
+    checks.append(('allowed service workers outside Chromium are recorded as not guarded by routing',
+                   m.get('mode') == 'allow' and m.get('requests_guarded') is False and 'Chromium' in (m.get('note') or ''), m))
+    try:
+        h = Harness({'targets': ['http://127.0.0.1:8000/']})
+        h.decide('GET', 'https://ads.example.net/tag.js?client=x-1')
+        h.decide('GET', 'http://127.0.0.1:8000/app.js')
+        fx = ('Cross-Origin Request Blocked: The Same Origin Policy disallows reading the remote resource at '
+              'https://ads.example.net/tag.js?client=x-1. (Reason: CORS request did not succeed). Status code: (null).')
+        got = (h.metadata().get('blocked_urls'), h.blocked_by_harness('https://ads.example.net/tag.js?client=x-1'),
+               h.blocked_by_harness(fx), h.blocked_by_harness('http://127.0.0.1:8000/app.js'),
+               h.blocked_by_harness('TypeError: x is undefined'))
+    except Exception as e:   # noqa: BLE001
+        got = repr(e)
+    checks.append(('blocked_urls lists what the harness blocked, and blocked_by_harness() matches a URL or a '
+                   "browser's message naming it", got == (['https://ads.example.net/tag.js'], True, True, False, False), got))
+    white = png_encode(40, 30, [b'\xff' * 120] * 30)
+    rows = [bytes((x * 6) % 256 for x in range(120)) for _ in range(30)]
+    busy = png_encode(40, 30, rows)
+    try:
+        u1, u2 = image_uniformity(white), image_uniformity(busy)
+        got = (u1['uniform'], u1['dominant_share'], u2['uniform'])
+    except Exception as e:   # noqa: BLE001
+        got = repr(e)
+    checks.append(('image_uniformity flags a blank capture and not a busy one', got == (True, 1.0, False), got))
+
+    class HistPage:
+        def __init__(self):
+            self.calls = []
+
+        def go_back(self, **_k):
+            self.calls.append('back')
+
+        def go_forward(self, **_k):
+            self.calls.append('forward')
+
+        def reload(self, **_k):
+            self.calls.append('reload')
+    try:
+        h, page = Harness({}), HistPage()
+        h.settle = lambda *_a, **_k: None
+        h.act(page, [{'back': True}, {'forward': True}, {'reload': True}])
+        got = page.calls
+    except Exception as e:   # noqa: BLE001
+        got = repr(e)
+    checks.append(('act() goes back, forward and reloads', got == ['back', 'forward', 'reload'], got))
+    return checks
+
+
 def tempfile_dir() -> str:
     import tempfile
     return tempfile.mkdtemp(prefix='harness-')
@@ -990,6 +1129,7 @@ def self_test() -> int:
                    res.get('ok') is False and 'targets' in (res.get('error') or '') and 'AssertionError' not in res.get('error', ''),
                    res))
     checks += _cache_and_viewport_checks()
+    checks += _sw_block_blank_checks()
     failed = 0
     for name, ok, extra in checks:
         failed += not ok
