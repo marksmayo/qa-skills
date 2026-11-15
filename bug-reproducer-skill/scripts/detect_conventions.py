@@ -583,7 +583,7 @@ class Detector:
             if evidence not in area['style'][cat][name] and len(area['style'][cat][name]) < 3:
                 area['style'][cat][name].append(evidence)
 
-        base_urls = []
+        base_urls, pw_configs = [], []
         for f in self.files:
             p = PurePosixPath(f)
             a = areas[self.owner(f, roots)]
@@ -628,9 +628,11 @@ class Detector:
             if re.match(r'(playwright|cypress|vitest|vite|jest|wdio|detox|karma)\.conf(ig)?\.[cm]?[jt]s$|^\.detoxrc|^pytest\.ini$|^tox\.ini$|^noxfile\.py$|^conftest\.py$|^jest\.config|^behave\.ini$|^cucumber\.(js|json|ya?ml)$', name):
                 a['config_files'].append(f)
                 text = read(self.root / f)
-                m = re.search(r'base_?url\s*[:=]\s*[\'"`]?([^\'"`,\s]+)', text, re.I)
-                if m:
-                    base_urls.append({'value': m.group(1), 'source': f})
+                bu = base_url_of(text)
+                if bu:
+                    base_urls.append({**bu, 'source': f})
+                if name.startswith('playwright.config'):
+                    pw_configs.append(f)
                 fw = {'playwright': 'playwright', 'cypress': 'cypress', 'wdio': 'webdriverio', 'jest': 'jest',
                       'vitest': 'vitest', '.detoxrc': 'detox', 'detox': 'detox', 'pytest': 'pytest',
                       'conftest': 'pytest', 'behave': 'behave', 'cucumber': 'cucumber'}
@@ -654,6 +656,17 @@ class Detector:
             if is_test_file(f):
                 a['test_files'].append(f)
 
+        for f in pw_configs:   # a Playwright config that no package.json script runs still has a command
+            owner = self.owner(f, roots)
+            a = areas[owner]
+            if any('playwright' in f"{c['command']} {c.get('resolves_to', '')}" for c in a['run_commands']):
+                continue
+            pm = self.tooling.get('package_manager') or 'npm'
+            runner = {'pnpm': 'pnpm exec', 'yarn': 'yarn', 'bun': 'bunx'}.get(pm, 'npx')
+            rel_cfg = f if owner == '.' else f[len(owner) + 1:]
+            a['run_commands'].append({'command': f'{runner} playwright test' + (f' --config {rel_cfg}' if '/' in rel_cfg else ''),
+                                      'source': f, 'origin': 'playwright config',
+                                      'note': 'no package.json script runs Playwright; run from the area root'})
         for r, a in areas.items():   # pytest's own collection rules decide which Python files are its tests
             cfg = pytest_collection(self.root, r)
             if not cfg:
@@ -900,6 +913,55 @@ class Detector:
         scored.sort(key=lambda x: (-x[0], x[1]))
         return [{'path': f, 'area': r, 'score': s} for s, f, r in scored[:3]]
 
+BASE_URL_RX = re.compile(r'base_?url\s*[:=]\s*', re.I)
+ENV_RX = re.compile(r'process\.env\.(\w+)|process\.env\[\s*[\'"](\w+)[\'"]\s*\]|import\.meta\.env\.(\w+)|'
+                    r'os\.environ(?:\.get\(\s*|\[\s*|\.setdefault\(\s*)[\'"](\w+)[\'"]|os\.getenv\(\s*[\'"](\w+)[\'"]|'
+                    r'Cypress\.env\(\s*[\'"](\w+)[\'"]')
+STR_RX = re.compile(r'([\'"`])((?:\\.|(?!\1).)*)\1')
+
+
+def base_url_of(text: str) -> dict | None:
+    """The base URL a test config sets: {value, expression, env, default}. value is the URL used when nothing is set:
+    the literal, or the fallback after ?? / || (or os.environ.get's default) when the URL comes from an environment
+    variable; env names that variable. A URL computed some other way keeps value = the expression."""
+    m = BASE_URL_RX.search(text)
+    if not m:
+        return None
+    expr, depth, quote = [], 0, None
+    for ch in text[m.end():m.end() + 400]:
+        if quote:
+            quote = None if ch == quote else quote
+        elif ch in '\'"`':
+            quote = ch
+        elif ch in '([{':
+            depth += 1
+        elif ch in ')]}':
+            if depth == 0:
+                break
+            depth -= 1
+        elif ch in ',;\n' and depth == 0:
+            break
+        expr.append(ch)
+    expr = ''.join(expr).strip()
+    if not expr:
+        return None
+    env = ENV_RX.search(expr)
+    env_name = next((g for g in env.groups() if g), None) if env else None
+    out = {'value': expr, 'expression': expr}
+    if env_name:
+        out['env'] = env_name
+        rest = expr[env.end():]
+        fb = re.match(r'\s*(?:\)\s*)?(?:\?\?|\|\||\bor\b|,)\s*' + STR_RX.pattern, rest)
+        out['default'] = fb.group(2) if fb else None
+        if fb:
+            out['value'] = fb.group(2)
+    else:
+        lit = STR_RX.fullmatch(expr)
+        if lit:
+            out['value'] = lit.group(2)
+    return out
+
+
 def self_test() -> int:
     """Check product packages named e2e, gated framework signals, node:test, workspace filters and tooling."""
     import tempfile
@@ -935,6 +997,12 @@ def self_test() -> int:
         'web/dist/app.js': 'function start() {}\n',
         'spa/package.json': json.dumps({'name': 'spa', 'scripts': {'build': 'vite build'}}),
         'spa/dist/index.js': 'export const a = 1\n',
+        # a Playwright suite with no test script, whose baseURL falls back to a default when the variable is unset
+        'apps/birds/package.json': json.dumps({'name': 'birds', 'devDependencies': {'@playwright/test': '1.50.0'}}),
+        'apps/birds/playwright.config.ts': ("import { defineConfig } from '@playwright/test';\nexport default defineConfig({\n"
+                                            "  testDir: './e2e',\n"
+                                            "  use: { baseURL: process.env.BIRDS_URL ?? \"http://127.0.0.1:8520\", },\n});\n"),
+        'apps/birds/e2e/home.spec.ts': "import { test } from '@playwright/test';\ntest('home', async ({ page }) => {});\n",
     }
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
@@ -972,6 +1040,13 @@ def self_test() -> int:
          and {b['path']: b['decision'] for b in res.get('build_output') or []} == {'web/dist': 'source',
                                                                                    'spa/dist': 'build_output'},
          res.get('build_output')),
+        ('a baseURL with a ?? fallback keeps the environment variable and the default',
+         'apps/birds' in areas
+         and {k: (areas['apps/birds']['e2e']['base_url'] or {}).get(k) for k in ('value', 'env', 'default')}
+         == {'value': 'http://127.0.0.1:8520', 'env': 'BIRDS_URL', 'default': 'http://127.0.0.1:8520'},
+         (areas.get('apps/birds', {}).get('e2e') or {}).get('base_url')),
+        ('a Playwright config with no test script still gives a run command',
+         'pnpm exec playwright test' in (cmds('apps/birds') if 'apps/birds' in areas else []), cmds('apps/birds') if 'apps/birds' in areas else sorted(areas)),
     ]
     failed = 0
     for name, ok, extra in checks:
