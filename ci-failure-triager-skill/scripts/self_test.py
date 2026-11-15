@@ -275,6 +275,14 @@ def never_started_checks(fails: list) -> None:
                                              'job': 'refresh', 'kind': 'step', 'step_kind': 'other'}, run, RUN)['signatures']]
             if ids != want:
                 fails.append(f'never started: annotation {text[:50]!r} matched {ids}, expected {want}')
+        # the same job passing in a later run of the workflow on the same commit (once the account was fixed) confirms the stop was
+        # the environment's, as a passing re-run does
+        later = copy.deepcopy(run)
+        later['history'] = [{'id': 905, 'commit': SHA, 'conclusion': 'success', 'started_at': '2026-03-02T12:00:00Z', 'event': 'schedule',
+                             'workflow_id': 9, 'branch': 'main', 'after_run': True, 'jobs': [{'name': 'refresh', 'conclusion': 'success'}]}]
+        got = [decide(signals(c['failure'], later, RUN), None)[:2] for c in cands]
+        if got != [('environment', 'confirmed')]:
+            fails.append(f'never started: a later pass of the same job on the same commit should confirm the environment cause, got {got}')
         from validate_triage import completeness
         bare = copy.deepcopy(run)
         bare['attempts'][0]['jobs'][0].pop('annotations')
@@ -389,9 +397,10 @@ def owning_change_checks(fails: list) -> None:
         f1 = {'id': 'X01', 'job': 'unit', 'kind': 'test', 'test_id': 'example.test/fares/pkg/quote > TestQuoteRounding',
               'test_file': 'example.test/fares/pkg/quote/quote_test.go', 'frames': []}
 
-        def oc(last_green, failures, *extra):
-            fetch_run.save(rd / 'run.json', {'run': {'id': 1, 'commit': shas[-1], 'event': 'push'},
-                                              'last_green': {'id': 0, 'commit': last_green} if last_green else None})
+        def oc(last_green, failures, *extra, head=None):
+            fetch_run.save(rd / 'run.json', {'run': {'id': 1, 'commit': head or shas[-1], 'event': 'push'},
+                                              'last_green': (last_green if isinstance(last_green, dict) else {'id': 0, 'commit': last_green})
+                                              if last_green else None})
             fetch_run.save(rd / 'failures.json', {'failures': failures})
             r = subprocess.run([sys.executable, str(HERE / 'owning_change.py'), '--run', str(rd), '--repo', str(repo), '--out', str(rd / 'changes.json'), *extra],
                                capture_output=True, text=True, encoding='utf-8')
@@ -415,6 +424,20 @@ def owning_change_checks(fails: list) -> None:
         x = (c.get('per_failure') or {}).get('X01') or {}
         if x.get('commit') != shas[-1] or [s['file'] for s in x.get('files_shared', [])] != ['pkg/quote/quote.go']:
             fails.append(f'owning change: a Go test exercises the source files of its own package, got {x}')
+        # a pull request branch with no green run of its own: the range starts at the default branch's last green run, and says so
+        main_green = shas[-1]
+        g('checkout', '-q', '-b', 'feature/half-fares')
+        (repo / 'pkg/quote/quote.go').write_text('package quote\n\nconst half = 0.51\n', encoding='utf-8')
+        g('commit', '-q', '-am', 'tune half fares')
+        feature = g('rev-parse', 'HEAD')
+        g('checkout', '-q', 'main')
+        (repo / 'pkg/quote/quote.go').write_text('package quote\n\nconst half = 0.49\n', encoding='utf-8')
+        g('commit', '-q', '-am', 'a later change on main, not in the branch')
+        c = oc({'id': 0, 'commit': main_green, 'branch': 'main', 'basis': 'the branch feature/half-fares has no successful run of the workflow '
+                'before this one, so this is the newest on the default branch main started before it'}, [f1], head=feature)
+        x = (c.get('per_failure') or {}).get('X01') or {}
+        if x.get('commit') != feature or (c.get('range') or {}).get('last_green_branch') != 'main' or 'default branch' not in (c.get('range') or {}).get('basis', ''):
+            fails.append(f'owning change from the default branch last green run: owner {x.get("commit")} (want the branch commit), range {c.get("range")}')
         c = oc(shas[0], [])
         if c.get('per_failure') != {} or c.get('commits') is not None or 'no failure' not in (c.get('problem') or ''):
             fails.append(f'owning change with no failures should return at once, got {c}')

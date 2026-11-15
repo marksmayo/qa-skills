@@ -4,7 +4,10 @@
     python owning_change.py --run run/ --repo <checkout> --out run/changes.json
 
 The range is the commits after the last green run of the same workflow on the branch, up to the failing
-commit (`git rev-list last_green..commit`). For each failure, every commit in range is scored by the files
+commit (`git rev-list last_green..commit`). When the branch has no green run of its own (a new pull request
+branch), fetch_run.py takes the default branch's newest green run before this one; the range then holds the
+branch's own commits (and any default-branch commits between that run and the merge base), and changes.json
+records `range.last_green_branch` and `range.basis`. For each failure, every commit in range is scored by the files
 it shares with the failure: a traceback frame (3), the test file (2), a module the test imports (2; Python
 imports and relative JavaScript/TypeScript imports), a data file the test names (2). Paths a test runner
 prints relative to its package (a monorepo) are matched to the one file in the tree that ends with them.
@@ -125,6 +128,9 @@ def main() -> int:
     fails = json.loads((a.run / 'failures.json').read_text(encoding='utf-8'))['failures']
     head, green = run['run']['commit'], (run.get('last_green') or {}).get('commit')
     rng = f'{green}..{head}' if green else head
+    lg = run.get('last_green') or {}
+    # where the range starts: the branch's own last green run, or the default branch's when the branch had none
+    origin = {k: v for k, v in (('last_green_branch', lg.get('branch')), ('basis', lg.get('basis'))) if v}
 
     def write(out: dict, msg: str) -> int:
         a.out.write_text(json.dumps(out, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
@@ -136,7 +142,9 @@ def main() -> int:
     bounded = None
     if not green:
         if not a.max_commits:
-            basis = ('no last green run of this workflow on the branch, so there is no range of changes to search; '
+            searched = (run.get('history_query') or {}).get('default_branch')
+            basis = ('no last green run of this workflow on the branch' + (f' or on the default branch {searched}' if searched else '')
+                     + ', so there is no range of changes to search; '
                      'owning_change.py --max-commits N searches the N commits up to the failing one (a weaker basis)')
             return write({'range': {'from': None, 'to': head, 'spec': None}, 'commits': None, 'problem': basis,
                           'per_failure': {f['id']: {'status': 'not_identified', 'basis': basis, 'files_considered': []} for f in fails}},
@@ -205,7 +213,7 @@ def main() -> int:
                         'ties': [s[2]['commit'] for s in scored[1:] if s[0] == top[0]], 'others': [{'commit': s[2]['commit'], 'score': s[0]} for s in scored[1:]],
                         'files_considered': sorted(touch), **extra}
     out = {'range': {'from': green, 'to': head, 'spec': rng if not bounded else f'{head} (last {bounded} commits)',
-                     **({'bounded': bounded} if bounded else {})}, 'commits': commits, 'per_failure': per}
+                     **({'bounded': bounded} if bounded else {}), **origin}, 'commits': commits, 'per_failure': per}
     a.out.write_text(json.dumps(out, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
     print(f'{len(commits)} commit(s) in {rng[:20]}...; ' + ', '.join(f'{k}: {v.get("commit", "not identified")[:8]}' for k, v in per.items()))
     return 0

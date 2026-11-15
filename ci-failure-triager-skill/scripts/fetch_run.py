@@ -218,7 +218,24 @@ def fetch_artifact(url: str, h: dict, dest: Path, raw: Path, name: str, size: in
     warn(f'artifact {name} not downloaded ({d["status"]}): {d["error"]}')
 
 
-def fetch_github(repo: str, run_id: int, raw: Path, history: int, max_mb: int):
+SAME_COMMIT_RUNS = 50   # runs of the same commit asked for (before and after the failing run)
+
+
+def history_queries(base: str, run: dict, history: int, default_branch: str | None) -> list[str]:
+    """The history a GitHub run is read against, each query bounded: up to `history` runs of the same workflow on the
+    branch, created up to this run; as many on the default branch (a pull request branch often has no green run of its
+    own, and the default branch's newest one before this run is then the range start); and up to SAME_COMMIT_RUNS runs
+    of the same commit, before or after this run (a later pass of the same job on the same code is evidence too)."""
+    created = run.get('created_at') or run.get('run_started_at') or ''
+    q = lambda br: f'{base}?branch={quote(br or "", safe="")}&created={quote("<=" + created, safe="")}&per_page={history}'  # noqa: E731
+    out = [q(run.get('head_branch'))]
+    default = default_branch or (run.get('repository') or {}).get('default_branch')
+    if default and default != run.get('head_branch'):
+        out.append(q(default))
+    return out + [f'{base}?head_sha={run["head_sha"]}&per_page={SAME_COMMIT_RUNS}']
+
+
+def fetch_github(repo: str, run_id: int, raw: Path, history: int, max_mb: int, default_branch: str | None = None):
     h = {'Authorization': f'Bearer {gh_token()}', 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'}
     run = _get(f'{GH_API}/repos/{repo}/actions/runs/{run_id}', h)
     save(raw / 'run.json', run)
@@ -239,16 +256,17 @@ def fetch_github(repo: str, run_id: int, raw: Path, history: int, max_mb: int):
         if not a.get('expired'):
             fetch_artifact(a['archive_download_url'], h, raw / 'attempts' / str(last) / 'artifacts' / a['name'], raw, a['name'],
                            a.get('size_in_bytes'), max_mb)
-    # history: the same workflow, on the branch, created up to this run; and every run of the same commit
+    # history: the same workflow, on the branch and on the default branch, created up to this run; and runs of the same commit
     wid, created = run.get('workflow_id'), run.get('created_at') or run.get('run_started_at')
     base = f'{GH_API}/repos/{repo}/actions/workflows/{wid}/runs' if wid else f'{GH_API}/repos/{repo}/actions/runs'
-    q_branch = f'{base}?branch={quote(run["head_branch"] or "", safe="")}&created={quote("<=" + (created or ""), safe="")}&per_page={history}'
-    q_commit = f'{base}?head_sha={run["head_sha"]}&per_page=50'
+    default = default_branch or (run.get('repository') or {}).get('default_branch')
     runs: dict = {}
-    for q in (q_branch, q_commit):
+    for q in history_queries(base, run, history, default):
         for r in _get(q, h).get('workflow_runs', []):
             runs[r['id']] = r
-    save(raw / 'history.json', {'query': {'workflow_id': wid, 'branch': run['head_branch'], 'created_before': created, 'head_sha': run['head_sha']},
+    save(raw / 'history.json', {'query': {'workflow_id': wid, 'branch': run['head_branch'], 'created_before': created, 'head_sha': run['head_sha'],
+                                          'per_page': history, 'default_branch': default if default != run['head_branch'] else None,
+                                          'same_commit_per_page': SAME_COMMIT_RUNS},
                                 'workflow_runs': sorted(runs.values(), key=lambda r: r.get('run_started_at') or '', reverse=True)})
     for r in runs.values():
         if r['head_sha'] == run['head_sha'] and r['id'] != run['id']:
@@ -258,7 +276,7 @@ def fetch_github(repo: str, run_id: int, raw: Path, history: int, max_mb: int):
                 warn(f'jobs of history run {r["id"]} not downloaded: {describe_error(e)["error"]}')
 
 
-def fetch_azure(org: str, project: str, build_id: int, raw: Path, history: int, max_mb: int):
+def fetch_azure(org: str, project: str, build_id: int, raw: Path, history: int, max_mb: int, default_branch: str | None = None):
     pat = os.environ.get('AZURE_DEVOPS_EXT_PAT')
     if not pat:
         raise SystemExit('no Azure DevOps PAT: set AZURE_DEVOPS_EXT_PAT')
@@ -281,7 +299,13 @@ def fetch_azure(org: str, project: str, build_id: int, raw: Path, history: int, 
     q = (f'{base}?branchName={quote(b["sourceBranch"], safe="")}&queryOrder=startTimeDescending&maxTime={quote(b.get("startTime") or "", safe="")}'
          f'&$top={history}&api-version=7.1' + (f'&definitions={did}' if did else ''))
     hist = _get(q, h)
-    hist['query'] = {'definition_id': did, 'branch': b['sourceBranch'], 'started_before': b.get('startTime')}
+    default = f'refs/heads/{default_branch.removeprefix("refs/heads/")}' if default_branch else None
+    if default and default != b['sourceBranch']:     # the default branch's builds: the range start when the branch has no green one
+        seen = {r['id'] for r in hist.get('value', [])}
+        more = _get(q.replace(f'branchName={quote(b["sourceBranch"], safe="")}', f'branchName={quote(default, safe="")}'), h)
+        hist['value'] = hist.get('value', []) + [r for r in more.get('value', []) if r['id'] not in seen]
+    hist['query'] = {'definition_id': did, 'branch': b['sourceBranch'], 'started_before': b.get('startTime'), 'per_page': history,
+                     'default_branch': default if default != b['sourceBranch'] else None}
     save(raw / 'history.json', hist)
     for r in hist.get('value', []):
         if r.get('sourceVersion') == b['sourceVersion'] and r['id'] != b['id']:
@@ -325,7 +349,25 @@ def _jobs_rerun(prev: list[dict] | None, cur: list[dict]) -> list[str] | None:
     return [j['name'] for j in cur if j['name'] not in before or (j.get('started_at') and j.get('started_at') != before[j['name']])]
 
 
-def _pick_green(history: list[dict], started: str | None, event: str | None, failed_jobs: set | None = None) -> dict | None:
+def _pick_green(history: list[dict], started: str | None, event: str | None, failed_jobs: set | None = None,
+                branch: str | None = None, default_branch: str | None = None) -> dict | None:
+    """The newest successful run of the workflow started before this one that ran (and passed) the jobs that failed here:
+    on the run's own branch (a run recorded without its branch counts as the branch's), preferring the same event; when
+    the branch has none, on the default branch, whose green run then starts the range of changes."""
+    on_branch = [r for r in history if branch is None or r.get('branch') in (None, branch)]
+    g = _pick_green_in(on_branch, started, event, failed_jobs)
+    if g:
+        return {**g, 'branch': branch} if branch else g
+    if default_branch and default_branch != branch:
+        g = _pick_green_in([r for r in history if r.get('branch') == default_branch], started, event, failed_jobs)
+        if g:
+            return {**g, 'branch': default_branch,
+                    'basis': f'the branch {branch} has no successful run of the workflow before this one, so this is the newest on the default '
+                             f'branch {default_branch} started before it{g["basis"][g["basis"].index(","):]}; the range of changes starts there'}
+    return None
+
+
+def _pick_green_in(history: list[dict], started: str | None, event: str | None, failed_jobs: set | None = None) -> dict | None:
     def ran_them(r):  # a run whose jobs are known must have run (and passed) the jobs that failed here
         if not failed_jobs or r.get('jobs') is None:
             return True
@@ -386,7 +428,8 @@ def normalise_github(raw: Path, out: Path, repo: str | None) -> dict:
     for e in sorted((raw / 'artifact_errors').glob('*.json')) if (raw / 'artifact_errors').exists() else []:
         d = json.loads(e.read_text(encoding='utf-8'))
         problems.append({'kind': 'artifact', 'artifact': d.get('artifact'), 'status': d.get('status'), 'error': d.get('error')})
-    hist = json.loads((raw / 'history.json').read_text(encoding='utf-8')).get('workflow_runs', []) if (raw / 'history.json').exists() else []
+    hist_doc = json.loads((raw / 'history.json').read_text(encoding='utf-8')) if (raw / 'history.json').exists() else {}
+    hist, hq = hist_doc.get('workflow_runs', []), hist_doc.get('query') or {}
     wid, wpath = run.get('workflow_id'), run.get('path')
     same_wf = lambda r: (wid is not None and r.get('workflow_id') == wid) or (wpath is not None and r.get('path') == wpath)  # noqa: E731
     history, other = [], 0
@@ -400,7 +443,9 @@ def normalise_github(raw: Path, out: Path, repo: str | None) -> dict:
         jobs = ([{'name': j['name'], 'conclusion': j.get('conclusion')} for j in json.loads(hj.read_text(encoding='utf-8'))['jobs']]
                 if hj.exists() else None)
         history.append({'id': r['id'], 'commit': r['head_sha'], 'conclusion': r.get('conclusion'), 'started_at': r.get('run_started_at'),
-                        'event': r.get('event'), 'workflow_id': r.get('workflow_id'), 'jobs': jobs})
+                        'event': r.get('event'), 'workflow_id': r.get('workflow_id'), 'jobs': jobs,
+                        **({'branch': r['head_branch']} if r.get('head_branch') else {}),
+                        **({'after_run': True} if (r.get('run_started_at') or '') > (run.get('run_started_at') or '~') else {})})
     if hist and not (wid or wpath):
         warn('the run names no workflow, so no history run can be matched to it: history is empty')
     elif other:
@@ -412,7 +457,9 @@ def normalise_github(raw: Path, out: Path, repo: str | None) -> dict:
                        'conclusion': run.get('conclusion'), 'workflow': run.get('path') or run.get('name'), 'workflow_id': wid},
                'attempts': attempts, 'history': history, 'history_scope': 'same workflow' if (wid or wpath) else 'unknown workflow',
                'last_green': _pick_green(history, run.get('created_at') or run.get('run_started_at'), run.get('event'),
-                                         {j['name'] for j in attempts[0]['jobs'] if j['conclusion'] not in ('success', 'skipped', None)} if attempts else None), 'fetch_problems': problems}
+                                         {j['name'] for j in attempts[0]['jobs'] if j['conclusion'] not in ('success', 'skipped', None)} if attempts else None,
+                                         run.get('head_branch'), hq.get('default_branch') or (run.get('repository') or {}).get('default_branch')),
+               'fetch_problems': problems, **({'history_query': hq} if hq else {})}
     if repo and api_repo and api_repo.lower() != repo.lower():
         out_run['repo_api'] = api_repo
     return out_run
@@ -465,7 +512,9 @@ def normalise_azure(raw: Path, out: Path, repo: str | None) -> dict:
         jobs = ([{'name': x['name'], 'conclusion': res.get(x.get('result'), x.get('result'))} for x in json.loads(hj.read_text(encoding='utf-8'))['records'] if x['type'] == 'Job']
                 if hj.exists() else None)
         history.append({'id': r['id'], 'commit': r['sourceVersion'], 'conclusion': res.get(r.get('result'), r.get('result')), 'started_at': r.get('startTime'),
-                        'event': r.get('reason'), 'workflow_id': did, 'jobs': jobs})
+                        'event': r.get('reason'), 'workflow_id': did, 'jobs': jobs,
+                        **({'branch': r['sourceBranch'].removeprefix('refs/heads/')} if r.get('sourceBranch') else {}),
+                        **({'after_run': True} if (r.get('startTime') or '') > (b.get('startTime') or '~') else {})})
     if other:
         print(f'note: {other} history build(s) of other definitions (or naming none) ignored', file=sys.stderr)
     atts, prev = [], None
@@ -479,7 +528,10 @@ def normalise_azure(raw: Path, out: Path, repo: str | None) -> dict:
                     'workflow_id': did},
             'attempts': atts, 'history': history, 'history_scope': 'same workflow' if did is not None else 'unknown workflow',
             'last_green': _pick_green(history, b.get('startTime'), b.get('reason'),
-                                      {j['name'] for j in atts[0]['jobs'] if j['conclusion'] not in ('success', 'skipped', None)} if atts else None), 'fetch_problems': problems}
+                                      {j['name'] for j in atts[0]['jobs'] if j['conclusion'] not in ('success', 'skipped', None)} if atts else None,
+                                      (b.get('sourceBranch') or '').removeprefix('refs/heads/') or None,
+                                      ((hist_doc.get('query') or {}).get('default_branch') or '').removeprefix('refs/heads/') or None),
+            'fetch_problems': problems, **({'history_query': hist_doc['query']} if hist_doc.get('query') else {})}
 
 
 # --- self-test -------------------------------------------------------------------------------------
@@ -634,6 +686,37 @@ def self_test() -> int:
         check(any(p['kind'] == 'log' and p['status'] == 'fetch_failed' for p in r['fetch_problems']), 'failed log fetch not in fetch_problems')
         pub = next(x for x in r['attempts'][0]['jobs'] if x['name'] == 'publish')
         check(pub['log'] is None and pub['log_status'] == 'fetch_failed', 'failed log fetch not on the job')
+    # a pull request branch with no green run of its own: the last green run is the default branch's, said so and recorded
+    with tempfile.TemporaryDirectory() as td:
+        raw, out = Path(td) / 'raw', Path(td) / 'out'
+        save(raw / 'run.json', {'id': 60, 'head_sha': 'f' * 40, 'head_branch': 'feature/tides', 'event': 'pull_request', 'run_attempt': 1,
+                                'workflow_id': 7, 'run_started_at': '2026-01-05T00:00:00Z', 'repository': {'full_name': 'acme/x', 'default_branch': 'main'}})
+        save(raw / 'attempts' / '1' / 'jobs.json', {'jobs': [{'id': 1, 'name': 'test', 'conclusion': 'failure', 'started_at': 'T1', 'steps': []}]})
+        wr = lambda i, sha, c, t, br, ev='push': {'id': i, 'head_sha': sha, 'head_branch': br, 'conclusion': c, 'run_started_at': t,  # noqa: E731
+                                                  'workflow_id': 7, 'event': ev}
+        runs = [wr(59, 'e' * 40, 'failure', '2026-01-04T00:00:00Z', 'feature/tides', 'pull_request'),
+                wr(58, 'd' * 40, 'success', '2026-01-03T00:00:00Z', 'main'), wr(57, 'a' * 40, 'success', '2026-01-02T00:00:00Z', 'main'),
+                wr(61, 'f' * 40, 'success', '2026-01-06T00:00:00Z', 'feature/tides', 'pull_request')]   # later, same commit
+        save(raw / 'history.json', {'query': {'workflow_id': 7, 'branch': 'feature/tides', 'default_branch': 'main', 'per_page': 20,
+                                              'head_sha': 'f' * 40, 'same_commit_per_page': 50}, 'workflow_runs': runs})
+        import contextlib
+        with contextlib.redirect_stderr(io.StringIO()):
+            r = normalise_github(raw, out, 'acme/x')
+        lg = r['last_green'] or {}
+        check(lg.get('id') == 58 and lg.get('branch') == 'main' and 'default branch' in (lg.get('basis') or ''),
+              f'no green run on the branch: the last green should be the default branch\'s newest before the run (58), said so, got {lg}')
+        check((r.get('history_query') or {}).get('default_branch') == 'main', f'the history query should be recorded, got {r.get("history_query")}')
+        later = next((x for x in r['history'] if x['id'] == 61), {})
+        check(later.get('after_run') is True and later.get('branch') == 'feature/tides', f'a later run of the same commit should be kept and marked, got {later}')
+        runs.append(wr(56, 'b' * 40, 'success', '2026-01-01T00:00:00Z', 'feature/tides', 'pull_request'))
+        save(raw / 'history.json', {'workflow_runs': runs})
+        with contextlib.redirect_stderr(io.StringIO()):
+            r = normalise_github(raw, out, 'acme/x')
+        check((r['last_green'] or {}).get('id') == 56, f'a green run on the branch itself comes first, got {r["last_green"]}')
+        qs = history_queries('https://api.example.test/w/7/runs', {'head_branch': 'feature/tides', 'head_sha': 'f' * 40, 'created_at': '2026-01-05T00:00:00Z',
+                                                                     'repository': {'default_branch': 'main'}}, 20, None)
+        check(any('branch=main' in q for q in qs) and any('branch=feature%2Ftides' in q for q in qs) and any('head_sha=' in q for q in qs),
+              f'the fetch should ask for the branch, the default branch and the same commit: {qs}')
     if fails:
         print('fetch_run self-test: FAILED'); [print('  -', f) for f in fails]
         return 1
@@ -649,7 +732,9 @@ def main() -> int:
     ap.add_argument('--run-id', type=int)
     ap.add_argument('--org'); ap.add_argument('--project'); ap.add_argument('--build-id', type=int)
     ap.add_argument('--from-dir', type=Path, help='a recorded directory of API responses (offline)')
-    ap.add_argument('--history', type=int, default=20)
+    ap.add_argument('--history', type=int, default=20, help='runs of the workflow asked for on the branch (and as many on the default branch)')
+    ap.add_argument('--default-branch', help='the default branch, whose newest green run before this one starts the range when the branch has '
+                                             'none (GitHub: read from the repository; Azure DevOps: give it)')
     ap.add_argument('--max-artifact-mb', type=int, default=50, help='skip (and record) larger artifacts; only their XML is kept')
     ap.add_argument('--out', type=Path)
     ap.add_argument('--self-test', action='store_true')
@@ -666,11 +751,11 @@ def main() -> int:
         if a.system == 'github':
             if not (a.repo and a.run_id):
                 raise SystemExit('--repo and --run-id are needed for GitHub')
-            fetch_github(a.repo, a.run_id, raw, a.history, a.max_artifact_mb)
+            fetch_github(a.repo, a.run_id, raw, a.history, a.max_artifact_mb, a.default_branch)
         else:
             if not (a.org and a.project and a.build_id):
                 raise SystemExit('--org, --project and --build-id are needed for Azure DevOps')
-            fetch_azure(a.org, a.project, a.build_id, raw, a.history, a.max_artifact_mb)
+            fetch_azure(a.org, a.project, a.build_id, raw, a.history, a.max_artifact_mb, a.default_branch)
     for d in ('logs', 'junit'):
         if (a.out / d).exists():
             shutil.rmtree(a.out / d)

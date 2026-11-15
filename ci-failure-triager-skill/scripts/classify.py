@@ -12,7 +12,8 @@ runs of the same workflow, dates before the run date in the message (a data mark
 aggregate gate failing because other jobs failed, and the owning change from changes.json. Rules, in order:
 
   consequence   an aggregate gate job, failing because other failures in the run failed   indicated
-  environment   an environment signature                         confirmed if the re-run passed, else indicated
+  environment   an environment signature                         confirmed if it passed on the same commit (the re-run, or
+                                                                   the same job in another run of the workflow), else indicated
   flaky         failed, then passed on the same commit: the re-run, or the same job in    confirmed
                 another run of the same workflow on that commit
   flaky         failed and passed in local repeat runs of the test on the failing commit  indicated
@@ -141,7 +142,9 @@ def decide(sg: dict, owner: dict | None) -> tuple[str, str, str]:
     if sg.get('consequence_of'):
         return 'consequence', 'indicated', f'aggregate gate: fails because {", ".join(sg["consequence_of"])} failed in this run'
     if env:
-        return 'environment', 'confirmed' if sg['rerun'] == 'passed' else 'indicated', f'environment signature {env[0]["id"]} ({env[0]["names"]})'
+        passed = sg['rerun'] == 'passed' or sg['history_passed_same_commit']
+        return 'environment', 'confirmed' if passed else 'indicated', f'environment signature {env[0]["id"]} ({env[0]["names"]})' + (
+            '' if not passed else '; passed on re-run' if sg['rerun'] == 'passed' else '; the same job passed in another run of the workflow on this commit')
     if sg['rerun'] == 'passed' or sg['history_passed_same_commit']:
         return 'flaky', 'confirmed', 'failed and passed on the same commit' + (' (re-run)' if sg['rerun'] == 'passed' else ' (the same job in another run of the workflow)')
     if sg.get('local_flaky'):
