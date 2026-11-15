@@ -69,6 +69,7 @@ python scripts/release_scope.py --self-test
 python scripts/complexity.py --self-test
 python scripts/mine_history.py --self-test
 python scripts/render_report.py --self-test
+python scripts/validate_test_plan.py --self-test
 ```
 
 On Windows, `complexity.py` over a fresh clone can take a minute or more the first time; that is
@@ -105,13 +106,14 @@ python scripts/render_report.py examples/test_plan.example.json --brief
 
 - `SKILL.md`: complete agent instructions
 - `RUBRIC.md`: factors, percentiles, bands, floors, strategy, effort, honesty rules
-- `data/surfaces.json`: call-aware patterns for money, access, personal data, secrets and credentials, destructive, compliance, entry-point, public API/CLI, UI page and external surfaces, run on code with comments and strings blanked (SQL in strings, directives and page paths matched as written)
+- `data/surfaces.json`: call-aware patterns for money, access, personal data, secrets and credentials, destructive, compliance, third-party script, response policy, service worker, entry-point (including App Router metadata routes), public API/CLI, UI page and external surfaces, run on code with comments, strings and JSX text blanked (SQL in strings, tag loaders, directives and page paths matched as written; a same-origin fetch is not external)
 - `schemas/test_plan.schema.json`: output contract
 - `scripts/mine_history.py`: churn, authors, fix commits and formatting-only commits from `git log --numstat`
 - `scripts/complexity.py`: lines of code and branches per file (Python by `ast`, Go and Rust by their own tokens, comments and strings removed in one scan; `--self-test`)
 - `scripts/release_scope.py`: the release base tag (the release before a tagged HEAD, withdrawn and retracted releases passed over), pending changesets and breaking commits (`--self-test` builds a synthetic workspace)
-- `scripts/score_risk.py`: areas (packages, Next.js App Router routes and modules, or source subdirectories; uncovered files as `unassigned`, everything else outside the areas listed in `excluded`, explicit areas with nothing to score in `unscored_areas`, changed files no area counts in `scope_outside_areas`), Go packages of a root or nested go.mod, the eight factors with evidence, risk, bands, floors; `--coverage` for a Go coverprofile; `language_coverage` from the shared language census; the input adapters; the effort allocation; `--self-test` for the surface idioms
-- `scripts/validate_test_plan.py`: checks the plan against the scores, the inputs and the rules
+- `scripts/score_risk.py`: areas (packages, Next.js App Router routes, root files by role (layout, home page, metadata routes, error and loading pages), runtime config and modules, a registered service worker, or source subdirectories; uncovered files as `unassigned`, everything else outside the areas listed in `excluded`, explicit areas with nothing to score in `unscored_areas`, changed files no area counts in `scope_outside_areas`, files the scope deletes in `scope_deleted` and counted in their area, possibly dead Next.js files in `unreferenced`), a loud warning for a repository with no tests, Go packages of a root or nested go.mod, the eight factors with evidence, risk, bands, floors; `--coverage` for a Go coverprofile; `language_coverage` from the shared language census; the input adapters; the effort allocation; `--self-test` for the surface idioms
+- `scripts/validate_test_plan.py`: checks the plan against the scores, the inputs and the rules (`--self-test`)
+- `scripts/next_app.py`, `lang_census.py`: shared readers (the Next.js model: script loaders, next.config headers and redirects, service workers)
 - `scripts/render_report.py`: terminal report, or the Markdown plan
 - `scripts/diff_scope.py`, `fetch_ticket.py`, `detect_conventions.py`: shared helpers
 - `examples/`: sample repository builder, inputs, real run and two plans

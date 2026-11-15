@@ -1,7 +1,7 @@
 ---
 name: risk-based-test-planner
 description: Write a test plan for a release, sprint or change with effort spread by risk = likelihood x impact. Likelihood comes from git history (churn, fix commits, Jira bugs), complexity, the change in scope and test weakness; impact from journey criticality, money, access, personal-data, credential, destructive and public-API surfaces, and reach. Reads a changesets monorepo's release base and pending changesets, and flags breaking changes. Every factor cites its evidence and missing evidence is not_assessed, never low risk. It reads other skills' reports (journey maps, security, crash, WCAG and flaky reports) as far as their own confidence goes, allocates 90-minute sessions against a budget, names the skill or test type for each risk, and lists every area it does not test with the reason and residual risk. Never claims a release is safe.
-version: 1.6.0
+version: 1.7.0
 ---
 
 # Risk-based test planner
@@ -149,12 +149,36 @@ release whose changes all sit outside the areas must never read as "nothing in s
 Add them to `--areas`, or say in the plan why they need no testing, and lower the plan's
 confidence until they are scored.
 
+**Deleted files count.** A file the scope deletes is removed behaviour (a redirect, a guard, a
+handler). Its deleted lines count in the change in scope of the area whose paths cover it (the
+evidence names the deleted files); one in no area is listed in `scope_outside_areas` with a reason
+starting "deleted in the scope". Every deletion is listed in `scope_deleted` and named in a
+warning: plan a regression check that what the deleted code did still happens, or is meant to
+stop. A file deleted before HEAD keeps its churn and fix commits in the area covering it. Fix
+commits of the window that touch no scored area (deploy configuration, root scripts) are named in
+a warning, since they count in no area's defects.
+
 **Explicit areas are never dropped.** Files under an explicit `--areas` entry are scored even when
 their name or directory looks generated (a committed, hand-written `dist/`), with a warning to check
-they are source. An area with nothing to score (its paths match no file, or everything under them is
+they are source. A configuration file an explicit area names by its path (`next.config.ts`,
+`vercel.json`, `netlify.toml`) is scored as runtime configuration, never dropped as tool
+configuration. An area with nothing to score (its paths match no file, or everything under them is
 excluded) is listed in `unscored_areas` with the reason and warned about; carry it into the plan's
 assumptions or fix its paths. In the default layout, generated and vendored files never choose the
 main source directory.
+
+**No tests.** When the repository has no test files, `risk.json` warns that test weakness is 5
+for every area and ranks nothing (and says when there is no CI configuration either). The
+validator then requires the headline, an assumption or an open question to say there are no
+tests; start the plan with the tests the High areas need.
+
+**Unreferenced files (a hint).** In a Next.js project, JavaScript and TypeScript source files that
+nothing in the repository imports and that are not entry points by convention (routing files,
+metadata routes, middleware, instrumentation, manifest entries, service workers, runtime
+configuration) are listed in `unreferenced` and named in a warning: possibly dead code whose
+complexity still counts in its area. It is a hint, never a score; confirm before testing them.
+When too many files look unreferenced (import resolution is likely incomplete), the hint is
+skipped with a note.
 
 **Languages.** `risk.json` records `language_coverage` from the shared language census
 (vendored, submodule and embedded third-party trees left out). Go, Rust, Python, JS/TS, Java,
@@ -184,10 +208,22 @@ as `diff_scope.py`'s classification across the skills.)
 - **Next.js App Router** (a `next` dependency and `app/` or `src/app/` with pages or route
   handlers): the directory tree is routing, not modules, so one `app` area would be useless.
   The default areas are one per API resource (`api/<resource>` for `app/api/<resource>`), one
-  per top-level route segment or route group (`pages/<segment>`), `app (root)`, `middleware`
-  for `middleware.ts`/`proxy.ts`, and `lib/`, `components/` and the other source directories
-  split by subdirectory (a large flat directory is grouped by file-name prefix: `stripe.ts` and
-  `stripe-webhooks.ts` together, `auth-options.ts` with `auth/`).
+  per top-level route segment or route group (`pages/<segment>`), the files directly in `app/`
+  by role (`app (layout)` for the root layout and template, which wrap every page and load what
+  every visitor gets; `pages/(root)` for the home page; `app (metadata routes)` for robots,
+  sitemap, manifest, icons and social images; `app (error and loading pages)` for not-found,
+  error, global-error and loading; `app (root)` for the rest), `middleware` for
+  `middleware.ts`/`proxy.ts`, and `lib/`, `components/` and the other source directories split
+  by subdirectory (a large flat directory is grouped by file-name prefix: `stripe.ts` and
+  `stripe-webhooks.ts` together, `auth-options.ts` with `auth/`). The shared Next.js reader
+  (`scripts/next_app.py`) adds `runtime config` for a `next.config.*` that sets headers, CSP,
+  redirects or rewrites and the platform files that set them (`vercel.json`, `netlify.toml`,
+  `public/_headers`): that is product behaviour, not tool configuration. A `next.config.*` that
+  sets none of them stays tool configuration.
+- **Service workers** (any layout): a script `navigator.serviceWorker.register('/sw.js')` names,
+  found in `public/`, `static/` or the root, is product code that intercepts the site's requests:
+  its own `service worker` area, never excluded as a static file. Other code files in `public/`
+  or `static/` are listed in `excluded` and named in a warning.
 - **Other routing-first frameworks** (Remix, Rails, Django URL modules, SvelteKit, Nuxt): the
   directory default is a poor fit. Write `--areas` by feature: route handlers, pages and the
   modules behind them grouped by domain.
@@ -287,12 +323,17 @@ git -C <repo> rev-parse "<that commit>^1"          # the base: pass it to diff_s
 
 With merge commits (no squash), the same list is the merges on the first parent
 (`git log --merges --first-parent`) and the base is the first parent of the Nth-newest merge.
-Name the N pull requests and the base commit in the plan's assumptions.
+Name the N pull requests and the base commit in the plan's assumptions. Commits pushed straight to
+the branch beside the pull requests (a file added to the site root, a config tweak) are not in
+that list: read `git log --first-parent <base>..<branch>` and say whether they belong to the
+change.
 
 **Surfaces** come from `data/surfaces.json`. The patterns are about doing, not mentioning: a
 catalogue that shows a price doesn't move money.
 - They run on code with comments and string literals blanked, so a provider named in a CSP
-  header, an API description or marketing copy doesn't count. SQL statements and the
+  header, an API description or marketing copy doesn't count. JSX text (the copy between tags in
+  `.tsx`, `.jsx` and `.js` files: `<p>We follow the GDPR</p>`) is blanked too, so a page that
+  mentions the GDPR or consent is not a compliance surface. SQL statements and the
   `'use server'` directive are matched as written, so SQL inside a Python string counts:
   `op.execute("ALTER TABLE x DROP COLUMN y")`, an f-string `TRUNCATE {table} ... CASCADE`
   (the bare `TRUNCATE`/`DROP` forms are upper-case only, so prose doesn't match).
@@ -300,8 +341,22 @@ catalogue that shows a price doesn't move money.
   Azure Functions `@app.route`, `@app.blob_trigger`, `@app.timer_trigger`, DRF views); external
   integrations include calls through an API client wrapper (`apiClient.postJson(`,
   `this.http.get(`) and cloud SDK clients. A UI's pages (`pages/`, `views/`, `screens/`,
-  `*Page.tsx`, App Router `page.tsx`) and route definitions (`<Route path`, `createBrowserRouter`)
-  are user-facing entry points (3).
+  `*Page.tsx`, App Router `page.tsx`, `not-found`, `error` and `global-error`) and route
+  definitions (`<Route path`, `createBrowserRouter`) are user-facing entry points (3); App Router
+  metadata routes (`robots`, `sitemap`, `manifest`, `icon`, `opengraph-image`, `twitter-image`)
+  are public entry points (3), since crawlers and social cards fetch them. A same-origin `fetch`
+  (a relative URL, or a service worker passing `event.request` through) is not an external
+  integration; `fetch(url)` and an absolute URL are.
+- **Third-party scripts** (4): tag-manager, analytics and ad loaders a page runs for every
+  visitor (`<Script src="https://...">`, `gtag(`, `adsbygoogle`, `fbq(`, `dataLayer.push(`,
+  `next/third-parties` components), read on the line as written because their URLs are strings,
+  and from the shared Next.js reader's script list (a `next/script` whose `src` is a constant).
+  JSON-LD and other non-JavaScript `<script type>` blocks run nothing and do not count.
+- **Response policy** (4): the headers, CSP, redirects and rewrites a `next.config.*` or a
+  platform file (`vercel.json`, `netlify.toml`, `public/_headers`) sets for every request, from
+  the shared Next.js reader.
+- **Service worker** (3): a fetch handler (`addEventListener('fetch'`, `.respondWith(`) answers
+  every request the page makes.
 - They are call-aware: `logInfo(` isn't a login, `Sentry.captureMessage(` isn't a payment
   capture, `stripe.paymentIntents.retrieve(` only reads, `someMap.delete(key)` isn't data
   deletion, `useSession()` reads who is signed in without enforcing anything, a sign-out button's
@@ -343,8 +398,9 @@ Scores:
   systems/CLI pack, for destroying files or directories (`remove_file`, `remove_dir_all`,
   `unlink`, `shred`) and changing ownership, permissions or privilege (`setuid`/`setgid`,
   `chroot`, `chown`/`lchown`, `chmod`/`set_permissions`, `Permissions::from_mode`);
-- 4 for compliance;
-- 3 for a public entry point (route handler, server action), a public API or CLI entry point
+- 4 for compliance, loading third-party scripts, and response policy (headers, CSP, redirects);
+- 3 for a public entry point (route handler, server action, metadata route), a service worker's
+  fetch handler, a public API or CLI entry point
   (manifest exports and bin, CLI commands), an external integration, a
   filesystem write (`symlink`, `hard_link`, `rename`, `create_dir`), a raw syscall/unsafe block,
   or (Go) running external processes or opening a listener (`exec.Command(`, `net.Listen(`);
@@ -465,6 +521,10 @@ Copy `risk.json`'s areas into `test_plan.json`, then write:
   - **Breaking change:** `regression` or `contract`, for what callers rely on and the
     migration the changeset describes; left untested only with a reason that names it.
   - **Low:** smoke or existing automation.
+  - `resilience` (owned by resilience-prober: offline, slow or failing dependencies, a service
+    worker's fallbacks) and `privacy` (owned by privacy-flow-auditor: what third-party scripts
+    get, before and after consent) are test types of their own; use them for service worker and
+    third-party-script areas rather than borrowing `exploratory` or `security`.
 - **`not_tested`** for each area you don't plan: the reason, and the residual band, which is the
   area's own band. Set `accepted_by: null`.
 - **Entry criteria; exit criteria** (condition and measure); **assumptions; open questions**.
