@@ -75,7 +75,7 @@ def main() -> int:
             for u in d['unreachable']]
     if d['notes']:
         out += ['', P('## Notes (not findings)', BOLD), ''] + [f'- {n["kind"]}: {"; ".join(n["detail"])}' + (f' ({n["scenario"]})' if n.get('scenario') else
-                                                                                                               f' (baseline, {n.get("flow")})') for n in d['notes']]
+                                                                                                               f' (baseline, {n.get("flow")})' if n.get('flow') else '') for n in d['notes']]
     dismissed = [t for t in d['triage'] if t['decision'] == 'dismissed']
     if dismissed:
         out += ['', P('## Dismissed', BOLD), ''] + [f'- {t["candidate_id"]}: {t["reason"]}' for t in dismissed]

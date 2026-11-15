@@ -4,6 +4,7 @@
     python validate_resilience.py report.json --run run/run.json --scenarios run/scenarios.json --candidates run/candidates.json [--write-summary]
 
 Fails when:
+  * run.json is partial (the runner did not finish: resume it);
   * any text still starts with or contains "TODO" (build_report.py's placeholders);
   * a finding has no scenario, its scenario didn't run, a run it cites as evidence didn't trigger the
     fault, or a run has no screenshot or request log;
@@ -78,6 +79,8 @@ def main() -> int:
         print('\n'.join(errs))
         print(f'INVALID: {len(errs)} schema error(s)')
         return 1
+    if run.get('run_status') == 'partial':
+        errs.append('run.json is partial: the runner did not finish (rerun run_resilience.py with --resume)')
     for p, s in strings(rep):
         if 'TODO' in s:
             errs.append(f'{p} still has a TODO placeholder')
@@ -129,6 +132,8 @@ def main() -> int:
     want_md = {'requests_sent': run.get('requests_sent'), 'request_budget': run.get('safety', {}).get('request_budget'),
                'allow_form_submission': run.get('safety', {}).get('allow_form_submission'), 'blocked_requests': len(run['blocked_requests']),
                'runs_per_scenario': run.get('runs_per_scenario')}
+    if 'service_workers' in md or run.get('safety', {}).get('service_workers', 'block') != 'block':
+        want_md['service_workers'] = run.get('safety', {}).get('service_workers', 'block')
     for k, v in want_md.items():
         if md.get(k) != v:
             errs.append(f'metadata.{k} is {md.get(k)!r}; run.json says {v!r}')
