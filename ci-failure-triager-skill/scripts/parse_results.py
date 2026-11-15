@@ -536,6 +536,11 @@ def _src_kind(src: str, unittests: bool) -> str | None:
     return None if unittests else 'test'
 
 
+def _crate_prefix(crate: dict) -> str:
+    d = (crate.get('dir') or '.').replace('\\', '/').strip('/')
+    return '' if d in ('', '.') else d + '/'
+
+
 def libtest_binary(src: str, binary: str, cargo: dict | None = None, unittests: bool = False) -> dict:
     """What a cargo `Running <src> (<binary>)` line names: {target, kind, candidates}. The binary's file name is the
     target name with dashes made underscores, the same for a package's lib and its same-named bin, so the target is
@@ -624,6 +629,8 @@ def parse_libtest(text: str, run_id: str, cargo: dict | None = None,
         c = {'run_id': run_id, 'id': cid, 'name': tname, 'classname': target or '', 'file': file,
              'status': status, 'failure_type': ftype, 'signals': signals or [], 'message_excerpt': excerpt(message),
              'time': None, 'target_kind': tkind, '_bin': bidx}
+        if file and file == tfile and bins.get(bidx, {}).get('package_file'):
+            c['file_base'] = 'package'
         cases.append(c)
         by_key[(bidx, tname)] = c
         return c
@@ -651,6 +658,10 @@ def parse_libtest(text: str, run_id: str, cargo: dict | None = None,
                     target = qualified_target(cargo, cands[0][0].get('name'), tkind, target)
                 bins[bidx] = {'cands': cands, 'hint': None, 'src': m.group(1)}
                 tfile = m.group(1).replace('\\', '/') if not m.group(1).startswith('src/') else None
+                if tfile and len(cands) == 1:   # cargo prints it relative to the package: make it the repository's
+                    tfile = _crate_prefix(cands[0][0]) + tfile
+                elif tfile:
+                    bins[bidx]['package_file'] = tfile
             else:
                 target, tfile, tkind = f'doctest:{d.group(1)}', None, 'doc'
             expected, seen_here, ended, pending, cur_out = None, 0, False, None, None
@@ -731,6 +742,7 @@ def parse_libtest(text: str, run_id: str, cargo: dict | None = None,
             pm = LT_PANIC_AT.search(msg)
             if pm:
                 c['file'] = pm.group(1).replace('\\', '/')
+                c.pop('file_base', None)
     for c in cases:
         if c['status'] == 'failed' and not c['failure_type']:
             c['failure_type'] = 'error'
@@ -751,10 +763,18 @@ def parse_libtest(text: str, run_id: str, cargo: dict | None = None,
             q = qualified_target(cargo, crate.get('name'), t['kind'], t['name'])
             for c in mine:
                 c['classname'], c['id'] = q, f"{q}::{c['name']}"
+                if c.get('file_base') == 'package':
+                    c['file'] = _crate_prefix(crate) + c['file']
+                    c.pop('file_base')
         else:
             notes.append(f"{info['src']}: crates {', '.join(x[0].get('name') for x in info['cands'])} each have a "
                          f"target `{info['cands'][0][1]['name']}` built from it and the output does not say which ran; "
                          'its ids name the target only')
+    pkg_files = sorted({c['file'] for c in cases if c.get('file_base') == 'package'})
+    if pkg_files:
+        notes.append(f"{len(pkg_files)} test file(s) ({', '.join(pkg_files[:5])}) are relative to their package "
+                     'directory, as cargo prints them (file_base: package): which crate ran them is not known'
+                     + ('' if cargo else '; give the Cargo project (cargo_project.py) to make them repository-relative'))
     for c in cases:
         c.pop('_bin', None)
     return cases, notes
@@ -812,11 +832,16 @@ def nextest_output_to_junit(text: str) -> str:
     return '\n'.join(xml) + '\n'
 
 
-def libtest_to_junit(text: str, cargo: dict | None = None, packages: list[str] | None = None) -> str:
+def libtest_to_junit(text: str, cargo: dict | None = None, packages: list[str] | None = None,
+                     notes_out: list | None = None) -> str:
     """JUnit XML (one suite per test binary) from `cargo test` output, so parse_junit gives the ids parse_libtest
-    does (<target>::<path::name>; cargo and packages as for parse_libtest)."""
+    does (<target>::<path::name>; cargo and packages as for parse_libtest). notes_out, when given, receives
+    parse_libtest's notes other than the summary lines (package-relative files, crates it could not tell apart,
+    compile errors), which JUnit has no place for."""
     from xml.sax.saxutils import escape, quoteattr
-    cases, _ = parse_libtest(text, 'x', cargo, packages)
+    cases, lt_notes = parse_libtest(text, 'x', cargo, packages)
+    if notes_out is not None:
+        notes_out.extend(n for n in lt_notes if ': test result: ' not in n)
     suites: dict[str, list[dict]] = {}
     for c in cases:
         suites.setdefault(c['classname'], []).append(c)
@@ -1124,6 +1149,17 @@ def libtest_workspace_checks() -> list:
     out.append(('qualified_target: a name one target holds stays plain; a name two crates share carries the crate',
                 pick is not None and pick(LIBTEST_WS_MODEL, 'tide-log', 'lib', 'tide_log') == 'tide_log'
                 and pick(LIBTEST_WS_MODEL, 'tidectl', 'test', 'cli') == 'tidectl/cli', pick))
+    files = {c['id']: c['file'] for c in cases}
+    out.append(('libtest (workspace, model known): an integration test\'s file is repository-relative '
+                '(crates/<crate>/tests/cli.rs), not the package-relative path cargo prints',
+                files.get('tide-log/cli::writes_log') == 'crates/tide-log/tests/cli.rs'
+                and files.get('tidectl/cli::prints_help') == 'crates/tidectl/tests/cli.rs'
+                and files.get('round-trip::reads_back') == 'crates/tide-log/tests/round-trip.rs', files))
+    pc = next((c for c in plain if c['name'] == 'writes_log'), {})
+    _, pnotes = fn(LIBTEST_WS_OUTPUT, 'W')
+    out.append(('libtest (no model): the file cargo prints is recorded as package-relative (file_base: package), '
+                'and a note says so', pc.get('file') == 'tests/cli.rs' and pc.get('file_base') == 'package'
+                and any('relative to' in n and 'package' in n for n in pnotes), (pc, pnotes)))
     return out
 
 

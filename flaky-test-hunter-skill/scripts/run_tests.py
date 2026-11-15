@@ -1709,7 +1709,8 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
     text_out = (out or b'').decode('utf-8', 'replace')
     if preset.get('libtest') and not args.cmd:   # cargo test: libtest's text output becomes the run's JUnit
         junit.write_text(parse_results.libtest_to_junit(
-            text_out, cargo_model(cwd) or None, _cargo_packages(_split_dashdash(cmd)[0])), encoding='utf-8')
+            text_out, cargo_model(cwd) or None, _cargo_packages(_split_dashdash(cmd)[0]), copy_notes),
+            encoding='utf-8')
     if preset.get('tests') == 'nextest' and not args.cmd and not junit.exists():
         src, note = nextest_junit(cwd, env, _split_dashdash(shlex.split(args.runner_args or ''))[0], wall0)
         copy_notes.append(note)
@@ -1965,6 +1966,10 @@ def cargo_self_checks() -> list:
             got = {c['id']: c['status'] for c in data['cases']}
             checks.append(('cargo (real run): a run with a failing test is not errored, every case is parsed',
                            rc == 0 and run['errored'] is False and got == want, (run.get('error'), got)))
+            files = {c['id']: c.get('file') for c in data['cases']}
+            checks.append(('cargo (real run): integration test files are relative to the workspace root, per crate',
+                           files.get('tide-log/cli::writes_log') == 'tide-log/tests/cli.rs'
+                           and files.get('tidectl/cli::prints_help') == 'tidectl/tests/cli.rs', files))
             checks.append(('cargo (real run): CARGO_TARGET_DIR is honoured (no target/ in the workspace)',
                            not (d / 'target').exists() and tgt.exists(), sorted(p.name for p in d.iterdir())))
             main(['--preset', 'cargo', '--cwd', str(d), '--out', str(out_dir / 'runs.json'), '--tests',
