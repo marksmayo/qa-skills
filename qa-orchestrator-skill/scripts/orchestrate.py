@@ -12,7 +12,8 @@
 
 The run state lives in a temporary folder by default (<temp>/qa-orchestrator/<run id>/state.json).
 record stores the report's SHA-256 and runs the step's validator command (the config's template, with
-{report} and {skills}); a step counts only when its validator exits 0. evaluate checks the gate's exit
+{report} and {skills}, read from the config file and checked against its recorded hash; only `python
+<skill>/scripts/validate_*.py` inside the trusted skills folder is run); a step counts only when its validator exits 0. evaluate checks the gate's exit
 criteria on the recorded reports. approve needs evaluated criteria and a person (who and how); with a failed
 criterion it also needs --override with a reason. A gate with auto_approve on in the config is approved by
 evaluate when its criteria pass, and recorded as auto_approved. reject stops the run until reopen. Gates go
@@ -100,6 +101,71 @@ def cfg_gate(d: dict, gid: str) -> dict:
     return next(g for g in d['config']['gates'] if g['id'] == gid)
 
 
+# Validator commands ----------------------------------------------------------------------------------------------
+# A state folder is data someone else may have written (a shared run, a pull request touching the example). Nothing
+# in it is ever executed as given: a validator command is rebuilt from the configuration file (checked against the
+# SHA-256 the run recorded), it must be `python <skill>/scripts/validate_*.py ...` with the script inside the
+# trusted skills folder (the folder holding this skill unless --skills-root names another), and the interpreter is
+# this one, not whatever `python` the PATH or working directory offers.
+
+PYTHONS = ('python', 'python3')
+VALIDATOR_NAME = re.compile(r'validate_\w+\.py')
+
+
+class Refused(Exception):
+    """A validator command that will not be run; the message says why."""
+
+
+def trusted_root(given: str | Path | None = None) -> Path:
+    return (Path(given) if given else HERE.parent.parent).resolve()
+
+
+def inside(p: Path, root: Path) -> bool:
+    try:
+        p.resolve().relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def trusted_config(d: dict) -> dict:
+    """The run's configuration from config_path, only when it is the file recorded at init (SHA-256) and equal to the
+    copy in the state."""
+    cp = Path(d['config_path'])
+    if sha(cp) != d.get('config_sha256'):
+        raise Refused(f'the config file {d["config_path"]} is missing or is not the one recorded (SHA-256 differs)')
+    cfg = json.loads(cp.read_text(encoding='utf-8'))
+    if cfg != d.get('config'):
+        raise Refused('the config copy in the state differs from the config file')
+    return cfg
+
+
+def validator_command(d: dict, cfg: dict, gid: str, sid: str, report: str | Path, root: Path) -> tuple[list[str], str, str | None]:
+    """(argv to run, the command as recorded, the cwd as recorded) for one step's validator, built from the trusted
+    configuration; raises Refused when it is not a skill's validator inside the trusted skills folder."""
+    if Path(d['skills_root']).resolve() != root:
+        raise Refused(f'skills_root {d["skills_root"]!r} is not the trusted skills folder {root} '
+                      '(pass --skills-root to trust another folder)')
+    g = next((x for x in cfg['gates'] if x['id'] == gid), None)
+    cs = next((x for x in (g or {}).get('steps', []) if x['id'] == sid), None)
+    if not cs or not cs.get('validator'):
+        raise Refused(f'{gid}/{sid} has no validator in the configuration')
+    if str(report).startswith('-'):
+        raise Refused(f'the report path {report!r} starts with "-"')
+    cwd = cs['cwd'].format(skills=d['skills_root']) if cs.get('cwd') else None
+    if cwd and not inside(Path(cwd), root):
+        raise Refused(f'the validator\'s cwd {cwd!r} is outside the trusted skills folder')
+    rel = Path(os.path.relpath(report, cwd)).as_posix() if cwd else Path(report).as_posix()
+    skills = Path(os.path.relpath(d['skills_root'], cwd)).as_posix() if cwd else d['skills_root']
+    cmd = cs['validator'].format(report=shlex.quote(rel), skills=skills)
+    argv = shlex.split(cmd)
+    script = Path(cwd or '.') / argv[1] if len(argv) > 1 else None
+    if (len(argv) < 2 or argv[0] not in PYTHONS or argv[1].startswith('-') or not VALIDATOR_NAME.fullmatch(script.name)
+            or script.parent.name != 'scripts' or not inside(script, root) or not script.is_file()):
+        raise Refused(f'{cmd!r} is not `python <skill>/scripts/validate_*.py ...` inside the trusted skills folder')
+    return [sys.executable, str(script.resolve()), *argv[2:]], cmd, cwd
+
+
 def gate(d: dict, gid: str) -> dict:
     g = next((g for g in d['gates'] if g['id'] == gid), None)
     if not g:
@@ -171,15 +237,14 @@ def cmd_record(a) -> int:
     must_be_current(d, a.gate)
     g = gate(d, a.gate)
     s = next((x for x in g['steps'] if x['id'] == a.step), None) or sys.exit(f'no step {a.step} in {a.gate}')
-    cs = next(x for x in cfg_gate(d, a.gate)['steps'] if x['id'] == a.step)
     rp = a.report
     if not rp.exists():
         raise SystemExit(f'{rp} does not exist: run the step\'s skill first')
-    cwd = cs['cwd'].format(skills=d['skills_root']) if cs.get('cwd') else None
-    rel = Path(os.path.relpath(rp, cwd)).as_posix() if cwd else rp.as_posix()
-    skills = Path(os.path.relpath(d['skills_root'], cwd)).as_posix() if cwd else d['skills_root']
-    cmd = cs['validator'].format(report=shlex.quote(rel), skills=skills)
-    r = subprocess.run(shlex.split(cmd), capture_output=True, text=True, encoding='utf-8', errors='replace', cwd=cwd)
+    try:
+        argv, cmd, cwd = validator_command(d, trusted_config(d), a.gate, a.step, rp, trusted_root(a.skills_root))
+    except Refused as x:
+        raise SystemExit(f'{a.gate}/{a.step}: refused to run the validator, nothing was run: {x}')
+    r = subprocess.run(argv, capture_output=True, text=True, encoding='utf-8', errors='replace', cwd=cwd)
     out = [l for l in (r.stdout + r.stderr).splitlines() if l.strip()][-3:]
     s.update(report=rp.as_posix(), sha256=sha(rp), validator={'command': cmd, 'cwd': cwd, 'exit_code': r.returncode, 'output': out, 'at': now()})
     if g['status'] != 'in_progress':
@@ -302,6 +367,7 @@ def main() -> int:
     for name in ('next', 'status'):
         q = sub.add_parser(name); q.add_argument('--state', type=Path, required=True)
     q = sub.add_parser('record'); q.add_argument('--state', type=Path, required=True); q.add_argument('--gate', required=True); q.add_argument('--step', required=True); q.add_argument('--report', type=Path, required=True)
+    q.add_argument('--skills-root', help='the skills folder whose validators may run (default: the folder holding this skill)')
     q = sub.add_parser('evaluate'); q.add_argument('--state', type=Path, required=True); q.add_argument('--gate', required=True)
     q = sub.add_parser('approve'); q.add_argument('--state', type=Path, required=True); q.add_argument('--gate', required=True); q.add_argument('--by', required=True)
     q.add_argument('--how', required=True); q.add_argument('--override')
