@@ -36,6 +36,9 @@
         "condition": {"type": "string", "description": "The if-test the item sits under: a route whose router is included, or a mount or middleware added, only in one serving mode."},
         "options": {"type": "array", "items": {"type": "string"}, "description": "A flags-only command line's options."},
         "directory": {"type": ["string", "null"], "description": "The directory a static mount serves."},
+        "component": {"type": "string", "description": "The default-exported page component of a Next.js page; names the domain of a route with no static segment."},
+        "segment_config": {"type": "object", "description": "Next.js segment config of the page or route handler (generate_static_params, dynamic_params, dynamic, revalidate, runtime, fetch_cache; each {value, line})."},
+        "inherited_config": {"type": "object", "description": "Segment config the page inherits from a layout above it."},
         "note": {"type": "string"}
       }
     }
@@ -141,7 +144,7 @@
                 "observed": {"type": "object", "required": ["result", "run", "at"],
                              "description": "What running the app showed for this step, kept apart from expect (what the code implies).",
                              "properties": {"result": {"type": "string", "minLength": 1},
-                                            "run": {"type": "string", "minLength": 1, "description": "The evidence file of the run (probe output, browser capture)."},
+                                            "run": {"type": "string", "minLength": 1, "description": "The evidence file of the run (probe output, browser capture), relative to the map's directory; the validator checks it exists."},
                                             "at": {"type": "string", "description": "When it ran (ISO date or time)."}}}
               }
             }
