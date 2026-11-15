@@ -202,7 +202,9 @@ def _kebab(name: str) -> str:
 # ---------------------------------------------------------------- per-file scan
 ITEM = re.compile(r'^\s*(?:pub(?:\([^)]*\))?\s+)?(?:(?:const|async|unsafe|extern(?:\s+"[^"]*")?)\s+)*'
                   r'(fn|mod|struct|enum|impl|trait)\b\s*(\w*)')
-TEST_ATTR = re.compile(r'#\[\s*(?:[\w:]+::)?(test|rstest|test_case|quickcheck|proptest)\b')
+TEST_ATTR = re.compile(r'#\[\s*(?:[\w:]+::)?(test|rstest|test_case|test_matrix|quickcheck|proptest)\b')
+# attributes that make one function several libtest tests (fn::case_1, fn::one, fn::a_1_b_3 ...)
+PARAM_ATTR = re.compile(r'#\[\s*(?:[\w:]+::)?(rstest|test_case|test_matrix|case|values)\b')
 CFG_ATTR = re.compile(r'#\[\s*cfg\s*\((.*)\)\s*\]\s*$', re.S)
 FEATURE = re.compile(r'feature\s*=\s*"([^"]+)"')
 ENV_READ = re.compile(r'\b(?:std::)?env::(var|var_os)\s*\(\s*"([^"]*)"|\b(option_env|env)!\s*\(\s*"([^"]*)"')
@@ -484,6 +486,7 @@ def scan_file(path: Path, rel: str) -> dict:
                     res['tests'].append({'name': name, 'line': ln, 'inline': inline,
                                          'ignored': any(re.match(r'#\[\s*ignore\b', a) for a in attrs),
                                          'should_panic': any(re.match(r'#\[\s*should_panic\b', a) for a in attrs),
+                                         'parameterised': any(PARAM_ATTR.match(a) for a in attrs),
                                          'cfg': cfgs + own_cfg})
             elif kind in ('struct', 'enum'):
                 derive = ' '.join(a for a in attrs if 'derive' in a)
@@ -975,6 +978,7 @@ def _crate(cdir: Path, root: Path, ws: dict, notes: list) -> dict | None:
             feats, feats_any = cfg_features(cfgs)
             c['tests'].append({'name': full, 'fn': t['name'], 'file': frel, 'line': t['line'], 'kind': kind,
                                'module': modpath, 'ignored': t['ignored'], 'should_panic': t['should_panic'],
+                               'parameterised': t.get('parameterised', False),
                                'cfg': cfgs, 'features': feats, 'features_any': feats_any,
                                'target': test_tg['name'] if test_tg else None,
                                'target_kind': test_tg['kind'] if test_tg else None,
@@ -1102,7 +1106,9 @@ def read_cargo(repo, metadata: dict | None = None) -> dict:
                target_files: {'<kind>:<name>': [files in that target's module tree]},
                fixture_bins: [{file, name, declared, note}],
                tests: [{name (libtest path), fn, file, line, kind unit|integration|doc, module, ignored,
-                        should_panic, cfg: [cfg exprs of the fn, its inline modules and the `mod x;`
+                        should_panic, parameterised (#[rstest], #[test_case], #[test_matrix], #[case],
+                        #[values]: libtest runs generated cases such as fn::case_1, never fn itself),
+                        cfg: [cfg exprs of the fn, its inline modules and the `mod x;`
                         declarations that include its file], features (required: see cfg_features), features_any
                         ([[a, b]]: one of them needed), target, target_kind,
                         id: '<target>::<name>' (None for doc tests; the target part is qualified_target's:
@@ -1721,6 +1727,22 @@ def self_test() -> int:
           ids2 == ['pantry/cli::prints_help', 'recipe-scale/cli::prints_help',
                    'recipe-scale/lib/recipe_scale::tests::halves', 'recipe-scale/test/recipe_scale::round_trip'], ids2)
     shutil.rmtree(two, ignore_errors=True)
+    # parameterised tests: the function's name is not a test libtest runs; its generated cases are
+    par = Path(tempfile.mkdtemp(prefix='cargo-par-'))
+    for rel, body in {'Cargo.toml': '[package]\nname = "scaler"\nversion = "0.1.0"\n',
+                      'tests/cases.rs': ('use rstest::rstest;\n\n#[rstest]\n#[case(1, 2)]\n#[case(2, 4)]\n'
+                                         'fn doubles(#[case] a: u32, #[case] b: u32) { assert_eq!(a * 2, b); }\n\n'
+                                         '#[test_case(1 ; "one")]\nfn positive(x: i32) { assert!(x > 0); }\n\n'
+                                         '#[test_matrix([1, 2], [3, 4])]\nfn sums(a: u32, b: u32) { let _ = a + b; }\n\n'
+                                         '#[rstest]\nfn grams(#[values(1, 10)] g: u32) { let _ = g; }\n\n'
+                                         '#[test]\nfn plain() {}\n')}.items():
+        (par / rel).parent.mkdir(parents=True, exist_ok=True)
+        (par / rel).write_text(body, encoding='utf-8')
+    pt = {t['fn']: t.get('parameterised') for c in read_cargo(par)['crates'] for t in c['tests'] if t.get('fn')}
+    check('#[rstest] (with #[case] or #[values]), #[test_case] and #[test_matrix] tests are parameterised: true; a '
+          'plain #[test] is not', pt == {'doubles': True, 'positive': True, 'sums': True, 'grams': True,
+                                         'plain': False}, pt)
+    shutil.rmtree(par, ignore_errors=True)
     failed = 0
     for name, ok, extra in checks:
         failed += not ok
