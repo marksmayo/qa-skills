@@ -54,9 +54,22 @@ measured document (`cdn_cache`), and request classes the top-12 resource list hi
 (`request_summary`: Next.js `?_rsc=` prefetches, fetch/XHR counts, fetch paths repeated in a load),
 whether warm runs used the HTTP cache (`warm_cache`), and compression and cache lifetime of the largest
 resources (`delivery`, when the runs recorded headers). transfer_interaction (bytes an interaction
-downloads) is measured only for groups whose runs recorded it. A measurement unstable with its median
-under the budget is a low-confidence candidate (`unstable:<metric>`) naming the runs furthest from the
-median and the calibration state.
+downloads) is measured only for groups whose runs recorded it, and so is transfer_sw (what a service
+worker fetched from the network during the load); `service_workers` summarises each group where a worker
+was active. transfer_image, transfer_font, transfer_stylesheet and transfer_document (from each run's
+transfer_by_type) are measured where the budget sets them, in this skill's format or as Lighthouse
+resourceSizes image, font, stylesheet and document; Lighthouse entries the skill cannot measure (media,
+other, third-party, resourceCounts) are listed as budget.ignored with a warning. A browser cache lifetime
+is max-age, immutable or Expires; s-maxage applies to shared caches only. `delivery` lists oversized images
+(natural width over 1.5x the rendered width times the device pixel ratio) when runs recorded their images.
+A weight cause names framework prefetches (`?_rsc=`) when they are a fifth or more of the page's weight.
+
+TBT causes: scripts within 10% of the top one's time are named together and the cause is keyed on the set;
+keys that share a script are merged (one hydration task split across framework chunks is one cause).
+A CPU-bound overrun (LCP, TBT, INP) no larger than the machine's slowdown against its idle reference
+(the calibration's largest, start, end or any pass) is low confidence. A measurement unstable with its
+median under the budget is a low-confidence candidate (`unstable:<metric>`) naming the runs furthest from
+the median and the calibration state.
 """
 from __future__ import annotations
 import argparse, fnmatch, json, os, re, statistics, sys
@@ -65,12 +78,23 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 SKILL = Path(__file__).resolve().parent.parent
-METRICS = ['LCP', 'CLS', 'INP', 'TBT', 'FCP', 'TTFB', 'transfer_total', 'transfer_script', 'transfer_interaction']
+# weight of one resource type, from each run's transfer_by_type: measured only where a budget sets it
+TYPE_METRICS = {'transfer_image': 'image', 'transfer_font': 'font', 'transfer_stylesheet': 'stylesheet',
+                'transfer_document': 'document'}
+METRICS = ['LCP', 'CLS', 'INP', 'TBT', 'FCP', 'TTFB', 'transfer_total', 'transfer_script', 'transfer_interaction',
+           'transfer_sw', *TYPE_METRICS]
 UNITS = {'LCP': 'ms', 'CLS': 'score', 'INP': 'ms', 'TBT': 'ms', 'FCP': 'ms', 'TTFB': 'ms', 'transfer_total': 'bytes',
-         'transfer_script': 'bytes', 'transfer_interaction': 'bytes'}
-# measured only when the runs recorded it (measure.py from v1.3 on, Chromium, a target with an interaction): older
-# measurements get no entry for it, so their reports are unchanged
-OPTIONAL_METRICS = {'transfer_interaction'}
+         'transfer_script': 'bytes', 'transfer_interaction': 'bytes', 'transfer_sw': 'bytes', **{m: 'bytes' for m in TYPE_METRICS}}
+# measured only when the runs recorded it (transfer_interaction: measure.py from v1.3 on, Chromium, a target with an
+# interaction; transfer_sw: from v1.4 on, Chromium runs that allowed service workers): older measurements get no entry,
+# so their reports are unchanged. The TYPE_METRICS appear only for a page and profile whose budget sets them.
+OPTIONAL_METRICS = {'transfer_interaction', 'transfer_sw'}
+# CPU-bound metrics: a machine slower than its idle reference inflates them by up to its slowdown
+CPU_BOUND = {'LCP', 'TBT', 'INP'}
+CAL_SLOWDOWN_LOADED = 1.2
+TIE = 0.1   # scripts within 10% of the top one's time are named together (one task split across framework chunks)
+OVERSIZED = 1.5   # an image whose natural width is this many times its rendered width x DPR
+PREFETCH_SHARE = 0.2   # framework prefetches this share of a page's weight are named in a weight cause
 # text resources a server should compress; anything at least this big sent without content-encoding is listed
 TEXT_TYPES = {'document', 'script', 'stylesheet', 'fetch'}
 COMPRESS_MIN = 1024
@@ -83,12 +107,58 @@ DEFAULT_MAX_RUNS = 10
 CDN_HEADERS = ('x-vercel-cache', 'cf-cache-status', 'x-cache', 'x-cache-status', 'cdn-cache-control', 'age', 'x-served-by',
                'x-vercel-id', 'cf-ray', 'x-amz-cf-pop', 'via')
 CACHE_STATUS_HEADERS = ('x-vercel-cache', 'cf-cache-status', 'x-cache', 'x-cache-status')
-GENERIC_KEYS = {'unknown', 'weight-spread', 'fcp-unattributed', 'unattributed-long-tasks'}
+GENERIC_KEYS = {'unknown', 'weight-spread', 'fcp-unattributed', 'unattributed-long-tasks', 'service-worker'}
 WEIGHT = {'Critical': 4, 'High': 3, 'Medium': 2, 'Low': 1}
 LEVELS = ['Low', 'Medium', 'High', 'Critical']
 LH_TIMINGS = {'largest-contentful-paint': 'LCP', 'cumulative-layout-shift': 'CLS', 'total-blocking-time': 'TBT',
               'first-contentful-paint': 'FCP', 'interaction-to-next-paint': 'INP', 'server-response-time': 'TTFB'}
-LH_SIZES = {'total': 'transfer_total', 'script': 'transfer_script'}
+LH_SIZES = {'total': 'transfer_total', 'script': 'transfer_script', 'image': 'transfer_image', 'font': 'transfer_font',
+            'stylesheet': 'transfer_stylesheet', 'document': 'transfer_document'}
+
+
+def http_cache_disabled(meta: dict | None) -> bool:
+    """Whether the browser harness ran with the HTTP cache off. Its metadata records http_cache as a dict
+    ({mode: disabled|kept, ...}); an older record may be the bare string."""
+    hc = (meta or {}).get('http_cache')
+    mode = hc.get('mode') if isinstance(hc, dict) else hc
+    return str(mode or '').lower() == 'disabled'
+
+
+def calibration_slowdown(cal: dict | None) -> float | None:
+    """The largest slowdown against the idle reference the calibration saw: start, end, and every --append pass."""
+    cal = cal or {}
+    out = []
+    for c in [cal] + list(cal.get('passes') or []):
+        ref = c.get('reference_ms') or cal.get('reference_ms')
+        if c.get('slowdown'):
+            out.append(c['slowdown'])
+        if ref and c.get('end_median_ms'):
+            out.append(round(c['end_median_ms'] / ref, 2))
+    return max(out) if out else None
+
+
+def calibration_state(cal: dict | None) -> str:
+    """busy, loaded (1.2x to 1.5x the idle reference), idle, or unknown (no reference); older calibrations carry no
+    state, so it is worked out from their figures."""
+    cal = cal or {}
+    if cal.get('busy'):
+        return 'busy'
+    if cal.get('state'):
+        return cal['state']
+    slow = calibration_slowdown(cal)
+    if slow is None:
+        return 'unknown'
+    return 'loaded' if slow >= CAL_SLOWDOWN_LOADED else 'idle'
+
+
+def metric_value(run: dict, metric: str):
+    """A run's value for a metric; a resource-type weight comes from transfer_by_type (0 when the type is absent)."""
+    m = run.get('metrics') or {}
+    if metric in m:
+        return m[metric]
+    if metric in TYPE_METRICS and run.get('transfer_by_type') is not None:
+        return run['transfer_by_type'].get(TYPE_METRICS[metric], 0)
+    return None
 
 
 # ------------------------------------------------------------------ budget
@@ -105,6 +175,12 @@ class Budget:
         label = 'data/default-budget.json (built-in defaults)' if builtin else path.name
         self.source = own or label
         self.note = label if own else ('Lighthouse budget.json' if isinstance(raw, list) else None)
+        # Lighthouse entries the skill cannot budget (resourceSizes media, other, third-party; resourceCounts; unknown
+        # timings): listed, never dropped silently
+        self.ignored = sorted({f'{k}:{x.get("resourceType") or x.get("metric")}' for e in self.lighthouse or []
+                               for k in ('timings', 'resourceSizes', 'resourceCounts') for x in e.get(k) or []
+                               if not (k == 'timings' and x.get('metric') in LH_TIMINGS)
+                               and not (k == 'resourceSizes' and x.get('resourceType') in LH_SIZES)})
 
     def for_(self, url: str, profile: str) -> dict:
         out = dict((self.profiles or {}).get(profile, {}))
@@ -239,7 +315,9 @@ def measurements(doc: dict, budget: Budget) -> list[dict]:
         for metric in METRICS:
             if metric in OPTIONAL_METRICS and not any(metric in (r.get('metrics') or {}) for r in runs):
                 continue
-            vals = [r['metrics'].get(metric) if r.get('metrics') else None for r in ok]
+            if metric in TYPE_METRICS and metric not in b:
+                continue
+            vals = [metric_value(r, metric) if r.get('metrics') else None for r in ok]
             st = stats(vals)
             limit = b.get(metric)
             stable, by, outl = stability(st, vals, UNITS[metric], limit)
@@ -268,7 +346,7 @@ def measurements(doc: dict, budget: Budget) -> list[dict]:
             outliers = [ok[i]['id'] for i in outl] if measured_status and by == 'robust' else []
             out.append({'url': url, 'template': sample.get(url, {}).get('template'), 'variant': variant, 'profile': profile,
                         'cache': cache, 'browser': browser, 'metric': metric, 'unit': UNITS[metric],
-                        'runs': [{'run_id': r['id'], 'value': r['metrics'].get(metric)} for r in ok] if status not in ('not_supported',) else [],
+                        'runs': [{'run_id': r['id'], 'value': metric_value(r, metric)} for r in ok] if status not in ('not_supported',) else [],
                         **(st if measured_status else {'n': 0, 'median': None, 'min': None, 'max': None, 'cv': None}),
                         'budget': limit, 'status': status,
                         'stable_by': by if measured_status and status != 'measured' and stable else None,
@@ -438,6 +516,14 @@ def attribute(metric: str, runs: list[dict], diag: dict | None) -> tuple[str, st
         scripts = sorted(({'url': u, 'script_ms_median': med(d), 'runs': len(d)} for u, d in per.items()), key=lambda s: -s['script_ms_median'])
         attr = {'scripts': scripts, 'long_tasks_ms': [t['duration'] for t in a[0].get('long_tasks') or []]}
         if scripts:
+            # scripts within TIE of the top one are named together: one task (a framework's hydration) split across
+            # chunks makes a near tie, and picking one by a few ms would split one cause into several candidates
+            top = scripts[0]['script_ms_median'] or 0
+            tied = [x for x in scripts if (x['script_ms_median'] or 0) >= top * (1 - TIE)]
+            if len(tied) > 1:
+                attr['tied_scripts'] = [x['url'] for x in tied]
+                return ('long tasks in ' + ' and '.join(f'{path_of(x["url"])} ({x["script_ms_median"]} ms)' for x in tied) +
+                        ' of script, within 10% of each other', ' + '.join(sorted(x['url'] for x in tied)), attr)
             return f'long tasks in {path_of(scripts[0]["url"])} ({scripts[0]["script_ms_median"]} ms of script)', scripts[0]['url'], attr
         return 'long tasks without script attribution', 'unattributed-long-tasks', attr
     if metric == 'INP':
@@ -481,25 +567,42 @@ def attribute(metric: str, runs: list[dict], diag: dict | None) -> tuple[str, st
             return (f'the interaction downloads {path_of(t["url"])} ({round(t["bytes"] / 1024)} KB {t["type"]}'
                     f'{"" if t.get("finished", True) else ", still loading when measured"})', t['url'], attr)
         return 'the interaction downloads many small resources', 'weight-spread', attr
-    if metric in ('transfer_total', 'transfer_script'):
+    if metric == 'transfer_sw':
+        sw = [r.get('service_worker') or {} for r in runs]
+        net = [(x.get('network') or {}) for x in sw]
+        attr = {'requests_median': med(n.get('requests') for n in net), 'bytes_median': med(n.get('bytes') for n in net),
+                'workers': sorted({w for x in sw for w in x.get('workers') or []})}
+        return (f'the service worker fetched {attr["requests_median"]} request(s), {round((attr["bytes_median"] or 0) / 1024)} KB, '
+                'from the network during the load (revalidating what it answered from its cache)', 'service-worker', attr)
+    if metric in ('transfer_total', 'transfer_script', *TYPE_METRICS):
         res = runs[0].get('resources') or []
         if metric == 'transfer_script':
             res = [r for r in res if r['type'] == 'script']
+        elif metric in TYPE_METRICS:
+            res = [r for r in res if r['type'] == TYPE_METRICS[metric]]
         cov = {c['url']: c for c in (diag or {}).get('coverage') or []}
         top = [{'url': r['url'], 'type': r['type'], 'bytes': r['bytes'], 'third_party': r.get('third_party', False),
                 'unused_bytes': (cov.get(r['url']) or {}).get('unused_bytes'),
                 **({'content_encoding': r['headers'].get('content-encoding'), 'cache_control': r['headers'].get('cache-control')}
                    if r.get('headers') else {})} for r in res[:5]]
         attr = {'largest': top, 'by_type_bytes': runs[0].get('transfer_by_type')}
+        prefetch = ''
         if runs[0].get('request_summary'):
             attr['request_classes'] = runs[0]['request_summary']['classes']
+            # framework prefetches (Next.js ?_rsc=) are speculative idle-time fetches of other pages, counted in the
+            # load's weight: name them when they are a fair share of it
+            pre = med((r.get('request_summary') or {}).get('classes', {}).get('rsc_prefetch', {}).get('bytes') or 0 for r in runs)
+            total = med(metric_value(r, 'transfer_total') for r in runs)
+            if metric == 'transfer_total' and pre and total and pre >= PREFETCH_SHARE * total:
+                attr['prefetch_bytes_median'] = pre
+                prefetch = f'; {round(pre / 1024)} KB of it is framework prefetches (?_rsc=) of other pages'
         if top:
             t = top[0]
             extra = f', {round(t["unused_bytes"] / 1024)} KB unused' if t.get('unused_bytes') else ''
             if 'content_encoding' in t and t['content_encoding'] is None and t['type'] in TEXT_TYPES and t['bytes'] >= COMPRESS_MIN:
                 extra += ', sent uncompressed'
-            return f'largest download {path_of(t["url"])} ({round(t["bytes"] / 1024)} KB {t["type"]}{extra})', t['url'], attr
-        return 'no single large resource', 'weight-spread', attr
+            return f'largest download {path_of(t["url"])} ({round(t["bytes"] / 1024)} KB {t["type"]}{extra}){prefetch}', t['url'], attr
+        return 'no single large resource' + prefetch, 'weight-spread', attr
     if metric == 'TTFB':
         st = [e for r in runs for e in r.get('server_timing') or []]
         by: dict[str, list[float]] = {}
@@ -546,8 +649,7 @@ def warm_cache(doc: dict) -> list[dict]:
     """Per page, profile, browser and variant measured warm: whether the warm (second) loads used the HTTP cache at all
     (measure.py's cache_check; for older runs, any top resource marked from_cache). A warm mode that never hit the cache
     measured a cold load twice, and the report must say so."""
-    meta = doc.get('harness') or {}
-    disabled = str(meta.get('http_cache', '')).lower() == 'disabled'
+    disabled = http_cache_disabled(doc.get('harness'))
     out = []
     for (url, profile, cache, browser, variant), runs in groups(doc).items():
         if cache != 'warm':
@@ -565,16 +667,45 @@ def warm_cache(doc: dict) -> list[dict]:
         effective = bool(hits) and not disabled
         if disabled:
             reason = 'the browser harness ran with the HTTP cache disabled (http_cache: disabled)'
-        out.append({'url': url, 'profile': profile, 'browser': browser, 'variant': variant, 'runs': len(ok),
-                    'runs_with_cache_hits': hits, 'effective': effective, 'reason': None if effective else reason})
+        row = {'url': url, 'profile': profile, 'browser': browser, 'variant': variant, 'runs': len(ok),
+               'runs_with_cache_hits': hits, 'effective': effective, 'reason': None if effective else reason}
+        if any(c and 'from_service_worker' in c for c in checks):   # measure.py from v1.4 on
+            row['runs_served_by_service_worker'] = sum(1 for c in checks if c and c.get('from_service_worker'))
+        out.append(row)
+    return out
+
+
+def service_workers(doc: dict) -> list[dict]:
+    """Per page, profile, cache mode, browser and variant whose runs allowed service workers (measure.py from v1.4 on):
+    how many measured runs a worker controlled, the median number of responses it answered, and what the worker
+    fetched from the network itself (Chromium; not visible elsewhere). Only groups where a worker was active."""
+    out = []
+    for (url, profile, cache, browser, variant), runs in groups(doc).items():
+        ok = [r for r in counted(runs) if r.get('service_worker')]
+        sws = [r['service_worker'] for r in ok]
+        if not any(x.get('controlled') or x.get('responses') or x.get('workers') for x in sws):
+            continue
+        measured = all(x.get('network_measured') for x in sws)
+        nets = [x.get('network') or {} for x in sws]
+        out.append({'url': url, 'profile': profile, 'cache': cache, 'browser': browser, 'variant': variant, 'runs': len(ok),
+                    'runs_controlled': sum(1 for x in sws if x.get('controlled')),
+                    'responses_median': med(x.get('responses') for x in sws),
+                    'workers': sorted({w for x in sws for w in x.get('workers') or []}),
+                    'network_measured': measured,
+                    'network_requests_median': med(n.get('requests') for n in nets) if measured else None,
+                    'network_bytes_median': med(n.get('bytes') for n in nets) if measured else None,
+                    'network_from_cache_median': med(n.get('from_cache') for n in nets) if measured else None,
+                    'requests_guarded': ((doc.get('harness') or {}).get('service_workers') or {}).get('requests_guarded')})
     return out
 
 
 def delivery(doc: dict) -> list[dict]:
     """Per page, profile, cache mode, browser and variant whose runs recorded response headers: text resources of 1 KB
-    or more sent without content-encoding, and first-party resources with no cache lifetime (no max-age, s-maxage,
-    immutable or Expires: every repeat visit revalidates or refetches them), from the first counted run's resources
-    (the 12 largest) with headers."""
+    or more sent without content-encoding, and first-party resources with no browser cache lifetime (no max-age,
+    immutable or Expires: every repeat visit revalidates or refetches them; s-maxage is for shared caches such as a CDN
+    and gives the browser only heuristic freshness), from the first counted run's resources (the 12 largest) with
+    headers. When the run recorded its images (measure.py from v1.4 on), `oversized_images` lists those whose natural
+    width is more than 1.5x their rendered width times the device pixel ratio (SVGs excepted), largest waste first."""
     out = []
     for (url, profile, cache, browser, variant), runs in groups(doc).items():
         run = next((r for r in counted(runs) if any(x.get('headers') for x in r.get('resources') or [])), None)
@@ -585,12 +716,36 @@ def delivery(doc: dict) -> list[dict]:
                if x['type'] in TEXT_TYPES and (x['bytes'] or 0) >= COMPRESS_MIN and not x['headers'].get('content-encoding')]
         def lifetime(h):
             cc = (h.get('cache-control') or '').lower()
-            return bool(re.search(r'max-age=\d*[1-9]|s-maxage=\d*[1-9]|immutable', cc) or (h.get('expires') and 'no-store' not in cc))
+            # max-age (not s-maxage, which only shared caches obey), immutable, or Expires
+            return bool(re.search(r'(?<![-\w])max-age=\d*[1-9]|immutable', cc) or (h.get('expires') and 'no-store' not in cc))
         stale = [x['url'] for x in res if x['type'] != 'document' and not x.get('third_party') and not lifetime(x['headers'])]
-        out.append({'url': url, 'profile': profile, 'cache': cache, 'browser': browser, 'variant': variant, 'run': run['id'],
-                    'checked': len(res), 'uncompressed': unc, 'uncompressed_bytes': sum(x['bytes'] for x in unc),
-                    'no_cache_lifetime': stale})
+        row = {'url': url, 'profile': profile, 'cache': cache, 'browser': browser, 'variant': variant, 'run': run['id'],
+               'checked': len(res), 'uncompressed': unc, 'uncompressed_bytes': sum(x['bytes'] for x in unc),
+               'no_cache_lifetime': stale}
+        if 'images' in run:
+            row['oversized_images'] = oversized_images(run)
+        out.append(row)
     return out
+
+
+def oversized_images(run: dict) -> list[dict]:
+    """Images delivered wider than their slot needs: natural width over OVERSIZED x rendered width x DPR. The waste is
+    estimated from the pixel area the slot needs, with the image's bytes when it is among the run's largest resources."""
+    sizes = {r['url']: r.get('bytes') for r in run.get('resources') or []}
+    out = []
+    for i in run.get('images') or []:
+        nat, ren, dpr = i.get('natural') or [0, 0], i.get('rendered') or [0, 0], i.get('dpr') or 1
+        if urlparse(i['url']).path.lower().endswith('.svg') or not ren[0] or not nat[0]:
+            continue
+        need = ren[0] * dpr
+        if nat[0] <= OVERSIZED * need:
+            continue
+        share = min(1.0, (need * ren[1] * dpr) / max(1, nat[0] * nat[1]))
+        b = sizes.get(i['url'])
+        out.append({'url': i['url'], 'natural': nat, 'rendered': ren, 'dpr': dpr, 'ratio': round(nat[0] / need, 2),
+                    'bytes': b, 'waste_bytes_estimate': round(b * (1 - share)) if b else None})
+    out.sort(key=lambda x: (-(x['waste_bytes_estimate'] or 0), -x['ratio']))
+    return out[:10]
 
 
 def severity_of(metric: str, median: float, budget: float, critical_path: bool) -> str:
@@ -625,10 +780,40 @@ def priority_of(severity: str, reach: int, leverage: int) -> tuple[int, str]:
     return score, p
 
 
+def merge_script_keys(keys: list[str]) -> dict[str, str]:
+    """TBT cause keys are a script URL or several tied ones joined by ' + '. Keys that share a script are one cause
+    (one hydration task whose chunks tie on one page and not on another): map each to the union of its group."""
+    parent: dict[str, str] = {}
+
+    def find(x):
+        while parent.setdefault(x, x) != x:
+            x = parent[x]
+        return x
+    for k in keys:
+        urls = k.split(' + ')
+        for u in urls[1:]:
+            parent[find(u)] = find(urls[0])
+        find(urls[0])
+    groups_: dict[str, set] = {}
+    for k in keys:
+        for u in k.split(' + '):
+            groups_.setdefault(find(u), set()).add(u)
+    return {k: ' + '.join(sorted(groups_[find(k.split(' + ')[0])])) for k in keys}
+
+
+def confidence_of_slowdown(conf: str, metric: str, ratio: float | None, slowdown: float | None) -> str:
+    """A CPU-bound overrun no larger than the machine's own slowdown against its idle reference could be the machine:
+    low confidence (needs_review), whatever its spread."""
+    if conf != 'low' and metric in CPU_BOUND and slowdown and slowdown > 1 and ratio is not None and ratio <= slowdown:
+        return 'low'
+    return conf
+
+
 def candidates(doc: dict, meas: list[dict]) -> list[dict]:
     sample = {s['url']: s for s in doc['sample']}
     g = groups(doc)
     out: dict[tuple, dict] = {}
+    rows = []
     for m in meas:
         if m['budget'] is None or m['median'] is None:
             continue
@@ -643,6 +828,12 @@ def candidates(doc: dict, meas: list[dict]) -> list[dict]:
             cause, key, attr = unstable_cause(m, doc)
         else:
             cause, key, attr = attribute(m['metric'], ok, diag)
+        rows.append((m, ok, diag, cause, key, attr))
+    script_keys = merge_script_keys(sorted({r[4] for r in rows if r[0]['metric'] == 'TBT' and '/' in r[4]}))
+    for m, ok, diag, cause, key, attr in rows:
+        if m['metric'] == 'TBT' and key in script_keys and script_keys[key] != key:
+            attr = dict(attr, cause_scripts=script_keys[key].split(' + '))
+            key = script_keys[key]
         # A specific cause (a resource URL, a server step, an element with an id or class) shared by several
         # templates is one site-wide candidate; generic causes stay per template.
         shared = key not in GENERIC_KEYS and ('/' in key or key.startswith(('server:', 'interaction:')) or '#' in key or '.' in key)
@@ -660,6 +851,7 @@ def candidates(doc: dict, meas: list[dict]) -> list[dict]:
                               'trace': (diag or {}).get('artifacts', {}).get('trace'),
                               'filmstrip': ((diag or {}).get('artifacts', {}).get('filmstrip') or [])[-1:]})
     cands = list(out.values())
+    slowdown = calibration_slowdown(doc.get('calibration'))
     metrics_per_key: dict[str, set] = {}
     for c in cands:
         metrics_per_key.setdefault(c['cause_key'], set()).add(c['metric'])
@@ -674,7 +866,7 @@ def candidates(doc: dict, meas: list[dict]) -> list[dict]:
             ({'variant': worst['variant']} if worst.get('variant') else {})
         c['critical_path'] = crit
         c['severity'] = severity_of(c['metric'], worst['median'], worst['budget'], crit)
-        c['confidence'] = confidence_of(full)
+        c['confidence'] = confidence_of_slowdown(confidence_of(full), c['metric'], worst['ratio'], slowdown)
         c['reach'] = min(len(c['pages']), 3)
         c['leverage'] = 2 if len(metrics_per_key[c['cause_key']]) > 1 else 1
         c['score'], c['priority'] = priority_of(c['severity'], c['reach'], c['leverage'])
@@ -704,10 +896,14 @@ def main() -> int:
     cands = candidates(doc, meas)
     out = {'measurements_file': a.measurements.name,
            'budget': {'source': budget.source, 'note': budget.note,
-                      'path': None if budget.builtin else rel_path(budget.path, a.out)},
+                      'path': None if budget.builtin else rel_path(budget.path, a.out),
+                      **({'ignored': budget.ignored} if budget.ignored else {})},
            'third_party': third_party(doc), 'blocked_first_party': blocked_first_party(doc), 'cdn_cache': cdn_cache(doc),
            'request_summary': request_summary(doc), 'warm_cache': warm_cache(doc), 'delivery': delivery(doc),
+           'service_workers': service_workers(doc),
            'measurements': meas, 'server_timing': server_timing(doc), 'candidates': cands}
+    if budget.ignored:
+        print(f'warning: the budget sets {", ".join(budget.ignored)}, which this skill cannot measure: not budgeted', file=sys.stderr)
     for w in out['warm_cache']:
         if not w['effective']:
             print(f'warning: warm runs of {w["url"]} ({w["profile"]}) did not use the HTTP cache: {w["reason"]}; the warm '

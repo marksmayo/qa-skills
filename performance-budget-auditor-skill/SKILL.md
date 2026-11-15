@@ -1,7 +1,7 @@
 ---
 name: performance-budget-auditor
 description: Measure web pages in a real browser against a performance budget, as lab data. Core Web Vitals (LCP, CLS, INP) with web-vitals' attribution, TBT, FCP, TTFB and bytes per resource type, each page run several times under fixed network and CPU profiles, with median, range and coefficient of variation. Each over-budget metric is pointed at its cause (the LCP element and its resource, the layout shift's target, the scripts in long tasks, the slow interaction handler, the largest downloads and unused JavaScript, Server-Timing for slow responses), rated, and compared with a baseline when one is given. Never calls a site fast: the best verdict is "within budget in the lab, under the tested profiles; field performance not established".
-version: 1.3.0
+version: 1.4.0
 ---
 
 # Performance budget auditor
@@ -84,15 +84,18 @@ for targets and forms.
 | `third_party` | `block` | `block` aborts and records requests to other hosts; `allow` loads and measures them |
 | `allowed_hosts` | `[]` | Other hosts that are part of the site (its own CDN): `["cdn.example.com", "*.example-cdn.net"]` |
 | `service_workers` | `cold` | `cold` blocks them on cold runs only; `block` on every run (a site whose worker would serve warm runs from its cache); `allow` |
+| `http_cache` | `keep` for Chromium with warm runs, else `route` | The shared harness's setting: `route` guards requests with Playwright routing, which turns the HTTP cache off; `keep` (Chromium) guards each page over CDP and keeps it. Warm runs with `route` are refused. Under `keep` a service worker's own requests are not intercepted by the guard (`metadata.harness.service_workers.requests_guarded: false`) |
 | `bypass_csp` | `false` | Measure the page under its own Content-Security-Policy (web-vitals is an init script, which CSP doesn't block); `true` bypasses it, and a limitation must then say the CSP was not enforced |
 | `stop_on_429` | `false` | Stop a page at its first 429 instead of retrying after Retry-After (the shared harness's `retry_decision`) |
 | `authorised_by`, `auth`, `allow_form_submission` | as in `browser_harness.py` | `auth: {"storage_state": file}` runs signed in, with a session a person captured by signing in by hand (`python scripts/browser_harness.py capture-session --url <app> --out <file outside the repo>`; cookies, localStorage, IndexedDB and sessionStorage); the run stays read-only and records only that a session was used, never the file or its contents |
 | `baseline` | none | A previous run's `candidates.json`, for regression comparison |
 | `field_data` | none | CrUX or RUM figures to show alongside, labelled field |
 
-Profiles: `mobile-mid` is 412x915, 1.6 Mbps down, 750 Kbps up, 150 ms RTT, 4x CPU slowdown;
-`desktop` is 1350x940, 10 Mbps, 40 ms RTT, no CPU slowdown. CPU slowdown is relative to the
-measuring machine.
+Profiles: `mobile-mid` is 412x915 at device pixel ratio 2.625 (as Lighthouse emulates a mid-range
+phone, so `srcset` picks what a real phone picks), 1.6 Mbps down, 750 Kbps up, 150 ms RTT, 4x CPU
+slowdown; `desktop` is 1350x940, 10 Mbps, 40 ms RTT, no CPU slowdown. CPU slowdown is relative to the
+measuring machine. The pixel ratio is applied over CDP in Chromium and recorded in
+`throttling.applied.device_scale_factor`; a mobile run without it needs a limitation.
 
 ## Workflow
 
@@ -121,6 +124,11 @@ python scripts/measure.py plan.json --out <run>/measurements.json --artifacts <r
 python scripts/measure.py plan.json --out <run>/measurements.json --append --browser firefox --profiles desktop --only about --no-diagnostic
 ```
 
+`--only` and `--templates` that leave no target exit 2 and name the filter (in Git Bash, pass `about`,
+not `/about`: an argument that starts with `/` is rewritten into a Windows path). `--no-reference-update`
+measures without ever writing the stored idle reference (use it when told not to touch the machine's
+cache).
+
 It records the machine and a CPU calibration, timed again at the end of the run. The machine is
 `busy` when the calibration runs vary (CV above 0.1), when the median is 1.5x or more the idle
 reference for this machine (the fastest calibration stored in the asset cache, or
@@ -132,7 +140,10 @@ also looks calm to the calibration, so the first idle reference is stored only w
 within 0.03, start and end within 1.1x) only ever lowers it, and `calibration.reference_update` says
 what happened. An `--append` pass calibrates again and is kept beside the earlier ones under
 `calibration.passes`; the file is busy when any pass was. A busy
-machine inflates every CPU-bound number (LCP, TBT, INP under CPU throttling). Then per page, variant, profile and cache mode: a warm-up, N measured runs in fresh
+machine inflates every CPU-bound number (LCP, TBT, INP under CPU throttling). The calibration's
+`state` grades the machine: `busy`, `loaded` (1.2x to 1.5x the idle reference at the start or end:
+not busy, but CPU-bound numbers are inflated by up to that factor, and a limitation must say so),
+`idle`, or `unknown` (no reference). Then per page, variant, profile and cache mode: a warm-up, N measured runs in fresh
 contexts, extra runs while a budgeted metric is unstable (up to `max_runs`), and one diagnostic run
 with the trace, filmstrip (until the later of load and the final LCP, plus 500 ms) and JavaScript
 coverage. A 429 or 503 is retried twice after Retry-After; any other HTTP error stops that page
@@ -147,9 +158,17 @@ button loads) are counted apart, until the network has been quiet for 0.5 s (at 
 `transfer_total` no longer includes them. Each resource also records its response headers
 (`headers`: content-encoding, cache-control, whether a validator exists, expires). A warm run checks
 that its second load used the HTTP cache (`cache_check`: resources from the disk or memory cache or
-revalidated with a 304); a harness that routes every request can disable the cache (Playwright
-turns it off under request interception, and the harness metadata then says `http_cache: disabled`),
-and a warm mode that never hit the cache measured a cold load twice.
+revalidated with a 304, or a service worker's own requests answered from the HTTP cache); a harness
+that routes every request disables the cache (Playwright turns it off under request interception, and
+the harness metadata then records `http_cache: {"mode": "disabled"}`), and a warm mode that never hit
+the cache measured a cold load twice. Responses a service worker answered are its own state, never an
+HTTP-cache hit (`cache_check.from_service_worker`): a worker can answer every request from its cache
+and still fetch each one again (stale-while-revalidate), and the page's DevTools Network domain never
+sees those fetches. Where workers are allowed (warm runs by default), each run records
+`service_worker` (controlled, responses answered, workers) and, in Chromium, what the worker fetched
+from the network itself: the `transfer_sw` metric (bytes; not part of `transfer_total`, which is the
+page's own requests). Each run also records its rendered images (`images`: natural and rendered size,
+device pixel ratio) for the oversized-image check.
 
 ### 4. Attribute and rate
 
@@ -168,7 +187,15 @@ site-wide candidate listing every page, so its reach counts them all. It also wr
 `blocked_first_party`, `cdn_cache`, `request_summary`, `warm_cache` (per page measured warm: whether
 the warm loads used the HTTP cache) and `delivery` (per page whose runs recorded headers: text
 resources of 1 KB or more sent without compression, and first-party resources with no cache
-lifetime), which go into the report unchanged. A transfer cause says when its largest resource was
+lifetime: no `max-age`, `immutable` or `Expires`; `s-maxage` is for shared caches such as a CDN
+and gives the browser only heuristic freshness; plus `oversized_images`, images whose natural width
+is more than 1.5x their rendered width times the device pixel ratio, with the bytes beyond what the
+slot needs) and `service_workers` (per page and cache mode where a worker was active: runs it
+controlled, responses it answered, what it fetched), which go into the report unchanged. A budget can
+set `transfer_image`, `transfer_font`, `transfer_stylesheet` and `transfer_document` (or Lighthouse
+`resourceSizes` of image, font, stylesheet, document); they are measured only where a budget sets
+them, and Lighthouse entries the skill cannot measure (media, other, third-party, resourceCounts) are
+listed in `candidates.json` as `budget.ignored` with a warning, never dropped silently. A transfer cause says when its largest resource was
 sent uncompressed. A metric unstable with its median under the budget is a candidate too (key
 `unstable:<metric>`, low confidence, so needs_review): its cause gives the range, the runs furthest
 from the median and the calibration state, for the triage to say whether the page or the machine
@@ -181,7 +208,16 @@ client-rendered block (a timer, or hydration). Measure the page with and without
 
 An LCP image painted as a CSS background (`css_background`) is found only once the stylesheet
 applies; the cause says whether a `<link rel=preload as=image>` names it (`preloaded`), with the
-resource load delay. An INP cause names the largest of its three subparts: a long input delay is
+resource load delay. A TBT cause names every script within 10% of the top one (one hydration task
+split across framework chunks makes a near tie) and is keyed on that set; causes that share a script
+are one candidate, so a framework's hydration cost is one site-wide cause rather than one per chunk.
+A CPU-bound overrun (LCP, TBT, INP) no larger than the machine's own slowdown against its idle
+reference is low confidence (`needs_review`): the machine alone could explain it. A weight cause
+names framework prefetches (Next.js `?_rsc=`) when they are a fifth or more of the page's weight.
+Prefetches are speculative idle-time fetches of other pages, but they are bytes the visit downloads
+on the user's connection, so they stay in `transfer_total` (a weight budget includes them); the
+remediation decides whether to prefetch less (`prefetch={false}` on low-value links, viewport-only
+prefetch) or to budget them apart. An INP cause names the largest of its three subparts: a long input delay is
 the main thread being busy when the user acted (`overlapping_long_tasks`, style and layout), not
 the handler, which only processing time blames. Note that `{"click": sel}` is a mouse click that
 hovers first, even in a mobile profile: hover styles (a menu opened on `:hover`) are part of it.
@@ -217,9 +253,14 @@ map the chunk to modules.
 
 ### 7. Write, validate, render
 
-Write `<run>/perf_report.json` (`schemas/perf_report.schema.json`), then:
+Write the triage (`triage.json`: the summary, a decision and reason per candidate, and for each
+promoted one its title, remediation and verification step, plus limitations and next steps) and seed
+the report from it; everything the validator recomputes is copied or computed, and each limitation
+the runs require that the triage does not already state is added in a default wording (listed on
+stderr: reword it where the run needs more):
 
 ```bash
+python scripts/build_report.py --measurements <run>/measurements.json --candidates <run>/candidates.json   --triage triage.json --out <run>/perf_report.json [--regressions <run>/regressions.json] [--plan plan.json]
 python scripts/validate_report.py <run>/perf_report.json --measurements <run>/measurements.json --candidates <run>/candidates.json \
   --budget budget.json [--regressions <run>/regressions.json] [--write-summary]
 python scripts/render_report.py <run>/perf_report.json [--brief]
@@ -233,8 +274,8 @@ Fix every validator error; never edit the runs.
   budget source and note (as in `candidates.json`), runs, `min_runs`, `max_runs`, cache modes,
   browsers, `authorised_by`, `third_party` (as in `candidates.json`; required when the run
   recorded it) and `blocked_first_party` (required when any were blocked).
-- `cdn_cache[]`, `request_summary[]`, `warm_cache[]` and `delivery[]` (as in `candidates.json`;
-  required when the runs recorded them).
+- `cdn_cache[]`, `request_summary[]`, `warm_cache[]`, `delivery[]` and `service_workers[]` (as in
+  `candidates.json`; required when the runs recorded them).
 - `metadata`: machine, calibration, tools (web-vitals with SHA-256, Playwright browsers,
   Lighthouse), the measurements file, and `metadata.harness`: the measurements' `harness` record
   copied unchanged (the shared browser harness's metadata: CSP bypass, read-only mode, third-party
@@ -254,7 +295,9 @@ an interaction; Chromium-only metrics are `not_supported` elsewhere. Evidence fi
 the limitations; blocked first-party requests are listed and named in the limitations; a remote
 target has a limitation about the warm CDN; the run cap and variants match the config; a metric
 unstable at the cap says so; `warm_cache` and `delivery` follow from the runs, and warm runs that
-did not use the HTTP cache need a limitation saying so (warm and cache). `--write-summary` fills
+did not use the HTTP cache need a limitation saying so (warm and cache); so do INP untested on every
+page, a loaded machine, a service worker active on any run, and a mobile profile run at device pixel
+ratio 1 (`limitation_rules`). `--write-summary` fills
 the computed headline fields, so a draft may leave them out. Field
 data stays out of the measurements. web-vitals is the pinned build. The check is structural:
 timings depend on the machine, so a rerun gives different numbers.

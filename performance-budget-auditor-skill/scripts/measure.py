@@ -4,13 +4,22 @@
     python measure.py plan.json --out run/measurements.json [--artifacts run/artifacts] [--runs 5]
         [--min-runs 3] [--max-runs 5] [--profiles mobile-mid,desktop] [--cache cold|warm|both]
         [--browser chromium|firefox|webkit] [--only URL_SUBSTRING] [--templates home,about] [--append] [--no-diagnostic]
+        [--calibration-reference MS] [--record-reference | --no-reference-update]
 
 plan.json:
     {"targets": [{"url", "template", "reason", "critical_path": false, "interaction": [actions],
                   "setup": {...} | "variants": [{"name": "first-visit"}, {"name": "after-consent", "setup": {...}}]}],
      "profiles": ["mobile-mid", "desktop"], "runs": 5, "min_runs": 5, "max_runs": 10, "cache": "cold",
      "budget": "budget.json", "authorised_by": null, "allow_form_submission": false, "auth": null,
-     "third_party": "block", "allowed_hosts": [], "service_workers": "cold"}
+     "third_party": "block", "allowed_hosts": [], "service_workers": "cold", "http_cache": null}
+
+http_cache: keep or route (the shared harness's setting). Unset, Chromium runs that include warm loads keep the HTTP
+cache (each page is guarded over CDP instead of Playwright routing, which turns the cache off) and other runs route.
+Warm runs with "route" are refused: they would be a cold load measured twice. Under keep, a service worker's own
+requests are not intercepted by the harness guard (metadata service_workers.requests_guarded false).
+
+--only or --templates that leave no target exit 2 and name the filter (in Git Bash, an argument that starts with /
+is rewritten into a Windows path: pass "about" rather than "/about", or set MSYS_NO_PATHCONV=1).
 
 Runs: `runs` measured runs, then extra runs while a budgeted metric is unstable, never more than
 `max_runs` in all (default 10; set it equal to `runs` for no extra runs at all). With `min_runs`
@@ -67,12 +76,22 @@ INP is measured only when the target has an interaction: the steps run after the
     is the load's own requests only);
   * each resource's response headers (`headers`: content-encoding, cache-control, validator, expires);
   * for a warm run, `cache_check`: whether the second load used the HTTP cache (disk or memory cache, or a
-    304). A harness whose request routing disables the cache (metadata http_cache: disabled) makes it
-    ineffective.
+    304, or a service worker's own requests answered from it). Responses a service worker answered are
+    counted apart (`from_service_worker`), never as cache hits. A harness whose request routing disables
+    the cache (metadata http_cache {mode: disabled}) makes it ineffective;
+  * where service workers are allowed (warm runs by default), `service_worker`: whether one controlled the
+    page, how many responses it answered, and in Chromium what it fetched from the network itself (Playwright
+    reports a worker's requests on the context; the page's DevTools Network domain never sees them): metric
+    transfer_sw, in bytes, which transfer_total (the page's own requests) does not include;
+  * `images`: every rendered image's URL, natural and rendered size and the device pixel ratio, for the
+    oversized-image check;
+  * a profile's `device_scale_factor` (mobile-mid: 2.625) is applied over CDP in Chromium and recorded in
+    throttling.applied, so srcset picks what a real phone would; elsewhere it is listed as not applied.
 
 The first idle calibration reference is stored only with --record-reference (a steady load looks calm);
-later calm runs only lower it, and calibration.reference_update says what happened. An --append pass
-calibrates again and is kept under calibration.passes (busy when any pass was).
+later calm runs only lower it unless --no-reference-update leaves it untouched, and
+calibration.reference_update says what happened. An --append pass calibrates again and is kept under
+calibration.passes (busy when any pass was).
 
 Then one diagnostic run (not counted in any statistic, because tracing and coverage slow the page)
 records a DevTools trace with screenshots (gzipped), a filmstrip of frames 100 ms apart until the
@@ -85,7 +104,9 @@ calibration (a fixed workload timed three times at the start and again at the en
 with the runs. The calibration is `busy` when its runs vary (CV above 0.1), when its median is 1.5x or
 more the idle reference for this machine (the fastest calibration stored in the asset cache, or
 --calibration-reference MS), or when start and end are 1.5x or more apart; without a reference its
-`note` says a steady load would not show.
+`note` says a steady load would not show. `state` grades it: busy, loaded (1.2x to 1.5x the reference at
+the start or the end: not busy, but CPU-bound metrics are inflated by up to that factor), idle, or unknown
+(no reference).
 """
 from __future__ import annotations
 import argparse, base64, gzip, json, os, platform, statistics, sys, time
@@ -97,6 +118,7 @@ SKILL = HERE.parent
 sys.path.insert(0, str(HERE))
 from browser_harness import Harness, check_authorised, NotAuthorised, now, retry_decision  # noqa: E402
 from fetch_assets import asset_path, cache_root, load_lock  # noqa: E402
+from attribute import http_cache_disabled  # noqa: E402
 
 VITALS = ('LCP', 'CLS', 'INP', 'FCP', 'TTFB')
 CV_LIMIT = 0.25
@@ -187,9 +209,18 @@ LCP_ELEMENT = r"""
 }
 """
 
+IMAGES = r"""
+() => [...document.images].filter(i => i.complete && i.naturalWidth && i.currentSrc && !i.currentSrc.startsWith('data:'))
+  .map(i => { const r = i.getBoundingClientRect();
+    return {url: i.currentSrc, natural: [i.naturalWidth, i.naturalHeight], rendered: [Math.round(r.width), Math.round(r.height)],
+            dpr: window.devicePixelRatio, sizes: i.getAttribute('sizes'), srcset: !!i.getAttribute('srcset'), loading: i.getAttribute('loading')}; })
+  .filter(i => i.rendered[0] > 0 && i.rendered[1] > 0).slice(0, 60)
+"""
+
 CAL_WORKLOAD = '2e7 iterations of Math.sqrt, no throttling'
 CAL_CV_BUSY = 0.1        # calibration runs that vary this much: the load fluctuated while calibrating
 CAL_SLOWDOWN_BUSY = 1.5  # a median this many times the idle reference (or start vs end of the run): a steady load
+CAL_SLOWDOWN_LOADED = 1.2  # between this and CAL_SLOWDOWN_BUSY: loaded, not busy; CPU-bound overruns this small are suspect
 CAL_REFERENCE_FILE = 'calibration-reference.json'
 
 CALIBRATE = """() => { const t = performance.now(); let x = 0; for (let i = 0; i < 20000000; i++) { x += Math.sqrt(i) % 7; }
@@ -232,12 +263,16 @@ CAL_STORE_CV = 0.03      # a calibration may lower the idle reference only when 
 CAL_STORE_DRIFT = 1.1    # ...and start and end agree this closely
 
 
-def should_store_reference(cal: dict, existing_ms: float | None, forced: bool = False) -> tuple[bool, str]:
+def should_store_reference(cal: dict, existing_ms: float | None, forced: bool = False,
+                           no_update: bool = False) -> tuple[bool, str]:
     """Whether this run's calibration may become the machine's idle reference, and why (or why not). A steady load
     (other processes sharing the CPU throughout) gives as low a CV as an idle machine, so the first reference is never
     seeded from an ordinary run: only with --record-reference, run on a machine known to be idle. After that a calm
-    calibration (not busy, CV within CAL_STORE_CV, start and end within CAL_STORE_DRIFT) only ever lowers it."""
+    calibration (not busy, CV within CAL_STORE_CV, start and end within CAL_STORE_DRIFT) only ever lowers it, unless
+    --no-reference-update keeps the stored reference untouched."""
     med = min(cal['median_ms'], cal.get('end_median_ms') or cal['median_ms'])
+    if no_update:
+        return False, 'the stored idle reference was left untouched (--no-reference-update)'
     if forced:
         return True, f'recorded as the idle reference ({med} ms) because --record-reference was given'
     if existing_ms is None:
@@ -253,7 +288,7 @@ def should_store_reference(cal: dict, existing_ms: float | None, forced: bool = 
 def combine_passes(prev: dict, new: dict) -> dict:
     """The calibration of a measurements file measured in several passes (--append): each pass keeps its own start and
     end figures under `passes`, the top-level figures stay the first pass's, and the file is busy when any pass was."""
-    keys = ('runs_ms', 'median_ms', 'cv', 'end_runs_ms', 'end_median_ms', 'drift', 'slowdown', 'busy', 'busy_reasons', 'note')
+    keys = ('runs_ms', 'median_ms', 'cv', 'end_runs_ms', 'end_median_ms', 'drift', 'slowdown', 'busy', 'busy_reasons', 'state', 'note')
     passes = list(prev.get('passes') or [{k: prev.get(k) for k in keys if k in prev}])
     passes.append({k: new.get(k) for k in keys if k in new})
     out = {k: v for k, v in prev.items() if k != 'passes'}
@@ -261,6 +296,9 @@ def combine_passes(prev: dict, new: dict) -> dict:
     reasons = [f'pass {i}: {r}' for i, p in enumerate(passes, 1) for r in p.get('busy_reasons') or []]
     out['busy'] = any(p.get('busy') for p in passes)
     out['busy_reasons'] = reasons
+    states = [p.get('state') for p in passes if p.get('state')]
+    if states:   # the worst pass's state
+        out['state'] = next(s for s in ('busy', 'loaded', 'unknown', 'idle') if s in states)
     out['note'] = ('machine busy: ' + '; '.join(reasons)) if reasons else \
         f'{len(passes)} passes, none busy: ' + '; '.join(f'pass {i}: {p.get("note")}' for i, p in enumerate(passes, 1))
     return out
@@ -275,24 +313,86 @@ def header_fields(headers: dict) -> dict:
             'validator': bool(h.get('etag') or h.get('last-modified')), 'expires': h.get('expires') or None}
 
 
-def cache_check(resources: list[dict], cache: str, harness_meta: dict | None = None) -> dict | None:
+def response_flags(resp: dict, served_from_cache: bool = False) -> dict:
+    """Where a DevTools Network response came from. A response a service worker answered (fromServiceWorker) is the
+    worker's, not an HTTP-cache hit, even when Chromium also marks it fromDiskCache (the worker's own fetch hit the
+    cache): what the worker fetched is counted apart (sw_network)."""
+    sw = bool(resp.get('fromServiceWorker'))
+    disk = bool(served_from_cache or resp.get('fromDiskCache') or resp.get('fromPrefetchCache'))
+    return {'from_cache': disk and not sw, 'from_service_worker': sw}
+
+
+def sw_network(entries: list[dict]) -> dict:
+    """A service worker's own requests during the measured load (Playwright reports them on the context in Chromium):
+    `body` and `headers` are Playwright's request.sizes() response body and header sizes. A negative body size is a
+    response the worker got from the HTTP cache, so it counts as a cache hit and no bytes."""
+    out = {'requests': 0, 'bytes': 0, 'from_cache': 0, 'failed': 0}
+    for e in entries:
+        out['requests'] += 1
+        if e.get('failed'):
+            out['failed'] += 1
+        elif (e.get('body') or 0) < 0:
+            out['from_cache'] += 1
+        else:
+            out['bytes'] += int(e.get('body') or 0) + int(e.get('headers') or 0)
+    return out
+
+
+def cache_check(resources: list[dict], cache: str, harness_meta: dict | None = None, sw: dict | None = None) -> dict | None:
     """For a warm run: did the measured (second) load use the HTTP cache at all? Resources served from the disk or memory
-    cache, or revalidated with a 304, count. A harness that disabled the HTTP cache (request interception turns it off in
-    Playwright) makes the warm mode ineffective whatever the counts say."""
+    cache, or revalidated with a 304, count; so do a service worker's own requests answered from the HTTP cache.
+    Responses a service worker answered are counted apart (from_service_worker): a worker can answer every request and
+    still fetch each one again from the network. A harness that disabled the HTTP cache (request interception turns it
+    off in Playwright; metadata http_cache {mode: disabled}) makes the warm mode ineffective whatever the counts say."""
     if cache != 'warm':
         return None
-    hits = sum(1 for r in resources if r.get('from_cache'))
+    hits = sum(1 for r in resources if r.get('from_cache') and not r.get('from_service_worker'))
     revalidated = sum(1 for r in resources if r.get('status') == 304)
-    out = {'resources': len(resources), 'from_cache': hits, 'revalidated': revalidated}
-    if str((harness_meta or {}).get('http_cache', '')).lower() == 'disabled':
+    by_sw = sum(1 for r in resources if r.get('from_service_worker'))
+    sw_hits = ((sw or {}).get('network') or {}).get('from_cache', 0)
+    out = {'resources': len(resources), 'from_cache': hits, 'revalidated': revalidated, 'from_service_worker': by_sw}
+    if sw and sw.get('network_measured'):
+        out['service_worker_network'] = sw.get('network')
+    if http_cache_disabled(harness_meta):
         out.update(effective=False, reason='the browser harness ran with the HTTP cache disabled (http_cache: disabled), '
                                            'so the second load could not use it')
-    elif hits or revalidated:
+    elif hits or revalidated or sw_hits:
         out.update(effective=True, reason=None)
+    elif by_sw:
+        net = (sw or {}).get('network') or {}
+        out.update(effective=False, reason=(f'{by_sw} of the {len(resources)} resources of the second load were answered by '
+                                            'a service worker, none from the HTTP cache' +
+                                            (f'; the worker fetched {net.get("requests", 0)} from the network'
+                                             if sw and sw.get('network_measured') else
+                                             '; what the worker fetched itself was not measured')))
     else:
         out.update(effective=False, reason=f'none of the {len(resources)} resources of the second load came from the HTTP '
                                            'cache or was revalidated (304): the warm run measured a cold load')
     return out
+
+
+def harness_config(plan: dict, browser: str, cache_modes: list[str]) -> tuple[dict, str | None]:
+    """The shared harness's settings for this plan, and an error when they can't measure what the plan asks.
+
+    http_cache: the plan's value, else `keep` for Chromium runs that include warm loads (routing turns the HTTP cache
+    off, so a warm mode would measure a cold load twice) and `route` otherwise. A plan that asks for warm runs with
+    `route` is refused. Under `keep` a service worker's own requests are not intercepted by the guard (the harness
+    metadata says so); `service_workers: block` keeps workers out altogether."""
+    want = plan.get('http_cache')
+    if want not in (None, 'keep', 'route'):
+        return {}, f'http_cache must be keep or route, not {want!r}'
+    if want == 'route' and 'warm' in cache_modes:
+        return {}, ('cache warm or both needs the HTTP cache: "http_cache": "route" turns it off (Playwright routing), '
+                    'so every warm run would be a cold load measured twice; use "keep" (Chromium) or measure cold only')
+    mode = want or ('keep' if browser == 'chromium' and 'warm' in cache_modes else 'route')
+    cfg = {'browser': browser, 'authorised_by': plan.get('authorised_by'), 'allow_form_submission': plan.get('allow_form_submission', False),
+           'auth': plan.get('auth'), 'rate_limit_seconds': 0.2, 'third_party': plan.get('third_party', 'block'),
+           'allowed_hosts': plan.get('allowed_hosts') or [], 'targets': [t['url'] for t in plan['targets']],
+           # measure the page as its own Content-Security-Policy makes it behave (web-vitals is injected as an init
+           # script, which CSP doesn't block); "bypass_csp": true in the plan turns enforcement off
+           'bypass_csp': bool(plan.get('bypass_csp', False)), 'stop_on_429': bool(plan.get('stop_on_429', False)),
+           'http_cache': mode}
+    return cfg, None
 
 
 def assess_calibration(runs_ms: list[float], end_runs_ms: list[float] | None = None, reference_ms: float | None = None,
@@ -322,8 +422,15 @@ def assess_calibration(runs_ms: list[float], end_runs_ms: list[float] | None = N
             reasons.append(f'calibration {med} ms at the start and {end} ms at the end of the run ({drift}x apart: the load changed)')
     out['busy'] = bool(reasons)
     out['busy_reasons'] = reasons
+    worst = max([out['slowdown'] or 0] + ([round(out['end_median_ms'] / reference_ms, 2)] if reference_ms and end_runs_ms else []))
+    out['state'] = 'busy' if reasons else 'loaded' if worst >= CAL_SLOWDOWN_LOADED else 'idle' if reference_ms else 'unknown'
     if reasons:
         out['note'] = 'machine busy: ' + '; '.join(reasons)
+    elif out['state'] == 'loaded':
+        out['note'] = (f'machine loaded: the calibration is {worst}x the idle reference of {reference_ms} ms (between '
+                       f'{CAL_SLOWDOWN_LOADED}x and {CAL_SLOWDOWN_BUSY}x, under the busy threshold but not idle): CPU-bound '
+                       'metrics such as LCP, TBT and INP are inflated by up to that factor, and overruns within it are '
+                       'low confidence')
     elif reference_ms:
         out['note'] = (f'no sign of load: median {med} ms is {out["slowdown"]}x the idle reference of {reference_ms} ms, '
                        f'CV {out["cv"]}' + (f', end of run {out["end_median_ms"]} ms' if end_runs_ms else ''))
@@ -450,6 +557,18 @@ class Runner:
         page = self.h.new_page(viewport=p['viewport'], cpu_throttle=p['cpu_slowdown'] if chromium and p['cpu_slowdown'] > 1 else None,
                                network={'download_kbps': p['download_kbps'], 'upload_kbps': p['upload_kbps'], 'rtt_ms': p['rtt_ms']},
                                service_workers=sw_mode(self.plan, cache), mobile=p.get('mobile', False))
+        dpr = p.get('device_scale_factor')
+        if dpr and dpr != 1:
+            applied = self.h.log(page)
+            if chromium:
+                # the shared harness's new_page has no device scale factor yet: set it over the page's CDP session, which
+                # keeps the viewport and mobile emulation and changes window.devicePixelRatio (what srcset picks by)
+                w, hgt = (int(x) for x in p['viewport'].split('x'))
+                self.h.cdp(page).send('Emulation.setDeviceMetricsOverride', {'width': w, 'height': hgt, 'deviceScaleFactor': dpr,
+                                                                            'mobile': bool(p.get('mobile'))})
+                applied['applied']['device_scale_factor'] = dpr
+            else:
+                applied['not_applied'].append(f'device_scale_factor {dpr}: set over CDP, Chromium only (the page ran at 1)')
         page.add_init_script(self.init)
         return page
 
@@ -487,6 +606,8 @@ class Runner:
         if variant and variant.get('name'):
             rec['variant'] = variant['name']
         cdp = None
+        sw_allowed = sw_mode(self.plan, cache) == 'allow'
+        sw_entries: list[dict] = []
         try:
             if self.browser == 'chromium':
                 cdp = self.h.cdp(page)
@@ -496,8 +617,7 @@ class Runner:
                 cdp.on('Network.responseReceived', lambda e: reqs.setdefault(e['requestId'], {}).update(
                     url=e['response']['url'], type=e.get('type', ''), mime=e['response'].get('mimeType', ''),
                     status=e['response'].get('status'), headers=header_fields(e['response'].get('headers') or {}),
-                    from_cache=bool(reqs.get(e['requestId'], {}).get('from_cache')) or e['response'].get('fromDiskCache', False)
-                    or e['response'].get('fromServiceWorker', False) or e['response'].get('fromPrefetchCache', False)))
+                    **response_flags(e['response'], bool(reqs.get(e['requestId'], {}).get('from_cache')))))
                 cdp.on('Network.requestServedFromCache', lambda e: reqs.setdefault(e['requestId'], {}).update(from_cache=True))
                 cdp.on('Network.dataReceived', lambda e: reqs.setdefault(e['requestId'], {}).update(
                     partial=reqs.get(e['requestId'], {}).get('partial', 0) + int(e.get('encodedDataLength') or 0)))
@@ -505,12 +625,27 @@ class Runner:
                 if diag:
                     cdp.send('Profiler.enable')
                     cdp.send('Profiler.startPreciseCoverage', {'callCount': True, 'detailed': True})
+                if sw_allowed:
+                    # a service worker's own requests are not the page's (its CDP Network domain never sees them), and
+                    # under http_cache keep the harness guard does not either: Playwright reports them on the context
+                    def on_sw(r, failed=False):
+                        if getattr(r, 'service_worker', None) is None:
+                            return
+                        try:
+                            size = {} if failed else r.sizes()
+                        except Exception:  # noqa: BLE001
+                            size = {}
+                        sw_entries.append({'url': r.url, 'body': size.get('responseBodySize'),
+                                           'headers': size.get('responseHeadersSize'), 'failed': failed})
+                    page.context.on('requestfinished', on_sw)
+                    page.context.on('requestfailed', lambda r: on_sw(r, True))
             self.apply_setup(page, target, (variant or {}).get('setup'), cache, rec, cdp)
             if cache == 'warm':
                 self.h.throttle()
                 page.goto(target['url'], wait_until='load', timeout=60000)
                 page.wait_for_timeout(500)
             reqs.clear()
+            sw_entries.clear()
             if diag:
                 self.h.start_trace(page, screenshots=True, categories=TRACE_CATEGORIES)
             self.h.throttle()
@@ -528,6 +663,9 @@ class Runner:
                 self.h.events.append({'url': target['url'], 'event': f'{run_id}: network not idle after 15 s', 'at': now()})
             page.wait_for_timeout(1500)  # late layout shifts and long tasks after load
             snap = page.evaluate(SNAPSHOT)
+            sw_load = list(sw_entries)   # the worker's requests during the load (the interaction's come later)
+            controlled = bool(sw_allowed and page.evaluate('() => !!(navigator.serviceWorker && navigator.serviceWorker.controller)'))
+            rec['images'] = page.evaluate(IMAGES)
             rec['wall_ms'] = round((time.monotonic() - t0) * 1000)
             interaction = target.get('interaction')
             inp = None
@@ -592,13 +730,21 @@ class Runner:
             if chromium:
                 resources = [{'url': r['url'], 'type': classify(r.get('type', ''), r.get('mime', ''), r['url']),
                               'bytes': r.get('bytes', 0), 'from_cache': r.get('from_cache', False),
+                              **({'from_service_worker': True} if r.get('from_service_worker') else {}),
                               **({'status': r['status']} if r.get('status') is not None else {}),
                               **({'headers': r['headers']} if r.get('headers') else {})}
                              for k, r in reqs.items() if k in load_ids and r.get('url') and not r['url'].startswith('data:')]
                 if 'interaction_transfer' in rec:
                     metrics['transfer_interaction'] = rec['interaction_transfer']['bytes']
                     sources['transfer_interaction'] = 'DevTools Network bytes of requests started by the interaction'
-                cc = cache_check(resources, cache, self.hmeta)
+                if sw_allowed:
+                    net = sw_network(sw_load)
+                    rec['service_worker'] = {'controlled': controlled, 'responses': sum(1 for x in resources if x.get('from_service_worker')),
+                                             'workers': sorted(set(log.get('service_workers') or [])), 'network': net,
+                                             'network_measured': True}
+                    metrics['transfer_sw'] = net['bytes']
+                    sources['transfer_sw'] = "Playwright request sizes of the service worker's own requests (Chromium)"
+                cc = cache_check(resources, cache, self.hmeta, rec.get('service_worker'))
                 if cc:
                     rec['cache_check'] = cc
             else:
@@ -606,6 +752,10 @@ class Runner:
                                                                 r['url']), 'bytes': r['transfer'], 'from_cache': r['transfer'] == 0}
                              for r in snap['resources']]
                 resources.append({'url': target['url'], 'type': 'document', 'bytes': (snap['nav'] or {}).get('transfer', 0), 'from_cache': False})
+                if sw_allowed:
+                    rec['service_worker'] = {'controlled': controlled, 'responses': None, 'workers': [], 'network': None,
+                                             'network_measured': False,
+                                             'note': f'{self.browser}: what a service worker answered and fetched is not visible'}
             by_type: dict[str, int] = {}
             for r in resources:
                 by_type[r['type']] = by_type.get(r['type'], 0) + int(r['bytes'] or 0)
@@ -674,8 +824,8 @@ class Runner:
 def rounded(o):
     if isinstance(o, float):
         return round(o, 4) if abs(o) < 1 else round(o, 1)
-    if isinstance(o, dict):
-        return {k: rounded(v) for k, v in o.items()}
+    if isinstance(o, dict):   # a device pixel ratio (2.625) is kept exact
+        return {k: v if k in ('dpr', 'device_scale_factor') else rounded(v) for k, v in o.items()}
     if isinstance(o, list):
         return [rounded(v) for v in o]
     return o
@@ -780,8 +930,8 @@ def describe_setup(setup: dict | None) -> dict | None:
 
 
 def stable_metric(measured: list[dict], metric: str, limits: dict) -> bool:
-    from attribute import UNITS, stability, stats
-    vals = [x.get('metrics', {}).get(metric) for x in measured if x['ok']]
+    from attribute import UNITS, metric_value, stability, stats
+    vals = [metric_value(x, metric) for x in measured if x['ok']]
     return stability(stats(vals), [v for v in vals if v is not None], UNITS[metric], limits.get(metric))[0]
 
 
@@ -809,7 +959,12 @@ def main() -> int:
     ap.add_argument('--record-reference', action='store_true',
                     help='store this run\'s calibration as the machine\'s idle reference (run on a machine you know is idle); '
                          'without it the first reference is never stored, and later calm runs only lower it')
+    ap.add_argument('--no-reference-update', action='store_true',
+                    help='never write the stored idle reference, even when this run is calm enough to lower it')
     a = ap.parse_args()
+    if a.record_reference and a.no_reference_update:
+        print('error: --record-reference and --no-reference-update contradict each other', file=sys.stderr)
+        return 2
     plan = json.loads(a.plan.read_text(encoding='utf-8'))
     all_profiles = json.loads((SKILL / 'data' / 'profiles.json').read_text(encoding='utf-8'))
     profile_names = (a.profiles or ','.join(plan.get('profiles') or ['mobile-mid', 'desktop'])).split(',')
@@ -822,6 +977,13 @@ def main() -> int:
     cache_modes = {'both': ['cold', 'warm']}.get(a.cache or plan.get('cache', 'cold'), [a.cache or plan.get('cache', 'cold')])
     targets = [t for t in plan['targets'] if (not a.only or a.only in t['url']) and
                (not a.templates or t['template'] in a.templates.split(','))]
+    if not targets:
+        filt = ', '.join(x for x in (f'--only {a.only!r}' if a.only else '', f'--templates {a.templates!r}' if a.templates else '') if x)
+        hint = (' (it looks like a Windows path: Git Bash rewrites an argument that starts with / into one; pass the URL '
+                'path without its leading slash, or set MSYS_NO_PATHCONV=1)' if a.only and ':/' in a.only and '://' not in a.only else '')
+        print(f'error: {filt or "the plan"} leaves no target to measure{hint}; plan targets: '
+              + ', '.join(t['url'] for t in plan['targets']), file=sys.stderr)
+        return 2
     try:
         check_authorised([t['url'] for t in targets], plan.get('authorised_by'))
     except NotAuthorised as e:
@@ -841,12 +1003,10 @@ def main() -> int:
     wv_path = asset_path('web-vitals')
     wv = wv_path.read_text(encoding='utf-8')
     doc = json.loads(a.out.read_text(encoding='utf-8')) if a.append and a.out.exists() else None
-    cfg = {'browser': a.browser, 'authorised_by': plan.get('authorised_by'), 'allow_form_submission': plan.get('allow_form_submission', False),
-           'auth': plan.get('auth'), 'rate_limit_seconds': 0.2, 'third_party': plan.get('third_party', 'block'),
-           'allowed_hosts': plan.get('allowed_hosts') or [], 'targets': [t['url'] for t in plan['targets']],
-           # measure the page as its own Content-Security-Policy makes it behave (web-vitals is injected as an init
-           # script, which CSP doesn't block); "bypass_csp": true in the plan turns enforcement off
-           'bypass_csp': bool(plan.get('bypass_csp', False)), 'stop_on_429': bool(plan.get('stop_on_429', False))}
+    cfg, bad = harness_config(plan, a.browser, cache_modes)
+    if bad:
+        print(f'error: {bad}', file=sys.stderr)
+        return 2
     with Harness(cfg) as h:
         cal_page = h.new_page()
         cal = [round(cal_page.evaluate(CALIBRATE)[0], 1) for _ in range(3)]   # this pass's start calibration
@@ -863,7 +1023,7 @@ def main() -> int:
                    'tools': [], 'config': {'runs': runs, 'min_runs': min_runs, 'max_runs': max_runs, 'warmup': 1, 'cv_limit': CV_LIMIT,
                                            'profiles': {p: all_profiles[p] for p in profile_names}, 'cache': cache_modes,
                                            'third_party': {'mode': cfg['third_party'], 'allowed_hosts': cfg['allowed_hosts']},
-                                           'service_workers': plan.get('service_workers', 'cold')},
+                                           'service_workers': plan.get('service_workers', 'cold'), 'http_cache': cfg['http_cache']},
                    'sample': [{k: t.get(k) for k in ('url', 'template', 'reason', 'critical_path')} | {'interaction': bool(t.get('interaction'))} |
                               ({'variants': [{'name': v['name'], 'setup': describe_setup(v['setup'])} for v in variants_of(t)]}
                                if t.get('variants') else {}) |
@@ -943,7 +1103,8 @@ def main() -> int:
         # this pass alone, start and end; an --append pass is kept beside the earlier ones, never written over them
         this = assess_calibration(cal, end_runs_ms=end_cal, reference_ms=(ref or {}).get('median_ms'),
                                   reference_source=(ref or {}).get('source'))
-        stored, why = should_store_reference(this, (calibration_reference(mach) or {}).get('median_ms'), a.record_reference)
+        stored, why = should_store_reference(this, (calibration_reference(mach) or {}).get('median_ms'), a.record_reference,
+                                             no_update=a.no_reference_update)
         if stored:
             update_calibration_reference(mach, None, min(this['median_ms'], this['end_median_ms']), force=a.record_reference)
         this['reference_update'] = why

@@ -1,7 +1,7 @@
 {
  "skill": {
   "name": "performance-budget-auditor",
-  "version": "1.1.0"
+  "version": "1.4.0"
  },
  "scope": {
   "targets": [
@@ -5127,7 +5127,7 @@
  ],
  "limitations": [
   "Lab data from one machine (recorded in metadata); CPU slowdown is relative to it, so another machine gives other numbers.",
-  "mobile-mid is an emulated profile, not a real phone; native apps are out of scope.",
+  "mobile-mid is an emulated profile, not a real phone; native apps are out of scope. These runs predate the profile's device pixel ratio and ran at DPR 1, so any responsive image (srcset) would have been picked for a DPR-1 screen and image weight on a real phone understated; the pages here use fixed images.",
   "The mobile-mid diagnostic run for /order timed out on the click (tracing at 4x CPU slowdown), so there is no trace or filmstrip for that profile; the five measured runs completed.",
   "Cold cache only; warm-cache behaviour (repeat visits) was not measured.",
   "Firefox was measured on /about (desktop) for load timings and weight only: LCP, CLS, INP and TBT are not_supported there.",
