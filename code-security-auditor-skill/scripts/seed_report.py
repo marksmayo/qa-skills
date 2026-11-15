@@ -74,6 +74,8 @@ def entry_point(e: dict) -> dict:
         notes.append(f"MCP transport {e['transport']}" + (f", bind {e['bind']}" if e.get('bind') else ''))
     elif e.get('bind'):
         notes.append(f"bind {e['bind']}")
+    if e.get('segment_note'):  # Next.js: prerendered at build, ids bounded by generateStaticParams
+        notes.append(e['segment_note'])
     if e.get('example'):
         out['example'] = True
         notes.append('example or fixture code (not part of the shipped product unless it is deployed)')
@@ -107,6 +109,9 @@ def tool_rows(scanners: dict | None, cands: dict, recon: dict) -> list[dict]:
                 extra.append(f"{t['test_fixtures']} test-file literals set aside as fixtures (not triaged)")
             rows.append({'name': 'scan_secrets', 'area': 'secrets', 'status': 'ran', 'version': skill_version(),
                          'output': t['input'], 'results': t['results'], 'config': '; '.join(extra)})
+    # PoCs and guard checks (run_poc.py): seeded as not run; set status ran, with results and output, when any ran
+    rows.append({'name': 'run_poc', 'area': 'dynamic', 'status': 'not_run', 'version': None, 'config': 'scripts/run_poc.py',
+                 'reason': 'verification was not requested, so no PoC or guard check ran'})
     rows.append({'name': 'agent', 'area': 'agent', 'status': 'ran', 'config': f'{TODO}: what the manual review covered'})
     return rows
 
@@ -177,7 +182,7 @@ def seed(recon: dict, cands: dict, scanners: dict | None, repo: Path | None) -> 
     not_ran = [t['name'] for t in tools if t['status'] in ('not_run', 'errored')]
     stores = list(OrderedDict((f"{s['kind']} ({s['file']}:{s['line']})", None) for s in recon.get('data_stores') or []))
     d = {
-        'schema_version': '1.4',
+        'schema_version': '1.5',
         'skill': {'name': 'code-security-auditor', 'version': skill_version()},
         'sensitive': True,
         'notice': NOTICE,

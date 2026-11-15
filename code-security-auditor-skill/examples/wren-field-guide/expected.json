@@ -1,0 +1,43 @@
+{
+  "about": "What scripts/self_test.py expects the built-in scanners to report on this static Next.js App Router content site (all packs). Pattern hits must match exactly; entry points must be present with these values; the leads must mention (and must not mention) these phrases.",
+  "patterns": [
+    ["next.config.ts", 4, "HDR-CSP-WILDCARD-SOURCE"],
+    ["next.config.ts", 5, "HDR-CSP-TAG-MANAGER"],
+    ["next.config.ts", 5, "HDR-CSP-UNSAFE-INLINE"],
+    ["next.config.ts", 22, "HDR-CACHE-CATCH-ALL"],
+    ["src/app/[id]/page.tsx", 20, "JS-JSONLD-STRINGIFY"],
+    ["src/app/page.tsx", 15, "JS-JSONLD-STRINGIFY"],
+    ["src/app/layout.tsx", 17, "JS-JSONLD-STRINGIFY"]
+  ],
+  "entry_points": [
+    {"kind": "page", "method": "GET", "path": "/", "handler": "src/app/page.tsx:4", "auth": "public"},
+    {"kind": "page", "method": "GET", "path": "/contact", "handler": "src/app/contact/page.tsx:3", "auth": "public"},
+    {"kind": "page", "method": "GET", "path": "/:id", "handler": "src/app/[id]/page.tsx:11", "auth": "public", "static": true, "params_bounded": true},
+    {"kind": "metadata_route", "method": "GET", "path": "/robots.txt", "handler": "src/app/robots.ts:4", "auth": "public"},
+    {"kind": "metadata_route", "method": "GET", "path": "/sitemap.xml", "handler": "src/app/sitemap.ts:5", "auth": "public"},
+    {"kind": "metadata_route", "method": "GET", "path": "/:id/opengraph-image", "handler": "src/app/[id]/opengraph-image.tsx:7", "auth": "public"},
+    {"kind": "http_route", "method": "GET", "path": "/feed.xml", "handler": "src/app/feed.xml/route.ts:5", "auth": "public", "static": true},
+    {"kind": "http_route", "method": "GET", "path": "/api/search", "handler": "src/app/api/search/route.ts:4", "auth": "public"},
+    {"kind": "http_route", "framework": "nextjs", "method": "GET", "path": "/_next/image", "handler": "next.config.ts:12", "auth": "public"},
+    {"kind": "server_action", "method": "POST", "path": "action:sendSighting", "handler": "src/app/contact/actions.ts:3", "auth": "public"},
+    {"kind": "middleware", "method": "ANY", "handler": "src/middleware.ts:3"},
+    {"kind": "service_worker", "method": "FETCH", "path": "/sw.js (scope /)", "handler": "public/sw.js:1", "auth": "public"}
+  ],
+  "entry_point_count": 12,
+  "outbound_files": ["src/app/contact/actions.ts"],
+  "security_headers_missing": ["Strict-Transport-Security", "frame-ancestors"],
+  "agent_config": [".claude/settings.json", ".vscode/settings.json"],
+  "lead_mentions": [
+    "'unsafe-inline'",
+    "www.googletagmanager.com",
+    "frame-ancestors",
+    "Strict-Transport-Security",
+    "/:path*",
+    "remotePatterns",
+    "cache-first",
+    ".claude/settings.json",
+    "GET /api/search returns a collection",
+    "third-party script"
+  ],
+  "no_lead_mentions": ["/feed.xml returns a collection", "/:id takes an object id"]
+}

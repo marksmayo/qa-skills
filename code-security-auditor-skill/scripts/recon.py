@@ -48,6 +48,15 @@ collections. Python servers started from code (app.run, uvicorn.run) are listene
 Data directories (200+ data files, no code; see data_dirs.py) and --exclude-dir paths are pruned
 unopened and listed under `skipped_data_dirs`.
 
+Next.js projects are read with the shared static reader (next_app.py, via next_surface.py): pages, generated
+metadata routes, the image optimiser (/_next/image), service workers and nested middleware are entry points, pages
+and routes carry `static` and `params_bounded` (prerendered at build; ids bounded by generateStaticParams with
+dynamicParams = false), and `security_headers` records the headers in next.config headers() and platform files (CSP
+weaknesses, missing frame-ancestors or HSTS, catch-all shared caching, the images config, third-party scripts), each
+a review lead. `agent_config` lists committed agent and editor configuration (.claude/settings*.json, .mcp.json,
+.vscode/tasks.json, ...). Outbound calls are matched on code with string literals blanked (code_only), so prose in a
+data string is not a call.
+
 Everything here is a regex-level first pass. The agent confirms entry points and auth by reading
 the code; an 'unknown' auth value means the script could not tell, not that the route is public.
 """
@@ -62,6 +71,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import data_dirs as data_dir_rule  # noqa: E402
 import go_entries  # noqa: E402
 import lang_census  # noqa: E402
+import next_app  # noqa: E402
+import next_surface  # noqa: E402
 import nextjs_auth  # noqa: E402
 import py_routes  # noqa: E402
 import test_paths  # noqa: E402
@@ -312,6 +323,76 @@ def ado_pipeline_info(rel: str, text: str, template: bool) -> tuple[dict, list[d
             'untrusted_input_triggers': ['pr'] if 'pr' in triggers else [], 'write_permissions': [],
             'uses_secrets': bool(re.search(r'^\s*-\s*group\s*:|AzureKeyVault@|\$\(\w*(secret|password|token|key)\w*\)', text, re.M | re.I))}
     return info, entries
+
+HASH_COMMENT = {'.py', '.rb', '.sh', '.yml', '.yaml', '.toml', '.tf'}
+TRIPLE = {'.py'}
+BACKTICK = {'.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts', '.vue', '.svelte', '.go', '.kt', '.scala'}
+
+def code_only(text: str, suffix: str) -> str:
+    """The text with the inside of every string literal and comment blanked to spaces (quotes and newlines kept), so a
+    pattern meant for code (an outbound call) does not match prose in a data string: 'you have got. Then fetch(it)'.
+    Template literals and Python triple-quoted strings may span lines; ' and " strings end at a newline."""
+    out, i, n = [], 0, len(text)
+    hash_c, triple, tick = suffix in HASH_COMMENT, suffix in TRIPLE, suffix in BACKTICK
+    def blank(s: str) -> str:
+        return re.sub(r'[^\n]', ' ', s)
+    while i < n:
+        c = text[i]
+        if c == '/' and text.startswith('//', i) and not hash_c:
+            j = text.find('\n', i)
+            j = n if j < 0 else j
+            out.append(blank(text[i:j]))
+            i = j
+        elif c == '/' and text.startswith('/*', i) and not hash_c:
+            j = text.find('*/', i + 2)
+            j = n if j < 0 else j + 2
+            out.append(blank(text[i:j]))
+            i = j
+        elif c == '#' and hash_c:
+            j = text.find('\n', i)
+            j = n if j < 0 else j
+            out.append(blank(text[i:j]))
+            i = j
+        elif triple and text.startswith(('"""', "'''"), i):
+            q = text[i:i + 3]
+            j = text.find(q, i + 3)
+            j = n if j < 0 else j
+            out.append(q + blank(text[i + 3:j]) + (q if j < n else ''))
+            i = min(n, j + 3)
+        elif c in '"\'' or (c == '`' and tick):
+            j = i + 1
+            while j < n and text[j] != c and (c == '`' or text[j] != '\n'):
+                j += 2 if text[j] == '\\' else 1
+            j = min(j, n)
+            closed = j < n and text[j] == c
+            out.append(c + blank(text[i + 1:j]) + (c if closed else ''))
+            i = j + (1 if closed else 0)
+        else:
+            out.append(c)
+            i += 1
+    return ''.join(out)
+
+# Files that grant permissions, run commands (hooks, tasks, launch configs) or start MCP servers for whoever opens the
+# repository in that agent or editor. Instruction-only files (CLAUDE.md, AGENTS.md) are not listed.
+AGENT_CONFIG = ('.claude/settings.json', '.claude/settings.local.json', '.claude/commands', '.claude/agents', '.mcp.json',
+                '.cursor/mcp.json', '.vscode/settings.json', '.vscode/launch.json', '.vscode/tasks.json', '.vscode/mcp.json',
+                '.idea/workspace.xml', '.gemini/settings.json', '.codex/config.toml')
+
+def agent_config(root: Path) -> list[str]:
+    """Agent and editor configuration at the repository root and one folder down (a monorepo package)."""
+    found = []
+    try:
+        tops = [root] + [p for p in sorted(root.iterdir()) if p.is_dir() and not p.name.startswith('.') and p.name not in SKIP_DIRS]
+    except OSError:
+        return found
+    for base in tops:
+        for rel in AGENT_CONFIG:
+            if (base / rel).exists():
+                found.append((base / rel).relative_to(root).as_posix())
+    return found
+
+STATIC_ASSET_DIR = re.compile(r'(^|/)public/.*\.(?:js|mjs|cjs)$')  # scripts served to browsers as they are (not PHP's public/)
+GOT_IMPORT = re.compile(r'''from\s+["']got["']|require\(\s*["']got["']\s*\)|import\(\s*["']got["']\s*\)''')
 
 def client_sources(rel: str, text: str, base_line: int = 0) -> list[dict]:
     """One entry per client-side source kind per file (first line where it is read)."""
@@ -730,6 +811,7 @@ def main() -> int:
     templates: list[str] = []
     limiter_libs: dict[str, list[str]] = {}
     forwarded_keys: list[dict] = []
+    next_config_seen = False
     data = data_dir_rule.DataDirs(root, args.exclude_dir, auto=not args.scan_data_dirs)
     for p in walk(root, vendored, lang_census.census(root), data):
         rel = p.relative_to(root).as_posix()
@@ -739,6 +821,8 @@ def main() -> int:
                   file=sys.stderr, flush=True)
         if p.name in MANIFESTS:
             manifests.append(rel)
+        if next_app.NEXT_CONFIG.match(p.name):
+            next_config_seen = True
         if p.name == 'package.json' and not tests.is_test(rel):
             entries += bin_entries(rel, read(p))
         if p.name.startswith('.env'):
@@ -833,13 +917,17 @@ def main() -> int:
             client += client_sources(rel, text)
         if 'gql`' in text or 'typeDefs' in text:
             entries += graphql_ops(rel, text)
+        # outbound calls are matched on code only: prose in a string ("whatever you have got.") is not a call, and files
+        # under public/ are served to browsers as they are (a service worker's fetch is not a server-side request)
+        code_lines = [] if STATIC_ASSET_DIR.search(rel) else code_only(text, p.suffix.lower()).splitlines()
         for i, line in enumerate(text.splitlines(), 1):
             for kind, rx in STORES:
                 if CONFIG_FILE.search(rel):
                     break  # next.config.ts listing @prisma/client in serverExternalPackages is not a data store
                 if re.search(rx, line) and not any(s['kind'] == kind and s['file'] == rel for s in stores):
                     stores.append({'kind': kind, 'file': rel, 'line': i})
-            if OUTBOUND.search(line) and not line.lstrip().startswith(('import ', 'from ', '#', '//')):
+            m = OUTBOUND.search(code_lines[i - 1]) if i <= len(code_lines) else None
+            if m and not line.lstrip().startswith(('import ', 'from ', '#', '//')) and (m.group(1) != 'got' or GOT_IMPORT.search(text)):
                 outbound.append({'file': rel, 'line': i, 'snippet': line.strip()[:160]})
             if SECRET_CFG.search(line):
                 secret_cfg.append({'file': rel, 'line': i, 'snippet': line.strip()[:160]})
@@ -865,12 +953,24 @@ def main() -> int:
         ci_entries += eps
     # Next.js: route handlers, server actions and middleware, with per-handler auth (helpers found across the repo)
     middleware = [nextjs_auth.parse_middleware(rel, t) for rel, t in js_files.items() if nextjs_auth.MIDDLEWARE_FILE.search(rel)]
-    helpers = nextjs_auth.guard_helpers(js_files) if any(
+    next_model = None
+    if 'Next.js' in frameworks or next_config_seen:  # pages, metadata routes, image optimiser, service workers, headers
+        try:
+            next_model = next_app.read_next_app(root)
+        except Exception as exc:  # noqa: BLE001 - recon must still write the rest of the map
+            print(f'  recon: the Next.js reader failed ({type(exc).__name__}: {exc}); pages and headers not modelled',
+                  file=sys.stderr)
+    helpers = nextjs_auth.guard_helpers(js_files) if (next_model and next_model.get('projects')) or any(
         nextjs_auth.ROUTE_FILE.search(r) or nextjs_auth.PAGES_API.search(r) or "use server" in t for r, t in js_files.items()) else {}
+    next_eps = []
     for rel, t in js_files.items():
-        entries += nextjs_auth.route_entries(rel, t, helpers, middleware) + nextjs_auth.server_actions(rel, t, helpers)
+        next_eps += nextjs_auth.route_entries(rel, t, helpers, middleware) + nextjs_auth.server_actions(rel, t, helpers)
     for mw in middleware:
-        entries.append(nextjs_auth.middleware_entry(mw))
+        next_eps.append(nextjs_auth.middleware_entry(mw))
+    if next_model:
+        next_eps += next_surface.entries(next_model, js_files, helpers, middleware, next_eps)
+    entries += next_eps
+    for mw in middleware:
         if mw['auth_check']:
             global_hooks.append(f"{mw['file']}:{mw['line']}")
     entries += queues + clis + client + ci_entries
@@ -917,7 +1017,7 @@ def main() -> int:
         e['id'] = f'EP-{n}'
     leads = []
     for e in entries:
-        if e['kind'] in ('http_route', 'webhook', 'graphql') and ID_PARAM.search(e['path']):
+        if e['kind'] in ('http_route', 'webhook', 'graphql') and ID_PARAM.search(e['path']) and not e.get('params_bounded'):
             leads.append({'area': 'access_control', 'entry_point': e['id'], 'why': f"{e['method']} {e['path']} takes an object id: check ownership (IDOR/BOLA)"})
         if e['kind'] in ('http_route', 'webhook') and AUTH_FLOW.search(re.sub(r':\w+', '', e['path'])):
             leads.append({'area': 'authentication', 'entry_point': e['id'], 'why': f"{e['method']} {e['path']} is part of an auth flow: tokens, rate limits, enumeration"})
@@ -958,14 +1058,16 @@ def main() -> int:
                              "client can send that header and get a fresh limit (or pass an allow-list); check the app sits "
                              "behind a known number of trusted proxies (ProxyFix x_for=N, 'trust proxy' set to a count) or "
                              "uses the platform's own header"})
-    web_routes = [e for e in entries if e['kind'] in ('http_route', 'graphql') and not e.get('example')]
+    # routes prerendered at build (dynamic = 'force-static', a static export) cost nothing per request
+    web_routes = [e for e in entries if e['kind'] in ('http_route', 'graphql') and not e.get('example') and not e.get('static')]
     if web_routes and not limiter_libs:
         leads.append({'area': 'availability', 'entry_point': None,
                       'why': f"no rate-limiting library found for {len(web_routes)} route(s): check for a limit at the proxy, "
                              "CDN or platform, and on the expensive routes (search, export, sign-in)"})
     for e in web_routes:
         if e['method'] in ('GET', 'POST', 'ANY') and e['auth'] in ('public', 'unknown') and \
-                COLLECTION_ROUTE.search(re.sub(r'<[^>]*>|\{[^}]*\}|:\w+', '', e['path'] or '')):
+                COLLECTION_ROUTE.search(re.sub(r'<[^>]*>|\{[^}]*\}|:\w+', '', e['path'] or '')) and \
+                not next_surface.capped(js_files.get(e['handler'].rsplit(':', 1)[0], '')):  # slice(0, 20): capped by a literal
             default = any(re.search(r'default_limits|application_limits', py_files.get(f, '')) for fs in limiter_libs.values() for f in fs)
             rl = '' if e['handler'] in limited else \
                 '; no route-level limit on it (only the app-wide default applies)' if default else '; no rate-limit decorator on it'
@@ -1017,6 +1119,18 @@ def main() -> int:
         leads.append({'area': 'server_side', 'entry_point': None, 'why': f'file uploads at {", ".join(uploads[:5])}: parsing, storage path, type checks'})
     if outbound:
         leads.append({'area': 'server_side', 'entry_point': None, 'why': f'{len(outbound)} outbound call(s): check for request-controlled URLs (SSRF)'})
+    # Next.js response headers (CSP, framing, HSTS, catch-all caching), the image optimiser's sources, third-party
+    # scripts and service workers
+    security_headers = next_surface.security_headers(next_model, js_files) if next_model else None
+    leads += next_surface.leads(security_headers, entries)
+    agent_cfg = agent_config(root)
+    if agent_cfg:
+        leads.append({'area': 'supply_chain_ci', 'entry_point': None,
+                      'why': f"committed agent or editor configuration ({', '.join(agent_cfg[:6])}): read what it allows and "
+                             'runs for everyone who opens the repository in that tool: permission allow-lists (shell commands, '
+                             'git push, web fetches to any domain), hooks and tasks that run commands, MCP servers it starts, '
+                             'and any token or local path in it; a personal settings file (*.local.json) usually belongs in '
+                             '.gitignore'})
     counts = Counter(e['auth'] for e in entries)
     out = {
         'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
@@ -1050,6 +1164,11 @@ def main() -> int:
         'templates': sorted(templates),
         'rate_limiting': {'libraries': sorted(limiter_libs), 'files': sorted({f for fs in limiter_libs.values() for f in fs}),
                           'limited_routes': limited, 'forwarded_header_keys': [k['at'] for k in forwarded_keys]},
+        # Next.js: headers from next.config headers() and platform files, CSP weaknesses, missing headers, catch-all
+        # shared caching, the images config and third-party scripts (next_surface.py); null when there is no Next.js app
+        'security_headers': security_headers,
+        # agent and editor configuration that grants permissions or runs commands (.claude/settings.json, .vscode/tasks.json)
+        'agent_config': agent_cfg,
         'review_leads': leads,
         'note': "Regex-level first pass. Confirm entry points and auth by reading the code; 'unknown' auth is not 'public'.",
     }

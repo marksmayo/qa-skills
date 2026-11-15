@@ -27,7 +27,10 @@
     {"kind": "http_route", "method": "GET", "path": "/api/cron/purge", "handler": "src/app/api/cron/purge/route.ts:17", "auth": "cron_secret"},
     {"kind": "http_route", "method": "GET", "path": "/api/auth/:nextauth", "handler": "src/app/api/auth/[...nextauth]/route.ts:6", "auth": "public"},
     {"kind": "http_route", "method": "POST", "path": "/api/auth/:nextauth", "handler": "src/app/api/auth/[...nextauth]/route.ts:6", "auth": "public"},
-    {"kind": "middleware", "method": "ANY", "handler": "src/middleware.ts:6", "auth": "authenticated"}
+    {"kind": "middleware", "method": "ANY", "handler": "src/middleware.ts:6", "auth": "authenticated"},
+    {"kind": "page", "method": "GET", "path": "/login", "handler": "src/app/login/page.tsx:13", "auth": "public"},
+    {"kind": "page", "method": "GET", "path": "/t/:slug", "handler": "src/app/t/[slug]/page.tsx:5", "auth": "public"},
+    {"kind": "http_route", "framework": "nextjs", "method": "GET", "path": "/_next/image", "handler": "next.config.ts:1", "auth": "public"}
   ],
   "client_sources": ["src/app/login/page.tsx:15"],
   "middleware_covers_api": false,

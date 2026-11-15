@@ -122,8 +122,12 @@ def main() -> int:
         w(P(f"- not applicable: {', '.join(t['name'] for t in na)}", DIM))
     w('')
     w(P('## Findings (ranked)', BOLD))
-    w('| # | ID | Priority | Severity | Confidence | Exposure | CWE | Finding | Location |')
-    w('|---|---|---|---|---|---|---|---|---|')
+    if not d['findings']:
+        w(f"No findings. {cnt['candidates']} candidate(s) triaged, {cnt['observations']} observation(s); see Coverage and "
+          'Limitations for what was not reviewed.')
+    else:
+        w('| # | ID | Priority | Severity | Confidence | Exposure | CWE | Finding | Location |')
+        w('|---|---|---|---|---|---|---|---|---|')
     for f in sorted(d['findings'], key=lambda f: f['rank']):
         l = primary(f)
         w(f"| {f['rank']} | {f['id']} | {P(f['priority'], PRIO_STYLE[f['priority']])} | "
@@ -214,7 +218,8 @@ def main() -> int:
         w('')
         w(P('## Observations', BOLD))
         for o in d['observations']:
-            w(f"- {o['id']} {o['title']} ({o['file']}:{o['line']}{', ' + ', '.join(o['cwe']) if o.get('cwe') else ''}): {o['note']}")
+            w(f"- {o['id']} {o['title']} ({o['file']}:{o['line']}{', ' + ', '.join(o['cwe']) if o.get('cwe') else ''}): {o['note']}"
+              + (f" (evidence: {o['evidence']})" if o.get('evidence') else ''))
     dismissed = [t for t in d['triage'] if t['decision'] == 'dismissed']
     if dismissed:
         w('')
