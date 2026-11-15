@@ -8,8 +8,9 @@ and compares what they report with examples/kite-notes/expected.json: the patter
 exactly, the listed entry points must be present with the expected auth, client-side sources and
 data stores must not include server or config files, and test-file literals must be set aside.
 Then checks the npm range matching and lockfile facts in merge_findings.py, and the validator's
-headline rule and secret-value matching. The other fixtures (ferry-ops, quill-cli, beacon-cli, tide-tables and
-wren-field-guide, a static Next.js content site) have their own expected.json; run_poc guard checks, observation
+headline rule and secret-value matching. The other fixtures (ferry-ops, quill-cli, beacon-cli, tide-tables,
+wren-field-guide, a static Next.js content site, and tidemark-cli, a Rust clap CLI with FFI and a Cargo.lock) have
+their own expected.json; run_poc guard checks, observation
 evidence, the seeded run_poc row and the empty-findings rendering are checked too. Writes nothing; exit code 0 when every check passes.
 """
 from __future__ import annotations
@@ -265,6 +266,208 @@ def beacon(root: Path) -> None:
     check(scan_secrets.find_in_line('const TokenHeader = "X-Beacon-Token"', 'auth.go') == []
           and scan_secrets.find_in_line('headerName := "X-Api-Key"', 'client.go') == [], 'header names are not secrets')
     check(len(scan_secrets.find_in_line('const deviceToken = "q7Lm2Vx9Rt4Kp8Zw"', 'auth.go')) == 1, 'a token literal still is')
+
+def tidemark(root: Path) -> None:
+    """The Rust fixture: a clap derive CLI that finds a helper under the working directory, loads a native library
+    from a relative path and a Windows DLL by name, FFI unsafe blocks with SAFETY comments, clamped casts and test
+    modules, plus a read-only CI job and a guarded archive extraction."""
+    import seed_report  # noqa: E402
+    want = json.loads((root / 'expected.json').read_text(encoding='utf-8'))
+    print('scan_pitfalls (all packs) on tidemark-cli')
+    res = scan_pitfalls.scan(root, scan_pitfalls.load_catalogue())
+    got = {(c['file'], c['line'], c['pitfall_id']) for c in res['candidates']}
+    exp = {tuple(x) for x in want['patterns']}
+    for x in sorted(exp - got):
+        check(False, f'missed {x[2]} at {x[0]}:{x[1]}')
+    for x in sorted(got - exp):
+        check(False, f'unexpected {x[2]} at {x[0]}:{x[1]}')
+    check(got == exp, f'{len(exp)} planted patterns: CWD and relative search paths, a DLL by bare name, an unchecked '
+                      'narrowing; nothing for clamped or float casts, #[cfg(test)] modules, a read-only CI job or a guarded extraction')
+    by_key = {f"{c['file']}:{c['line']}:{c['pitfall_id']}": c for c in res['candidates']}
+    for key, attrs in want['grouped'].items():
+        c = by_key.get(key) or {}
+        check(all(c.get(k) == v for k, v in attrs.items()) and c.get('group_reason'),
+              f"FFI unsafe blocks with SAFETY comments are one low-confidence candidate ({key}: "
+              f"{ {k: c.get(k) for k in attrs} })")
+    with_tests = {(c['file'], c['line'], c['pitfall_id']) for c in
+                  scan_pitfalls.scan(root, scan_pitfalls.load_catalogue(), include_tests=True)['candidates']}
+    check(('src/plotter.rs', 43, 'RUST-CMD') in with_tests and ('src/model.rs', 41, 'RUST-INT-TRUNCATION') in with_tests,
+          '--include-tests keeps the #[cfg(test)] module hits')
+    print('recon on tidemark-cli')
+    d = run_recon(root)
+    eps = d['entry_points']
+    for e in want['entry_points']:
+        hit = [x for x in eps if all(x.get(k) == v for k, v in e.items())]
+        check(bool(hit), f"{e['kind']} {e['method']} {e.get('path', '')} at {e['handler']}"
+                         + ('' if hit else f" (got {[(x['kind'], x['method'], x['path'], x['handler']) for x in eps if x['handler'].endswith('.rs:' + e['handler'].split(':')[1]) or x['handler'] == e['handler']]})"))
+    rust = [x for x in eps if x['handler'].split(':')[0].endswith('.rs')]
+    check(len(rust) == want['rust_entry_point_count'], f"{want['rust_entry_point_count']} Rust entry points ({len(rust)}: "
+                                                       f"{[(x['kind'], x['path'], x['handler']) for x in rust]})")
+    bad = [x['handler'] for x in eps if x['handler'] in want['no_entry_points_at']]
+    check(not bad, f'no entry point on a use line ({bad})')
+    flags = [[f['file'], f['name'], f['env']] for f in d.get('cli_flags') or []]
+    check(flags == want['cli_flags'], f'clap arguments with the environment variables bound to them ({flags})')
+    leads = ' '.join(l['why'] for l in d['review_leads'])
+    missing = [m for m in want['lead_mentions'] if m not in leads]
+    check(not missing, f'env-chosen executables and libraries, the working-directory search and env-bound flags are review leads (missing {missing})')
+    wrong = [m for m in want['no_lead_mentions'] if m in leads]
+    check(not wrong, f'an environment input is not described as a config file ({wrong})')
+    by_handler = {x['handler']: x for x in eps}
+    got_exp = {h: seed_report.exposure_of(by_handler[h]) for h in want['seeded_exposure'] if h in by_handler}
+    check(got_exp == want['seeded_exposure'], f'seeded exposure: CLI and environment inputs are local ({got_exp})')
+
+CARGO_AUDIT = {
+    'database': {'advisory-count': 1156, 'last-commit': None, 'last-updated': None}, 'lockfile': {'dependency-count': 6},
+    'settings': {'target_arch': [], 'target_os': [], 'severity': None, 'ignore': [], 'informational_warnings': ['unmaintained', 'unsound', 'notice']},
+    'vulnerabilities': {'found': True, 'count': 2, 'list': [
+        {'advisory': {'id': 'RUSTSEC-2020-0159', 'package': 'chrono', 'title': 'Potential segfault in `localtime_r` invocations',
+                      'aliases': [], 'related': ['CVE-2020-26235'], 'cvss': None},
+         'versions': {'patched': ['>=0.4.20'], 'unaffected': []}, 'affected': None,
+         'package': {'name': 'chrono', 'version': '0.4.19', 'source': 'registry+https://github.com/rust-lang/crates.io-index'}},
+        {'advisory': {'id': 'RUSTSEC-2020-0071', 'package': 'time', 'title': 'Potential segfault in the time crate',
+                      'aliases': ['CVE-2020-26235', 'GHSA-wcg3-cvx6-7396'], 'related': [], 'cvss': None},
+         'versions': {'patched': ['>=0.2.23'], 'unaffected': ['=0.2.0']}, 'affected': None,
+         'package': {'name': 'time', 'version': '0.1.43'}}]},
+    'warnings': {'unmaintained': [{'kind': 'unmaintained', 'package': {'name': 'ansi_term', 'version': '0.12.1'},
+                                   'advisory': {'id': 'RUSTSEC-2021-0139', 'package': 'ansi_term', 'title': 'ansi_term is Unmaintained',
+                                                'aliases': []}, 'versions': {'patched': [], 'unaffected': []}}],
+                 'yanked': [{'kind': 'yanked', 'package': {'name': 'cfg-if', 'version': '1.0.0'}, 'advisory': None, 'versions': None}]}}
+CARGO_DENY = '\n'.join(json.dumps(x) for x in [
+    {'type': 'diagnostic', 'fields': {'code': 'vulnerability', 'severity': 'error', 'message': 'Potential segfault in the time crate',
+                                      'advisory': {'id': 'RUSTSEC-2020-0071', 'package': 'time', 'title': 'Potential segfault in the time crate',
+                                                   'aliases': ['CVE-2020-26235']},
+                                      'graphs': [{'Krate': {'name': 'time', 'version': '0.1.43'}, 'parents': []}],
+                                      'notes': ['ID: RUSTSEC-2020-0071', 'Solution: Upgrade to >=0.2.23 (try `cargo update -p time`)']}},
+    {'type': 'diagnostic', 'fields': {'code': 'unmaintained', 'severity': 'warning', 'message': 'ansi_term is Unmaintained',
+                                      'advisory': {'id': 'RUSTSEC-2021-0139', 'package': 'ansi_term', 'title': 'ansi_term is Unmaintained', 'aliases': []},
+                                      'graphs': [{'Krate': {'name': 'ansi_term', 'version': '0.12.1'}}], 'notes': ['ID: RUSTSEC-2021-0139']}},
+    {'type': 'diagnostic', 'fields': {'code': 'yanked', 'severity': 'warning', 'message': 'detected yanked crate (try `cargo update -p cfg-if`)',
+                                      'graphs': [{'Krate': {'name': 'cfg-if', 'version': '1.0.0'}}]}},
+    {'type': 'summary', 'fields': {'advisories': {'errors': 1, 'warnings': 2, 'notes': 0, 'helps': 0}}}])
+
+def rust_dependency_rules(root: Path) -> None:
+    print('Rust dependencies (run_scanners cargo-audit / cargo-deny, merge_findings, seed_report)')
+    import run_scanners  # noqa: E402
+    import seed_report  # noqa: E402
+    want = json.loads((root / 'expected.json').read_text(encoding='utf-8'))
+    inv = run_scanners.inventory(root)
+    deps = run_scanners.dependency_inventory(root, inv)
+    check([[l['file'], l['ecosystem'], l['packages']] for l in deps['lockfiles']] == want['dependency_lockfiles'],
+          f"Cargo.lock is inventoried ({deps['lockfiles']})")
+    with tempfile.TemporaryDirectory() as tmp:
+        db = Path(tmp) / 'advisory-db'
+        db.mkdir()
+        plan = {t['name']: t for t in run_scanners.plan(root, Path(tmp) / 'out', inv, [], cargo_audit_db=db, offline=True)}
+        ca = plan.get('cargo-audit') or {}
+        cmd = ' '.join(c for r in ca.get('runs') or [] for c in r['cmd'])
+        check(ca.get('applies') is True and ca.get('covers') == ['Cargo.lock'] and ca.get('area') == 'dependencies'
+              and ca.get('network') is False and '--no-fetch' in cmd and '--json' in cmd and str(db) in cmd,
+              f'cargo-audit runs offline against a local advisory database for each Cargo.lock ({cmd})')
+        online = {t['name']: t for t in run_scanners.plan(root, Path(tmp) / 'out', inv, [], offline=False)}.get('cargo-audit') or {}
+        check(online.get('network') is True and '--no-fetch' not in ' '.join(c for r in online.get('runs') or [] for c in r['cmd']),
+              'online, cargo-audit fetches the advisory database')
+        no_db = {t['name']: t for t in run_scanners.plan(root, Path(tmp) / 'out', inv, [], cargo_audit_db=Path(tmp) / 'none',
+                                                          offline=True)}.get('cargo-audit') or {}
+        check(no_db.get('network') is True, 'offline with no local advisory database, cargo-audit needs the network (not run)')
+        cd = plan.get('cargo-deny') or {}
+        check(cd.get('applies') is True and cd.get('area') == 'dependencies' and cd.get('covers') == ['Cargo.lock']
+              and any(r.get('stderr_to') for r in cd.get('runs') or []), 'cargo-deny check advisories is planned (JSON on stderr)')
+        adv = run_scanners.advisory_status([{'name': 'cargo-audit', 'area': 'dependencies', 'status': 'ran', 'covers': ['Cargo.lock']}], deps)
+        check(adv['status'] == 'assessed', f'cargo-audit covers Cargo.lock ({adv})')
+        adv = run_scanners.advisory_status([{'name': 'cargo-audit', 'area': 'dependencies', 'status': 'ran'}], deps)
+        check(adv['status'] == 'assessed', 'an older cargo-audit record without covers covers crates.io lockfiles')
+        ca_out = Path(tmp) / 'cargo-audit.json'
+        ca_out.write_text(json.dumps(CARGO_AUDIT), encoding='utf-8')
+        check(run_scanners.count_results(ca_out) == 4, f'cargo-audit results count vulnerabilities and warnings ({run_scanners.count_results(ca_out)})')
+        items, info = merge_findings.from_deps(ca_out)
+        got = sorted((i['package'], i['version'], i['advisory'], i.get('kind'), tuple(i['fixed_in'])) for i in items)
+        check(info['tool'] == 'cargo-audit' and got == [
+            ('ansi_term', '0.12.1', 'RUSTSEC-2021-0139', 'unmaintained', ()),
+            ('cfg-if', '1.0.0', 'yanked:cfg-if@1.0.0', 'yanked', ()),
+            ('chrono', '0.4.19', 'RUSTSEC-2020-0159', 'vulnerability', ('0.4.20',)),
+            ('time', '0.1.43', 'RUSTSEC-2020-0071', 'vulnerability', ('0.2.23',))], f'cargo-audit JSON: vulnerabilities, unmaintained and yanked ({got})')
+        check(all(i['ecosystem'] == 'crates.io' for i in items), 'cargo-audit rows are crates.io')
+        cd_out = Path(tmp) / 'cargo-deny.json'
+        cd_out.write_text(CARGO_DENY, encoding='utf-8')
+        items2, info2 = merge_findings.from_deps(cd_out)
+        got2 = sorted((i['package'], i['advisory'], i.get('kind'), tuple(i['fixed_in'])) for i in items2)
+        check(info2['tool'] == 'cargo-deny' and got2 == [('ansi_term', 'RUSTSEC-2021-0139', 'unmaintained', ()),
+                                                         ('cfg-if', 'yanked:cfg-if@1.0.0', 'yanked', ()),
+                                                         ('time', 'RUSTSEC-2020-0071', 'vulnerability', ('0.2.23',))],
+              f'cargo-deny JSON lines are read ({got2})')
+        check(run_scanners.count_results(cd_out) == 3, 'cargo-deny results count its advisory diagnostics')
+        merged = merge_findings.merge_deps(items + items2)
+        check(len(merged) == 4, f'cargo-audit and cargo-deny rows for one advisory merge ({len(merged)})')
+        row = seed_report.dependency(next(m for m in merged if m['kind'] == 'unmaintained'))
+        check(row.get('kind') == 'unmaintained' and not validator.schema_errors(row, *(lambda s: (s['properties']['dependencies']['items'], s))(
+            json.loads(validator.SCHEMA.read_text(encoding='utf-8')))), f'seed_report keeps the RustSec kind on the dependency row ({row})')
+    pat = {'candidates': [{'file': 'src/a.rs', 'line': 3, 'pitfall_id': 'RUST-UNSAFE', 'cwe': ['CWE-119'], 'message': 'm', 'snippet': 's',
+                           'grouped_lines': [3, 9], 'confidence': 'low', 'group_reason': 'r'}]}
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / 'patterns.json'
+        p.write_text(json.dumps(pat), encoding='utf-8')
+        c = merge_findings.from_patterns(p)[0]
+        check(c.get('grouped_lines') == [3, 9] and c.get('confidence') == 'low', 'merge_findings keeps grouped lines and the confidence')
+
+def report_rules_rust() -> None:
+    print('validator (tool outputs, contradicting limitations, --write-summary priorities) and the dismissal grouping')
+    import render_report  # noqa: E402
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        (base / 'run').mkdir()
+        (base / 'run' / 'cargo-audit.json').write_text(json.dumps(CARGO_AUDIT), encoding='utf-8')
+        tools = [{'name': 'cargo-audit', 'area': 'dependencies', 'status': 'ran', 'output': 'run/cargo-audit.json', 'results': 4}]
+        dep = lambda i, adv, pkg, ver: {'id': f'DEP-{i:03d}', 'ecosystem': 'crates.io', 'package': pkg, 'version': ver,  # noqa: E731
+                                        'advisory': adv, 'fixed_in': [], 'reachable': 'unknown', 'basis': 'not traced yet, needs reading'}
+        rows = [dep(1, 'RUSTSEC-2021-0139', 'ansi_term', '0.12.1'), dep(2, 'yanked:cfg-if@1.0.0', 'cfg-if', '1.0.0'),
+                dep(3, 'RUSTSEC-2020-0159', 'chrono', '0.4.19'), dep(4, 'RUSTSEC-2020-0071', 'time', '0.1.43')]
+        rep = {'schema_version': '1.6', 'tools': tools, 'dependencies': rows,
+               'dependency_advisories': {'status': 'partial', 'tools': ['cargo-audit'], 'reason': 'the advisory database was a stale local copy'},
+               'limitations': ['Dependency advisories were checked against a local RustSec copy that may be stale.'],
+               'summary': {'headline': '2 P2 findings'}}
+        check(not validator.tool_output_errors(rep, base), f'a dependency tool row with its output and every advisory reported passes '
+                                                         f'({validator.tool_output_errors(rep, base)})')
+        errs = validator.tool_output_errors({**rep, 'tools': [{**tools[0], 'output': 'run/missing.json'}]}, base)
+        check(any('does not exist' in e for e in errs), f'a dependency tool whose output file is missing is rejected ({errs})')
+        errs = validator.tool_output_errors({**rep, 'tools': [{**tools[0], 'output': None}]}, base)
+        check(any('output' in e for e in errs), 'a dependency tool that ran must name its output')
+        errs = validator.tool_output_errors({**rep, 'dependencies': rows[:2]}, base)
+        check(any('RUSTSEC-2020-0071' in e for e in errs), f'an advisory in the output but not in dependencies is rejected ({errs})')
+        errs = validator.tool_output_errors({**rep, 'tools': [{**tools[0], 'results': 9}]}, base)
+        check(any('results' in e for e in errs), 'results that disagree with the output are rejected')
+    seeded = 'Dependency advisories were not assessed: no dependency advisory tool ran. This is not the same as no vulnerable dependencies.'
+    errs = validator.advisory_errors({**rep, 'limitations': [seeded]})
+    check(any('contradicts' in e for e in errs), f'a limitation saying advisories were not assessed contradicts status partial ({errs})')
+    errs = validator.advisory_errors({**rep, 'limitations': ['Dependency advisories were not assessed for the npm lockfile web/package-lock.json.']})
+    check(not any('contradicts' in e for e in errs), f'a scoped "not assessed for <lockfile>" limitation is consistent with partial ({errs})')
+    errs = validator.advisory_errors({**rep, 'dependency_advisories': {'status': 'assessed', 'tools': ['cargo-audit'], 'reason': None},
+                                      'limitations': ['No dependency advisory tool ran.']})
+    check(any('contradicts' in e for e in errs), 'a limitation saying no advisory tool ran contradicts status assessed')
+    f = {'id': 'F-1', 'cvss': {'severity': 'high', 'score': 8.4}, 'confidence': 'traced', 'exposure': 'local'}
+    d = {'findings': [f], 'summary': {'counts': {}}}
+    validator.fill_computed(d)
+    check(f.get('priority_score') == 9 and f.get('priority') == 'P2', f'--write-summary fills priority_score and priority ({f})')
+    cases = {
+        'src/runner.rs:502 is inside #[cfg(test)] mod tests, never built into the release binary':
+            'is inside #[cfg(test)] mod tests, never built into the release binary',
+        'quantile is clamped to 0.0..=1.0 at src/model.rs:54 and only finite values are kept':
+            'quantile is clamped to 0.0..=1.0 at <file> and only finite values are kept',
+        'runs python (the interpreter named in PYTHON_BIN) with a fixed script path; no input reaches it':
+            'runs python with a fixed script path',
+    }
+    for reason, label in cases.items():
+        got = render_report.reason_group(reason)
+        check(got == label, f'dismissal group label keeps the reason readable ({got!r})')
+    ex = HERE.parent / 'examples' / 'security_audit.example.json'
+    run = lambda *a: subprocess.run([sys.executable, str(HERE / 'render_report.py'), str(ex), '--color', 'never', *a],  # noqa: E731
+                                    capture_output=True, text=True, encoding='utf-8').stdout
+    full, brief = run(), run('--brief')
+    rep = json.loads(ex.read_text(encoding='utf-8'))
+    obs_note = rep['observations'][0]['note'] if rep['observations'] else ''
+    check(len(brief.splitlines()) * 2 < len(full.splitlines()) and (not obs_note or obs_note not in brief)
+          and sum(1 for l in rep['limitations'] if l in brief) <= 3,
+          f'--brief is a summary: tools by status, observation titles, the first limitations ({len(brief.splitlines())} vs '
+          f'{len(full.splitlines())} lines)')
 
 GOVULNCHECK_STREAM = '''{"config": {"protocol_version": "v1.0.0", "scanner_name": "govulncheck", "scanner_version": "v1.1.4", "scan_level": "symbol"}}
 {"progress": {"message": "Scanning your code and 40 packages across 4 dependent modules for known vulnerabilities..."}}
@@ -727,6 +930,7 @@ def main() -> int:
     ap.add_argument('--go-fixture', type=Path, default=HERE.parent / 'examples' / 'beacon-cli')
     ap.add_argument('--flask-fixture', type=Path, default=HERE.parent / 'examples' / 'tide-tables')
     ap.add_argument('--static-fixture', type=Path, default=HERE.parent / 'examples' / 'wren-field-guide')
+    ap.add_argument('--rust-fixture', type=Path, default=HERE.parent / 'examples' / 'tidemark-cli')
     args = ap.parse_args()
     root = args.fixture.resolve()
     want = json.loads((root / 'expected.json').read_text(encoding='utf-8'))
@@ -741,7 +945,9 @@ def main() -> int:
         tide(args.flask_fixture.resolve())
     except Exception as exc:  # noqa: BLE001 - a missing helper is a failure, not a crash of the whole self-test
         check(False, f'tide-tables: {type(exc).__name__}: {exc}')
-    for step in (lambda: wren(args.static_fixture.resolve()), static_site_rules, poc_guard_and_render_rules):
+    rust_root = args.rust_fixture.resolve()
+    for step in (lambda: wren(args.static_fixture.resolve()), static_site_rules, poc_guard_and_render_rules,
+                 lambda: tidemark(rust_root), lambda: rust_dependency_rules(rust_root), report_rules_rust):
         try:
             step()
         except Exception as exc:  # noqa: BLE001 - a missing helper is a failure, not a crash of the whole self-test

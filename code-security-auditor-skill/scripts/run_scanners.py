@@ -21,7 +21,10 @@ Network: Semgrep fetches registry rules (metrics are turned off); pip-audit, npm
 govulncheck, osv-scanner and Trivy query vulnerability databases with package names and versions, never
 source code. --offline skips those tools and records why (and whether they are installed at all).
 With --osv-local-db <dir> (an osv-scanner offline database downloaded beforehand), osv-scanner
-checks advisories without the network, also under --offline.
+checks advisories without the network, also under --offline. cargo-audit (Rust, one run per Cargo.lock)
+fetches the RustSec database online; under --offline it runs --no-fetch --stale against a local
+copy (--cargo-audit-db, default CARGO_HOME/advisory-db) when one exists, and its record keeps the
+copy's advisory count and last update (advisory_db). cargo-deny check advisories runs when installed.
 
 Whatever runs, the pinned packages in lockfiles and requirements files are listed offline in
 dependencies.json, and scanners.json records dependency_advisories: assessed, partial (a lockfile
@@ -86,6 +89,8 @@ def inventory(root: Path, exclude_dirs: list[str] | None = None, data_dirs: bool
         'package_lock': [n for n in names if n.endswith('package-lock.json')],
         'pnpm_lock': [n for n in names if Path(n).name == 'pnpm-lock.yaml'],
         'go_mod': [n for n in names if Path(n).name == 'go.mod' and 'testdata' not in n.split('/')],
+        'cargo_lock': [n for n in names if Path(n).name == 'Cargo.lock'],
+        'cargo_toml': 'Cargo.toml' in names,
         'other_js_locks': [n for n in names if n.endswith(('yarn.lock', 'pnpm-lock.yaml'))],
         'gha': [n for n in names if (n.startswith('.github/workflows/') and n.endswith(('.yml', '.yaml'))) or
                 re.search(r'(^|/)action\.ya?ml$', n) and (n.startswith('.github/') or '/' not in n)],
@@ -193,7 +198,8 @@ def covered_lockfiles(records: list[dict], deps: dict) -> set[str]:
         if r.get('covers') is not None:
             out |= set(r['covers']) & files
         else:
-            eco = {'pip-audit': 'PyPI', 'npm-audit': 'npm', 'pnpm-audit': 'npm', 'govulncheck': 'Go'}.get(r['name'])
+            eco = {'pip-audit': 'PyPI', 'npm-audit': 'npm', 'pnpm-audit': 'npm', 'govulncheck': 'Go', 'cargo-audit': 'crates.io',
+                   'cargo-deny': 'crates.io'}.get(r['name'])
             out |= {l['file'] for l in deps['lockfiles'] if l.get('ecosystem') == eco}
     return out
 
@@ -240,15 +246,24 @@ def tool_env() -> dict:
     env.update({'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8', 'SEMGREP_SEND_METRICS': 'off', 'NO_COLOR': '1'})
     return env
 
+def cargo_home() -> Path:
+    return Path(os.environ.get('CARGO_HOME') or Path.home() / '.cargo')
+
 def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str], osv_local_db: Path | None = None,
-         online_ci: bool = False) -> list[dict]:
-    """One entry per tool: {name, area, network, applies (reason if not), exe, runs: [{cmd, cwd, output, stdout_to}]}."""
+         online_ci: bool = False, cargo_audit_db: Path | None = None, offline: bool = False) -> list[dict]:
+    """One entry per tool: {name, area, network, applies (reason if not), exe, runs: [{cmd, cwd, output, stdout_to}]}.
+
+    cargo-audit reads each Cargo.lock against the RustSec database. With offline=True it runs --no-fetch --stale
+    against a local copy (cargo_audit_db, default CARGO_HOME/advisory-db) and needs no network; with no local copy it
+    needs the network. cargo-deny check advisories runs when it is installed (JSON diagnostics on stderr)."""
     L = inv['langs']
     src = sum(L.values()) > 0
     tools = []
-    def add(name, area, exe, applies, runs, network=False, not_run=None, note=None, covers=None, version_args=None, version_rx=None):
+    def add(name, area, exe, applies, runs, network=False, not_run=None, note=None, covers=None, version_args=None, version_rx=None,
+            db_path=None):
         tools.append({'name': name, 'area': area, 'exe': exe, 'applies': applies, 'runs': runs, 'network': network,
-                      'not_run': not_run, 'note': note, 'covers': covers, 'version_args': version_args, 'version_rx': version_rx})
+                      'not_run': not_run, 'note': note, 'covers': covers, 'version_args': version_args, 'version_rx': version_rx,
+                      'db_path': db_path})
     cfg = [a for c in semgrep_configs for a in ('--config', c)]
     skip_data = [f"--exclude={s['dir']}" for s in inv.get('skipped_data_dirs') or []]  # data trees and --exclude-dir paths
     add('semgrep', 'sast', 'semgrep', True if src else 'no source files',
@@ -302,6 +317,27 @@ def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str], osv_local
         covers=list(inv['go_mod']), note='queries vuln.go.dev with module paths and versions, never source code; '
         'needs the Go toolchain and the module cache (it builds the packages to read the call graph)',
         version_args=('-version',), version_rx=r'govulncheck@v?(\d+\.\d+(?:\.\d+)?)')
+    # cargo-audit: RustSec advisories (vulnerabilities, unmaintained and yanked crates) for each Cargo.lock
+    db = cargo_audit_db or cargo_home() / 'advisory-db'
+    local_db = offline and db.is_dir()
+    ca_runs = [{'cmd': ['cargo-audit', 'audit', '--json', '--file', str(root / lock),
+                        *(['--no-fetch', '--stale', '--db', str(db)] if local_db else [])],
+                'cwd': str(root), 'stdout_to': f"cargo-audit{'' if i == 0 else '-' + str(i)}.json",
+                'output': f"cargo-audit{'' if i == 0 else '-' + str(i)}.json", 'ok_codes': [0, 1]}
+               for i, lock in enumerate(inv.get('cargo_lock') or [])]
+    add('cargo-audit', 'dependencies', 'cargo-audit', True if ca_runs else 'no Cargo.lock', ca_runs, network=not local_db,
+        db_path=str(db) if local_db else None,
+        covers=list(inv.get('cargo_lock') or []),
+        note=(f'offline: local RustSec database {db} (--no-fetch --stale; the yanked check reads the crates.io index and '
+              'can fail offline)' if local_db else 'fetches the RustSec advisory database; crate names and versions are not sent'))
+    deny_local = offline and (cargo_home() / 'advisory-dbs').is_dir()
+    root_lock = [l for l in inv.get('cargo_lock') or [] if l == 'Cargo.lock']
+    add('cargo-deny', 'dependencies', 'cargo-deny', True if inv.get('cargo_toml') and root_lock else 'no Cargo.toml and Cargo.lock at the root',
+        [{'cmd': ['cargo-deny', '--format', 'json', '--manifest-path', str(root / 'Cargo.toml'), 'check',
+                  *(['--disable-fetch'] if deny_local else []), 'advisories'], 'cwd': str(root),
+          'stderr_to': 'cargo-deny.json', 'output': 'cargo-deny.json', 'ok_codes': [0, 1]}],
+        network=not deny_local, covers=root_lock,
+        note='runs cargo metadata (offline it needs the crates in the local registry cache); diagnostics are JSON lines on stderr')
     pip_runs = [{'cmd': ['pip-audit', '-r', str(root / r), '-f', 'json', '-o', str(out / f"pip-audit{'' if i == 0 else '-' + str(i)}.json"),
                          '--progress-spinner', 'off'], 'output': f"pip-audit{'' if i == 0 else '-' + str(i)}.json", 'ok_codes': [0, 1]}
                 for i, r in enumerate(inv['requirements'])]
@@ -360,6 +396,8 @@ def run_with_progress(cmd: list[str], cwd: str | None, timeout: int, name: str, 
                 raise
             print(f'  ... {name} still running ({time.monotonic() - t0:.0f}s of {timeout}s allowed)', file=sys.stderr, flush=True)
 
+CARGO_DENY_CODES = ('vulnerability', 'unmaintained', 'unsound', 'yanked', 'notice')
+
 def count_results(path: Path) -> int | None:
     """Number of results in a tool output (SARIF, Bandit, pip-audit, npm audit, osv-scanner), or None."""
     try:
@@ -380,9 +418,14 @@ def count_results(path: Path) -> int | None:
                 objs.append(o)
         except ValueError:
             return None
+        if any(isinstance(o, dict) and o.get('type') == 'diagnostic' for o in objs):  # cargo-deny JSON lines
+            return sum(1 for o in objs if isinstance(o, dict) and o.get('type') == 'diagnostic'
+                       and (o.get('fields') or {}).get('code') in CARGO_DENY_CODES)
         return len({o['finding'].get('osv') for o in objs if isinstance(o, dict) and isinstance(o.get('finding'), dict)})
     if isinstance(d, dict) and 'runs' in d:
         return sum(len(r.get('results') or []) for r in d['runs'])
+    if isinstance(d, dict) and isinstance(d.get('vulnerabilities'), dict) and 'database' in d:  # cargo-audit
+        return len(d['vulnerabilities'].get('list') or []) + sum(len(v or []) for v in (d.get('warnings') or {}).values())
     if isinstance(d, dict) and isinstance(d.get('results'), list) and 'errors' in d:  # bandit
         return len(d['results'])
     if isinstance(d, dict) and isinstance(d.get('dependencies'), list):  # pip-audit
@@ -424,6 +467,10 @@ def run_tool(t: dict, out: Path, timeout: int, timeouts: dict | None = None) -> 
                 errors.append(str(exc)); break
             if r.get('stdout_to'):
                 (out / r['stdout_to']).write_text(p.stdout, encoding='utf-8')
+            if r.get('stderr_to'):
+                (out / r['stderr_to']).write_text(p.stderr, encoding='utf-8')
+            elif p.stderr and re.search(r'(?m)^(error|warning):', p.stderr):  # e.g. cargo-audit's offline yanked check
+                rec.setdefault('stderr', []).extend(re.findall(r'(?m)^(?:error|warning):.*$', p.stderr)[:3])
             target = out / r['output']
             ok = target.exists() and target.stat().st_size > 0 and (p.returncode in r.get('ok_codes', [0]) or valid_json(target))
             rec['commands'].append(' '.join(cmd))
@@ -435,6 +482,13 @@ def run_tool(t: dict, out: Path, timeout: int, timeouts: dict | None = None) -> 
                 errors.append(f"exit {p.returncode}: {(msg[-1] if msg else 'no output')[:300]}")
     if rec['outputs']:
         rec['status'] = 'ran'
+        for o in rec['outputs']:
+            info = cargo_audit_db_info(Path(o))
+            if info:
+                if t.get('db_path'):  # an offline copy: its own last commit dates it when cargo-audit does not
+                    info['path'] = t['db_path']
+                    info['last_updated'] = info.get('last_updated') or git_date(Path(t['db_path']))
+                rec['advisory_db'] = info
         if errors:
             rec['reason'] = 'some runs failed: ' + '; '.join(errors)
         counts = [count_results(Path(o)) for o in rec['outputs']]
@@ -443,6 +497,25 @@ def run_tool(t: dict, out: Path, timeout: int, timeouts: dict | None = None) -> 
         rec['status'], rec['reason'] = 'errored', '; '.join(errors) or 'no output produced'
     rec['elapsed_s'] = round(time.monotonic() - t0, 1)
     return rec
+
+def cargo_audit_db_info(path: Path) -> dict | None:
+    """The RustSec database a cargo-audit run used (advisory count, last commit and update) for the report's tool row:
+    an offline run against a stale copy still ran, but its date belongs in the limitations."""
+    try:
+        d = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    if not (isinstance(d, dict) and isinstance(d.get('database'), dict) and isinstance(d.get('vulnerabilities'), dict)):
+        return None
+    db = d['database']
+    return {'advisories': db.get('advisory-count'), 'last_commit': db.get('last-commit'), 'last_updated': db.get('last-updated')}
+
+def git_date(repo: Path) -> str | None:
+    try:
+        p = subprocess.run(['git', '-C', str(repo), 'log', '-1', '--format=%cI'], capture_output=True, text=True, timeout=30)
+        return p.stdout.strip() or None if p.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        return None
 
 def valid_json(path: Path) -> bool:
     try:
@@ -466,6 +539,8 @@ def main() -> int:
     ap.add_argument('--path-prepend', nargs='*', default=[], help='directories to search for tools first (e.g. a venv)')
     ap.add_argument('--osv-local-db', type=Path, help='an osv-scanner offline database directory (downloaded earlier with '
                     '--download-offline-databases): osv-scanner then runs without the network, also under --offline')
+    ap.add_argument('--cargo-audit-db', type=Path, help='a local RustSec advisory database for cargo-audit (default: '
+                    'CARGO_HOME/advisory-db); with --offline, cargo-audit runs --no-fetch --stale against it')
     data_dir_rule.add_arguments(ap)
     args = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
@@ -482,7 +557,8 @@ def main() -> int:
         os.environ['PATH'] = os.pathsep.join([str(Path(p).resolve()) for p in args.path_prepend] + [os.environ.get('PATH', '')])
     inv = inventory(root, args.exclude_dir, not args.scan_data_dirs)
     tools = plan(root, out, inv, args.semgrep_config, args.osv_local_db.resolve() if args.osv_local_db else None,
-                 online_ci=not args.offline)
+                 online_ci=not args.offline, cargo_audit_db=args.cargo_audit_db.resolve() if args.cargo_audit_db else None,
+                 offline=args.offline)
     only = set(args.only.split(',')) if args.only else None
     skip = set(args.skip.split(',')) if args.skip else set()
     if not args.dry_run:

@@ -1,5 +1,5 @@
 {
- "version": "1.6.0",
+ "version": "1.7.0",
  "about": "Security pitfall catalogue for scan_pitfalls.py, organised by CWE. Each entry is a pattern-level lead: a match is a candidate until a source-to-sink path is traced. cvss_hint is a typical CVSS v4.0 base vector for the weakness, to adjust per finding. tools maps rules from other scanners (tool:rule) to the entry. OWASP categories are the 2025 Top 10.",
  "owasp_2025": {
   "A01": "A01:2025 Broken Access Control",
@@ -318,7 +318,8 @@
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
    "tools": [
     "bandit:B202"
-   ]
+   ],
+   "suppress_above": "(?i)\\b(?:validate|check|verify|ensure|assert|safe|sanit\\w*|filter)_?\\w*(?:member|path|name|entr|archive|extract|tar|zip)\\w*\\s*\\(|\\bis_relative_to\\s*\\(|\\bos\\.path\\.commonpath\\s*\\("
   },
   {
    "id": "PY-SSRF",
@@ -1825,7 +1826,9 @@
    "cvss_hint": "CVSS:4.0/AV:L/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
    "tools": [
     "clippy:undocumented_unsafe_blocks"
-   ]
+   ],
+   "suppress_in_test_code": true,
+   "group_ffi_safety": true
   },
   {
    "id": "RUST-RAW-SLICE",
@@ -1837,7 +1840,8 @@
    "regex": "\\bfrom_raw_parts(_mut)?\\s*\\(",
    "fix": "Derive the length from the real allocation and validate the pointer is non-null and aligned; prefer safe slicing or bytemuck.",
    "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
-   "tools": []
+   "tools": [],
+   "suppress_in_test_code": true
   },
   {
    "id": "RUST-TRANSMUTE",
@@ -1849,7 +1853,8 @@
    "regex": "\\btransmute(_copy)?\\s*(::\\s*<[^>]*>)?\\s*\\(",
    "fix": "Use safe conversions (From/TryFrom, to_ne_bytes/from_ne_bytes, validated pointer casts); transmute must uphold the type's validity invariants.",
    "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
-   "tools": []
+   "tools": [],
+   "suppress_in_test_code": true
   },
   {
    "id": "RUST-SET-LEN",
@@ -1861,7 +1866,8 @@
    "regex": "\\.set_len\\s*\\(",
    "fix": "Only call set_len after that many elements are initialised; prefer resize/extend or spare_capacity_mut with MaybeUninit.",
    "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:H/SC:N/SI:N/SA:N",
-   "tools": []
+   "tools": [],
+   "suppress_in_test_code": true
   },
   {
    "id": "RUST-INT-TRUNCATION",
@@ -1875,7 +1881,9 @@
    "window": 2,
    "fix": "Use try_into()/TryFrom for narrowing conversions and checked_add/checked_mul for size arithmetic; reject values that do not fit.",
    "cvss_hint": "CVSS:4.0/AV:L/AC:H/AT:P/PR:N/UI:N/VC:L/VI:L/VA:H/SC:N/SI:N/SA:N",
-   "tools": []
+   "tools": [],
+   "suppress_in_test_code": true,
+   "bounded_cast": true
   },
   {
    "id": "RUST-CMD",
@@ -1887,7 +1895,8 @@
    "regex": "\\bCommand::new\\s*\\(|\\.(arg|args)\\s*\\(\\s*&?\\s*format!",
    "fix": "Pass each argument as a separate .arg() value, never a shell string; validate any interpolated input and avoid sh -c.",
    "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
-   "tools": []
+   "tools": [],
+   "suppress_in_test_code": true
   },
   {
    "id": "RUST-SYMLINK-TOCTOU",
@@ -1899,7 +1908,8 @@
    "regex": "\\bfs::(remove_dir_all|rename|hard_link|read_link)\\s*\\(|\\b(symlink|symlink_file|symlink_dir)\\s*\\(|\\.(read_link|symlink_metadata)\\s*\\(",
    "fix": "Open with O_NOFOLLOW or the *at syscalls, check metadata on the opened fd, or canonicalize and re-check the result stays under a trusted base directory.",
    "cvss_hint": "CVSS:4.0/AV:L/AC:H/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
-   "tools": []
+   "tools": [],
+   "suppress_in_test_code": true
   },
   {
    "id": "RUST-UNWRAP-INPUT",
@@ -1911,6 +1921,51 @@
    "regex": "(?i)(env::args\\s*\\(\\s*\\)|\\bargs\\s*\\(\\s*\\)|\\bargv\\b|stdin\\s*\\(\\s*\\)|read_line|read_to_string|from_str|\\.parse\\s*\\(\\s*\\))[^;]*\\.(unwrap|expect)\\s*\\(",
    "fix": "Handle the Result/Option (match, the ? operator, unwrap_or) and exit with a diagnostic instead of panicking on bad input.",
    "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:L/SC:N/SI:N/SA:N",
+   "tools": [],
+   "suppress_in_test_code": true
+  },
+  {
+   "id": "RUST-SEARCH-PATH-CWD",
+   "pack": "rust",
+   "cwe": "CWE-427",
+   "owasp": "A08:2025 Software or Data Integrity Failures",
+   "category": "language_specific",
+   "title": "Executable or library looked up under the current working directory (uncontrolled search path): CWE-427",
+   "regex": "(?<![.\\w])(?:std::)?(?:env::)?current_dir\\s*\\(\\s*\\)",
+   "require_near": "Command::new|Library::(?:new|open)|LoadLibrary|dlopen|\\.(?:exe|dll|so|dylib)\\b|\\bplugins?\\b|\\bbin\\b",
+   "window": 8,
+   "suppress_in_test_code": true,
+   "fix": "Resolve helpers and plugins from the executable's own directory (std::env::current_exe), a configured absolute path or the system search path, never the working directory: whoever controls the folder the tool is started in (a cloned repository, a download folder) can plant the file.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "RUST-SEARCH-PATH-RELATIVE",
+   "pack": "rust",
+   "cwe": "CWE-427",
+   "owasp": "A08:2025 Software or Data Integrity Failures",
+   "category": "language_specific",
+   "title": "Executable or library loaded from a relative path (resolved against the working directory): CWE-427",
+   "regex": "(?:Library::(?:new|open)|Command::new|LoadLibrary\\w*|dlopen)\\s*\\(\\s*&?\\s*r?#*\"(?:\\.{1,2}[/\\\\]|[\\w-][\\w.-]*[/\\\\])|\"(?:\\.{1,2}[/\\\\]|[\\w-][\\w.-]*[/\\\\])[^\"\\s:]*\\.(?:dll|so|dylib|exe)(?:\\.\\d+)*\"",
+   "require_file": "Library::|LoadLibrary|dlopen|Command::new|libloading",
+   "suppress_in_test_code": true,
+   "fix": "Build the path from the executable's directory (std::env::current_exe()?.parent()) or a configured absolute path; a relative path is resolved against whatever directory the program is started in.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "RUST-DLL-SEARCH-ORDER",
+   "pack": "rust",
+   "cwe": "CWE-427",
+   "owasp": "A08:2025 Software or Data Integrity Failures",
+   "category": "language_specific",
+   "title": "Windows DLL loaded by bare name or with the standard search order (application folder, PATH, working directory): CWE-427",
+   "regex": "\\bLoadLibrary(?:Ex)?[AW]?\\s*\\(|Library::(?:new|open)\\s*\\(\\s*r?#*\"[^\"/\\\\]+\\.dll\"",
+   "suppress_near": "LOAD_LIBRARY_SEARCH_(?:SYSTEM32|APPLICATION_DIR|DEFAULT_DIRS|USER_DIRS|DLL_LOAD_DIR)|SetDefaultDllDirectories|load_with_flags",
+   "window": 4,
+   "suppress_in_test_code": true,
+   "fix": "Load with an absolute path, or with LOAD_LIBRARY_SEARCH_APPLICATION_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32 (libloading::os::windows::Library::load_with_flags), and call SetDefaultDllDirectories early.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
    "tools": []
   },
   {
@@ -1944,7 +1999,8 @@
    "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N",
    "tools": [
     "zizmor:artipacked"
-   ]
+   ],
+   "gha_read_only_token": true
   },
   {
    "id": "GHA-EXPR-INJECTION",

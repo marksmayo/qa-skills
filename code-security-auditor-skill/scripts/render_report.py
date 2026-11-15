@@ -4,9 +4,9 @@ optionally export the findings as SARIF for code-scanning dashboards.
 
     python render_report.py security_audit.json [--color auto|always|never] [--brief] [--sarif findings.sarif]
 
---brief prints the summary, the ranked table and dependencies without per-finding detail,
-collapses tools that did not apply into one line, and counts dismissed candidates by reason
-instead of listing each one. Findings found by review (source: agent) are labelled "found by
+--brief prints the summary, the ranked table and dependencies without per-finding detail, the
+tools as one line per status, observations by title, the first three limitations, and counts
+dismissed candidates by reason instead of listing each one. Findings found by review (source: agent) are labelled "found by
 review". With --sarif only the SARIF file is written (and a one-line note printed); the report
 itself is not printed.
 The SARIF export gives each rule its CWE tags and a security-severity (the CVSS v4.0 score), which
@@ -44,16 +44,24 @@ def paint(text: str, code: str, enabled: bool) -> str:
 def primary(f: dict) -> dict:
     return next((l for l in f['locations'] if l['role'] in ('sink', 'config')), f['locations'][0])
 
+FILE_REF = re.compile(r'(?:[\w.-]+/)*[\w.-]+\.(?:py|pyi|rs|js|mjs|cjs|ts|tsx|jsx|go|rb|php|java|kt|kts|cs|swift|c|h|cc|cpp|hpp|'
+                      r'ya?ml|json|toml|md|html?|txt|sh|ps1|lock|cfg|ini|xml|gradle|tf|bicep|sql|vue|svelte)(?::\d+(?:-\d+)?)?\b'
+                      r'|[\w./\\-]+:\d+(?:-\d+)?\b')
+
 def reason_group(reason: str) -> str:
     """A short key for grouping dismissals: the reason up to its first clause, without file:line references.
 
     A reason that opens with a file reference is grouped on what follows it, and a colon only ends the clause when
-    at least three words come before it ("secure: false is a form-field option" stays whole)."""
+    at least three words come before it ("secure: false is a form-field option" stays whole). Only real file
+    references become <file> (a path with a source or config extension, or anything with a :line), so 0.0..=1.0 and
+    crypto/rand stay as written; a parenthetical aside is dropped whole, and code such as #[cfg(test)] is kept."""
     text = re.sub(r'`[^`]*`\s*', '', reason)  # a quoted code fragment (`rt.Get("output")`) is not the reason
-    text = re.sub(r'[\w./-]+\.\w+(:\d+)?', '<file>', text)
+    text = FILE_REF.sub('<file>', text)
     text = re.sub(r'^(?:<file>[\s,:;-]*)+', '', text)
     text = re.sub(r'(?i)^(?:here|there|this|it|that|which)\s+(?:is|uses|calls|reads|has)\s+', '', text)
-    head = re.split(r'\.\s|;|\(| - ', text, maxsplit=1)[0]
+    for _ in range(3):  # " (an aside)", nested ones too; #[cfg(test)] has no space before its bracket
+        text = re.sub(r'\s\([^()]*\)', '', text)
+    head = re.split(r'\.\s|;| - ', text, maxsplit=1)[0]
     before, colon, _ = head.partition(': ')
     if colon and len(before.split()) >= 3:
         head = before
@@ -111,15 +119,15 @@ def main() -> int:
     w(f"Verification: {vt}")
     w('')
     w(P('## Tools', BOLD))
-    na = [t for t in d['tools'] if t['status'] == 'not_applicable'] if args.brief else []
-    for t in d['tools']:
-        if t in na:
-            continue
+    if args.brief:  # one line per status
+        for st in ('ran', 'errored', 'not_run', 'not_applicable'):
+            names = [t['name'] for t in d['tools'] if t['status'] == st]
+            if names:
+                w(f"- {P(st.replace('_', ' '), TOOL_STYLE[st])}: {', '.join(names)}")
+    for t in ([] if args.brief else d['tools']):
         extra = t.get('version') or ''
         why = f" - {t['reason']}" if t.get('reason') else ''
         w(f"- {t['name']} {extra} [{P(t['status'], TOOL_STYLE[t['status']])}]{why}")
-    if na:
-        w(P(f"- not applicable: {', '.join(t['name'] for t in na)}", DIM))
     w('')
     w(P('## Findings (ranked)', BOLD))
     if not d['findings']:
@@ -218,6 +226,9 @@ def main() -> int:
         w('')
         w(P('## Observations', BOLD))
         for o in d['observations']:
+            if args.brief:
+                w(f"- {o['id']} {o['title']} ({o['file']}:{o['line']})")
+                continue
             w(f"- {o['id']} {o['title']} ({o['file']}:{o['line']}{', ' + ', '.join(o['cwe']) if o.get('cwe') else ''}): {o['note']}"
               + (f" (evidence: {o['evidence']})" if o.get('evidence') else ''))
     dismissed = [t for t in d['triage'] if t['decision'] == 'dismissed']
@@ -244,8 +255,11 @@ def main() -> int:
         w(P(f"- Not reviewed: {n['area']} - {n['reason']}", YELLOW))
     w('')
     w(P('## Limitations', BOLD))
-    for l in d['limitations']:
+    shown = d['limitations'][:3] if args.brief else d['limitations']
+    for l in shown:
         w(f"- {l}")
+    if len(shown) < len(d['limitations']):
+        w(P(f"- {len(d['limitations']) - len(shown)} more limitation(s) in the full report", DIM))
     if args.sarif:
         args.sarif.write_text(json.dumps(to_sarif(d), indent=2) + '\n', encoding='utf-8')
         print(f"SARIF ({len(d['findings'])} result(s)) -> {args.sarif}")

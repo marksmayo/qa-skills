@@ -96,6 +96,12 @@ def tool_rows(scanners: dict | None, cands: dict, recon: dict) -> list[dict]:
         if t.get('covers') and t['area'] == 'dependencies':  # which lockfiles this tool read (or would have)
             shown = ', '.join(t['covers'][:4]) + (f' and {len(t["covers"]) - 4} more' if len(t['covers']) > 4 else '')
             row['config'] = (row.get('config') + '; ' if row.get('config') else '') + f'lockfiles: {shown}'
+        if t.get('advisory_db'):  # cargo-audit: the RustSec database it read (a stale offline copy belongs in limitations)
+            db = t['advisory_db']
+            row['config'] = (row.get('config') + '; ' if row.get('config') else '') + \
+                f"RustSec database: {db.get('advisories')} advisories, last updated {db.get('last_updated') or 'unknown'}"
+        if t.get('stderr'):  # e.g. cargo-audit's yanked check, which needs the crates.io index
+            row['reason'] = '; '.join(([row['reason']] if row.get('reason') else []) + t['stderr'][:2])
         rows.append({k: v for k, v in row.items() if v is not None or k in ('version', 'reason')})
     for t in cands.get('tools', []):
         if t['tool'] == 'scan_pitfalls':
@@ -119,7 +125,7 @@ def dependency(x: dict) -> dict:
     out = {'id': x['id'], 'ecosystem': x.get('ecosystem') or 'unknown', 'package': x['package'], 'version': str(x.get('version') or '?'),
            'advisory': x['advisory'], 'aliases': x.get('aliases') or [], 'fixed_in': x.get('fixed_in') or [],
            'summary': x.get('summary') or '', 'reachable': 'unknown'}
-    for k in ('range', 'via'):
+    for k in ('range', 'via', 'kind'):
         if x.get(k):
             out[k] = x[k]
     if x.get('dev') is not None:
@@ -182,7 +188,7 @@ def seed(recon: dict, cands: dict, scanners: dict | None, repo: Path | None) -> 
     not_ran = [t['name'] for t in tools if t['status'] in ('not_run', 'errored')]
     stores = list(OrderedDict((f"{s['kind']} ({s['file']}:{s['line']})", None) for s in recon.get('data_stores') or []))
     d = {
-        'schema_version': '1.5',
+        'schema_version': '1.6',
         'skill': {'name': 'code-security-auditor', 'version': skill_version()},
         'sensitive': True,
         'notice': NOTICE,
@@ -203,7 +209,9 @@ def seed(recon: dict, cands: dict, scanners: dict | None, repo: Path | None) -> 
         'tools': tools,
         'verification': {'requested': False, 'permitted': False, 'permission': None, 'target': None, 'target_kind': 'none'},
         'triage': [{'candidate': c['id'], 'decision': 'dismissed',
-                    'reason': f"{TODO}: promote, observe or dismiss {c.get('file')}:{c.get('line')} ({', '.join(c.get('pitfall_ids') or c.get('cwe') or [c.get('message') or 'candidate'])[:80]})"}
+                    'reason': f"{TODO}: promote, observe or dismiss {c.get('file')}:{c.get('line')} ({', '.join(c.get('pitfall_ids') or c.get('cwe') or [c.get('message') or 'candidate'])[:80]})"
+                              + (f"; grouped with lines {', '.join(str(x) for x in c['grouped_lines'][1:])}, confidence {c.get('confidence')}"
+                                 if len(c.get('grouped_lines') or []) > 1 else '')}
                    for c in cands.get('candidates', [])]
                   + [{'candidate': s['id'], 'decision': 'dismissed',
                       'reason': f"{TODO}: {s['type']} at {s.get('file')}:{s.get('line') or 'history ' + ','.join(s.get('history_commits') or [])}; "
@@ -224,8 +232,13 @@ def seed(recon: dict, cands: dict, scanners: dict | None, repo: Path | None) -> 
     }
     adv = d['dependency_advisories']
     if adv['status'] != 'assessed' and TODO not in (adv.get('reason') or ''):
-        d['limitations'].append(f"Dependency advisories were {adv['status'].replace('_', ' ')}: {adv['reason']}. "
+        said = 'only partly assessed' if adv['status'] == 'partial' else adv['status'].replace('_', ' ')
+        d['limitations'].append(f"Dependency advisories were {said}: {adv['reason']}. "
                                 'This is not the same as no vulnerable dependencies.')
+    for t in (scanners or {}).get('tools', []):  # an offline advisory database is only as current as its last update
+        if t.get('advisory_db') and t.get('status') == 'ran':
+            d['limitations'].append(f"{t['name']} read a local RustSec database (last updated "
+                                    f"{t['advisory_db'].get('last_updated') or 'unknown'}); advisories published since are not covered.")
     for s in recon.get('skipped_data_dirs') or []:  # data trees pruned by recon, the pattern scan and the secret scan
         d['limitations'].append(f"{s['dir']}/ was not read by recon, the pattern scan or the secret scan ({s['reason']}); "
                                 'a secret or code placed there was not checked.')
