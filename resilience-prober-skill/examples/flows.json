@@ -3,6 +3,7 @@
   "authorised_by": null,
   "allow_form_submission": true,
   "request_budget": 3000,
+  "requests_per_load": 10,
   "app_root": "#app",
   "viewport": "1280x800",
   "indicators": {"boundary_selectors": [".route-error"]},
