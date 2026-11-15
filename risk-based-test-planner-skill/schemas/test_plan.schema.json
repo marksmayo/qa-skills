@@ -87,7 +87,7 @@
             "type": "array", "minItems": 1,
             "items": {"type": "object", "required": ["type", "why"],
                       "properties": {"type": {"enum": ["unit", "integration", "contract", "journey", "exploratory", "performance", "accessibility",
-                                                       "security", "mutation", "regression", "smoke", "visual", "data"]},
+                                                       "security", "mutation", "regression", "smoke", "visual", "data", "resilience", "privacy"]},
                                      "owner_skill": {"type": ["string", "null"]}, "why": {"type": "string", "minLength": 10}}}
           },
           "effort_sessions": {"type": ["integer", "null"], "minimum": 0},

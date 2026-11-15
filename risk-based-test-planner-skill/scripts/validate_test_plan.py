@@ -228,6 +228,12 @@ def check(plan: dict, risk: dict, inputs: dict) -> list[str]:
         if not re.search(r'journey', said, re.I):
             errs.append('the risk file warns that UI impact rests on surface patterns alone (no journey map); the headline, '
                         'an assumption or an open question must say so')
+    # A repository with no tests: test weakness is 5 everywhere and ranks nothing, so the plan must say so.
+    if any(str(x).startswith(score_risk.NO_TESTS) for x in risk.get('warnings') or []):
+        said = json.dumps([plan['summary'].get('headline', ''), plan['assumptions'], plan['open_questions']])
+        if not re.search(r'\bno (?:automated )?tests?\b|\bwithout (?:any )?tests\b|\bno test (?:files|suite)\b', said, re.I):
+            errs.append('the risk file warns that the repository has no test files (test weakness ranks nothing); the '
+                        'headline, an assumption or an open question must say there are no tests')
     # When no area has journey criticality or reach assessed, impact is the surface factor alone and the ranking is a
     # ranking by surface patterns: the headline itself must say so (an assumption is not enough).
     surface_only = plan['areas'] and all(a['factors'][k]['status'] == 'not_assessed'
@@ -278,7 +284,42 @@ def load_inputs(specs: list[str]) -> dict:
     return out
 
 
+def self_test() -> int:
+    """Negative and positive cases on the example plan: a risk file warning that the repository has no tests must be
+    acknowledged by the plan, and resilience and privacy are test types."""
+    ex = HERE.parent / 'examples'
+    plan = json.loads((ex / 'test_plan.example.json').read_text(encoding='utf-8'))
+    risk = json.loads((ex / 'run' / 'risk.json').read_text(encoding='utf-8'))
+    inputs = load_inputs([f'security={ex / "inputs" / "security_audit.json"}'])
+    schema = json.loads(SCHEMA.read_text(encoding='utf-8'))
+    bad = []
+    if check(plan, risk, inputs):
+        bad.append(f'the example plan should be valid: {check(plan, risk, inputs)[:3]}')
+    no_tests = {**risk, 'warnings': list(risk.get('warnings') or []) + [score_risk.no_tests_warning([]) or '']}
+    errs = check(plan, no_tests, inputs)
+    if not any('no test' in e for e in errs):
+        bad.append(f'a plan that never says the repository has no tests should fail when risk.json warns so (got {errs[:3]})')
+    said = json.loads(json.dumps(plan))
+    said['assumptions'].append('The repository has no tests and no CI, so test weakness ranks nothing; the first '
+                               'sessions write the tests the High areas need.')
+    errs = check(said, no_tests, inputs)
+    if any('no test' in e for e in errs):
+        bad.append(f'a plan that says the repository has no tests should pass that check (got {errs[:3]})')
+    typed = json.loads(json.dumps(plan))
+    typed['strategy'][0]['test_types'] += [{'type': 'resilience', 'owner_skill': 'resilience-prober', 'why': 'offline and slow-network behaviour of the flow'},
+                                           {'type': 'privacy', 'owner_skill': 'privacy-flow-auditor', 'why': 'what third parties get before consent'}]
+    errs = schema_errors(typed, schema)
+    if errs:
+        bad.append(f'resilience and privacy should be test types (got {errs[:3]})')
+    for b in bad:
+        print('FAIL ' + b)
+    print(f'validate_test_plan self-test: {4 - len(bad)} passed, {len(bad)} failed')
+    return 1 if bad else 0
+
+
 def main(argv=None) -> int:
+    if '--self-test' in (sys.argv[1:] if argv is None else argv):
+        return self_test()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('plan', type=Path)
     ap.add_argument('--risk', type=Path, required=True)
