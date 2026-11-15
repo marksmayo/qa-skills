@@ -444,6 +444,10 @@ def check(rep: dict) -> tuple[list[str], list[str]]:
     if execution == 'no_tests' and not has('recent_execution'):
         errs.append('execution no_tests needs the discovery run that found no tests as recent execution results in '
                     'the evidence inventory')
+    if execution == 'no_tests' and inv.get('test_source', 'missing') != 'missing':
+        errs.append(f'execution no_tests but test_source is {inv["test_source"]}: discovery found no tests, so test '
+                    f'source is missing (say in details that the absence was verified); if test files exist that '
+                    f'discovery did not collect, the execution is not_executable or the discovery was wrong')
     if execution in STATIC and head['overall_confidence'] == 'high':
         errs.append('overall confidence cannot be high without execution evidence')
     errs += execution_errors(meta)
@@ -761,6 +765,12 @@ def self_test() -> int:
              lambda r: next(d for d in r['dimensions'] if d['id'] == 'reliability').update(
                  score=5, confidence='medium', evidence_level='verified', evidence=['x'], finding='Reliable.'),
              'reliability'),
+            ('no_tests with test source available',
+             lambda r: next(e for e in r['evidence_inventory'] if e['kind'] == 'test_source').update(status='available'),
+             'no_tests but test_source'),
+            ('no_tests with test source partial',
+             lambda r: next(e for e in r['evidence_inventory'] if e['kind'] == 'test_source').update(status='partial'),
+             'no_tests but test_source'),
             ('no_tests with coverage above 1',
              lambda r: next(d for d in r['dimensions'] if d['id'] == 'coverage').update(score=3), 'coverage')):
         rep = copy.deepcopy(none)
