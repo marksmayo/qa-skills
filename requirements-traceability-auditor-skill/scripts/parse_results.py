@@ -37,8 +37,11 @@ build or set up (gotestsum's TestMain case with an empty classname) becomes `<im
 error case with the `build_failed` signal, never a failed test named TestMain.
 
 Rust: `--libtest FILE` (or parse_libtest / libtest_to_junit) reads `cargo test` output, libtest's text format or
-its `--format json` lines. Ids are `<target>::<path::name>`, the target named from the test binary in cargo's
-`Running` line (tides_core, a bin's name, an integration test's file stem; `doctest:<crate>` for doc tests); a failed
+its `--format json` lines. Ids are `<target>::<path::name>`, the target found from cargo's `Running <source>
+(<binary>)` line: the binary's file name is the same for a package's lib and its same-named bin (dashes made
+underscores), so the source path decides (a lib for src/lib.rs, a bin for src/main.rs and src/bin/, an integration
+test's file stem with its dashes), and with `--cargo-repo` (or a Cargo project at `--files-root`) the target names are
+cargo_project.py's, so runtime ids equal its static ids (`doctest:<crate>` for doc tests); a failed
 test carries its panic message and the panic's file, an assertion panic is `assertion` and any other panic `error`;
 a test binary that died before its summary line becomes `<target>::(crashed)`, an error case with the `crash`
 signal. nextest_target(binary_id) maps a cargo-nextest binary id to the same target name.
@@ -49,7 +52,7 @@ from __future__ import annotations
 import argparse, hashlib, json, os, re, sys
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 EXCERPT = 600
 ASSERTION_RX = re.compile(r'AssertionError|AssertError|assert\s|expect\(|Expected|expected .* (to|but)|toBe|toEqual|toHave|'
@@ -489,11 +492,75 @@ LT_ASSERT = re.compile(r'assertion(?: `[^`]*`)? failed|assert(?:_eq|_ne)?!|did n
                        r'left: .*\n\s*right:', re.I)
 
 
+def cargo_model(repo) -> dict | None:
+    """cargo_project.read_cargo(repo) when cargo_project.py sits beside this script and repo holds a Cargo.toml."""
+    if not repo or not (Path(repo) / 'Cargo.toml').is_file():
+        return None
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import cargo_project
+    except ImportError:
+        return None
+    try:
+        return cargo_project.read_cargo(Path(repo))
+    except Exception:   # noqa: BLE001 - an unreadable project leaves the ids as the output names them
+        return None
+
+
 def libtest_target(binary: str) -> str:
     """The cargo target a libtest binary belongs to: target/debug/deps/tides_core-1a2b..(.exe) -> tides_core."""
     name = re.split(r'[\\/]', binary.strip().strip('`'))[-1]
     name = re.sub(r'\.exe$', '', name, flags=re.I)
     return re.sub(r'-[0-9a-f]{8,}$', '', name)
+
+
+def _norm_target(name: str) -> str:
+    return (name or '').replace('-', '_')
+
+
+def _crate_local(path: str, cdir: str) -> str:
+    """A target path relative to its package directory (cargo metadata gives it relative to the repository)."""
+    path = (path or '').replace('\\', '/')
+    cdir = (cdir or '.').replace('\\', '/').strip('/')
+    return path[len(cdir) + 1:] if cdir not in ('', '.') and path.startswith(cdir + '/') else path
+
+
+def _src_kind(src: str, unittests: bool) -> str | None:
+    if src == 'src/lib.rs':
+        return 'lib'
+    if src == 'src/main.rs' or src.startswith('src/bin/'):
+        return 'bin'
+    for folder, kind in (('tests/', 'test'), ('benches/', 'bench'), ('examples/', 'example')):
+        if src.startswith(folder):
+            return kind
+    return None if unittests else 'test'
+
+
+def libtest_binary(src: str, binary: str, cargo: dict | None = None, unittests: bool = False) -> dict:
+    """What a cargo `Running <src> (<binary>)` line names: {target, kind, candidates}. The binary's file name is the
+    target name with dashes made underscores, the same for a package's lib and its same-named bin, so the target is
+    found from the source path cargo prints (relative to the package): through the cargo_project.read_cargo model
+    when given (its target names, so runtime ids equal the static ones; candidates lists every (crate, target) that
+    fits), else from the path itself (a bin for src/main.rs and src/bin/, an integration test's file stem with its
+    dashes)."""
+    deps = libtest_target(binary)
+    src = (src or '').replace('\\', '/').strip('`')
+    out = {'target': deps, 'kind': _src_kind(src, unittests), 'candidates': []}
+    for c in (cargo or {}).get('crates') or []:
+        for t in c.get('targets') or []:
+            if t.get('kind') == 'build' or _norm_target(t.get('name')) != deps:
+                continue
+            if _crate_local(t.get('path') or '', c.get('dir') or '.') == src:
+                out['candidates'].append((c, t))
+    if out['candidates']:
+        _, t = out['candidates'][0]
+        out['target'], out['kind'] = t['name'], t['kind']
+        return out
+    p = PurePosixPath(src)
+    stem = p.parent.name if p.name == 'main.rs' and src != 'src/main.rs' else p.stem
+    if src not in ('src/main.rs', 'src/lib.rs') and _norm_target(stem) == deps:
+        out['target'] = stem
+    return out
 
 
 def nextest_target(binary_id: str) -> str:
@@ -505,10 +572,12 @@ def nextest_target(binary_id: str) -> str:
     return rest.split('/', 1)[1] if '/' in rest else rest
 
 
-def parse_libtest(text: str, run_id: str) -> tuple[list[dict], list[str]]:
+def parse_libtest(text: str, run_id: str, cargo: dict | None = None,
+                  packages: list[str] | None = None) -> tuple[list[dict], list[str]]:
     """(cases, notes) from `cargo test` output (libtest's text format, or `--format json` lines). Ids are
-    `<target>::<path::name>`, the target named from the test binary in cargo's `Running` line (`doctest:<crate>` for
-    doc tests). A failed test carries its panic message (`---- name stdout ----`), `file` from the panic location
+    `<target>::<path::name>`, the target found from cargo's `Running <source> (<binary>)` line by libtest_binary
+    (with `cargo`, the cargo_project.read_cargo model of the project the run was in, target names are the model's, so
+    runtime ids equal cargo_project's; `doctest:<crate>` for doc tests); each case records its target_kind. A failed test carries its panic message (`---- name stdout ----`), `file` from the panic location
     (else the integration test's file), failure_type assertion for assertion panics and error for other panics. A
     test binary that died before its summary (a signal, an access violation) becomes `<target>::(crashed)`, an error
     case with the crash signal. Summary lines and compile errors are notes."""
@@ -516,6 +585,7 @@ def parse_libtest(text: str, run_id: str) -> tuple[list[dict], list[str]]:
     cases: list[dict] = []
     notes: list[str] = []
     target, tfile, expected, seen_here, ended = None, None, None, 0, True
+    tkind, bidx = None, 0
     pending = None
     stdout: dict[tuple, list[str]] = {}
     cur_out = None
@@ -525,9 +595,9 @@ def parse_libtest(text: str, run_id: str) -> tuple[list[dict], list[str]]:
         cid = f'{target or "(unknown)"}::{tname}'
         c = {'run_id': run_id, 'id': cid, 'name': tname, 'classname': target or '', 'file': file,
              'status': status, 'failure_type': ftype, 'signals': signals or [], 'message_excerpt': excerpt(message),
-             'time': None}
+             'time': None, 'target_kind': tkind}
         cases.append(c)
-        by_key[(target, tname)] = c
+        by_key[(bidx, tname)] = c
         return c
 
     def close_binary(reason: str | None = None):
@@ -542,11 +612,13 @@ def parse_libtest(text: str, run_id: str) -> tuple[list[dict], list[str]]:
         d = LT_DOC.match(s)
         if m or d:
             close_binary()
+            bidx += 1
             if m:
-                target = libtest_target(m.group(2))
+                b = libtest_binary(m.group(1), m.group(2), cargo, 'Running unittests ' in s)
+                target, tkind = b['target'], b['kind']
                 tfile = m.group(1).replace('\\', '/') if not m.group(1).startswith('src/') else None
             else:
-                target, tfile = f'doctest:{d.group(1)}', None
+                target, tfile, tkind = f'doctest:{d.group(1)}', None, 'doc'
             expected, seen_here, ended, pending, cur_out = None, 0, False, None, None
             continue
         if s.startswith('{') and '"type"' in s:
@@ -588,7 +660,7 @@ def parse_libtest(text: str, run_id: str) -> tuple[list[dict], list[str]]:
             continue
         m = re.match(r'^---- (.+?) std(out|err) ----$', s)
         if m:
-            cur_out = (target, m.group(1))
+            cur_out = (bidx, m.group(1))
             stdout.setdefault(cur_out, [])
             continue
         if cur_out is not None:
@@ -680,11 +752,11 @@ def nextest_output_to_junit(text: str) -> str:
     return '\n'.join(xml) + '\n'
 
 
-def libtest_to_junit(text: str) -> str:
+def libtest_to_junit(text: str, cargo: dict | None = None, packages: list[str] | None = None) -> str:
     """JUnit XML (one suite per test binary) from `cargo test` output, so parse_junit gives the ids parse_libtest
-    does (<target>::<path::name>)."""
+    does (<target>::<path::name>; cargo and packages as for parse_libtest)."""
     from xml.sax.saxutils import escape, quoteattr
-    cases, _ = parse_libtest(text, 'x')
+    cases, _ = parse_libtest(text, 'x', cargo, packages)
     suites: dict[str, list[dict]] = {}
     for c in cases:
         suites.setdefault(c['classname'], []).append(c)
@@ -767,6 +839,7 @@ def self_test() -> int:
     checks += go_self_checks()
     checks += playwright_windows_checks()
     checks += libtest_self_checks()
+    checks += libtest_workspace_checks()
     for name, ok, extra in checks:
         failed += not ok
         print(f"{'PASS' if ok else 'FAIL'} {name}" + ('' if ok else f'  [{extra}]'))
@@ -884,6 +957,105 @@ error: 2 targets failed:
     `-p tides-core --lib`
     `-p tides-cli --test crash`
 """
+
+# a workspace whose package `tide-log` has a lib, a bin (src/main.rs) and tests/cli.rs, and whose package `tidectl`
+# also has tests/cli.rs; cargo names both unit-test binaries tide_log-<hash> and both integration binaries cli-<hash>
+LIBTEST_WS_OUTPUT = """     Running unittests src/lib.rs (target/debug/deps/tide_log-1111111111111111)
+
+running 1 test
+test tests::opens ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/tide_log-2222222222222222)
+
+running 1 test
+test tests::parses_args ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cli.rs (target/debug/deps/cli-3333333333333333)
+
+running 2 tests
+test prints_help ... ok
+test writes_log ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/round-trip.rs (target/debug/deps/round_trip-4444444444444444)
+
+running 1 test
+test reads_back ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cli.rs (target/debug/deps/cli-5555555555555555)
+
+running 2 tests
+test prints_help ... ok
+test slow_station ... FAILED
+
+failures:
+
+---- slow_station stdout ----
+
+thread 'slow_station' panicked at crates/tidectl/tests/cli.rs:5:5:
+assertion failed: false
+
+
+failures:
+    slow_station
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tidectl --test cli`
+"""
+
+
+def _ws_target(kind, name, path):
+    return {'kind': kind, 'name': name, 'path': path}
+
+
+def _ws_test(name, target, kind):
+    return {'name': name, 'target': target, 'target_kind': kind}
+
+
+# the cargo_project.read_cargo model of that workspace, cut to what parse_libtest reads (tidectl's target paths are
+# repository-relative, as cargo metadata gives them)
+LIBTEST_WS_MODEL = {'crates': [
+    {'name': 'tide-log', 'dir': 'crates/tide-log',
+     'targets': [_ws_target('lib', 'tide_log', 'src/lib.rs'), _ws_target('bin', 'tide-log', 'src/main.rs'),
+                 _ws_target('test', 'cli', 'tests/cli.rs'), _ws_target('test', 'round-trip', 'tests/round-trip.rs')],
+     'tests': [_ws_test('tests::opens', 'tide_log', 'lib'), _ws_test('tests::parses_args', 'tide-log', 'bin'),
+               _ws_test('prints_help', 'cli', 'test'), _ws_test('writes_log', 'cli', 'test'),
+               _ws_test('reads_back', 'round-trip', 'test')]},
+    {'name': 'tidectl', 'dir': 'crates/tidectl',
+     'targets': [_ws_target('bin', 'tidectl', 'crates/tidectl/src/main.rs'),
+                 _ws_target('test', 'cli', 'crates/tidectl/tests/cli.rs')],
+     'tests': [_ws_test('prints_help', 'cli', 'test'), _ws_test('slow_station', 'cli', 'test')]}]}
+
+
+def libtest_workspace_checks() -> list:
+    """cargo test run from a workspace root: target names as cargo_project.py gives them (a bin keeps its dashes and
+    is never labelled the lib), same-named targets of two crates told apart, files relative to the repository."""
+    out = []
+    fn = globals().get('parse_libtest')
+    try:
+        cases, notes = fn(LIBTEST_WS_OUTPUT, 'W', cargo=LIBTEST_WS_MODEL)
+    except TypeError as e:
+        cases, notes = [], [repr(e)]
+    ids = {c['id'] for c in cases}
+    out.append(('libtest (workspace, model known): a bin built as deps/tide_log-<hash> from src/main.rs is the bin '
+                '`tide-log`, not the lib; the lib keeps `tide_log`; an integration test keeps its dashes',
+                {'tide_log::tests::opens', 'tide-log::tests::parses_args', 'round-trip::reads_back'} <= ids,
+                sorted(ids) or notes))
+    plain, _ = fn(LIBTEST_WS_OUTPUT, 'W')
+    by = {c['id']: c for c in plain}
+    out.append(('libtest (no model): an integration test keeps its file stem\'s dashes; a src/main.rs binary is '
+                'recorded as a bin', 'round-trip::reads_back' in by and any(
+                    c['name'] == 'tests::parses_args' and c.get('target_kind') == 'bin' for c in plain),
+                sorted((c['id'], c.get('target_kind')) for c in plain)))
+    return out
 
 
 def libtest_self_checks() -> list:
@@ -1022,6 +1194,9 @@ def main(argv=None) -> int:
                     help='`go test -json` output file(s) of this run (converted to gotestsum-shaped JUnit next to each)')
     ap.add_argument('--libtest', nargs='+', default=[], metavar='FILE',
                     help='`cargo test` output file(s) of this run (libtest text or JSON; converted to JUnit next to each)')
+    ap.add_argument('--cargo-repo', metavar='DIR',
+                    help='the Cargo project the --libtest run was in (default: --files-root when it holds a '
+                         'Cargo.toml): target names and files come from cargo_project.py, as its static ids do')
     ap.add_argument('--run-id', required=True)
     ap.add_argument('--command', required=True, help='the exact command that was run')
     ap.add_argument('--exit-code', type=int, required=True)
@@ -1037,11 +1212,12 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     if not args.junit and not args.go_json and not args.libtest:
         ap.error('give --junit, --go-json or --libtest')
+    model = cargo_model(args.cargo_repo or args.files_root) if args.libtest else None
     for g in args.libtest:
         gp = Path(g)
         if gp.exists():
             xp = gp.with_suffix('.junit.xml')
-            xp.write_text(libtest_to_junit(gp.read_text(encoding='utf-8', errors='replace')), encoding='utf-8')
+            xp.write_text(libtest_to_junit(gp.read_text(encoding='utf-8', errors='replace'), model), encoding='utf-8')
             args.junit.append(str(xp))
         else:
             args.junit.append(g)

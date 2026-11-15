@@ -1292,17 +1292,52 @@ def _split_dashdash(tokens: list[str]) -> tuple[list[str], list[str]]:
     return tokens, []
 
 
+_CARGO_MODELS: dict = {}
+
+
+def cargo_model(cwd: Path) -> dict:
+    """cargo_project.read_cargo(cwd) (cargo_project.py beside this script), read once per directory; {} without it."""
+    key = str(Path(cwd).resolve())
+    if key not in _CARGO_MODELS:
+        try:
+            import cargo_project
+            _CARGO_MODELS[key] = cargo_project.read_cargo(Path(cwd))
+        except ImportError:
+            _CARGO_MODELS[key] = {}
+    return _CARGO_MODELS[key]
+
+
 def cargo_targets(cwd: Path) -> dict[str, list[tuple[str, str]]]:
     """{target name: [(crate, kind)]} for the Cargo project at cwd (cargo_project.py beside this script)."""
-    try:
-        import cargo_project
-    except ImportError:
-        return {}
     out: dict[str, list[tuple[str, str]]] = {}
-    for c in cargo_project.read_cargo(cwd).get('crates', []):
+    for c in cargo_model(cwd).get('crates', []):
         for t in c['targets']:
             out.setdefault(t['name'], []).append((c['name'], t['kind']))
     return out
+
+
+def _cargo_candidates(model: dict, tname: str, path: str, doc: bool) -> list[dict]:
+    """The targets an id's target part may name: the exact name, else (an id written from cargo's deps file name,
+    as older runs recorded them) the name with dashes and underscores alike. A target whose static tests include
+    the id's path is preferred, so a bin's test is never re-run as the same-named lib's."""
+    norm = tname.replace('-', '_')
+    exact, loose = [], []
+    for c in model.get('crates', []):
+        static: dict[tuple, set] = {}
+        for t in c.get('tests') or []:
+            static.setdefault((t.get('target'), t.get('target_kind')), set()).add(t.get('name'))
+        for t in c['targets']:
+            if t['kind'] == 'build' or (doc and t['kind'] != 'lib'):
+                continue
+            hit = {'crate': c['name'], 'kind': t['kind'], 'name': t['name'],
+                   'has_path': path in static.get((t['name'], t['kind']), set())}
+            if t['name'] == tname:
+                exact.append(hit)
+            elif t['name'].replace('-', '_') == norm:
+                loose.append(hit)
+    pool = exact + loose
+    with_path = [h for h in pool if h['has_path']]
+    return with_path or exact or loose
 
 
 def cargo_ids(tests: list[str], cwd: Path) -> tuple[list[str], list[str], bool]:
@@ -1316,17 +1351,18 @@ def cargo_ids(tests: list[str], cwd: Path) -> tuple[list[str], list[str], bool]:
     if len(ids) != len(tests):
         raise ValueError('cargo: a mix of test ids and plain name filters in one run; run them separately or use '
                          '--isolate')
-    known = cargo_targets(cwd)
+    model = cargo_model(cwd)
     crates, sel, names = [], [], []
     for t in ids:
         target, _, path = t.partition('::')
         doc = target.startswith('doctest:')
         tname = target.split(':', 1)[1] if doc else target
-        hits = known.get(tname) or []
+        hits = _cargo_candidates(model, tname, path, doc)
         if not hits:
             raise ValueError(f'cargo: no target named {tname!r} in the Cargo project at {cwd} (ids are '
                              '<target>::<path>; cargo_project.py lists the targets)')
-        crate, kind = next(((c, k) for c, k in hits if not doc or k == 'lib'), hits[0])
+        h = hits[0]
+        crate, kind, tname = h['crate'], h['kind'], h['name']
         if crate not in crates:
             crates.append(crate)
         if doc:
@@ -1581,7 +1617,7 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
     copy_notes = []
     text_out = (out or b'').decode('utf-8', 'replace')
     if preset.get('libtest') and not args.cmd:   # cargo test: libtest's text output becomes the run's JUnit
-        junit.write_text(parse_results.libtest_to_junit(text_out), encoding='utf-8')
+        junit.write_text(parse_results.libtest_to_junit(text_out, cargo_model(cwd) or None), encoding='utf-8')
     if preset.get('tests') == 'nextest' and not args.cmd and not junit.exists():
         src, note = nextest_junit(cwd, env, _split_dashdash(shlex.split(args.runner_args or ''))[0], wall0)
         copy_notes.append(note)
@@ -1688,7 +1724,7 @@ def tests_not_run(tests: list[str], cases: list[dict], cwd: Path, prefix: str = 
 
 
 CARGO_FIXTURE = {
-    'Cargo.toml': '[workspace]\nmembers = ["gauge", "tidectl"]\nresolver = "2"\n',
+    'Cargo.toml': '[workspace]\nmembers = ["gauge", "tidectl", "tide-log", "tide-plot"]\nresolver = "2"\n',
     'gauge/Cargo.toml': '[package]\nname = "gauge"\nversion = "0.1.0"\nedition = "2021"\n',
     'gauge/src/lib.rs': ('pub fn feet(m: f64) -> f64 { m * 3.28084 }\n\n#[cfg(test)]\nmod tests {\n'
                          '    #[test]\n    fn converts() { assert!(super::feet(1.0) > 3.0); }\n'
@@ -1697,6 +1733,14 @@ CARGO_FIXTURE = {
     'tidectl/Cargo.toml': '[package]\nname = "tidectl"\nversion = "0.1.0"\nedition = "2021"\n',
     'tidectl/src/main.rs': 'fn main() {}\n',
     'tidectl/tests/cli.rs': '#[test]\nfn prints_help() {}\n\n#[test]\nfn slow_station() {}\n',
+    # a package with a lib and a bin of the same name (cargo builds both as deps/tide_log-<hash>), an integration
+    # test with a dash in its name, and a bin-only package whose name has a dash
+    'tide-log/Cargo.toml': '[package]\nname = "tide-log"\nversion = "0.1.0"\nedition = "2021"\n',
+    'tide-log/src/lib.rs': '#[cfg(test)]\nmod tests {\n    #[test]\n    fn opens() {}\n}\n',
+    'tide-log/src/main.rs': 'fn main() {}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn parses_args() {}\n}\n',
+    'tide-log/tests/round-trip.rs': '#[test]\nfn reads_back() {}\n',
+    'tide-plot/Cargo.toml': '[package]\nname = "tide-plot"\nversion = "0.1.0"\nedition = "2021"\n',
+    'tide-plot/src/main.rs': 'fn main() {}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn scales() {}\n}\n',
 }
 
 
@@ -1734,6 +1778,22 @@ def cargo_self_checks() -> list:
     cmd = try_build(mk('cargo'), ['gauge::tests::converts', 'cli::prints_help'])
     checks.append(('cargo: ids from two crates in one run are refused (use --isolate)',
                    isinstance(cmd, str) and '--isolate' in cmd, cmd))
+    base = ['cargo', 'test', '--no-fail-fast']
+    cmd = try_build(mk('cargo'), ['tide-log::tests::parses_args'])
+    checks.append(('cargo: a bin id (cargo_project\'s name, with its dash) re-runs with --bin <name>',
+                   cmd == base + ['-p', 'tide-log', '--bin', 'tide-log', '--', '--exact', 'tests::parses_args'], cmd))
+    cmd = try_build(mk('cargo'), ['tide_log::tests::parses_args'])
+    checks.append(('cargo: an older id naming a bin test by the deps file name (tide_log) re-runs the bin, not --lib',
+                   cmd == base + ['-p', 'tide-log', '--bin', 'tide-log', '--', '--exact', 'tests::parses_args'], cmd))
+    cmd = try_build(mk('cargo'), ['tide_log::tests::opens'])
+    checks.append(('cargo: the lib of a package that also has a same-named bin re-runs with --lib',
+                   cmd == base + ['-p', 'tide-log', '--lib', '--', '--exact', 'tests::opens'], cmd))
+    cmd = try_build(mk('cargo'), ['tide_plot::tests::scales'])
+    checks.append(('cargo: an older id of a dashed bin-only package (tide_plot) re-runs --bin tide-plot',
+                   cmd == base + ['-p', 'tide-plot', '--bin', 'tide-plot', '--', '--exact', 'tests::scales'], cmd))
+    cmd = try_build(mk('cargo'), ['round_trip::reads_back'])
+    checks.append(('cargo: an older id of a dashed integration test (round_trip) re-runs --test round-trip',
+                   cmd == base + ['-p', 'tide-log', '--test', 'round-trip', '--', '--exact', 'reads_back'], cmd))
     cmd = try_build(mk('nextest', 2), ['cli::prints_help', 'gauge::tests::converts'])
     checks.append(('nextest: no ci profile is required; ids become one -E filterset of binary and test',
                    isinstance(cmd, list) and '--profile' not in cmd and '-E' in cmd
@@ -1778,7 +1838,9 @@ def cargo_self_checks() -> list:
         old = {k: os.environ.get(k) for k in ('CARGO_TARGET_DIR', 'CARGO_BUILD_JOBS')}
         os.environ['CARGO_TARGET_DIR'], os.environ['CARGO_BUILD_JOBS'] = str(tgt), '1'
         want = {'gauge::tests::converts': 'passed', 'gauge::tests::rounds_badly': 'failed',
-                'gauge::tests::live_reading': 'skipped', 'cli::prints_help': 'passed', 'cli::slow_station': 'passed'}
+                'gauge::tests::live_reading': 'skipped', 'cli::prints_help': 'passed', 'cli::slow_station': 'passed',
+                'tide_log::tests::opens': 'passed', 'tide-log::tests::parses_args': 'passed',
+                'round-trip::reads_back': 'passed', 'tide-plot::tests::scales': 'passed'}
         try:
             rc = main(['--preset', 'cargo', '--cwd', str(d), '--out', str(out_dir / 'runs.json')])
             data = json.loads((out_dir / 'runs.json').read_text(encoding='utf-8'))
