@@ -1,6 +1,6 @@
 # Design: `flaky-test-hunter-skill`
 
-Status: Built (v1.5.0), see "As built" at the end. Build order: 8.
+Status: Built (v1.6.0), see "As built" at the end. Build order: 8.
 
 ## Mission
 
@@ -429,3 +429,44 @@ Agreed with the user before the build.
     invocation, `--tests-file` resolved against `--cwd`; `net_guard.py` guarding DNS and naming
     the test id; `clock_shift.py` moving `os.stat` times. Not changed: `repeat_suspects` stays
     outside the normal rate (one configuration), and the clock-skew rate is not capped.
+- **Found on a Rust workspace with Python tooling (v1.6.0)** (a Cargo workspace of several crates
+  with clap CLIs, unit tests in `#[cfg(test)]` modules, integration tests in `tests/*.rs` that launch
+  helper binaries from `tests/fixtures/`, and Python helper scripts whose tests CI runs with
+  `coverage run -m unittest`):
+  - **Rust runs per test.** The shared `cargo` preset now parses libtest's output per test and
+    `nextest` runs any profile from the right target directory, so SKILL.md drops "prefer nextest,
+    cargo emits no JUnit" and documents ids (`<target>::<path>`), `--tests` reruns, `--workers` as
+    `--test-threads`, nextest profiles, building before the first counted run (a new `Cargo.lock`
+    changes the code hash) and a scratch `CARGO_TARGET_DIR`. Rust variation recipes: `--workers 1`
+    against the default threads as the parallel lever, libtest shuffles only on nightly
+    (`RUSTUP_TOOLCHAIN=nightly`, `-Z unstable-options --shuffle-seed`), `--isolate` with ids from a
+    baseline, `TZ` and libfaketime on Linux only (`not_run` on Windows), locale not applicable.
+  - **Suites per language (schema 1.3.0).** `scan_pitfalls.py` writes `suites`: each language with
+    tests, its test files and CI gates from `detect_conventions.py`, and a test count (Rust from
+    `cargo_project.py`, doc tests apart; a static count elsewhere). Reports list them in
+    `metadata.suites` as `ran` or `not_run`; evidence completeness is variations ran × the share of
+    tests in suites that ran, so a report covering only the Python half no longer scores like one
+    covering both. The validator checks the suites against the runs' presets and, with `--smells`,
+    that every language the scan found is listed.
+  - **Smells whose tests never ran are `not_run`.** The validator refused nothing when Rust smells
+    were recorded `not_observed` with zero Rust runs; now a smell whose test has no counted run must
+    be `not_run`, and one whose test ran must not be.
+  - **`single_test_runs`.** `--isolate` runs are counted apart in the summary (1.3.0 reports) and the
+    renderer prints "N runs (S suite or batch runs, I single-test runs)".
+  - **Smells** (`data/pitfalls.json` 1.7.0): Rust unit tests in `#[cfg(test)]` modules are test code;
+    a Rust or Python smell names its function only when it is a test (a helper's smell has no test);
+    files in test directories with a `main` and no tests (helper programs under `tests/fixtures/`)
+    get only the source checks and are listed under `helper_programs`; `code_only` drops matches
+    inside string literals (a sleep in a command for a child process); `skip_if_unique_name` drops
+    `uuid4()` and `SystemTime::now()` reads that only build a unique folder or file name and never
+    reach an assertion, including inside a multi-line `format!`. New: `wall-time-assertion-rust`,
+    `wall-time-count-assertion` (Python and Rust: a lower bound on a count of samples asserted in a
+    test that runs for a fixed duration), `scratch-dir-leak-rust` (once per file; `skip_if_in_file`
+    for files that remove their folders or use `TempDir`) and `pytest-collects-helper` (a
+    module-level `def test_*` helper other code calls). On the review repository the scan went from
+    10 leads, all false, to 4, all real.
+  - **Guidance.** CI gates and the Python runner come from `detect_conventions.py`; when CI runs
+    `unittest`, the pytest preset stands in and says so.
+  - **Left to the shared files:** nothing new; this round uses phase 1's `run_tests.py` cargo and
+    nextest presets, `parse_results.parse_libtest`, `cargo_project.py` and `detect_conventions.py`'s
+    `ci_gates` and `languages`. Not changed: a Rust order variation without nightly stays `not_run`.

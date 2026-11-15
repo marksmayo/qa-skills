@@ -1,7 +1,7 @@
 ---
 name: flaky-test-hunter
 description: Find tests that pass and fail on the same code, show why with experiments, and propose a fix for each. Reruns the suite under controlled variations (repeats, reversed and shuffled order, isolation, hash seeds, parallel workers, time zone, clock, locale, CPU load), bisects order-dependent failures to their polluter, reports every rate as failures/runs with a 95% Wilson interval, separates flakes from tests that simply fail, and ranks flakes by rate, CI gate and what they hide. Never calls a test or suite "not flaky"; never proposes a retry as the fix; never changes product code.
-version: 1.5.0
+version: 1.6.0
 ---
 
 # Flaky test hunter
@@ -102,6 +102,14 @@ tests need: a variable a Makefile `export`s or a pipeline sets (`DATABASE_URL`, 
 connection string) must be given with `--env`, or the first run is a collection error. Give fake
 loopback values, never real credentials; `runs.json` records only their names.
 
+`detect_conventions.py` lists CI's test gates under `ci_gates` (`cargo llvm-cov`, `cargo test`,
+`cargo nextest`, `coverage run -m unittest`, `pytest`, `go test`) and each Python area's runner
+(`python_runner`). When CI runs Python tests with `unittest` (often `coverage run -m unittest
+discover -s tests`), the `pytest` preset still runs those `TestCase` classes and gives per-test
+JUnit: say in `metadata.run_command` that pytest stood in for unittest, set the `sys.path` the tests
+expect if they add a folder to it themselves, and resolve `pytest-collects-helper` smells (a helper
+pytest runs as a test and unittest never does) before comparing counts with CI.
+
 **Monorepos.** When packages run in separate virtual environments (as CI often does), run each
 suite with its own interpreter: start `run_tests.py` itself with that environment's Python
 (`<venv>/bin/python scripts/run_tests.py ...`), one `--cwd` and label prefix per package. Runs of
@@ -124,20 +132,75 @@ command. Files that can't be collected
 (a missing private dependency or submodule) are left out of `--tests`, listed in `limitations`,
 and their tests are not counted as run.
 
-**Rust / cargo.** `run_tests.py` has `cargo` and `nextest` presets, so Rust suites run and repeat
-like any other. Prefer `--preset nextest` (`cargo nextest run`): it writes per-case JUnit, so each
-test gets its own rate; plain `--preset cargo` (`cargo test`) emits no JUnit, so a run parses no
-cases and is flagged `errored` ("no test cases were parsed") and never counts as a pass.
-`scan_pitfalls.py` now has
-a Rust smell pack: fixed sleeps (`thread::sleep`, `sleep(Duration)`), wall-clock and
-monotonic-clock reads (`SystemTime::now`, `Instant::now`, `Local/Utc::now`, `chrono::…now()`),
-randomness (`rand::`, `thread_rng`, `rng()`, `random()`/`random_range()`, `gen_range`; a seeded
-RNG is noted as a mitigation), fixed ports, hardcoded `/tmp` paths, process-global env/cwd changes
-(`env::set_var`, `set_current_dir` — these leak across cargo's parallel test threads) and
-`static mut`. Remember cargo runs a crate's tests as threads in one process by default, so
-process-global state and `--test-threads` are first-class `shared_state` / `resource_contention`
-levers. If `scan_pitfalls.py` prints a loud warning that the repo's dominant language has no smell
-pack, treat it as "not scanned", not "clean": the tests of that language were skipped.
+**Suites per language.** `smells.json` lists every language the repository has tests in under
+`suites`: test files from `detect_conventions.py`, the CI gates that run them, and a test count
+(Rust from the Cargo model in `cargo_project.py`: `#[test]` functions in `#[cfg(test)]` modules
+and `tests/*.rs`, doc tests apart; other languages a static count of test definitions). Copy each
+into `metadata.suites` with `status` `ran` (its runs used one of its `presets`) or `not_run` with
+the reason ("cargo was not installed", "out of budget"). Evidence completeness is multiplied by the
+share of tests in suites that ran, so a report that ran only the Python half of a Rust and Python
+repository says so in its number, not only in a limitation. The validator checks every language
+the scan found is listed (pass `--smells`), and that `ran` and `not_run` agree with the runs.
+
+**Rust / cargo.** Both presets give per-test results, so Rust suites run, repeat and rank like any
+other:
+
+- `--preset cargo` runs `cargo test --no-fail-fast` and parses libtest's own output per test (no
+  extra tool). Ids are `<target>::<module path::name>`: the library's name for unit tests in
+  `#[cfg(test)]` modules (`tidecalc::tests::height_is_linear`), the file stem for an integration
+  test in `tests/` (`table::odd_nanos_pass`), `doctest:<crate>::...` for doc tests. A failing case
+  carries its panic message and file; a test binary that dies mid-run is a `<target>::(crashed)`
+  error case. A compile error, a missing target or a selection that matched nothing is an errored
+  run that says so; a run whose tests ran is never errored.
+- `--preset nextest` runs `cargo nextest run --no-fail-fast` with the default profile, or the one
+  in `--runner-args "--profile ci"` (or `NEXTEST_PROFILE`); a profile must exist in
+  `.config/nextest.toml`, so don't name `ci` unless the repository defines it. The JUnit a profile
+  configures is read from the target directory (`CARGO_TARGET_DIR`, `.cargo/config.toml`'s
+  `target-dir`, else `<workspace>/target`) only when this run wrote it; otherwise nextest's own
+  output is parsed. A missing cargo-nextest is an errored run naming it: use `--preset cargo`.
+- `--tests <id>` reruns chosen tests (`-p <crate> --lib|--bin|--test <target> -- --exact <path>`
+  for cargo, one `-E` filterset for nextest); ids from two crates in one cargo run are refused, so
+  use `--isolate` for those. `--workers N` is `--test-threads N`. `--runner-args` takes cargo
+  options, and after ` -- ` libtest options (`"--runner-args=--features cli -- --include-ignored"`;
+  write it with `=` so a value starting with `-` is not read as an option). Use the repository's CI
+  command as the guide: `smells.json`'s `suites` lists its gates (`cargo llvm-cov --workspace ...`
+  runs the same tests as `cargo test --workspace`, so pass `--workspace` and the features it uses).
+- Build before the first counted run (`cargo test --no-run`, or one uncounted run): the first build
+  writes `Cargo.lock` when the repository has none, which changes the `code_hash` between runs, and
+  compile time lands in the first run's duration. Set `CARGO_TARGET_DIR` to a scratch directory
+  when the repository's `target/` is shared or large; remove it afterwards.
+
+Rust variation recipes (record each under its kind):
+
+| Variation | Rust recipe |
+|---|---|
+| Repeat | `--repeat 20` (each run reuses the build) |
+| Parallel (`parallel`) | `--workers 1` (one thread: `--test-threads=1`) against the default thread count. cargo runs a binary's tests as threads of one process, so a test that passes serially and fails threaded is `shared_state` (env, cwd, statics) or `resource_contention` (ports, files) |
+| Order (`order`) | libtest shuffles only on nightly: `--env RUSTUP_TOOLCHAIN=nightly "--runner-args=-- -Z unstable-options --shuffle-seed 11"` (record the seed; the nightly build is a second build, so give it its own `CARGO_TARGET_DIR`). `--order` is refused for both presets, and nextest has no seeded shuffle. Without nightly, record order `not_run` ("libtest shuffle needs nightly") and lean on `--workers 1` against the default and `--isolate` |
+| Isolation (`isolate`) | `--isolate --tests <ids>` with ids from a baseline run (each id in its own `cargo test` invocation, one process per test; cargo ids are not collected for you) |
+| Load (`cpu_load`) | `--cpu-load N` against the same tests without it; timing assertions and sample counts over a fixed duration are the usual victims |
+| Time zone (`tz`) | `--tz <IANA>` sets `TZ`. chrono's and time's local zone read `TZ` on Linux and macOS; on Windows they ask the system, so record `tz` `not_run` there for Rust |
+| Clock (`clock`) | On Linux: libfaketime, `--env LD_PRELOAD=<path>/libfaketime.so.1 FAKETIME=-1d` (it moves `SystemTime::now()` and chrono's clock; build first, so cargo itself is not faked). Not available on Windows or macOS with SIP: record `not_run`. An injected clock in the code is better evidence: say if there is one |
+| Locale | Rust's standard library ignores the locale; record `not_applicable` unless the code reads it through a crate |
+
+`scan_pitfalls.py` has a Rust smell pack and reads unit tests in `#[cfg(test)]` modules as test
+code: fixed sleeps, wall-clock and monotonic-clock reads, randomness (a seeded RNG is noted as a
+mitigation), fixed ports, hardcoded `/tmp` paths and `env::temp_dir()`, process-global env/cwd
+changes (`env::set_var`, `set_current_dir`: they leak across cargo's parallel test threads),
+`static mut`, an assertion on elapsed time (`wall-time-assertion-rust`), a lower bound on a count
+of samples taken over a fixed duration (`wall-time-count-assertion`, Python too), and a scratch
+folder created and never removed in the file (`scratch-dir-leak-rust`: folders pile up across runs
+under the temp or target directory, a `resource_contention` lead). A Rust smell names a function
+only when it has a test attribute (`#[test]`, `#[tokio::test]`, `#[rstest]`); a smell in a helper
+has no test. Not counted as leads: a clock read or `uuid4()` that only makes a unique folder or
+file name and never reaches an assertion, a sleep inside a string passed to a child process, and
+helper programs in test directories (a `main` and no tests, such as `tests/fixtures/*.rs`, listed
+under `helper_programs`). `pytest-collects-helper` flags a module-level `def test_*` helper that
+other code in the file calls: pytest collects it as a test while `unittest` does not, so the two
+runners count different suites.
+
+If `scan_pitfalls.py` prints a loud warning that the repo's dominant language has no smell pack,
+treat it as "not scanned", not "clean": the tests of that language were skipped.
 
 **Go.** Use `--preset go-test` (plain `go test -json`, no extra tool) or `--preset gotestsum`
 (JUnit from gotestsum). Both run every package (`./...`) when no `--tests` are given, set
@@ -230,7 +293,7 @@ other). Typical commands:
 
 | Variation | Command |
 |---|---|
-| Order | `--order reverse`, `--order shuffle --seed 11` (pytest reorders explicit ids; Jest, Vitest and Go use their own shuffle flags) |
+| Order | `--order reverse`, `--order shuffle --seed 11` (pytest reorders explicit ids; Jest, Vitest and Go use their own shuffle flags; Rust: see the Rust recipes in Step 1) |
 | Isolation | `--isolate` (each test in its own process) |
 | Seed | `--hash-seed 0`, `--hash-seed 1` (PYTHONHASHSEED); framework seeds through `--env` |
 | Parallel | `--workers 2` on the suspects (needs pytest-xdist for pytest); the same tests serially as the "off" side |
@@ -378,7 +441,10 @@ RUBRIC.md has the causes, their experiments and the usual fixes. Account for eve
   (`checkout > applies a code`), matching the JUnit id `file::checkout > applies a code`. A smell
   with no test (a setup file, product code) may link to the flake it explains;
 - `linked_to_failure` when it sits in a consistently failing test;
-- `not_observed` when its test never failed. Say how many runs, so nobody reads it as "safe".
+- `not_observed` when its test ran and never failed. Say how many runs, so nobody reads it as "safe";
+- `not_run` when its test has no counted run (its language's suite was not run, the test was not
+  selected or was skipped). Nothing was observed, so it is never `not_observed`; the validator
+  checks both ways.
 
 A smell with a `mitigation` (Math.random stubbed, fake timers in the file or a setup file) is a
 weaker lead: check the mitigation covers the test and say so in the note. Smells are line
@@ -408,7 +474,8 @@ python scripts/render_report.py <scratch>/flaky_report.json [--brief]
 `--brief` lists only the flaky and consistently failing tests and summarises the rest in one line.
 
 `--write-summary` computes every test's counts, intervals and status from the runs, each flake's
-score and priority, and the summary counts. An "upper bound N%" in the headline must be a Wilson
+score and priority, and the summary counts (with `single_test_runs`, the `--isolate` runs of one
+test each, so "87 runs" is read as suite runs plus single-test runs). An "upper bound N%" in the headline must be a Wilson
 upper bound of the runs (`python scripts/stats.py 0 21` gives 0/21); the validator checks it, and
 checks every priority label the headline names ("ranks P2", "2 P1 flakes", "no P0") against the
 computed ranking. `--repo` checks that every proposed fix applies cleanly to the repository's files, so generate
@@ -425,11 +492,11 @@ Show the rendered report:
 
 | Field | Content |
 |---|---|
-| `metadata` | Repo, code hash, framework, run command, budget, gate and its evidence, critical tests, platform |
+| `metadata` | Repo, code hash, framework, run command, budget, gate and its evidence, critical tests, platform, `suites` (each language with tests: ran or not run, with its test count) |
 | `tools[]`, `variations[]` | Each with ran, not run or not applicable and the reason; variations name their run labels |
 | `tests[]` | Per test: runs, passes, fails, the normal rate and the worst label with Wilson bounds, `by_platform` when runs name more than one platform, and status (computed; `platform_dependent` for an all-pass/all-fail split by platform) |
 | `flakes[]` | Cause, confidence, experiment, evidence runs, polluter or enabler (`polluter.relation`), excerpts, ranking, fix and optional quarantine; `history_only` with `history_evidence` for a flake seen only in CI |
 | `consistently_failing[]` | Tests that failed every run (or every run on some platforms, with `platforms`), with what they show |
 | `static_smells[]` | Every smell from `scan_pitfalls.py` and what became of it |
-| `summary` | Headline, counts, causes, priorities, total runs, minutes and evidence completeness |
+| `summary` | Headline, counts, causes, priorities, total runs (and `single_test_runs`), minutes and evidence completeness (variations ran × share of tests in suites that ran) |
 | `limitations[]`, `files_changed[]` | What the runs couldn't show; files changed by applied fixes |
