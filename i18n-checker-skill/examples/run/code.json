@@ -101,6 +101,24 @@
    "match": "padding-left:"
   },
   {
+   "kind": "rtl_physical",
+   "file": "site/events.html",
+   "line": 12,
+   "detail": "direction arrow drawn as text; it will not mirror in RTL (use an icon flipped with :dir(rtl))",
+   "status": "possible",
+   "snippet": "<p class=\"cta\"><a href=\"#\" data-i18n=\"events.rsvp\">Reserve a seat</a><span class=\"icon\">&rarr;</span></p>",
+   "match": "&rarr;"
+  },
+  {
+   "kind": "rtl_physical",
+   "file": "site/index.html",
+   "line": 14,
+   "detail": "direction arrow drawn as text; it will not mirror in RTL (use an icon flipped with :dir(rtl))",
+   "status": "possible",
+   "snippet": "<p class=\"cta\"><a href=\"events.html\" data-i18n=\"events.rsvp\">Reserve a seat</a><span class=\"icon\">&rarr;</span></p>",
+   "match": "&rarr;"
+  },
+  {
    "kind": "fixed_width",
    "file": "site/css/site.css",
    "line": 3,

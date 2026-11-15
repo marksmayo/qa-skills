@@ -185,7 +185,7 @@ Agreed with the user before the build.
 2. **Translation memory or machine-translation comparison?** No: it would send text to an outside service.
 3. **Which RTL locale?** Arabic first, with Hebrew as a second check.
 
-## As built (v1.0.0, updated to v1.1.0)
+## As built (v1.0.0, updated to v1.1.0 and v1.2.0)
 
 Where the build differs from the design above, and what the example showed.
 
@@ -209,7 +209,7 @@ Where the build differs from the design above, and what the example showed.
 - **Not built:** YAML (Rails) resources (listed as not parsed), locale negotiation by cookie and
   Accept-Language beyond what `locale_strategy` passes, running the project's own i18n linters, and
   fixed-width checks for iOS.
-- **Example results:** 17 candidates; 13 findings (1 Critical, 5 High, 6 Medium, 1 Low), 3 dismissed
+- **Example results (v1.2.0):** 18 candidates; 14 findings (1 Critical, 5 High, 7 Medium, 1 Low), 3 dismissed
   (script-filled placeholder text), 1 needs review (de "Newsletter"); Hebrew not run (no resources).
   The pseudo-locale fitted the tab bar; real German text overflowed it.
 - **Testing:** 16 of 16 seeded report violations are caught.
@@ -245,3 +245,46 @@ Where the build differs from the design above, and what the example showed.
     not re-captured.
   - Not done: the JSX/Vue/DOM hard-coded patterns in `data/hardcoded-patterns.json` still start at a
     Latin capital; no pseudo-locale for JS message objects (the text walk is used and reported).
+- **Found on a single-locale Next.js App Router content site (no i18n library, no tests), fixed
+  (v1.2.0)**:
+  - The visually-hidden idiom (`.sr-only`: 1x1 px, `overflow: hidden`, `clip: rect(0 0 0 0)` or
+    `clip-path: inset(50%)`) was measured as truncation at runtime, which then "confirmed" the static
+    fixed-width finding on the `.sr-only` rule as High, high confidence. The page snapshot now skips
+    visually-hidden elements and their descendants, and `scan_code.py` never reads the idiom as a
+    fixed width.
+  - `public/sw.js` was listed as a Swahili resource not parsed. `discover.py` uses the shared
+    `next_app.py` service-worker model and a text check (install/fetch handlers, `importScripts`,
+    `skipWaiting`) and lists workers under `service_workers`; `sw` joined the ambiguous codes that need
+    a locale folder.
+  - JSX was read with an ASCII, capital-first regex. `scripts/jsx_text.py` is a small JSX-aware scanner
+    (a `<` opens markup only where an expression can start, so comparisons and TypeScript generics are
+    skipped): element text in any script with digits and `& · : %`, kept whole beside `{expressions}`;
+    `alt`, `aria-label`, `title`, `placeholder`, `label` attributes (string or template); Next.js
+    `metadata` and `generateMetadata()` strings; sentences interleaving text with two or more
+    expressions (concatenation, the only kind visible without a `t()` call); `{n}%`; className
+    Tailwind physical utilities and arrow glyphs. HTML and Vue get the class and arrow rules too.
+  - Formats: a locale literal passed to `toLocale*String` or `Intl.*` and hand-made percentages (an
+    `unless` pattern skips CSS percentages in style objects and class strings).
+  - Single-locale products: `merge_findings.py` writes `single_locale` (no locale ships besides the
+    source), rates hard-coded text Low (readiness) and the validator expects the new verdict
+    `readiness_only` (or `not_assessed`) with a summary saying only one locale ships. Before, such a
+    site got `issues_found` driven by heuristics alone.
+  - Validator, stricter where it accepted a dishonest report: "RTL-ready" / "supports RTL" with no RTL
+    locale checked and any "ready for localisation / any language" claim are rejected (negated claims
+    pass); vague dismissals (under 25 characters, or "false positive" / "not needed" with nothing
+    checkable) are rejected; limitations must name each not_run or excluded locale, unparsed files, a
+    text-walk pseudo-locale and the absence of resources or a second locale; summary counts (issues,
+    severities, need review, dismissed) must match. A probe report on the target (all candidates
+    dismissed as "not needed for this English site", no limitations, `none_detected`, "RTL-ready and
+    ready for localisation into any language") validated before and fails now on each count.
+  - `render_locales.py` records `pseudo.only_mode` when there is no resource set (the text walk is the
+    only mode, so untranslated text can never be assessed there); `--brief` now prints the
+    needs-review items (first 15, then a count) and the limitations.
+  - Runtime arrows now link to their static cause: the example's arrow became two `rtl_physical`
+    candidates (one per page, each confirmed by its ar run) instead of one runtime-only
+    `rtl_mirroring` candidate. The example's static outputs and candidates were regenerated; the
+    runtime run was not re-captured (the snapshot change only skips visually-hidden elements, which
+    the example has none of).
+  - Not done: proper nouns and brand names in copy are still flagged (the allow-list is generic; the
+    agent dismisses them with a reason); content kept in typed data modules is not scanned for text;
+    text in `opengraph-image` files is flagged like page text.
