@@ -66,7 +66,7 @@
           "path": {"type": "string"},
           "old_path": {"type": ["string", "null"]},
           "status": {"enum": ["added", "modified", "deleted", "renamed"]},
-          "kind": {"enum": ["source", "test", "snapshot", "shared_fixture", "global_config", "data_or_schema", "non_code", "docs", "unknown"]},
+          "kind": {"enum": ["source", "test", "snapshot", "shared_fixture", "global_config", "data_or_schema", "non_code", "docs", "bench", "unknown"]},
           "kind_reason": {"type": ["string", "null"]},
           "line_ranges": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}}},
           "renamed_from": {"type": ["string", "null"]}
@@ -116,8 +116,8 @@
           "path": {"type": "string"},
           "kind": {"enum": ["global_config", "shared_fixture", "dynamic_reference", "data_or_schema", "unmapped_source",
                             "deleted_or_renamed", "non_code", "huge_change"]},
-          "action": {"enum": ["full_suite", "package", "fixture_reach", "package_and_contract", "importers", "e2e_and_visual", "labelled"]},
-          "required_scope": {"enum": ["full_suite", "package", "fixture_reach", "package_and_contract", "importers", "e2e_and_visual"]},
+          "action": {"enum": ["full_suite", "language", "package", "fixture_reach", "package_and_contract", "importers", "e2e_and_visual", "labelled"]},
+          "required_scope": {"enum": ["full_suite", "language", "package", "fixture_reach", "package_and_contract", "importers", "e2e_and_visual"]},
           "widened_to": {"type": "array", "items": {"type": "string"}},
           "would_widen_to": {"type": "array", "items": {"type": "string"}},
           "note": {"type": "string", "minLength": 10},
@@ -140,13 +140,22 @@
             "properties": {
               "package": {"type": "string"}, "cwd": {"type": "string"}, "framework": {"type": "string"},
               "argv": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "full_suite": {"type": "boolean"},
-              "tests": {"type": "integer"}, "part": {"type": "integer"}, "parts": {"type": "integer"}
+              "tests": {"type": "integer"}, "part": {"type": "integer"}, "parts": {"type": "integer"},
+              "note": {"type": "string", "description": "a caveat about this command, such as name filters without --exact for parameterised Rust tests"}
             }
           }
         },
         "split_into": {"type": "integer", "minimum": 0},
         "max_chars": {"type": "integer"},
-        "no_runner": {"type": "array", "items": {"type": "string"}}
+        "no_runner": {"type": "array", "items": {"type": "string"}},
+        "no_runner_reasons": {"type": "object"},
+        "feature_gated": {
+          "type": "array",
+          "description": "Selected Rust tests behind a cargo feature their crate does not enable by default: the commands do not run them unless --features is added",
+          "items": {"type": "object", "required": ["crate", "feature", "tests"],
+                    "properties": {"package": {"type": "string"}, "crate": {"type": "string"}, "feature": {"type": "string"},
+                                   "tests": {"type": "array", "items": {"type": "string"}}}}
+        }
       }
     },
     "replay": {
@@ -228,6 +237,18 @@
         "recall_status": {"enum": ["measured", "not_assessed"]},
         "recall_text": {"type": ["string", "null"]},
         "sources_not_run": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "language_coverage": {
+      "type": "object",
+      "description": "Copied from the selection (1.4): languages the import graph parsed, those it has no parser for, and the changed files in them. With a warning, every language in changed_unparsed must be named in limitations.",
+      "required": ["parsed", "no_parser", "changed_unparsed", "warning"],
+      "properties": {
+        "parsed": {"type": "array", "items": {"type": "string"}},
+        "no_parser": {"type": "array", "items": {"type": "string"}},
+        "changed_unparsed": {"type": "array", "items": {"type": "string"}},
+        "changed_unparsed_files": {"type": "object"},
+        "warning": {"type": ["string", "null"]}
       }
     },
     "limitations": {"type": "array", "items": {"type": "string", "minLength": 10}},

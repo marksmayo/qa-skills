@@ -1,0 +1,38 @@
+{
+  "about": "What scripts/self_test.py expects the built-in scanners to report on this Rust fixture (all packs). Pattern hits must match exactly; grouped candidates must list their lines; the entry points must be present with these values and the count must match. Nothing here is built or run.",
+  "patterns": [
+    [".github/workflows/ci.yml", 28, "GHA-PERSISTED-CREDENTIALS"],
+    ["scripts/fetch_tables.py", 24, "PY-ARCHIVE-EXTRACT"],
+    ["src/harmonics.rs", 7, "RUST-SEARCH-PATH-RELATIVE"],
+    ["src/harmonics.rs", 20, "RUST-UNSAFE"],
+    ["src/harmonics.rs", 41, "RUST-DLL-SEARCH-ORDER"],
+    ["src/harmonics.rs", 47, "RUST-SET-LEN"],
+    ["src/harmonics.rs", 47, "RUST-UNSAFE"],
+    ["src/model.rs", 29, "RUST-INT-TRUNCATION"],
+    ["src/plotter.rs", 12, "RUST-SEARCH-PATH-CWD"],
+    ["src/plotter.rs", 23, "RUST-CMD"],
+    ["src/plotter.rs", 52, "RUST-SEARCH-PATH-RELATIVE"]
+  ],
+  "grouped": {"src/harmonics.rs:20:RUST-UNSAFE": {"grouped_lines": [20, 28, 33, 41, 56], "confidence": "low"}},
+  "entry_points": [
+    {"kind": "cli", "framework": "clap", "method": "ROOT", "path": "tidemark", "handler": "src/main.rs:12"},
+    {"kind": "cli", "framework": "clap", "method": "COMMAND", "path": "predict", "handler": "src/main.rs:28"},
+    {"kind": "cli", "framework": "clap", "method": "COMMAND", "path": "plot", "handler": "src/main.rs:33"},
+    {"kind": "config_input", "framework": "rust", "method": "ENV", "path": "TIDEMARK_PLOTTER", "handler": "src/plotter.rs:9"},
+    {"kind": "config_input", "framework": "rust", "method": "ENV", "path": "TIDEMARK_HARMONICS_LIB", "handler": "src/harmonics.rs:18"},
+    {"kind": "config_input", "framework": "rust", "method": "ENV", "path": "TIDEMARK_STATION_LIB", "handler": "src/harmonics.rs:54"},
+    {"kind": "config_input", "framework": "rust", "method": "ENV", "path": "TIDEMARK_LEGEND", "handler": "src/plotter.rs:50"}
+  ],
+  "rust_entry_point_count": 7,
+  "no_entry_points_at": ["src/main.rs:2", "src/main.rs:3", "src/plotter.rs:2", "src/harmonics.rs:2"],
+  "cli_flags": [
+    ["src/main.rs", "station", ["TIDEMARK_STATION"]],
+    ["src/main.rs", "data-dir", ["TIDEMARK_DATA_DIR"]],
+    ["src/main.rs", "hours", []],
+    ["src/main.rs", "out", []]
+  ],
+  "lead_mentions": ["TIDEMARK_PLOTTER", "TIDEMARK_HARMONICS_LIB", "current_dir", "lib/libharmonics.so", "harmonics.dll", "TIDEMARK_STATION"],
+  "no_lead_mentions": ["TIDEMARK_PLOTTER loads a config file"],
+  "seeded_exposure": {"src/main.rs:12": "local", "src/plotter.rs:9": "local"},
+  "dependency_lockfiles": [["Cargo.lock", "crates.io", 6]]
+}

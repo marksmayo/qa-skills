@@ -369,20 +369,20 @@ def case_prove_kill_go(tmp: Path) -> None:
 def case_prove_kill_unsupported(tmp: Path) -> None:
     """prove_kill.py refuses a test file in a language it has no runner for, before copying anything."""
     repo = tmp / 'repo'
-    (repo / 'tests').mkdir(parents=True)
-    (repo / 'src').mkdir()
-    (repo / 'src' / 'lib.rs').write_text('pub fn add(a: i32) -> i32 {\n    a + 1\n}\n', encoding='utf-8')
-    muts = write_json(tmp / 'mutants.json', {'mutants': [{'id': 'X1', 'engine': 'cargo-mutants', 'file': 'src/lib.rs',
-                                                          'line': 2, 'end_line': 2, 'original': '    a + 1',
-                                                          'mutated': '    a - 1'}]})
-    code = tmp / 't.rs'
-    code.write_text('#[test]\nfn adds() { assert_eq!(add(1), 2); }\n', encoding='utf-8')
-    res = run('prove_kill.py', '--repo', repo, '--mutants', muts, '--mutant', 'X1', '--test-file', 'tests/add.rs',
+    (repo / 'src').mkdir(parents=True)
+    (repo / 'src' / 'Add.java').write_text('class Add {\n    int add(int a) {\n        return a + 1;\n    }\n}\n',
+                                           encoding='utf-8')
+    muts = write_json(tmp / 'mutants.json', {'mutants': [{'id': 'P1', 'engine': 'pit', 'file': 'src/Add.java',
+                                                          'line': 3, 'end_line': 3, 'original': '        return a + 1;',
+                                                          'mutated': '        return a - 1;'}]})
+    code = tmp / 'AddTest.java'
+    code.write_text('@Test\nvoid adds() { assertEquals(2, new Add().add(1)); }\n', encoding='utf-8')
+    res = run('prove_kill.py', '--repo', repo, '--mutants', muts, '--mutant', 'P1', '--test-file', 'src/AddTest.java',
               '--test-code', code, '--test-name', 'adds', '--run-dir', tmp / 'run', '--out', tmp / 'proofs.json')
     assert res.returncode != 0, 'exit 0'
     text = res.stderr + res.stdout
-    assert 'Traceback' not in text and '.rs' in text and 'no runner' in text, text[-600:]
-    assert 'not run' not in text and not (tmp / 'proofs.json').exists(), 'ran a runner on a Rust test file'
+    assert 'Traceback' not in text and '.java' in text and 'no runner' in text, text[-600:]
+    assert 'not run' not in text and not (tmp / 'proofs.json').exists(), 'ran a runner on a Java test file'
     assert not (tmp / 'run').exists() or not any((tmp / 'run').iterdir()), 'wrote a scratch copy before refusing'
 
 
@@ -518,11 +518,441 @@ def case_prove_kill_collection_error(tmp: Path) -> None:
     assert r['verdict'] == 'runtime_error', f"collection error on the mutant recorded as {r['verdict']}"
 
 
+# ---------------------------------------------------------------- a Rust workspace with Python tooling
+# A synthetic tide-gauge workspace: the product is a Rust crate; Python sits in scripts/ (helpers) with
+# unittest tests that put scripts/ on sys.path, as many Rust repositories have.
+RUST_FN = '''/// Height band {i}: readings from {lo} cm count.
+pub fn band_{i}(height_cm: u32) -> bool {{
+    if height_cm >= {lo} {{
+        return true;
+    }}
+    false
+}}
+'''
+LEVELS_PY = '''def band(cm):
+    if cm >= 300:
+        return 'high'
+    return 'low'
+
+
+def describe(reading, defaults=('north', 'south')):
+    station = reading.get('station', defaults[0])
+    return station + ':' + band(reading['cm'])
+'''
+LEVELS_TEST = '''import os
+import sys
+import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
+import levels  # noqa: E402
+
+
+class LevelsTest(unittest.TestCase):
+    def test_band(self):
+        self.assertEqual(levels.band(450), 'high')
+        self.assertEqual(levels.band(10), 'low')
+
+    def test_describe(self):
+        self.assertEqual(levels.describe({'station': 'pier', 'cm': 500}), 'pier:high')
+'''
+NO_PYTEST = "raise SystemExit('pytest must not run in this repository: CI runs unittest')\n"
+
+
+def rust_tooling_repo(root: Path, rust_fns: int = 80) -> Path:
+    (root / 'crates' / 'gauge' / 'src').mkdir(parents=True)
+    (root / 'scripts').mkdir()
+    (root / 'tests').mkdir()
+    (root / 'Cargo.toml').write_text('[workspace]\nmembers = ["crates/gauge"]\nresolver = "2"\n', encoding='utf-8')
+    (root / 'crates' / 'gauge' / 'Cargo.toml').write_text('[package]\nname = "gauge"\nversion = "0.1.0"\nedition = "2021"\n',
+                                                          encoding='utf-8')
+    (root / 'crates' / 'gauge' / 'src' / 'lib.rs').write_text(
+        '\n'.join(RUST_FN.format(i=i, lo=100 + i) for i in range(rust_fns)), encoding='utf-8')
+    (root / 'scripts' / 'levels.py').write_text(LEVELS_PY, encoding='utf-8')
+    (root / 'tests' / 'test_levels.py').write_text(LEVELS_TEST, encoding='utf-8')
+    return root
+
+
+def case_detect_tools_unscripted_dominant(tmp: Path) -> None:
+    """The language with the most product lines (Rust here) has no engine that can run: detect_tools.py prints a
+    loud WARNING and records it, and says the Python it would mutate is tooling (scripts/), not the product."""
+    repo = rust_tooling_repo(tmp / 'repo')
+    res = run('detect_tools.py', repo, '--out', tmp / 'tools.json')
+    assert res.returncode == 0, res.stderr[-600:]
+    warn = [l for l in res.stderr.splitlines() if l.startswith('WARNING')]
+    assert any('Rust' in l for l in warn), res.stderr[-800:]
+    assert any('tooling' in l and 'Python' in l for l in warn), res.stderr[-800:]
+    out = json.loads((tmp / 'tools.json').read_text(encoding='utf-8'))
+    lc = out.get('language_coverage') or {}
+    assert lc.get('status') == 'unsupported_dominant' and lc.get('dominant') == 'Rust', lc
+    assert 'scripts' in json.dumps(out.get('tooling') or {}), out.get('tooling')
+
+
+def lc_report(tmp: Path) -> tuple[Path, dict, dict]:
+    """A minimal report mutating scripts/levels.py in the Rust workspace, built from normalize_results.py output."""
+    import validate_mutation_report as v
+    import run_tests
+    repo = rust_tooling_repo(tmp / 'repo')
+    line = 2
+    raw = {'engine': {'name': 'builtin', 'version': '1.3.0', 'command': 'x'}, 'ids': 'position', 'timeout_s': 10,
+           'sampled': None, 'tree': {'changed': []},
+           'mutants': [{'id': 'B1', 'file': 'scripts/levels.py', 'line': line, 'end_line': line,
+                        'operator': 'comparison_boundary', 'original': '    if cm >= 300:', 'mutated': '    if cm > 300:',
+                        'status': 'survived', 'covering_tests': ['tests/test_levels.py::LevelsTest::test_band'],
+                        'killed_by': None}]}
+    write_json(tmp / 'builtin.json', raw)
+    scope = write_json(tmp / 'scope.json', scope_for({'scripts/levels.py': [[1, 9]]}))
+    res = run('normalize_results.py', '--scope', scope, '--repo', repo, '--builtin', tmp / 'builtin.json',
+              '--out', tmp / 'mutants.json')
+    assert (tmp / 'mutants.json').exists(), res.stdout + res.stderr
+    mfile = json.loads((tmp / 'mutants.json').read_text(encoding='utf-8'))
+    _, d = go_report_fixture(tmp / 'go')
+    d = fit_schema(d)
+    m = dict(mfile['mutants'][0])
+    d['mutants'] = [m]
+    e = dict(mfile['engines'][0])
+    d['metadata']['engines'] = [e]
+    d['metadata']['code_hash'] = run_tests.code_hash(repo)
+    d['metadata']['scope'] = {'mode': 'path', 'base_ref': None, 'diff_file': None, 'paths': ['scripts/levels.py'],
+                              'files': [{'path': 'scripts/levels.py', 'ranges': [[1, 9]]}], 'excluded': []}
+    d['metadata']['coverage'] = None
+    if 'language_coverage' in mfile:
+        d['metadata']['language_coverage'] = mfile['language_coverage']
+    d['findings'] = [{'id': 'F1', 'triage': 'missing_case', 'mutant_ids': ['B1'], 'file': 'scripts/levels.py',
+                      'function': 'band', 'summary': 'No reading of exactly 300 cm.', 'reason': 'The boundary is untested.',
+                      'should_have_caught': None, 'suggestion': {'test_file': 'tests/test_levels.py', 'code': None,
+                                                                 'assertion_or_input': 'A reading of 300 cm.'},
+                      'proof_ids': [], 'criticality': 1, 'criticality_reason': 'A display band.', 'kind_factor': None,
+                      'proximity': None, 'score': None, 'priority': None}]
+    d['summary']['headline'] = 'F1: no test reads exactly 300 cm in the tide band helper.'
+    v.write_summary(d, repo)
+    return repo, d, mfile
+
+
+def case_report_language_limitation(tmp: Path) -> None:
+    """normalize_results.py records which language dominates the product and whether the mutated files are tooling;
+    the validator then requires limitations saying Rust was not mutated and that scripts/ is tooling."""
+    import validate_mutation_report as v
+    repo, d, mfile = lc_report(tmp)
+    lc = mfile.get('language_coverage') or {}
+    assert lc.get('unmutated_dominant') == 'Rust', lc
+    assert lc.get('tooling_scope_files') == ['scripts/levels.py'], lc
+    d['limitations'] = []
+    errs, _ = v.check(d, mfile, None, None, repo)
+    assert any('Rust' in e and 'limitation' in e for e in errs), errs
+    assert any('tooling' in e and 'limitation' in e for e in errs), errs
+    d['limitations'] = ['Rust, the product language, was not mutated: cargo-mutants is not installed here.',
+                        'scripts/levels.py is tooling (a helper script), not the product.']
+    errs, _ = v.check(d, mfile, None, None, repo)
+    assert not errs, errs
+
+
+def case_headline_names_p0(tmp: Path) -> None:
+    """A placeholder headline is rejected: it must name every P0 finding by id."""
+    import validate_mutation_report as v
+    repo, d = go_report_fixture(tmp)
+    d = fit_schema(d)
+    d['summary']['headline'] = 'HEADLINE PLACEHOLDER TEXT'
+    v.write_summary(d, repo)
+    assert d['findings'][0]['priority'] == 'P0', d['findings'][0]['priority']
+    errs, _ = v.check(d, None, None, None, repo)
+    assert any('headline' in e and 'F1' in e for e in errs), errs
+    d['summary']['headline'] = 'F1: no test weighs a parcel of exactly 20 kg, so the heavy band can move.'
+    errs, _ = v.check(d, None, None, None, repo)
+    assert not [e for e in errs if 'headline' in e], errs
+
+
+def case_schema_version_hint(tmp: Path) -> None:
+    """A wrong schema_version says which version to write."""
+    import validate_mutation_report as v
+    repo, d = go_report_fixture(tmp)
+    d = fit_schema(d)
+    current = d['schema_version']
+    d['schema_version'] = '1.0'
+    errs, _ = v.check(d, None, None, None, repo)
+    assert any('schema_version' in e and f'write "{current}"' in e for e in errs), errs
+
+
+def case_render_path_scope(tmp: Path) -> None:
+    """The rendered header names the paths of a path scope, not "path (path)"."""
+    import validate_mutation_report as v
+    repo, d, _ = lc_report(tmp)
+    d['limitations'] = ['Rust was not mutated.', 'scripts/levels.py is tooling.']
+    p = write_json(tmp / 'report.json', d)
+    res = run('render_report.py', p, '--color', 'never')
+    assert res.returncode == 0, res.stderr
+    head = next(l for l in res.stdout.splitlines() if l.startswith('Scope:'))
+    assert 'path (path)' not in head and 'scripts/levels.py' in head, head
+
+
+def case_path_scope_records_head(tmp: Path) -> None:
+    """path_scope.py ties the scope to the commit it read (source.head), like diff_scope.py."""
+    repo = py_shop(tmp / 'repo')
+    git = lambda *a: subprocess.run(['git', *a], cwd=repo, capture_output=True, text=True)  # noqa: E731
+    if shutil.which('git') is None:
+        raise Skip('git is not on PATH')
+    git('init', '-q')
+    git('-c', 'user.name=t', '-c', 'user.email=t@example.com', 'add', '-A')
+    git('-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-qm', 'init')
+    head = git('rev-parse', 'HEAD').stdout.strip()
+    res = run('path_scope.py', '--repo', repo, '--path', 'shop', '--out', tmp / 'scope.json')
+    assert res.returncode == 0, res.stderr
+    scope = json.loads((tmp / 'scope.json').read_text(encoding='utf-8'))
+    assert scope['source']['head'] == head, scope['source']
+
+
+def case_operator_keys_and_defaults(tmp: Path) -> None:
+    """A string used as a dict key (subscript, .get) or held in a default collection decides behaviour: it ranks as
+    a value, never as display text."""
+    import ast
+    import builtin_mutator as bm
+    tree = ast.parse(LEVELS_PY + "\n\ndef claims(c, platform):\n    return c.get('platforms', [platform])\n\n\n"
+                     "def kinds(x=('sea', 'river')):\n    return x\n")
+    ops = {}
+    for node, _rep, op in bm.candidates(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            ops[node.value] = op
+    for key in ('station', 'cm', 'platforms', 'north', 'sea', 'river'):
+        assert ops.get(key) == 'constant_string_data', (key, ops.get(key))
+    import normalize_results as nr
+    assert nr.kind_of('constant_string_data') == 'value'
+    assert nr.refine_string('constant_string', "    station = reading.get('station', 'x')") == 'constant_string_data'
+
+
+def case_builtin_budget_estimate_measured(tmp: Path) -> None:
+    """The plan's estimate counts the measured start-up of a test run (collection, conftest), not a fixed second:
+    on a suite whose start-up dominates, it is within reach of the measured per-mutant times."""
+    conftest = 'import time\n\ntime.sleep(2)\n' + PY_CONFTEST
+    repo = py_shop(tmp / 'repo', conftest=conftest)
+    (repo / 'tests' / 'test_other.py').write_text(
+        'from shop.prices import load_rates\n\n\n' +
+        ''.join(f"def test_rate_{i}():\n    assert load_rates()['tea'] == 3\n\n\n" for i in range(12)), encoding='utf-8')
+    n = len(PY_PRICES.splitlines())
+    scope = write_json(tmp / 'scope.json', scope_for({'shop/prices.py': [[10, n]]}))
+    res = run('builtin_mutator.py', '--repo', repo, '--scope', scope, '--run-dir', tmp / 'run', '--minutes', '5',
+              '--max-mutants', '4')
+    assert res.returncode == 0, res.stdout[-800:] + res.stderr[-800:]
+    out = json.loads((tmp / 'run' / 'builtin.json').read_text(encoding='utf-8'))
+    ran = [m for m in out['mutants'] if 'duration_s' in m]
+    actual = sum(m['duration_s'] for m in ran)
+    est = (out.get('estimate') or {}).get('planned_s')
+    if est is None:
+        import re
+        mm = re.search(r'est\. ([\d.]+) min', res.stdout)
+        est = float(mm.group(1)) * 60 if mm else 0.0
+    assert ran and 0.7 <= est / actual <= 1.6, f'estimate {est:.1f}s for {len(ran)} mutants that took {actual:.1f}s'
+
+
+def ut_repo(root: Path) -> Path:
+    repo = rust_tooling_repo(root, rust_fns=1)
+    (repo / 'pytest.py').write_text(NO_PYTEST, encoding='utf-8')
+    return repo
+
+
+def case_builtin_unittest_runner(tmp: Path) -> None:
+    """A unittest suite (CI runs `python -m unittest`) is run with unittest itself, never pytest: coverage per
+    TestCase method, mutants killed and survived, ids in the file::Class::method form."""
+    repo = ut_repo(tmp / 'repo')
+    scope = write_json(tmp / 'scope.json', scope_for({'scripts/levels.py': [[1, 9]]}))
+    res = run('builtin_mutator.py', '--repo', repo, '--scope', scope, '--run-dir', tmp / 'run', '--minutes', '5',
+              '--runner', 'unittest', '--unittest-args', '-s tests')
+    assert res.returncode == 0, res.stdout[-800:] + res.stderr[-800:]
+    out = json.loads((tmp / 'run' / 'builtin.json').read_text(encoding='utf-8'))
+    assert out.get('runner') == 'unittest', out.get('runner')
+    st = {(m['line'], m['operator']): m for m in out['mutants']}
+    boundary = st[(2, 'comparison_boundary')]
+    assert boundary['status'] == 'survived', boundary
+    assert boundary['covering_tests'] == ['tests/test_levels.py::LevelsTest::test_band',
+                                          'tests/test_levels.py::LevelsTest::test_describe'], boundary['covering_tests']
+    neg = st[(2, 'negate_condition')]
+    assert neg['status'] == 'killed' and neg['killed_by'].startswith('tests/test_levels.py::LevelsTest::'), neg
+    assert out['tree']['changed'] == [], out['tree']
+
+
+def case_prove_kill_unittest(tmp: Path) -> None:
+    """prove_kill.py proves a unittest TestCase method with unittest (pytest is not used)."""
+    repo = ut_repo(tmp / 'repo')
+    muts = write_json(tmp / 'mutants.json', {'mutants': [
+        {'id': 'B1', 'engine': 'builtin', 'file': 'scripts/levels.py', 'line': 2, 'end_line': 2,
+         'original': '    if cm >= 300:', 'mutated': '    if cm > 300:'}]})
+    code = tmp / 'new_test.py'
+    code.write_text("class BoundaryTest(unittest.TestCase):\n    def test_300_is_high(self):\n"
+                    "        self.assertEqual(levels.band(300), 'high')\n", encoding='utf-8')
+    res = run('prove_kill.py', '--repo', repo, '--mutants', muts, '--mutant', 'B1', '--test-file', 'tests/test_levels.py',
+              '--test-code', code, '--test-name', 'BoundaryTest.test_300_is_high', '--run-dir', tmp / 'run',
+              '--out', tmp / 'proofs.json', '--runner', 'unittest', '--unittest-args', '-s tests')
+    assert (tmp / 'proofs.json').exists(), res.stdout[-800:] + res.stderr[-800:]
+    p = json.loads((tmp / 'proofs.json').read_text(encoding='utf-8'))['proofs'][0]
+    assert p['original_run']['test_status'] == 'passed', p['original_run']
+    assert 'unittest' in p['original_run']['command'], p['original_run']['command']
+    assert p['mutants'][0]['verdict'] == 'kills', p['mutants'][0]
+    assert p['test_id'] == 'tests/test_levels.py::BoundaryTest::test_300_is_high', p['test_id']
+
+
+REPORT_PY = '''import sys
+
+
+def summary(levels):
+    high = [x for x in levels if x >= 300]
+    return f'{len(high)} high'
+
+
+if __name__ == '__main__':
+    print(summary([int(a) for a in sys.argv[1:]]))
+'''
+REPORT_TEST = '''import os
+import subprocess
+import sys
+
+HERE = os.path.dirname(__file__)
+
+
+def test_cli_prints_summary():
+    out = subprocess.run([sys.executable, os.path.join(HERE, '..', 'tools', 'report.py'), '400', '10'],
+                         capture_output=True, text=True).stdout
+    assert out.strip() == '1 high'
+'''
+
+
+def case_builtin_subprocess_only_coverage(tmp: Path) -> None:
+    """A file the tests only run as a child process has no in-process coverage: its mutants are no_coverage, with a
+    note naming the test that launches it."""
+    repo = tmp / 'repo'
+    (repo / 'tools').mkdir(parents=True)
+    (repo / 'tests').mkdir()
+    (repo / 'tools' / 'report.py').write_text(REPORT_PY, encoding='utf-8')
+    (repo / 'tests' / 'test_report.py').write_text(REPORT_TEST, encoding='utf-8')
+    scope = write_json(tmp / 'scope.json', scope_for({'tools/report.py': [[1, 10]]}))
+    res = run('builtin_mutator.py', '--repo', repo, '--scope', scope, '--run-dir', tmp / 'run', '--minutes', '2')
+    assert res.returncode == 0, res.stdout[-800:] + res.stderr[-800:]
+    out = json.loads((tmp / 'run' / 'builtin.json').read_text(encoding='utf-8'))
+    unc = [m for m in out['mutants'] if m['status'] == 'no_coverage']
+    assert unc, [(m['id'], m['status']) for m in out['mutants']]
+    assert all('tests/test_report.py' in m.get('note', '') and 'child process' in m.get('note', '') for m in unc), \
+        [m.get('note') for m in unc][:2]
+
+
+CARGO_EXAMPLE = SKILL / 'examples' / 'cargo-mutants'
+
+
+def cargo_scope(tmp: Path) -> Path:
+    return write_json(tmp / 'scope.json', scope_for({'src/lib.rs': [[1, 36]]}))
+
+
+def case_cargo_mutants_normalise(tmp: Path) -> None:
+    """cargo-mutants' outcomes.json (a synthetic recording in its format, committed under examples/cargo-mutants) is
+    normalised: statuses, operators from the genre and the replaced text, the original lines, and killed_by from the
+    mutant's log."""
+    res = run('normalize_results.py', '--scope', cargo_scope(tmp), '--repo', CARGO_EXAMPLE / 'tide-cli',
+              '--cargo-mutants', CARGO_EXAMPLE / 'mutants.out', '--out', tmp / 'mutants.json')
+    assert res.returncode == 0, res.stdout[-800:] + res.stderr[-800:]
+    data = json.loads((tmp / 'mutants.json').read_text(encoding='utf-8'))
+    e = data['engines'][0]
+    assert e['name'] == 'cargo-mutants' and e['version'] == '25.3.1' and e['run_by'] == 'external', e
+    assert e['counts'] == {'killed': 4, 'survived': 5, 'timeout': 1}, e['counts']
+    ms = data['mutants']
+    assert [m['id'] for m in ms][:2] == ['C1', 'C2'], [m['id'] for m in ms]
+    by = {(m['line'], m['mutated'].strip()): m for m in ms}
+    b = by[(5, 'if height_cm > 300 {')]
+    assert b['operator'] == 'comparison_boundary' and b['status'] == 'survived' and b['function'] == 'band', b
+    assert b['original'] == '    if height_cm >= 300 {', b['original']
+    assert 'coverage' in b.get('note', ''), b.get('note')
+    lt = by[(5, 'if height_cm < 300 {')]
+    assert lt['status'] == 'killed' and lt['killed_by'] == 'tide_cli::tests::bands', lt
+    assert by[(17, '24 * 60 + from + to')]['operator'] == 'arithmetic'
+    assert by[(23, 'pilot && height_cm > draught_cm + 50')]['operator'] == 'logical'
+    fv = [m for m in ms if m['engine_operator'] == 'FnValue']
+    assert fv and all(m['operator'] == 'return_value' and m['kind'] == 'value' for m in fv), fv[:1]
+    assert any(m['status'] == 'timeout' for m in fv)
+
+
+FAKE_CARGO = '''import shutil, sys
+from pathlib import Path
+args = sys.argv[1:]
+if args[:2] == ['mutants', '--version']:
+    print('cargo-mutants 25.3.1')
+    sys.exit(0)
+if args[:1] == ['mutants']:
+    out = Path(args[args.index('--output') + 1])
+    shutil.copytree(sys.argv[0].rsplit('fake_cargo.py', 1)[0] + 'mutants.out', out / 'mutants.out')
+    sys.exit(2)    # cargo-mutants exits 2 when some mutants were missed
+print('error: no such command', file=sys.stderr)
+sys.exit(101)
+'''
+
+
+def case_run_engine_cargo_mutants(tmp: Path) -> None:
+    """run_engine.py cargo-mutants runs cargo-mutants (here a stand-in that replays the recorded output) with the tree
+    hashed before and after and the code hash recorded, so normalize_results.py counts it as the skill's own run; a
+    missing cargo-mutants is refused with exit 2 and the install command."""
+    repo = tmp / 'tide-cli'
+    shutil.copytree(CARGO_EXAMPLE / 'tide-cli', repo)
+    fake_dir = tmp / 'fake'
+    fake_dir.mkdir()
+    shutil.copytree(CARGO_EXAMPLE / 'mutants.out', fake_dir / 'mutants.out')
+    (fake_dir / 'fake_cargo.py').write_text(FAKE_CARGO, encoding='utf-8')
+    cargo = f'"{sys.executable}" "{fake_dir / "fake_cargo.py"}"'
+    scope = cargo_scope(tmp)
+    res = run('run_engine.py', 'cargo-mutants', '--repo', repo, '--scope', scope, '--run-dir', tmp / 'run',
+              '--cargo', cargo)
+    assert res.returncode == 0, res.stdout[-800:] + res.stderr[-800:]
+    rec = json.loads((tmp / 'run' / 'cargo-mutants.run.json').read_text(encoding='utf-8'))
+    assert rec['status'] == 'ran' and rec['tree_changed'] == [] and len(rec['code_hash']) == 64, rec
+    assert '--file src/lib.rs' in rec['engine']['command'], rec['engine']['command']
+    res = run('normalize_results.py', '--scope', scope, '--repo', repo, '--cargo-mutants', tmp / 'run' / 'mutants.out',
+              '--cargo-mutants-run', tmp / 'run' / 'cargo-mutants.run.json', '--out', tmp / 'mutants.json')
+    assert res.returncode == 0, res.stdout[-800:] + res.stderr[-800:]
+    e = json.loads((tmp / 'mutants.json').read_text(encoding='utf-8'))['engines'][0]
+    assert e['run_by'] == 'skill' and e['tree_changed'] == [] and e.get('code_hash') == rec['code_hash'], e
+    (fake_dir / 'fake_cargo.py').write_text("import sys\nprint('error: no such command: `mutants`', file=sys.stderr)\n"
+                                           "sys.exit(101)\n", encoding='utf-8')
+    res = run('run_engine.py', 'cargo-mutants', '--repo', repo, '--scope', scope, '--run-dir', tmp / 'run2',
+              '--cargo', cargo)
+    assert res.returncode == 2 and 'cargo install' in res.stderr, (res.returncode, res.stderr[-400:])
+
+
+def case_prove_kill_rust(tmp: Path) -> None:
+    """prove_kill.py proves a Rust test with cargo test (run_tests.py's cargo preset ids) in a scratch copy: it
+    passes on the original and fails on the mutant; the repository is untouched."""
+    if shutil.which('cargo') is None:
+        raise Skip('cargo is not on PATH')
+    repo = tmp / 'tide-cli'
+    shutil.copytree(CARGO_EXAMPLE / 'tide-cli', repo)
+    muts = write_json(tmp / 'mutants.json', {'mutants': [
+        {'id': 'C2', 'engine': 'cargo-mutants', 'file': 'src/lib.rs', 'line': 5, 'end_line': 5,
+         'original': '    if height_cm >= 300 {', 'mutated': '    if height_cm > 300 {'}]})
+    code = tmp / 'new_test.rs'
+    code.write_text('#[test]\nfn high_from_300() {\n    assert_eq!(tide_cli::band(300), "high");\n}\n', encoding='utf-8')
+    before = (repo / 'tests' / 'crossing.rs').read_text(encoding='utf-8')
+    # a build directory shared by two proofs (as with --cargo-target-dir): the second proof's copy must not reuse the
+    # first proof's last build, which was a mutant
+    shared = Path(os.environ['CARGO_TARGET_DIR']) / 'mt-self-test' if os.environ.get('CARGO_TARGET_DIR') else \
+        tmp / 'cargo-target'
+    try:
+        for i in (1, 2):
+            res = run('prove_kill.py', '--repo', repo, '--mutants', muts, '--mutant', 'C2', '--test-file',
+                      'tests/crossing.rs', '--test-code', code, '--test-name', 'high_from_300', '--run-dir',
+                      tmp / f'run{i}', '--out', tmp / 'proofs.json', '--cargo-target-dir', shared)
+            assert (tmp / 'proofs.json').exists(), res.stdout[-1200:] + res.stderr[-1200:]
+            p = json.loads((tmp / 'proofs.json').read_text(encoding='utf-8'))['proofs'][-1]
+            assert p['original_run']['test_status'] == 'passed', (i, p['original_run'])
+            assert p['original_run']['command'].startswith('cargo test'), p['original_run']['command']
+            assert p['test_id'] == 'crossing::high_from_300', p['test_id']
+            assert p['mutants'][0]['verdict'] == 'kills', (i, p['mutants'][0])
+            assert p['repo_files_changed'] == [] and (repo / 'tests' / 'crossing.rs').read_text(encoding='utf-8') == before
+    finally:
+        shutil.rmtree(shared, ignore_errors=True)
+
+
 CASES = [case_builtin_go_engine, case_builtin_unsupported_language, case_ranges_go_only, case_mte_engine_label,
          case_gremlins_operators, case_duplicate_mutants_merged, case_proximity_go, case_proximity_unparsed,
          case_completeness_external_engine, case_prove_kill_go, case_prove_kill_unsupported,
          case_builtin_import_time_coverage, case_builtin_budget_uses_covering_tests, case_prove_kill_original_timeout,
-         case_prove_kill_default_timeout, case_prove_kill_collection_error]
+         case_prove_kill_default_timeout, case_prove_kill_collection_error,
+         case_detect_tools_unscripted_dominant, case_report_language_limitation, case_headline_names_p0,
+         case_schema_version_hint, case_render_path_scope, case_path_scope_records_head,
+         case_operator_keys_and_defaults, case_builtin_budget_estimate_measured, case_builtin_unittest_runner,
+         case_prove_kill_unittest, case_builtin_subprocess_only_coverage, case_cargo_mutants_normalise,
+         case_run_engine_cargo_mutants, case_prove_kill_rust]
 
 
 def main(argv=None) -> int:

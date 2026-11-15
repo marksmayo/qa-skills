@@ -1,7 +1,7 @@
 ---
 name: risk-based-test-planner
 description: Write a test plan for a release, sprint or change with effort spread by risk = likelihood x impact. Likelihood comes from git history (churn, fix commits, Jira bugs), complexity, the change in scope and test weakness; impact from journey criticality, money, access, personal-data, credential, destructive and public-API surfaces, and reach. Reads a changesets monorepo's release base and pending changesets, and flags breaking changes. Every factor cites its evidence and missing evidence is not_assessed, never low risk. It reads other skills' reports (journey maps, security, crash, WCAG and flaky reports) as far as their own confidence goes, allocates 90-minute sessions against a budget, names the skill or test type for each risk, and lists every area it does not test with the reason and residual risk. Never claims a release is safe.
-version: 1.7.0
+version: 1.8.0
 ---
 
 # Risk-based test planner
@@ -87,7 +87,7 @@ python scripts/score_risk.py --repo <repo> --history <run>/history.json --comple
     --scope <run>/scope.json [--release <run>/release.json] --journeys journey_map.json \
     --input security=security_audit.json [--input flaky=...] [--defects <run>/bugs.json] [--usage usage.json] \
     [--coverage coverage.out] --out <run>/risk.json
-python scripts/score_risk.py --self-test        # surface idioms, the test/product directory rule, a Go module layout
+python scripts/score_risk.py --self-test        # surface idioms, the test/product directory rule, a Go module layout, a Cargo workspace with Python scripts
 python scripts/release_scope.py --self-test     # tag shapes, changesets, breaking commits, a tagged HEAD, withdrawn releases
 python scripts/complexity.py --self-test        # Go, JavaScript and Objective-C branch counts
 ```
@@ -147,7 +147,8 @@ vendored, documentation or root tooling) is listed in `scope_outside_areas` by d
 reason, with its changed lines, and named in a warning (a 5,000-file data tree is one line): a
 release whose changes all sit outside the areas must never read as "nothing in scope changed".
 Add them to `--areas`, or say in the plan why they need no testing, and lower the plan's
-confidence until they are scored.
+confidence until they are scored. The validator checks that the headline, an assumption, an open
+question or a `not_tested` reason names each directory in `scope_outside_areas` with changed lines.
 
 **Deleted files count.** A file the scope deletes is removed behaviour (a redirect, a guard, a
 handler). Its deleted lines count in the change in scope of the area whose paths cover it (the
@@ -185,6 +186,17 @@ skipped with a note.
 Kotlin, C#, Swift, Objective-C, C and C++ are measured; code in any other language is named in a
 warning (loudly when it is most of the repository), since it gets no complexity or surface score.
 Objective-C and C files count in their areas' size, change in scope and complexity.
+Desktop and mobile UI definitions (Slint, QML, XAML, Qt Designer, GTK, Kivy, Interface Builder)
+are named in a warning with the areas holding them: nothing reads them, so judge those areas'
+impact by hand.
+
+**A second language is never root tooling.** When a language other than the areas' own holds 30%
+or more of the code's lines and most of it sits outside the default areas (Python helper scripts
+beside a Cargo workspace or a Go module), its directories become areas (`area_basis` says
+"second language: ..."). With `--areas` that leave such a language out (or only in
+`unassigned`), `risk.json` warns loudly ("a language with a large share of the code is outside
+every area") and the validator requires the plan to name the language and say why it is not
+scored.
 
 **Areas** follow the packages in a monorepo; a package with more than 40 source files is split
 by subdirectory below its source root (`services/orders/handlers`, `services/orders/store`), and
@@ -403,7 +415,10 @@ Scores:
   fetch handler, a public API or CLI entry point
   (manifest exports and bin, CLI commands), an external integration, a
   filesystem write (`symlink`, `hard_link`, `rename`, `create_dir`), a raw syscall/unsafe block,
-  or (Go) running external processes or opening a listener (`exec.Command(`, `net.Listen(`);
+  running external processes or opening a listener (Go `exec.Command(`, `net.Listen(`; Rust
+  `std::process::Command`; Python `subprocess.run`/`Popen`, `os.system`), loading native code or
+  calling foreign code (`libloading`, `dlopen`, `LoadLibrary`, `ctypes.CDLL`, `extern "C"`
+  blocks, `#[link]`);
 - 1 for none.
 
 Review the surfaces and mark any you see differently as `judged`.
@@ -420,10 +435,22 @@ pure text filters (`cat`, `cut`, `echo`) do not. Two cautions remain:
   in systems code, say so and mark the factor `judged` — do not present it as confidently
   assessed. A match can be real-but-internal (a utility removing its own temp directory calls
   `remove_dir` just as `rm` does); read the cited line before trusting the band.
-- **Tests.** Rust keeps unit tests inline (`#[cfg(test)] mod tests`, not counted as a surface)
-  and integration tests in a separate tree (`tests/**/test_<util>.rs`), which reference the
-  utility by name. Those integration tests are linked to `src/uu/<util>/` by the filename
-  convention; without it every area would look untested. Complexity for `.rs` counts `match` arms
+- **Tests.** Rust keeps unit tests inline (`#[cfg(test)] mod tests`, at any depth, under any cfg
+  that turns on with `test`, such as `#[cfg(all(test, feature = "x"))]`): those lines are test
+  lines of the file's area, not code and not a surface, and the file is listed among the area's
+  tests. A module declared under a test cfg (`#[cfg(test)] mod x;`, or with `#[path = "..."]`) is a
+  test file, not product source. Integration tests in a crate's `tests/` count for that crate and
+  for every workspace crate they name by path (`use other_crate::...`); tests named
+  `tests/**/test_<util>.rs` are also linked to `src/uu/<util>/` by the filename convention.
+  Helper binaries under `tests/` (a `fn main` in `tests/fixtures/`, or a `[[bin]]` kept there) are
+  listed in `tests_not_counted`, and Cargo bench targets (`benches/`, `[[bench]]`) are excluded as
+  benchmark code, never product source.
+- **Cargo.** In a Cargo workspace the crates are the areas (a virtual workspace's root
+  `Cargo.toml` is not a root package). The shared Cargo model (`cargo_project.py`) adds clap CLIs
+  (derive and builder) to the public API class, `std::process::Command` launches to the process
+  class and `libloading` loads to the native-code class, citing file and line; GPU and UI objects
+  freed in an error path or `Drop` (`gl.delete_texture`, `deleteFramebuffer`, `destroy_buffer`)
+  are not data destruction. Complexity for `.rs` counts `match` arms
   (`=>`) and the `?` try-operator as branches; for `.go`, `if`, `for`, each `case` of a switch or
   select, `&&` and `||` (it matches a go/ast count). Comments and strings are removed in one
   left-to-right scan, so an apostrophe in a comment never hides the code after it.
@@ -472,7 +499,13 @@ ranking rests on surface patterns. For a library, SDK or CLI, journey-mapper (wh
 journeys) is the wrong remedy. Give `--usage` instead, keyed by area id: download counts per
 package (npm, PyPI) or, within a package, calls per public entry point from telemetry, with
 the `exports`/`bin` entries (the public API surface) as a guide to which areas users reach.
-Say which source the shares came from in an assumption.
+Say which source the shares came from in an assumption. **For a desktop or command-line app**
+with neither a journey map nor usage data, judge impact per area by hand: mark the surface factor
+`judged`, with a reason that says what a user loses when the area fails (their data, a running
+session, a result they publish), so impact separates the areas instead of resting on pattern
+matches. A credential the code makes for itself per run (a random password for a loopback
+service, redacted from logs) still matches the secrets class; judging it down, with that reason,
+is a fair call.
 
 **Confidence:**
 

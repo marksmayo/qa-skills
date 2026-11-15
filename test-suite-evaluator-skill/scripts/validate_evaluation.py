@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Validate a Test Suite Evaluator evaluation.json against the schema and the rubric (stdlib only).
 
-    python validate_evaluation.py evaluation.json
+    python validate_evaluation.py evaluation.json [--interfaces interfaces.json]
+
+With --interfaces (list_interfaces.py output) it also warns where interface_coverage departs from the script's
+list: a kind with no entry, a smaller total, or a tested count other than the script's reached count.
 
 Beyond the schema it checks what SKILL.md and RUBRIC.md require: all fifteen dimensions with the
 rubric's weights (re-weighted only for dimensions marked not applicable), the raw weighted score
@@ -51,8 +54,11 @@ STATIC = ('static_only', 'not_executable')
 NO_TESTS_ABSENT = ('effectiveness', 'trust', 'assertions', 'coverage')
 NO_TESTS_UNGRADED = ('reliability', 'isolation', 'maintainability', 'debuggability', 'performance', 'test_data',
                      'portability')
-# a note saying implementation-linked claims rest on reading source (answers the white-box warning)
-SOURCE_NOTE = re.compile(r'\b(read(ing)?|inspect(ing|ion)?|static(ally)?)\b[^.]*\bsource\b|\binstrument', re.I)
+# a note saying implementation-linked claims rest on reading source (answers the white-box warning): it must say
+# both that source was read and what that means for the claims (claims, implementation, instrumentation, coverage),
+# so a note that reads source for another reason ("read the source of the fixtures") does not silence it
+SOURCE_NOTE = re.compile(r'\b(read(ing)?|inspect(ing|ion)?|static(ally)?)\b[^.]*\bsource\b', re.I)
+SOURCE_NOTE_ABOUT = re.compile(r'\b(claims?|implementation|(un)?instrument\w*|coverage)\b', re.I)
 TOL = 0.05 + 1e-9
 
 # A code-coverage claim: a named implementation-coverage measure, a coverage percentage, or a share of the code,
@@ -412,7 +418,7 @@ def check(rep: dict) -> tuple[list[str], list[str]]:
     if order.index(strongest) > order.index(mode):
         warns.append(f'the inventory supports {strongest} mode but the evaluation records {mode}')
     if mode == 'white_box' and not (has('runtime_coverage') or has('mutation_report')) and \
-            not any(SOURCE_NOTE.search(n) for n in meta.get('notes', [])):
+            not any(SOURCE_NOTE.search(n) and SOURCE_NOTE_ABOUT.search(n) for n in meta.get('notes', [])):
         warns.append('white_box mode from application source only: no runtime coverage or mutation report, so say in '
                      'metadata.notes that implementation-linked claims rest on reading source, not instrumentation')
     for i, d in dims.items():
@@ -688,6 +694,41 @@ def execution_errors(meta: dict) -> list[str]:
     return errs
 
 
+KIND_FAMILY = {'commands': 'cli', 'endpoints': 'routes', 'operations': 'routes'}
+
+
+def interface_warnings(rep: dict, listing: dict) -> list[str]:
+    """Differences between interface_coverage and list_interfaces.py's output (`--interfaces interfaces.json`): a
+    kind the script lists with no entry, an entry total below the script's count, and a tested count that differs
+    from what the script found reached. A hand mapping may rightly differ (a route the script cannot read, a test
+    that names a command without running it), but it must say how, so each difference is named."""
+    out = []
+    by_kind: dict[str, list[dict]] = {}
+    for i in listing.get('interfaces') or []:
+        if isinstance(i, dict) and i.get('kind'):
+            by_kind.setdefault(KIND_FAMILY.get(i['kind'], i['kind']), []).append(i)
+    matched = 'reached' in (listing.get('summary') or {})
+    entries: dict[str, list[dict]] = {}
+    for b in rep.get('interface_coverage') or []:
+        entries.setdefault(KIND_FAMILY.get(b['kind'], b['kind']), []).append(b)
+    for kind, its in sorted(by_kind.items()):
+        es = entries.get(kind, [])
+        if not es:
+            out.append(f'list_interfaces.py lists {len(its)} {kind} interface(s) but there is no interface_coverage entry '
+                       f'of kind {kind}: map them, or say why they are left out')
+            continue
+        total, tested = sum(b['total'] for b in es), sum(b['tested'] for b in es)
+        if total < len(its):
+            out.append(f'interface_coverage {kind}: total {total} but list_interfaces.py lists {len(its)}; say in the '
+                       f'entry\'s method or notes which were left out and why')
+        reached = sum(1 for i in its if i.get('reached'))
+        if matched and tested != reached:
+            out.append(f'interface_coverage {kind}: tested {tested} but list_interfaces.py found {reached} reached by a '
+                       f'test; say in the entry\'s method or notes how the mapping differs (hits read by hand, tests the '
+                       f'script cannot read, names that are not calls)')
+    return out
+
+
 def self_test() -> int:
     """Failure counts against run totals, on the partial-run example."""
     import copy
@@ -782,6 +823,29 @@ def self_test() -> int:
     rep['metadata']['notes'] = [n for n in rep['metadata']['notes'] if 'reading source' not in n]
     if not any('reading source' in x for x in full(rep)[1]):
         fails.append('white-box mode without a note on reading source must warn')
+    # --interfaces: interface_coverage is compared with list_interfaces.py's output, so a hand mapping never departs
+    # from the script's list silently
+    def listing(n_routes, reached, n_cli=0):
+        its = [{'kind': 'routes', 'path': f'/r{i}', 'reached': i < reached} for i in range(n_routes)]
+        its += [{'kind': 'cli', 'path': f'tool c{i}', 'reached': False} for i in range(n_cli)]
+        return {'interfaces': its, 'summary': {'total': len(its), 'reached': reached}}
+    try:
+        same = interface_warnings(base, listing(46, 41))
+        diff = interface_warnings(base, listing(50, 30, n_cli=4))
+    except NameError as exc:
+        same, diff = [str(exc)], []
+    if same:
+        fails.append(f'interface_coverage that agrees with list_interfaces.py gives no warning (got {same})')
+    if not any('50' in w and '46' in w for w in diff) or not any('30' in w and '41' in w for w in diff) \
+            or not any('cli' in w and 'no interface_coverage entry' in w for w in diff):
+        fails.append(f'--interfaces names a different total, a different tested count and a kind with no entry '
+                     f'(got {diff})')
+    # a note that mentions reading source for another reason does not answer the warning
+    for note in ('Read the source of the fixtures folder before running the suite.',
+                 'Static analysis of the source tree found no secrets.'):
+        rep['metadata']['notes'] = [note]
+        if not any('reading source' in x for x in full(rep)[1]):
+            fails.append(f'a note not about implementation-linked claims does not silence the white-box warning: {note!r}')
     if fails:
         print('validate_evaluation self-test FAILED:\n  - ' + '\n  - '.join(fails))
         return 1
@@ -797,6 +861,8 @@ def main(argv=None) -> int:
         return self_test()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('evaluation', type=Path)
+    ap.add_argument('--interfaces', type=Path, metavar='INTERFACES_JSON',
+                    help="list_interfaces.py output: warn where interface_coverage departs from it")
     args = ap.parse_args(argv)
     try:
         rep = json.loads(args.evaluation.read_text(encoding='utf-8-sig'))
@@ -826,6 +892,13 @@ def main(argv=None) -> int:
         print(f'WARNING: written for skill {written}, this validator checks the {current} contract; '
               f'see SKILL.md "Migrating older evaluations"')
     errs, warns = check(rep)
+    if args.interfaces:
+        try:
+            listing = json.loads(args.interfaces.read_text(encoding='utf-8-sig'))
+        except (OSError, ValueError) as exc:
+            print(f'INVALID: cannot read --interfaces {args.interfaces}: {exc}')
+            return 1
+        warns += interface_warnings(rep, listing if isinstance(listing, dict) else {})
     for w in warns:
         print('WARNING: ' + w)
     if errs:

@@ -12,7 +12,8 @@ runs of the same workflow, dates before the run date in the message (a data mark
 aggregate gate failing because other jobs failed, and the owning change from changes.json. Rules, in order:
 
   consequence   an aggregate gate job, failing because other failures in the run failed   indicated
-  environment   an environment signature                         confirmed if the re-run passed, else indicated
+  environment   an environment signature                         confirmed if it passed on the same commit (the re-run, or
+                                                                   the same job in another run of the workflow), else indicated
   flaky         failed, then passed on the same commit: the re-run, or the same job in    confirmed
                 another run of the same workflow on that commit
   flaky         failed and passed in local repeat runs of the test on the failing commit  indicated
@@ -33,7 +34,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from parse_results import parse_junit  # noqa: E402
-from extract_failures import console_tests, match_sections, step_sections  # noqa: E402
+from extract_failures import log_tests, match_sections, step_sections  # noqa: E402
 
 SIG = json.loads((HERE.parent / 'data' / 'signatures.json').read_text(encoding='utf-8'))
 COMPILED = [(s, re.compile(s['pattern'], re.I)) for s in SIG['signatures']]
@@ -41,7 +42,7 @@ DATE = re.compile(r'\b(20\d\d-\d\d-\d\d)\b')
 
 
 def _console_rerun(f: dict, job: dict, run_dir: Path) -> str:
-    """The re-run outcome of a test read from console output (no JUnit)."""
+    """The re-run outcome of a test read from console output (no JUnit): Vitest, Jest, node:test, go test, cargo test or nextest."""
     if job['conclusion'] == 'success':
         return 'passed'
     if not job.get('log') or not (run_dir / job['log']).exists():
@@ -51,7 +52,7 @@ def _console_rerun(f: dict, job: dict, run_dir: Path) -> str:
     ids = set()
     for sec, _ in match_sections(step_sections(lines), failed):
         if sec:
-            ids |= {c['test_id'] for c in console_tests(lines, sec['body'], sec['end'])}
+            ids |= {c['test_id'] for c in log_tests(lines, sec['body'], sec['end'])}
     if f['test_id'] in ids:
         return 'failed'
     st = next((s for s in job['steps'] if s['name'] == f['step']), None)
@@ -130,7 +131,8 @@ def signals(f: dict, run: dict, run_dir: Path, quoted: list[dict] | None = None)
             'signatures': hits, 'date_markers': markers, 'run_date': run_date, 'rerun': rerun, 'rerun_attempt': last['n'] if last['n'] > 1 else None,
             'history_same_commit': hist, 'history_passed_same_commit': any(x['job'] == 'success' for x in hist),
             'step_kind': kind, 'failure_type': f.get('failure_type'), 'log_status': f.get('log_status', 'fetched'),
-            'consequence_of': f.get('consequence_of') or [], **({'annotations': f['annotations']} if f.get('annotations') else {})}
+            'consequence_of': f.get('consequence_of') or [], **({'annotations': f['annotations']} if f.get('annotations') else {}),
+            **({'queued_for_s': f['queued_for_s']} if f.get('queued_for_s') is not None else {})}
 
 
 def decide(sg: dict, owner: dict | None) -> tuple[str, str, str]:
@@ -140,7 +142,9 @@ def decide(sg: dict, owner: dict | None) -> tuple[str, str, str]:
     if sg.get('consequence_of'):
         return 'consequence', 'indicated', f'aggregate gate: fails because {", ".join(sg["consequence_of"])} failed in this run'
     if env:
-        return 'environment', 'confirmed' if sg['rerun'] == 'passed' else 'indicated', f'environment signature {env[0]["id"]} ({env[0]["names"]})'
+        passed = sg['rerun'] == 'passed' or sg['history_passed_same_commit']
+        return 'environment', 'confirmed' if passed else 'indicated', f'environment signature {env[0]["id"]} ({env[0]["names"]})' + (
+            '' if not passed else '; passed on re-run' if sg['rerun'] == 'passed' else '; the same job passed in another run of the workflow on this commit')
     if sg['rerun'] == 'passed' or sg['history_passed_same_commit']:
         return 'flaky', 'confirmed', 'failed and passed on the same commit' + (' (re-run)' if sg['rerun'] == 'passed' else ' (the same job in another run of the workflow)')
     if sg.get('local_flaky'):

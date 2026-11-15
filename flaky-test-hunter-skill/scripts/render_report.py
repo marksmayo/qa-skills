@@ -71,7 +71,14 @@ def main() -> int:
     w(f"Repo: {m['repo']}  |  {m['framework']}  |  {m['platform']}  |  generated {d['generated_at']}")
     w(f"Budget: {m['budget']['repeats']} repeats, {m['budget']['minutes']}-minute cap"
       + (P(' (stopped early)', YELLOW) if m['budget']['stopped_early'] else '')
-      + f"  |  {s['total_runs']} runs, {s['wall_minutes']} min  |  gate: {m['gate']['level']}")
+      + f"  |  {s['total_runs']} runs"
+      + (f" ({s['total_runs'] - s['single_test_runs']} suite or batch runs, {s['single_test_runs']} single-test runs)"
+         if s.get('single_test_runs') else '')
+      + f", {s['wall_minutes']} min  |  gate: {m['gate']['level']}")
+    for su in m.get('suites') or []:
+        n = f"{su['tests']} tests" if su.get('tests') is not None else 'tests (count unknown)'
+        state = P('ran', GREEN) if su['status'] == 'ran' else P('NOT RUN', MAGENTA)
+        w(f"Suite {su['language']}: {n}, {state} ({', '.join(su['presets']) or 'no preset'}): {su['reason']}")
     w('')
     w(P(s['headline'], BOLD))
     w(f"{s['tests_run']} tests run: {P(str(s['flaky']) + ' flaky', YELLOW)}, "
@@ -172,7 +179,8 @@ def main() -> int:
             w(P('## Static smells', BOLD))
             for sm in d['static_smells']:
                 link = f" -> {sm['flake_id']}" if sm['flake_id'] else ''
-                w(f"- {sm['file']}:{sm['line']} {sm['smell']} ({sm['status'].replace('_', ' ')}{link}): {sm['note']}")
+                status = 'not run: its test has no runs' if sm['status'] == 'not_run' else sm['status'].replace('_', ' ')
+                w(f"- {sm['file']}:{sm['line']} {sm['smell']} ({status}{link}): {sm['note']}")
             w('')
         for lim in d['limitations']:
             w(P(f'Limitation: {lim}', DIM))

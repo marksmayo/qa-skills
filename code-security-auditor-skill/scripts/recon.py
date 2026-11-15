@@ -57,6 +57,13 @@ a review lead. `agent_config` lists committed agent and editor configuration (.c
 .vscode/tasks.json, ...). Outbound calls are matched on code with string literals blanked (code_only), so prose in a
 data string is not a call.
 
+Rust crates are read with the shared Cargo model (cargo_project.py, via rust_entries.py): each clap CLI is
+an entry point at its Parser struct or command line and each subcommand at its variant (never at a `use` line), a
+binary without clap at its fn main, clap arguments are `cli_flags` with the environment variables bound to them,
+and an environment variable that chooses an executable or library is a `config_input` entry point (method ENV).
+Process launches and library loads are review leads, with a path built from env::current_dir(), a relative path
+(through a const or a let default too) or a DLL loaded by bare name named as a search-path risk (CWE-427).
+
 Everything here is a regex-level first pass. The agent confirms entry points and auth by reading
 the code; an 'unknown' auth value means the script could not tell, not that the route is public.
 """
@@ -75,6 +82,7 @@ import next_app  # noqa: E402
 import next_surface  # noqa: E402
 import nextjs_auth  # noqa: E402
 import py_routes  # noqa: E402
+import rust_entries  # noqa: E402
 import test_paths  # noqa: E402
 
 SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', '.turbo', '.cache', 'coverage',
@@ -808,6 +816,7 @@ def main() -> int:
     ado_files: dict[str, str] = {}
     vendored: list[dict] = []
     cli_flags: list[dict] = []
+    rust_cli_lines: list[dict] = []
     templates: list[str] = []
     limiter_libs: dict[str, list[str]] = {}
     forwarded_keys: list[dict] = []
@@ -934,7 +943,11 @@ def main() -> int:
             if QUEUE.search(line):
                 queues.append({'kind': 'queue_consumer', 'framework': None, 'method': 'CONSUME', 'path': line.strip()[:80],
                                'handler': f'{rel}:{i}', 'function': None, 'auth': 'unknown', 'auth_evidence': None})
-            if CLI.search(line):
+            if CLI.search(line) and p.suffix == '.rs':
+                if not line.lstrip().startswith(('use ', 'pub use ')):  # kept only when there is no Cargo model
+                    rust_cli_lines.append({'kind': 'cli', 'framework': None, 'method': 'CLI', 'path': rel, 'handler': f'{rel}:{i}',
+                                           'function': None, 'auth': 'unknown', 'auth_evidence': 'local invocation'})
+            elif CLI.search(line):
                 clis.append({'kind': 'cli', 'framework': None, 'method': 'CLI', 'path': rel, 'handler': f'{rel}:{i}',
                              'function': None, 'auth': 'unknown', 'auth_evidence': 'local invocation'})
             if UPLOAD.search(line) and not line.lstrip().startswith(('import ', 'from ')):
@@ -973,6 +986,16 @@ def main() -> int:
     for mw in middleware:
         if mw['auth_check']:
             global_hooks.append(f"{mw['file']}:{mw['line']}")
+    # Rust: clap CLIs, binaries, env-chosen executables and libraries from the Cargo model
+    rust = {'entries': [], 'cli_flags': [], 'leads': [], 'crates': 0, 'notes': []}
+    if langs.get('Rust') or any(Path(m).name == 'Cargo.toml' for m in manifests):
+        try:
+            rust = rust_entries.read(root, manifests)
+        except Exception as exc:  # noqa: BLE001 - recon must still write the rest of the map
+            print(f'  recon: the Cargo reader failed ({type(exc).__name__}: {exc}); Rust CLIs found by line patterns only',
+                  file=sys.stderr)
+    clis += rust['entries'] if rust['crates'] else rust_cli_lines
+    cli_flags += rust['cli_flags']
     entries += queues + clis + client + ci_entries
     # MCP tools: the transport decides who supplies the arguments (the launching client over stdio, or HTTP callers)
     for e in entries:
@@ -1044,12 +1067,13 @@ def main() -> int:
                           'why': f"{e['path']} decodes a file it reads from disk (a config, flow or spec file): check who "
                                  "writes it (a cloned repository, a flow in a pull request), whether it is found by searching "
                                  "parent or home directories, and which fields reach commands, paths, URLs or scripts"})
-        elif e['kind'] == 'config_input':
+        elif e['kind'] == 'config_input' and e['framework'] != 'rust':  # Rust ENV inputs have their own leads
             leads.append({'area': 'injection', 'entry_point': e['id'],
                           'why': f"{e['path']} loads a config file: check where it is searched for (parent directories, the "
                                  "home directory), whether it is executed (a .js/.ts config) and which fields reach commands, "
                                  "paths or URLs"})
     leads += node_leads
+    leads += rust['leads']
     # Availability: rate limiting and routes that return collections (an uncapped search is a denial of service)
     limited = limited_routes(entries, py_files)
     for k in forwarded_keys:

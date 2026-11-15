@@ -56,6 +56,8 @@
    "confidence": "indicated",
    "rule": "data signature DATA-EXPIRED (a date in the test data); date 2026-11-10 before the run date 2026-11-12",
    "signals": {
+    "local_runs": null,
+    "local_flaky": false,
     "signatures": [
      {
       "id": "DATA-EXPIRED",
@@ -162,6 +164,8 @@
    "confidence": "confirmed",
    "rule": "failed again on re-run on the same commit",
    "signals": {
+    "local_runs": null,
+    "local_flaky": false,
     "signatures": [],
     "date_markers": [],
     "run_date": "2026-11-12",
@@ -241,6 +245,8 @@
    "confidence": "confirmed",
    "rule": "failed and passed on the same commit (re-run)",
    "signals": {
+    "local_runs": null,
+    "local_flaky": false,
     "signatures": [],
     "date_markers": [],
     "run_date": "2026-11-12",
@@ -309,6 +315,8 @@
    "confidence": "indicated",
    "rule": "environment signature ENV-REGISTRY (package registry)",
    "signals": {
+    "local_runs": null,
+    "local_flaky": false,
     "signatures": [
      {
       "id": "ENV-REGISTRY",

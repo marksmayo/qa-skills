@@ -26,6 +26,7 @@
      "conclusion": "failure",
      "url": "https://github.com/example-org/tidewater/actions/runs/109/job/5101",
      "started_at": "2026-11-12T03:10:00Z",
+     "completed_at": "2026-11-12T03:10:59Z",
      "steps": [
       {
        "number": 1,
@@ -76,6 +77,7 @@
      "conclusion": "failure",
      "url": "https://github.com/example-org/tidewater/actions/runs/109/job/5102",
      "started_at": "2026-11-12T03:10:00Z",
+     "completed_at": "2026-11-12T03:10:59Z",
      "steps": [
       {
        "number": 1,
@@ -120,6 +122,7 @@
      "conclusion": "failure",
      "url": "https://github.com/example-org/tidewater/actions/runs/109/job/5201",
      "started_at": "2026-11-12T03:40:00Z",
+     "completed_at": "2026-11-12T03:40:59Z",
      "steps": [
       {
        "number": 1,
@@ -170,6 +173,7 @@
      "conclusion": "failure",
      "url": "https://github.com/example-org/tidewater/actions/runs/109/job/5202",
      "started_at": "2026-11-12T03:40:00Z",
+     "completed_at": "2026-11-12T03:40:59Z",
      "steps": [
       {
        "number": 1,
@@ -208,7 +212,8 @@
    "started_at": "2026-11-09T01:20:00Z",
    "event": "push",
    "workflow_id": 71,
-   "jobs": null
+   "jobs": null,
+   "branch": "main"
   }
  ],
  "history_scope": "same workflow",
@@ -216,7 +221,8 @@
   "id": 101,
   "commit": "1e537ac23f72913514214744dcf1bae69cddab0c",
   "event": "push",
-  "basis": "the newest successful run of the same workflow on the branch started before this run, same event"
+  "basis": "the newest successful run of the same workflow on the branch started before this run, same event",
+  "branch": "main"
  },
  "fetch_problems": [],
  "source": "recorded",

@@ -120,7 +120,7 @@
       "old_path": null,
       "status": "modified",
       "kind": "non_code",
-      "kind_reason": "unrecognised extension .css",
+      "kind_reason": "stylesheet",
       "line_ranges": [
         [
           13,

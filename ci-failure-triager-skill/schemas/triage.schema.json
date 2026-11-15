@@ -17,7 +17,11 @@
  ],
  "properties": {
   "schema_version": {
-   "const": "1.2.0"
+   "enum": [
+    "1.2.0",
+    "1.3.0"
+   ],
+   "description": "1.3.0 adds optional fields only; 1.2.0 reports still validate"
   },
   "skill": {
    "type": "object",
@@ -76,7 +80,15 @@
       "id",
       "commit"
      ],
-     "description": "the newest successful run of the same workflow on the branch before this run"
+     "description": "the newest successful run of the same workflow on the branch before this run; when the branch has none, the newest on the default branch (branch names it, basis says so), whose commit then starts the range of changes",
+     "properties": {
+      "branch": {
+       "type": "string"
+      },
+      "basis": {
+       "type": "string"
+      }
+     }
     },
     "fetch_problems": {
      "type": "array",
@@ -303,6 +315,11 @@
        "local_flaky": {
         "type": "boolean",
         "description": "the local repeat runs on the failing commit both passed and failed"
+       },
+       "queued_for_s": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "a job that never started on a runner: the seconds between its start and completion, time spent waiting for a runner, never time running (checked against the run)"
        }
       }
      },
@@ -384,6 +401,13 @@
        "agent"
       ],
       "description": "agent: the extractor read no test for this step failure and the agent names it from the log lines it quotes (the validator checks they show it); kind is then test"
+     },
+     "failure_type": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "assertion, error or timeout for a test; for a step failure compile, lint, format or coverage_gate when its excerpt carries that real signature, else step; job for a job with no failed step"
      }
     }
    }

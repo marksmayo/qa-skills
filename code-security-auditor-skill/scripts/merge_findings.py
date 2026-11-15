@@ -8,7 +8,10 @@
                              [--scanners scanners.json] [--out candidates.json]
 
 Code candidates (CAND-nnn) are merged by sink location (file and line): one line flagged by
-three tools is one candidate with three sources and every CWE they reported. Secrets (SEC-nnn)
+three tools is one candidate with three sources and every CWE they reported. A grouped pattern
+candidate (documented FFI unsafe blocks) keeps grouped_lines, confidence and group_reason.
+cargo audit --json and cargo deny --format json (JSON lines) become crates.io rows with a kind:
+vulnerability, unmaintained, unsound, notice or yanked (advisory yanked:<crate>@<version>). Secrets (SEC-nnn)
 are merged by fingerprint or location; dependency advisories (DEP-nnn) by package, version and
 advisory aliases. Tool rules are mapped to data/pitfalls.json entries where the catalogue lists them.
 Secrets that scan_secrets.py found only in git history are candidates too (history_only, git_status
@@ -96,9 +99,18 @@ def code_candidate(file, line, cwe, pitfall, message, snippet, source, end_line=
             'message': redact(message or ''), 'snippet': redact((snippet or '')[:200]), 'sources': [source]}
 
 def from_patterns(path: Path) -> list[dict]:
+    """scan_pitfalls.py candidates; a grouped candidate (documented FFI unsafe blocks) keeps grouped_lines,
+    confidence and group_reason."""
     data = json.loads(path.read_text(encoding='utf-8'))
-    return [code_candidate(c['file'], c['line'], c.get('cwe'), c.get('pitfall_id'), c.get('message'), c.get('snippet'),
-                           {'tool': 'scan_pitfalls', 'rule_id': c.get('pitfall_id')}) for c in data.get('candidates', [])]
+    out = []
+    for c in data.get('candidates', []):
+        cand = code_candidate(c['file'], c['line'], c.get('cwe'), c.get('pitfall_id'), c.get('message'), c.get('snippet'),
+                              {'tool': 'scan_pitfalls', 'rule_id': c.get('pitfall_id')})
+        for k in ('grouped_lines', 'confidence', 'group_reason'):
+            if c.get(k):
+                cand[k] = c[k]
+        out.append(cand)
+    return out
 
 GENERIC_SECRET_RULES = re.compile(r'(?i)^(generic[-_]api[-_]key|generic[-_]secret|generic)$')
 
@@ -460,19 +472,76 @@ def from_govulncheck(objs: list) -> list[dict]:
                     'call_path': ' <- '.join(frames) if frames else None})
     return out
 
+def _fixed_from_req(reqs: list[str]) -> list[str]:
+    """'>=0.4.20', '^0.3.1' (RustSec patched requirements) -> the lowest version each one allows."""
+    out = set()
+    for r in reqs or []:
+        m = re.search(r'(\d+(?:\.\d+)*(?:-[\w.]+)?)', r)
+        if m:
+            out.add(m.group(1))
+    return sorted(out, key=lambda v: _ver(v) or (0,))
+
+def _rustsec_row(kind: str, pkg: dict, adv: dict | None, patched: list[str]) -> dict:
+    """One crates.io advisory row: kind vulnerability, unmaintained, unsound, notice or yanked (a yanked release has
+    no advisory id, so its row's advisory is yanked:<crate>@<version>)."""
+    name, version = pkg.get('name'), pkg.get('version')
+    adv = adv or {}
+    aliases = sorted({*(adv.get('aliases') or []), *(a for a in adv.get('related') or [] if a.startswith(('CVE-', 'GHSA-')))})
+    return {'ecosystem': 'crates.io', 'package': name, 'version': version,
+            'advisory': adv.get('id') or f'yanked:{name}@{version}', 'aliases': aliases, 'fixed_in': _fixed_from_req(patched),
+            'summary': adv.get('title') or ('the locked version was yanked from crates.io' if kind == 'yanked' else ''),
+            'kind': kind}
+
+def from_cargo_audit(data: dict) -> list[dict]:
+    """cargo audit --json: vulnerabilities.list, and the warnings (unmaintained, unsound, notice, yanked)."""
+    out = [_rustsec_row('vulnerability', v.get('package') or {}, v.get('advisory'), (v.get('versions') or {}).get('patched') or [])
+           for v in (data.get('vulnerabilities') or {}).get('list') or []]
+    for kind, items in (data.get('warnings') or {}).items():
+        for w in items or []:
+            out.append(_rustsec_row(w.get('kind') or kind, w.get('package') or {}, w.get('advisory'),
+                                    (w.get('versions') or {}).get('patched') or []))
+    return out
+
+CARGO_DENY_CODES = ('vulnerability', 'unmaintained', 'unsound', 'notice', 'yanked')
+
+def from_cargo_deny(objs: list) -> list[dict]:
+    """cargo deny --format json check advisories: diagnostics (JSON lines on stderr) with code vulnerability,
+    unmaintained, unsound, notice or yanked, one row per affected crate in `graphs`."""
+    out = []
+    for o in objs:
+        f = (o or {}).get('fields') or {}
+        if o.get('type') != 'diagnostic' or f.get('code') not in CARGO_DENY_CODES:
+            continue
+        sol = next((n for n in f.get('notes') or [] if n.startswith('Solution:')), '')
+        patched = re.findall(r'[<>=^~]*\s*\d+(?:\.\d+)*', sol.split('(')[0]) if 'Upgrade' in sol else []
+        for g in f.get('graphs') or [{}]:
+            out.append(_rustsec_row(f['code'], g.get('Krate') or {}, f.get('advisory'), patched))
+    return out
+
 def from_deps(path: Path, lock: dict[str, list[dict]] | None = None) -> tuple[list[dict], dict]:
     text = path.read_text(encoding='utf-8')
     try:
         data = json.loads(text)
     except ValueError:
         stream = json_stream(text)  # raises ValueError when it is not JSON at all
-        if not any(isinstance(o, dict) and ('finding' in o or (o.get('config') or {}).get('scanner_name') == 'govulncheck') for o in stream):
-            raise ValueError('a JSON stream, but not govulncheck -format json')
-        data = {'_govulncheck': stream}
+        if any(isinstance(o, dict) and o.get('type') in ('diagnostic', 'summary') and 'fields' in o for o in stream):
+            data = {'_cargo_deny': stream}
+        elif any(isinstance(o, dict) and ('finding' in o or (o.get('config') or {}).get('scanner_name') == 'govulncheck') for o in stream):
+            data = {'_govulncheck': stream}
+        else:
+            raise ValueError('a JSON stream, but not govulncheck -format json or cargo-deny --format json')
     out = []
+    if isinstance(data, dict) and data.get('type') in ('diagnostic', 'summary') and 'fields' in data:
+        data = {'_cargo_deny': [data]}  # one line of cargo-deny output
     if isinstance(data, dict) and isinstance(data.get('config'), dict) and data['config'].get('scanner_name') == 'govulncheck':
         data = {'_govulncheck': [data]}  # a run with nothing to report can be a single config object
-    if isinstance(data, dict) and '_govulncheck' in data:
+    if isinstance(data, dict) and '_cargo_deny' in data:
+        tool = 'cargo-deny'
+        out = from_cargo_deny(data['_cargo_deny'])
+    elif isinstance(data, dict) and isinstance(data.get('vulnerabilities'), dict) and isinstance(data.get('database'), dict):
+        tool = 'cargo-audit'
+        out = from_cargo_audit(data)
+    elif isinstance(data, dict) and '_govulncheck' in data:
         tool = 'govulncheck'
         out = from_govulncheck(data['_govulncheck'])
     elif isinstance(data, dict) and 'dependencies' in data and isinstance(data['dependencies'], list):  # pip-audit

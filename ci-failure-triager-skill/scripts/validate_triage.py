@@ -30,7 +30,8 @@ sys.path.insert(0, str(HERE))
 from extract_failures import SECRET, TEST_STEP, extract, redact, strip  # noqa: E402
 from classify import decide, local_run_problem, local_runs, signals  # noqa: E402
 
-SCHEMA_VERSION = '1.2.0'
+SCHEMA_VERSION = '1.3.0'
+ACCEPTED_SCHEMAS = ('1.2.0', '1.3.0')   # 1.3.0 adds optional fields only
 CONF = {'confirmed': 3, 'indicated': 2, 'low': 1}
 CLASSES = ('real', 'flaky', 'environment', 'data', 'consequence', 'unclassified')
 BANNED = re.compile(r'(?i)\b(build is (fine|green|healthy|ok)|all (green|good|clear)|stable build|nothing (is )?wrong|safe to merge|(?<!not )green build|ready to merge)\b')
@@ -45,7 +46,7 @@ def expected_priority(f: dict, run: dict) -> str | None:
 
 
 def completeness(run: dict, run_dir: Path, changes: dict | None, failures: list[dict] | None = None) -> float:
-    """Five checks: logs for every failed job; test results (JUnit, or a test runner's console summary)
+    """Five checks: logs for every failed job (or, for a job that never started on a runner, the CI's annotation on it); test results (JUnit, or a test runner's console summary)
     for every failed job with a test step; a re-run; a last green run; the repository for the owning change."""
     first = run['attempts'][0]
     failed = [j for j in first['jobs'] if j['conclusion'] not in ('success', 'skipped', None)]
@@ -56,7 +57,10 @@ def completeness(run: dict, run_dir: Path, changes: dict | None, failures: list[
                  or any(f['job_id'] == j['id'] and f.get('step_kind') == 'test' for f in failures)]
     # a check over nothing earns nothing: a run with no failed job has no log to read, and one with no test job (a job
     # that never started, a lint-only failure) no test result
-    checks = [bool(failed) and all(j.get('log') and (run_dir / j['log']).exists() for j in failed),
+    # a job that never started on a runner wrote no log; the CI's check-run annotation on it is its only record, and when
+    # there is one it stands in for the log (it says why the job did not run)
+    checks = [bool(failed) and all((j.get('log') and (run_dir / j['log']).exists()) or (j.get('never_started') and j.get('annotations'))
+                                   for j in failed),
               bool(test_jobs) and all(j.get('junit') or j['id'] in with_tests for j in test_jobs),
               len(run['attempts']) > 1, bool(run.get('last_green')), bool(changes and changes.get('commits') is not None)]
     return round(sum(checks) / len(checks), 2)
@@ -93,6 +97,16 @@ def summarise(d: dict, run: dict, run_dir: Path, changes: dict | None, failures:
     by = {c: sum(1 for f in d['failures'] if f['classification'] == c) for c in CLASSES}
     return {'by_classification': by, 'defects_drafted': sum(1 for f in d['failures'] if f.get('draft_defect')),
             'reruns': len(d.get('reruns', [])), 'evidence_completeness': completeness(run, run_dir, changes, failures)}
+
+
+def found_file(name: str, triage: Path) -> Path | None:
+    """A files_written entry, resolved against the working directory, then the triage's folder and up to three above it
+    (an example triage lists paths relative to its skill folder)."""
+    for base in [Path.cwd(), *list(triage.resolve().parents)[:4]]:
+        p = base / name
+        if p.is_file():
+            return p
+    return None
 
 
 def check_reruns(run: dict, reruns: list[dict], e) -> None:
@@ -139,8 +153,8 @@ def main() -> int:
             e(f'missing {k}')
     if E:
         print('\n'.join(E)); return 1
-    if d['schema_version'] != SCHEMA_VERSION:
-        e(f'schema_version {d["schema_version"]} should be {SCHEMA_VERSION}')
+    if d['schema_version'] not in ACCEPTED_SCHEMAS:
+        e(f'schema_version {d["schema_version"]} should be {SCHEMA_VERSION} (or {", ".join(ACCEPTED_SCHEMAS[:-1])})')
     if d['run']['id'] != run['run']['id'] or d['run']['commit'] != run['run']['commit']:
         e('run id or commit differ from run.json')
     if (d['run'].get('last_green') or {}).get('id') != (run.get('last_green') or {}).get('id'):
@@ -242,6 +256,9 @@ def main() -> int:
             e(f'{w["id"]}: data needs a data signature or a date before the run date')
         if 'annotations' in f['signals'] and f['signals']['annotations'] != sg.get('annotations', []):
             e(f'{w["id"]}: signals.annotations differ from the job\'s annotations in the run (quote them as recorded)')
+        if f['signals'].get('queued_for_s') != sg.get('queued_for_s') and ('queued_for_s' in f['signals'] or 'queued_for_s' in sg):
+            e(f'{w["id"]}: signals.queued_for_s {f["signals"].get("queued_for_s")} should be {sg.get("queued_for_s")} (the time the job waited '
+              'for a runner, from the run)')
         fs_ids = [s['id'] for s in f['signals'].get('signatures', [])]
         if fs_ids not in ([h['id'] for h in sg['signatures']], [h['id'] for h in sgq['signatures']]) or f['signals'].get('rerun') != sg['rerun']:
             e(f'{w["id"]}: signals differ from the run (signatures {[h["id"] for h in sg["signatures"]]}, re-run {sg["rerun"]})')
@@ -273,6 +290,22 @@ def main() -> int:
             e(f'{w["id"]}: priority {f.get("priority")} should be {expected_priority(f, run)}')
     for k in set(got) - {w['id'] for w in want}:
         e(f'{k} is not a failure of the run')
+
+    # files written: each listed file exists, and a drafts file is the renderer's (it writes none when there is no draft)
+    drafted = [f for f in d['failures'] if f.get('draft_defect')]
+    for name in d.get('files_written') or []:
+        p = found_file(name, a.triage)
+        if not p:
+            e(f'files_written lists {name}, which does not exist (relative to the working directory or the triage\'s folders)')
+        elif p.resolve() == a.triage.resolve() or p.suffix.lower() not in ('.md', '.markdown'):
+            continue
+        elif not drafted:
+            e(f'files_written lists {name}, but the triage has no draft: render_report.py --defects-md writes no drafts file for it')
+        else:
+            md = p.read_text(encoding='utf-8')
+            missing = [f['id'] for f in drafted if f['draft_defect'].get('title') and f['draft_defect']['title'] not in md]
+            if missing:
+                e(f'files_written lists {name}, which lacks the draft(s) of {", ".join(missing)}: write it again with render_report.py --defects-md')
 
     # secrets and language ----------------------------------------------------------------------------
     text = json.dumps(d, ensure_ascii=False)

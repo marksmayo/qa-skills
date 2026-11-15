@@ -23,6 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import js_workspace  # noqa: E402
+import lang_census  # noqa: E402
 
 LANG_DEFAULT = {'python': 'mutmut', 'javascript': 'stryker', 'typescript': 'stryker', 'csharp': 'stryker-net', 'jvm': 'pit', 'rust': 'cargo-mutants',
                 'go': 'go-mutesting', 'swift': 'muter', 'dart': 'mutation_test'}
@@ -148,7 +149,7 @@ def detect(repo: Path) -> dict:
                          'config_source': 'scratch' if ok else 'builtin',
                          'why': 'mutmut is available; run it from a scratch config' if ok else
                          ('mutmut is not available here' if os.name != 'nt' else 'mutmut 3 does not run on Windows') +
-                         '; use the builtin engine (stdlib, pytest only), or mutmut under WSL'})
+                         '; use the builtin engine (stdlib; pytest or unittest), or mutmut under WSL'})
         elif lang == 'go':
             go_ok = bool(shutil.which('go'))
             recs.append({'language': lang, 'engine': 'builtin' if go_ok else default,
@@ -167,12 +168,88 @@ def detect(repo: Path) -> dict:
                        'plugin where the package resolves them. Installing changes package.json and the lockfile and '
                        'needs the user\'s agreement: ' + js_workspace.install_command(
                            repo, ['@stryker-mutator/core', f'@stryker-mutator/{runner}-runner']))
+            elif default == 'cargo-mutants':
+                how = ('installed; run_engine.py cargo-mutants runs it on the scoped .rs files and '
+                       'normalize_results.py --cargo-mutants reads its outcomes.json' if tool and tool['available'] else
+                       'not installed; installing it needs the user\'s agreement (cargo install --locked cargo-mutants), '
+                       'then run_engine.py cargo-mutants runs it; until then Rust is not mutated')
             else:
                 how = 'not configured; run from a scratch config if installed (installing it needs the user\'s agreement)'
             recs.append({'language': lang, 'engine': default, 'config_source': 'scratch',
                          'why': f'standard open-source tool for {lang}; {how}'})
+    lc, tooling, warnings = language_facts(repo, tools)
     return {'repo': repo.name, 'platform': sys.platform, 'languages': langs, 'files_by_language': scan[0],
-            'without_project_marker': unmarked, 'tools': tools, 'recommended': recs, 'node': node}
+            'without_project_marker': unmarked, 'tools': tools, 'recommended': recs, 'node': node,
+            'language_coverage': lc, 'tooling': tooling, 'warnings': warnings}
+
+
+# census language -> the tool that must be available here for a mutation engine to run on it
+ENGINE_FOR = {'JavaScript': 'stryker', 'TypeScript': 'stryker', 'Rust': 'cargo-mutants', 'C#': 'stryker-net',
+              'Java': 'pit', 'Kotlin': 'pit', 'Swift': 'muter', 'Dart': 'mutation_test'}
+WHY_NOT = {'Rust': 'cargo-mutants is not installed (run_engine.py cargo-mutants runs it once it is: '
+                   '`cargo install --locked cargo-mutants`, with the user\'s agreement)',
+           'Go': 'go is not on PATH, so the builtin Go engine cannot run',
+           'JavaScript': 'StrykerJS is not installed for this package',
+           'TypeScript': 'StrykerJS is not installed for this package'}
+
+
+def runnable_languages(tools: list[dict]) -> set[str]:
+    """Census language names a mutation engine can run on here (Python always: the builtin engine)."""
+    avail = {t['name'] for t in tools if t['available']}
+    out = {'Python'}
+    if shutil.which('go') or avail & {'gremlins', 'go-mutesting'}:
+        out.add('Go')
+    out |= {lang for lang, tool in ENGINE_FOR.items() if tool in avail}
+    return out
+
+
+def language_facts(repo: Path, tools: list[dict]) -> tuple[dict, dict, list[str]]:
+    """(language coverage, tooling languages, warnings). The language with the most lines of product code (test
+    files and tooling folders such as scripts/ counted apart: lang_census.py) decides: when no engine can run on
+    it here, that is a loud warning, because mutating the other languages does not test the product. A language
+    whose only non-test code sits in tooling folders while the product is elsewhere is named as tooling."""
+    c = lang_census.census(repo)
+    run_here = runnable_languages(tools)
+    lc = lang_census.language_coverage(c, run_here, tool='the mutation engines that can run here',
+                                       what='mutation test')
+    lc.update(runnable_languages=sorted(run_here), product_lines=c.get('lines') or {}, dominant_by=c.get('dominant_by'))
+    warnings = []
+    if lc['status'] == 'unsupported_dominant':
+        lang = lc['dominant_unsupported_language']
+        n = (c.get('lines') or {}).get(lang, 0)
+        why = WHY_NOT.get(lang) or ('this skill has no scripted engine for it: run the tool from SKILL.md\'s table by '
+                                    'hand and convert its results (normalize_results.py --mte)')
+        warnings.append(f'{lang} has the most product code ({n} lines; test code and tooling folders counted apart) '
+                        f'and no mutation engine can run on it here: {why}. Mutating the other languages does not '
+                        f'test the product; record {lang} as not mutated in the report\'s limitations.')
+    tooling = {}
+    if c.get('total_product_lines'):
+        for lang, tl in (c.get('tooling_lines') or {}).items():
+            if tl and not (c.get('lines') or {}).get(lang):
+                dirs = sorted({d for d in (c.get('top_dirs') or {}).get(lang, {}) if d.lower() in lang_census.TOOLING_DIRS})
+                tooling[lang] = {'tooling_files': (c.get('tooling_files') or {}).get(lang, 0), 'tooling_lines': tl,
+                                 'test_lines': (c.get('test_lines') or {}).get(lang, 0), 'product_lines': 0,
+                                 'dirs': [d + '/' for d in dirs]}
+                warnings.append(f'the {lang} here is tooling, not the product: {tl} lines under '
+                                f'{", ".join(d + "/" for d in dirs) or "tooling folders"} and no {lang} product code '
+                                f'(the product is {c.get("dominant")}). Mutating it tests helper scripts; say so in '
+                                'the report\'s limitations.')
+    return lc, tooling, warnings
+
+
+def report_language_coverage(repo: Path, mutated_files, scope_paths) -> dict:
+    """The report's metadata.language_coverage: the language with the most product lines, the languages this
+    report's mutants are in, `unmutated_dominant` when the product's main language was not mutated (the report
+    must then say so in a limitation), and the scoped files that sit in tooling folders while the product is
+    elsewhere (`tooling_scope_files`: mutating them tests helper scripts, which a limitation must say)."""
+    c = lang_census.census(repo)
+    mutated = sorted({lang_census.LANG_BY_EXT.get(Path(f).suffix) for f in mutated_files} - {None})
+    lc = lang_census.language_coverage(c, mutated, tool="this report's mutation engines", what='mutation test')
+    tooling = sorted(f for f in scope_paths if lang_census.is_tooling_file(f)) if c.get('total_product_lines') else []
+    return {'dominant': c.get('dominant'), 'dominant_by': c.get('dominant_by'), 'product_lines': c.get('lines') or {},
+            'mutated_languages': mutated, 'status': lc['status'],
+            'unmutated_dominant': lc.get('dominant_unsupported_language') if lc['status'] == 'unsupported_dominant' else None,
+            'tooling_scope_files': tooling, 'warning': lc.get('warning')}
 
 
 def node_facts(repo: Path) -> dict:
@@ -209,6 +286,8 @@ def main(argv=None) -> int:
         sys.stdout.write(text)
     for r in out['recommended']:
         print(f'{r["language"]}: {r["engine"]} ({r["config_source"]}) - {r["why"]}', file=sys.stderr)
+    for w in out['warnings']:
+        print(f'WARNING: {w}', file=sys.stderr)
     return 0
 
 

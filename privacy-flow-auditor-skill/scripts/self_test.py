@@ -15,7 +15,7 @@ headline and the brief, observed review findings with runtime evidence, credenti
 the limitation an unanalysed language needs. Every host and value is invented.
 """
 from __future__ import annotations
-import copy, json, re, subprocess, sys, tempfile
+import copy, json, re, subprocess, sys, tempfile, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -786,11 +786,220 @@ def categories_reproducible() -> None:
           'validator: a tracking finding for a vendor of known category carries that category\'s data categories (or a categories_basis)')
 
 
+# A weather-station logger: a Rust workspace (the product: few long files) with many short Python helper scripts in
+# scripts/ and Python tests in tests/. Python has more files; Rust has far more lines of product code.
+def rust_workspace(extra: dict | None = None) -> dict:
+    body = ''.join(f'pub fn reading_{j}(raw: u32) -> f64 {{\n    let scaled = raw as f64 / 10.0;\n    scaled + {j}.0\n}}\n\n'
+                   for j in range(60))
+    files = {'Cargo.toml': '[workspace]\nmembers = ["station"]\n', 'station/Cargo.toml': '[package]\nname = "station"\nedition = "2024"\n'}
+    files.update({f'station/src/m{i}.rs': body for i in range(3)})
+    files.update({f'scripts/tool{i}.py': f'import json\n\n\ndef main():\n    print(json.dumps({{"n": {i}}}))\n' for i in range(9)})
+    files.update({f'tests/test_tool{i}.py': f'import unittest\n\n\nclass T(unittest.TestCase):\n    def test_{i}(self):\n        self.assertTrue(True)\n'
+                  for i in range(8)})
+    files.update(extra or {})
+    return files
+
+
+def rust_dominant_by_lines() -> None:
+    st, out = scan(rust_workspace())
+    cov = st.get('language_coverage') or {}
+    check(cov.get('status') == 'unsupported_dominant' and cov.get('needs_limitation') == ['Rust'] and cov.get('decided_by') == 'lines',
+          f'scan: Rust product code with more lines than the Python scripts and tests is the dominant unanalysed language '
+          f'(got {cov.get("status")}, {cov.get("needs_limitation")}, {cov.get("decided_by")})')
+    check('WARNING' in out and 'Rust' in out, 'scan: the Rust-dominant repository is a printed warning')
+    dist = {'web/dist/index.html': '<!doctype html>\n<html><body><h1>Station</h1><script src="app.js"></script></body></html>\n',
+            'web/dist/app.js': 'document.querySelector("h1").textContent = "Readings";\n'}
+    st, _ = scan(rust_workspace(dist))
+    cov = st.get('language_coverage') or {}
+    check(cov.get('status') == 'unsupported_dominant' and cov.get('decided_by') == 'lines',
+          f'scan: a committed dist/ merged into the counts keeps the line rule (got {cov.get("status")}, {cov.get("decided_by")})')
+    # the validator, given this scan's coverage, rejects a report that does not name Rust in a limitation
+    cands = json.loads(CANDS.read_text(encoding='utf-8'))
+    ex = json.loads((ROOT / cands['static']).read_text(encoding='utf-8'))
+    ex['language_coverage'] = cov
+    with tempfile.TemporaryDirectory() as d:
+        sp = Path(d) / 'static.json'
+        sp.write_text(json.dumps(ex), encoding='utf-8')
+        cands['static'] = str(sp)
+        out = run_validator(base(), cands=cands)
+        check('does not analyse Rust' in out, 'validator: a report on a Rust-dominant repository with no Rust limitation fails')
+
+
+# helper scripts that record the machine's host name and the OS account name, and write them into a results file
+# committed with the repository (a scoreboard), plus a Rust runner reading the same from the environment
+ID_SCRIPT = '''import getpass
+import json
+import os
+import platform
+import socket
+from pathlib import Path
+
+HOST = platform.node()
+
+
+def manifest(out_path):
+    host = socket.gethostname()
+    user = os.environ.get("USERNAME") or os.environ["USER"]
+    who = getpass.getuser()
+    home = Path.home()
+    machine = os.environ.get("COMPUTERNAME", "")
+    data = {"host": host, "user": user}
+    with open(out_path, "w") as fh:
+        json.dump(data, fh)
+    print(f"running on {host}")
+    return who, home, machine
+'''
+ID_RUST = '''use std::env;
+
+pub fn machine() -> String {
+    env::var("COMPUTERNAME").or_else(|_| env::var("HOSTNAME")).unwrap_or_default()
+}
+
+pub fn account() -> Option<String> {
+    let h = hostname::get().ok();
+    let _ = h;
+    whoami::fallible::username().ok()
+}
+'''
+
+
+def host_and_account_names() -> None:
+    st, _ = scan({'scripts/record_run.py': ID_SCRIPT, 'runner/Cargo.toml': '[package]\nname = "runner"\n', 'runner/src/lib.rs': ID_RUST})
+    pts = [c for c in st['collection'] if c['file'] == 'scripts/record_run.py' and c['kind'] == 'machine_identifier']
+    got = {c['field'] for c in pts}
+    want = {'platform.node', 'socket.gethostname', 'USERNAME', 'USER', 'getpass.getuser', 'Path.home', 'COMPUTERNAME'}
+    check(want <= got, f'scan: host-name and account-name reads in Python are collection points (missing {sorted(want - got)})')
+    cats = {c['field']: c['category'] for c in pts}
+    check(cats.get('socket.gethostname') == 'device_identifier' and cats.get('getpass.getuser') == 'identity',
+          f'scan: a host name is a device identifier and an account name identity (got {cats})')
+    rs = {c['field'] for c in st['collection'] if c['file'] == 'runner/src/lib.rs' and c['kind'] == 'machine_identifier'}
+    check({'COMPUTERNAME', 'HOSTNAME', 'hostname::get', 'whoami::username'} <= rs,
+          f'scan: Rust host-name and account-name reads are collection points (got {sorted(rs)})')
+    art = [c for c in st['candidates'] if c['type'] == 'identifier_in_artifact']
+    check(len(art) == 1 and art[0]['file'] == 'scripts/record_run.py' and art[0]['line'] == 19,
+          f'scan: a host name written to a file is an identifier_in_artifact candidate (got {[(c["file"], c["line"]) for c in art]})')
+    logs = [c for c in st['candidates'] if c['type'] == 'personal_data_in_logs' and c['file'] == 'scripts/record_run.py']
+    check(len(logs) == 1 and logs[0]['line'] == 20, 'scan: printing a variable holding the host name is a personal-data-in-logs candidate')
+    check(not [c for c in st['candidates'] if c['type'] == 'excess_collection'], 'scan: machine identifiers are never excess_collection')
+
+
+INSTALL_PY = '''import json
+import urllib.request
+
+ARCHIVE_URL = "https://downloads.example-tools.io/pkg/tool-1.0.zip"
+
+
+def main(index_path):
+    urllib.request.urlretrieve(ARCHIVE_URL, "tool.zip")
+    package = json.load(open(index_path))
+    with urllib.request.urlopen(package["url"]) as resp:
+        return resp.read()
+'''
+
+
+def outbound_constant() -> None:
+    st, _ = scan({'scripts/install.py': INSTALL_PY})
+    hosts = {(h['host'], h['line']) for h in st['outbound_hosts']}
+    check(('downloads.example-tools.io', 8) in hosts,
+          f'scan: urlretrieve with a module-level URL constant is an outbound host (got {sorted(hosts)})')
+    unres = [(u['file'], u['line']) for u in st.get('outbound_unresolved') or []]
+    check(('scripts/install.py', 10) in unres, f'scan: an HTTP call whose host is not a literal is listed as unresolved (got {unres})')
+
+
+def subtitles_not_title() -> None:
+    st, _ = scan({'report.html': '<input class="filter" placeholder="Subtitles, HDR, playlists">\n<input name="job_title">\n'
+                                 '<input name="untitled_note">\n'})
+    cats = {c['line']: c['category'] for c in st['collection']}
+    check(cats.get(1) is None and cats.get(3) is None, f'scan: "title" inside "Subtitles" or "untitled" is not identity (got {cats})')
+    check(cats.get(2) == 'identity', 'scan: job_title is still identity')
+
+
+def regex_literal_not_sink() -> None:
+    js = ('import assert from "node:assert";\n'
+          'assert(!/fetch\\(|XMLHttpRequest|WebSocket/.test(script), "the report must not call out");\n'
+          'const banned = ["fetch(", "sendBeacon("];\n'
+          'const r = await fetch("https://api.example-sync.io/v1");\n')
+    st, _ = scan({'scripts/check-report.mjs': js})
+    lines = sorted(s['line'] for s in st['sinks'] if s['kind'] == 'http')
+    check(lines == [4], f'scan: a regex or string literal naming fetch( is no HTTP sink; a real fetch is (got lines {lines})')
+
+
+def minified_speed() -> None:
+    parts = ['<!doctype html><html><head><meta charset="utf-8"></head><body><div id="app">']
+    i = 0
+    while sum(map(len, parts)) < 300_000:
+        parts.append(f'<a href="https://docs{i % 50}.example-docs.io/p/{i}">entry {i}</a>'
+                     f'<script>var u{i}="https://www.google-analytics.com/collect?v=1&i={i}";</script>'
+                     f'<span data-src="//cdn{i % 7}.example-assets.io/img/{i}.png">consent {i}</span>')
+        i += 1
+    parts.append('</div></body></html>')
+    html = ''.join(parts)
+    with tempfile.TemporaryDirectory() as d:
+        root, out = Path(d) / 'repo', Path(d) / 'static.json'
+        write(root, {'docs/report.html': html})
+        (root / 'docs' / 'report.html').read_bytes()   # let an on-access virus scanner see the new file before timing
+        t0 = time.time()
+        subprocess.run([sys.executable, str(HERE / 'scan_privacy.py'), str(root), '--out', str(out)], capture_output=True, text=True)
+        secs = time.time() - t0
+        st = json.loads(out.read_text(encoding='utf-8')) if out.is_file() else {}
+    # the scan took over three minutes on such a file when every mention re-read the whole line; well under a second now
+    check(secs < 6, f'scan: a 300 KB single-line HTML file is scanned in under 6 s (took {secs:.1f} s)')
+    check(any(m['host'] == 'www.google-analytics.com' for m in st.get('host_mentions') or []), 'scan: hosts in the long line are still found')
+
+
+def by_the_code_statement() -> None:
+    rep = base()
+    rep['headline']['statement'] = (rep['headline'].get('statement', '') + ' By the code, nothing is sent to an analytics or telemetry vendor.').strip()
+    out = run_validator(rep)
+    check('which only a browser run could show' not in out,
+          f'validator: a not_run statement saying "by the code, nothing is sent" is accepted ({out.strip()[-200:]})')
+    rep = base()
+    rep['headline']['statement'] = (rep['headline'].get('statement', '') + ' Nothing is sent to an analytics vendor.').strip()
+    check('which only a browser run could show' in run_validator(rep), 'validator: an unqualified "nothing is sent" in a not_run audit still fails')
+    rep = base()
+    rep['headline']['statement'] = (rep['headline'].get('statement', '') + ' By the code, the capture showed no trackers.').strip()
+    check('which only a browser run could show' in run_validator(rep), 'validator: "the capture showed" fails whatever the qualifier')
+
+
+def open_line(p: Path, n: int) -> str:
+    return p.read_text(encoding='utf-8').splitlines()[n - 1].strip()
+
+
+def artifact_finding() -> None:
+    f = telemetry_finding(type='identifier_in_artifact', title='The run recorder writes the host name into a committed results file',
+                          categories=['device_identifier'], flow_basis='committed', default_on=None, reach=3,
+                          reach_source='the repository is public', fields=['host'],
+                          basis=[{'file': 'serve.py', 'line': 1, 'excerpt': open_line(REPO / 'serve.py', 1)}],
+                          artifacts=[{'file': 'serve.py', 'line': 2, 'what': 'host name'}],
+                          references={r: vpa.PROV['types'].get('identifier_in_artifact', {}).get(r, []) for r in ('EU', 'AU')},
+                          evidence={'summary': 'Found by review: the recorder writes the host name into a committed file.',
+                                    'code_path': [{'file': 'serve.py', 'line': 1}]})
+    f.pop('default_on')
+    rep = base()
+    rep['findings'].append(f)
+    out = run_validator(rep)
+    check(': valid (' in out, f'validator: an identifier_in_artifact finding with committed flow and an artifact location is valid ({out.strip()[-300:]})')
+    rep = base()
+    rep['findings'].append(dict(f, artifacts=[{'file': 'serve.py', 'line': 99999, 'what': 'host name'}]))
+    check('F06: artifact serve.py:99999' in run_validator(rep), 'validator: an artifact location is re-read with --repo')
+    rep = base()
+    g = dict(f)
+    g.pop('artifacts')
+    rep['findings'].append(g)
+    check('F06: identifier_in_artifact needs artifacts' in run_validator(rep), 'validator: identifier_in_artifact needs the artifact locations')
+    rep = base()
+    rep['findings'].append(telemetry_finding(flow_basis='committed'))
+    check('F06: flow_basis committed' in run_validator(rep), 'validator: flow_basis committed is for identifier_in_artifact only')
+
+
 def main() -> int:
-    for t in (go_scan, unanalysed_language, template_loaders, fonts_not_tracker, undeclared_without_canary, telemetry_before_consent, declared_must_name, inventory_and_headline,
+    for t in (rust_dominant_by_lines, host_and_account_names, outbound_constant, subtitles_not_title, regex_literal_not_sink,
+              minified_speed, by_the_code_statement, artifact_finding, go_scan, unanalysed_language, template_loaders, fonts_not_tracker, undeclared_without_canary, telemetry_before_consent, declared_must_name, inventory_and_headline,
               observed_with_runtime_evidence, url_credentials_message, language_limitation, committed_dist, static_front_end_flows,
               agent_undeclared_third_party, console_and_key_canaries, next_script_loaders, csp_compared, vendors_added, policy_mismatch,
               declared_page, categories_reproducible):
+        if sys.argv[1:] and t.__name__ not in sys.argv[1:]:  # python self_test.py <group> ... runs only those groups
+            continue
         try:
             t()
         except Exception as exc:  # a crash in one group is a failure, not the end of the run

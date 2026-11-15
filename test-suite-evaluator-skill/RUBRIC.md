@@ -121,6 +121,8 @@ Assess triggers, PR gating, sharding, caching, artifact retention, environment p
 
 A YAML file alone does not demonstrate CI readiness.
 
+A gate covers only what its command builds and runs: a coverage threshold enforced with the default features (or on a `--source` subset) says nothing about feature-gated code or the modules left out, and `#[ignore]`d or feature-gated tests that no job runs are a part of the suite CI does not run (3–4 when that part holds behaviour the product ships).
+
 - **1–2:** No CI runs the tests, or CI ignores their exit code.
 - **3–4:** CI runs only part of the suite (for example not the end-to-end layer), on weak triggers, or not as a required check; configured thresholds never run.
 - **5–6:** CI runs the suite on pull requests; gating, artefacts or provisioning incomplete.
@@ -232,7 +234,7 @@ Record each item in the evidence inventory with its `kind` (`application_source`
 - **ci_configuration:** the pipeline definitions that run the tests (workflow files, pipeline YAML). `partial` when a referenced template or required-check setting is unavailable.
 - **recent_execution:** results from the current code: your own runs (origin `assessor`), or CI or local reports for the assessed commit or one close to it. `partial` when only some layers or tests ran. A committed log from months ago is `other`.
 - **historical_ci:** outcomes of many CI runs over time (pass/fail per run, retries, durations), from the CI system or exported reports. Your own repeated runs are never historical CI, however many: they are recent execution and may support a flakiness observation for reliability. `partial` when fewer than about ten runs or a short window is available. Count only runs that reached the tests: a run waiting for approval (`action_required`, a fork pull request), cancelled, or failed with no jobs (a workflow file error, a billing or runner-availability stop) says nothing about the suite; leave them out of reliability and say how many were excluded and why. History counts only for the layers those CI jobs ran: runs of a job that tests a side tool say nothing about the main suite, which then has no historical CI.
-- **runtime_coverage:** a coverage report produced by instrumentation for the assessed code (coverage.py, V8/Istanbul, JaCoCo), from your run or a recent CI artefact. Hand-written summaries of coverage percentages are `other` and never support coverage claims.
+- **runtime_coverage:** a coverage report produced by instrumentation for the assessed code (coverage.py, V8/Istanbul, JaCoCo, cargo-llvm-cov, tarpaulin, `go test -coverprofile`), from your run or a recent CI artefact. Hand-written summaries of coverage percentages are `other` and never support coverage claims.
 - **mutation_report:** output of a mutation tool (Stryker, mutmut, PIT) for the assessed code.
 - **requirements:** authoritative statements of intended behaviour: specifications (OpenAPI, GraphQL schema, protobuf), tickets with acceptance criteria, product or API documentation the team maintains. `available` when they cover the main features; `partial` when they cover only some, or when the only specification is generated from the code at runtime (it describes what the code does, not what it should do).
 - **defect_history:** records of defects that escaped or were found: an issue tracker's bugs, incident reports, post-mortems, or a security audit report listing findings. Commit messages alone (`fix:` commits) are `partial` at most, because they show that something was fixed but not what failed or how it was found.

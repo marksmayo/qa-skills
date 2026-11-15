@@ -18,8 +18,10 @@ journey criticality or reach assessed the headline says the ranking rests on sur
 breaking_change area is planned with regression or contract testing (or left untested with a reason
 that names the breaking change); the headline doesn't contradict the register (no "no area reaches
 High" when one does, band counts and quoted risks and bands match); no "safe", "fully tested" or
-"risk-free". A judged factor may keep the computed score with a new reason (a reviewed surface). --write-summary fills in each area's computed fields, the effort and the summary;
-the headline stays yours.
+"risk-free". A judged factor may keep the computed score with a new reason (a reviewed surface).
+A language the risk file warns is outside every area is named in the plan, and so is every
+scope_outside_areas directory with changed lines. --write-summary fills in each area's computed
+fields, the effort and the summary, and writes only when the schema passes; the headline stays yours.
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -234,6 +236,24 @@ def check(plan: dict, risk: dict, inputs: dict) -> list[str]:
         if not re.search(r'\bno (?:automated )?tests?\b|\bwithout (?:any )?tests\b|\bno test (?:files|suite)\b', said, re.I):
             errs.append('the risk file warns that the repository has no test files (test weakness ranks nothing); the '
                         'headline, an assumption or an open question must say there are no tests')
+    # A language with a large share of the code outside every area: the plan names it (scored by --areas instead, or
+    # why it needs no testing), so half a product never leaves the plan silently.
+    plan_text = json.dumps([plan['summary'].get('headline', ''), plan['assumptions'], plan['open_questions'],
+                            [n['reason'] for n in plan['not_tested']]])
+    for w in risk.get('warnings') or []:
+        m = re.match(re.escape(score_risk.SECOND_LANGUAGE_WARNING) + r': (.+?) has \d+ of the', str(w))
+        if m and not re.search(rf'(?<![\w#+]){re.escape(m.group(1))}(?![\w#+])', plan_text, re.I):
+            errs.append(f'the risk file warns that {m.group(1)} code ({str(w).split(" has ", 1)[1].split(" in ", 1)[0]}) is '
+                        f'outside every area; the headline, an assumption, an open question or a not_tested reason must '
+                        f'name {m.group(1)} and say why it is not scored (or re-score with --areas that include it)')
+    # Changed lines that count in no scored area (scope_outside_areas): the plan names each directory, so a release
+    # whose changes sit in docs/, workflows or scripts never reads as covered by an unrelated assumption.
+    for x in risk.get('scope_outside_areas') or []:
+        name = str(x.get('path', '')).rstrip('/')
+        if name and x.get('lines') and not re.search(rf'(?<![\w.-]){re.escape(name)}(?![\w-])', plan_text):
+            errs.append(f'scope_outside_areas: {x["lines"]} changed line(s) in {x["path"]} ({x.get("reason")}) count in no '
+                        f'scored area; the headline, an assumption, an open question or a not_tested reason must name '
+                        f'{x["path"]} and say why it needs no testing (or re-score with --areas)')
     # When no area has journey criticality or reach assessed, impact is the surface factor alone and the ranking is a
     # ranking by surface patterns: the headline itself must say so (an assumption is not enough).
     surface_only = plan['areas'] and all(a['factors'][k]['status'] == 'not_assessed'
@@ -311,9 +331,44 @@ def self_test() -> int:
     errs = schema_errors(typed, schema)
     if errs:
         bad.append(f'resilience and privacy should be test types (got {errs[:3]})')
+    # a second language left outside the areas: the plan must name it
+    lang_w = {**risk, 'warnings': list(risk.get('warnings') or []) + [
+        f'{getattr(score_risk, "SECOND_LANGUAGE_WARNING", "a language with a large share")}: Python has 900 of the 2000 '
+        'code lines (45%) in 21 file(s) outside every area or only in "unassigned" (area basis: workspace packages): scripts/']}
+    errs = check(plan, lang_w, inputs)
+    if not any('Python' in e for e in errs):
+        bad.append(f'a plan that never names a second language the risk file says is outside the areas should fail (got {errs[:3]})')
+    named = json.loads(json.dumps(plan))
+    named['assumptions'].append('The Python scripts are release tooling and are tested by their own unit tests; they are '
+                                'not part of this plan.')
+    if any('Python' in e for e in check(named, lang_w, inputs)):
+        bad.append('a plan that names the second language should pass that check')
+    # changed lines in no scored area: the plan must name each directory
+    out_w = {**risk, 'scope_outside_areas': [{'path': 'docs/', 'reason': 'documentation or examples directory', 'files': 3,
+                                               'lines': 4200}]}
+    errs = check(plan, out_w, inputs)
+    if not any('docs/' in e for e in errs):
+        bad.append(f'a plan that never names changed lines outside every area (scope_outside_areas) should fail (got {errs[:3]})')
+    said_out = json.loads(json.dumps(plan))
+    said_out['assumptions'].append('The 4200 changed lines in docs/ are generated scoreboards and need no testing.')
+    if any('docs/' in e for e in check(said_out, out_w, inputs)):
+        bad.append('a plan that names the directory of the changed lines outside the areas should pass that check')
+    # --write-summary does not write a plan the schema rejects
+    import contextlib, io, tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        draft = json.loads(json.dumps(plan))
+        draft['summary']['headline'] = 'TODO'
+        draft['areas'][0]['risk'] = 0
+        p = Path(tmp) / 'plan.json'
+        p.write_text(json.dumps(draft), encoding='utf-8')
+        before = p.read_text(encoding='utf-8')
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = main([str(p), '--risk', str(ex / 'run' / 'risk.json'), '--write-summary'])
+        if rc == 0 or p.read_text(encoding='utf-8') != before:
+            bad.append('--write-summary must not write a plan that fails the schema (it wrote, or exited 0)')
     for b in bad:
         print('FAIL ' + b)
-    print(f'validate_test_plan self-test: {4 - len(bad)} passed, {len(bad)} failed')
+    print(f'validate_test_plan self-test: {9 - len(bad)} passed, {len(bad)} failed')
     return 1 if bad else 0
 
 
@@ -336,13 +391,15 @@ def main(argv=None) -> int:
         except (KeyError, TypeError) as exc:
             print(f'INVALID: cannot compute ({exc!r}); fix the plan structure first')
             return 1
-        args.plan.write_text(json.dumps(plan, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+    # the schema is checked before anything is written: --write-summary never leaves a half-valid plan on disk
     errs = schema_errors(plan, json.loads(SCHEMA.read_text(encoding='utf-8')))
     if errs:
-        print('INVALID (schema)')
+        print('INVALID (schema)' + (': nothing written' if args.write_summary else ''))
         for e in errs[:40]:
             print('  ' + e)
         return 1
+    if args.write_summary:
+        args.plan.write_text(json.dumps(plan, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     errs = check(plan, risk, load_inputs(args.input))
     if errs:
         print('INVALID')

@@ -59,7 +59,8 @@ python scripts/validate_flaky_report.py flaky_report.json --runs runs.json --sme
 python scripts/render_report.py flaky_report.json [--brief]
 ```
 
-`run_tests.py` has presets for pytest, Jest, Vitest, Playwright and gotestsum, and a `custom`
+`run_tests.py` has presets for pytest, Jest, Vitest, Playwright, node:test, gotestsum, go test, cargo
+and cargo-nextest, and a `custom`
 preset with `{junit}` and `{tests}` placeholders for anything that writes JUnit XML. For Vitest
 and Jest, pass the repo's own test command and environment (`--cmd`, `--env TZ=...`) when its
 `npm test` script adds them (`--preset node-test` runs `node --test` suites); SKILL.md has notes on pools, isolation, shuffling and timeouts.
@@ -68,7 +69,16 @@ counting, build failures, rerunning one test with `-run`, and running with a scr
 `USERPROFILE`; `scan_pitfalls.py` has a Go smell pack, reads pytest's `testpaths` and
 `python_files` so root scripts pytest never collects are not scanned as tests, and flags session
 HTTP calls, wall-time budget assertions and file mtimes compared with the wall clock. The
-validator checks priority labels the headline names against the computed ranking. Runs of one code hash on two platforms
+validator checks priority labels the headline names against the computed ranking.
+For Rust, `--preset cargo` parses `cargo test`'s own output per test (ids `<target>::<path>`) and
+`--preset nextest` runs any nextest profile; SKILL.md has Rust recipes for each variation
+(`--workers 1` against the default threads, shuffles only on nightly, libfaketime and `TZ` on Linux
+only). The Rust smell pack reads `#[cfg(test)]` modules, skips helper programs under
+`tests/fixtures/` and clock or `uuid4()` reads that only make unique folder names, and flags
+elapsed-time assertions, sample counts over a fixed duration and scratch folders never removed.
+`smells.json` lists each language's suite (`suites`, Rust tests counted from the Cargo model); the
+report records each in `metadata.suites`, a suite not run lowers evidence completeness, and a smell
+whose test never ran is `not_run`. Runs of one code hash on two platforms
 pool when each run records `platform`: an all-pass/all-fail split is `platform_dependent`, not a
 flake. A flake seen only in CI history is reported with `history_only` and its `history_evidence`
 (capped at P2). `python scripts/validate_flaky_report.py --self-test` and `python
@@ -108,7 +118,7 @@ journey therefore tops out at 8 (P2) by design, even at 3/3.
 | `consistently_failing` | Tests that failed every run |
 | `static_smells` | Every smell the scanner found and what it led to |
 | `variations`, `tools` | What ran and what didn't, with reasons |
-| `summary` | Counts, causes, priorities, total runs and evidence completeness |
+| `summary` | Counts, causes, priorities, total runs (single-test runs apart) and evidence completeness |
 
 `runs.json` keeps every run: the command, exit code, duration, variation, code hash and parsed
 JUnit cases.

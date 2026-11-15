@@ -64,16 +64,23 @@ python scripts/render_report.py examples/triage.example.json
 - `SKILL.md`, `RUBRIC.md`
 - `schemas/triage.schema.json`
 - `data/signatures.json`: environment, data and real signatures (including Go module downloads, compile
-  errors, data races, golangci-lint and gofmt)
+  errors, data races, golangci-lint and gofmt, Rust compile errors, clippy with `-D warnings`, rustfmt,
+  coverage gates, and billing or spending-limit stops)
 - `scripts/fetch_run.py`: GitHub and Azure DevOps fetch and normalisation (or a recorded directory). The
   API token is never sent to the storage host a log or artifact download redirects to; a download that
   fails is recorded (`fetch_problems`) and makes the script exit 2. Each failed GitHub job's check-run
   annotations are saved (`raw/annotations/`); a job that never started on a runner (a billing or runner
-  stop) is `never_started`, not a failed log download, and a run of only such jobs is `not_run`.
+  stop) is `never_started`, not a failed log download (no log is requested for it), its start-to-completion
+  time is recorded as queue time (`queued_for_s`), and a run of only such jobs is `not_run`. The history
+  covers the branch, the default branch (whose newest green run starts the range when the branch has none,
+  `--default-branch` for Azure DevOps) and the runs of the same commit, each query bounded and recorded
+  (`history_query`).
 - `scripts/extract_failures.py`, `scripts/rerun.py`, `scripts/owning_change.py`, `scripts/classify.py`
 - `scripts/validate_triage.py`, `scripts/render_report.py`
 - `scripts/self_test.py`: loopback redirect and download-failure checks, log extraction (including Go
-  test, build, race, lint and format output), Go signatures, a run with no job, agent-named tests, local
+  test, build, race, lint and format output, and `cargo test`, nextest, Rust compile, clippy, rustfmt and
+  coverage-gate output), Go signatures, a synthetic GitHub recording of a Rust workspace's checks, a job
+  that never started (billing annotation, queue time, a later pass on the same commit), `files_written`, a run with no job, agent-named tests, local
   repeat runs, the owning change with and without a last green run, and a synthetic run through the whole
   pipeline with seeded violations (`python scripts/self_test.py`)
 - `<run>/local_runs.json` (optional, written by the agent): local repeat runs of a failing test on the

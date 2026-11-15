@@ -22,6 +22,16 @@ commands. Besides the usual file names, YAML files at the top level or under pip
 (pipelines/, .azure-pipelines/, .azuredevops/, ci/, templates/ ...) count as CI when they are
 shaped like an Azure DevOps pipeline or template (trigger/stages/jobs/steps with pool, task,
 script or template entries).
+
+`ci_gates` lists the test and coverage gates CI runs ({file, line, job, step, command, runner, fail_under}): cargo
+test, cargo nextest, cargo llvm-cov and cargo tarpaulin with their --fail-under-lines/functions/regions thresholds,
+pytest (--cov-fail-under), python -m unittest, coverage run -m unittest|pytest, coverage report --fail-under and go
+test. Each area with Python tests has `python_runner` ({runner, reason, evidence, command}): unittest when CI runs
+unittest or every test module defines unittest.TestCase classes and nothing configures or imports pytest; pytest
+otherwise (said to be assumed when nothing names a runner). Areas carry `language_lines` (non-blank lines per
+language) beside `languages` (files); the top level carries `languages` ({files, lines, test_files, test_lines} per
+language) and `dominant_language`, decided by product lines as lang_census does (test files and tooling folders
+such as scripts/ counted apart).
 """
 from __future__ import annotations
 import argparse, fnmatch, json, os, re, sys
@@ -264,7 +274,33 @@ RUN_HINTS = re.compile(r'\b(pytest|python -m pytest|tox|nox|npm (run )?test\S*|n
                        r' +(run +)?\S*test\S*|node +(--[\w-]+(=\S+)? +)*--test|npx(jest|vitest|playwright test|cypress run|wdio|detox test)|'
                        r'(jest|vitest|mocha)\b|playwright test|cypress run|go test|mvn (-\S+ )*(verify|test)|'
                        r'(\./)?gradlew? \S*(test|check|connected\w*AndroidTest)|bundle exec (rspec|rake|cucumber)|rspec|'
-                       r'dotnet test|cargo (nextest run|test)|flutter test|phpunit|xcodebuild (\S+ )*test|maestro test|detox test|behave)\b')
+                       r'dotnet test|cargo (\+\S+ )?(nextest run|test|llvm-cov|tarpaulin)|flutter test|phpunit|xcodebuild (\S+ )*test|'
+                       r'maestro test|detox test|behave|python[\d.]* -m unittest|coverage run)\b')
+
+# where a command starts on a CI line: the line's start or after && || ; | $( ( `, then any VAR=value assignments and
+# wrappers (sudo, time, env, uv run, poetry run, pipenv run, pdm run, hatch run, rye run, xvfb-run); so `pytest` in
+# `pip install pytest pytest-cov` or in an echo is never an invocation
+CMD_START = (r'(?:^|&&|\|\||;|\||\$\(|\(|`)\s*(?:[A-Za-z_]\w*=\S*\s+)*'
+             r'(?:(?:sudo|time|exec|env|uv run|poetry run|pipenv run|pdm run|hatch run|rye run|xvfb-run(?: -\S+)*)\s+)*'
+             r'(?:[\w.~$/\\-]*[/\\])?')   # a path to the executable (.venv/bin/pytest)
+# CI test gates: (runner, pattern) tried in order on each command line of a CI file; thresholds are read separately
+CI_GATE_RUNNERS = [
+    ('cargo-llvm-cov', re.compile(r'\bcargo (\+\S+ )?llvm-cov\b')),
+    ('cargo-tarpaulin', re.compile(r'\bcargo (\+\S+ )?tarpaulin\b')),
+    ('cargo-nextest', re.compile(r'\bcargo (\+\S+ )?nextest run\b')),
+    ('cargo-test', re.compile(r'\bcargo (\+\S+ )?test\b')),
+    ('coverage-unittest', re.compile(CMD_START + r'(?:python[\d.]* -m )?coverage run\b.*-m unittest\b')),
+    ('coverage-pytest', re.compile(CMD_START + r'(?:python[\d.]* -m )?coverage run\b.*-m pytest\b')),
+    ('coverage-report', re.compile(r'\bcoverage (report|xml|json|html)\b.*--fail-under')),
+    ('unittest', re.compile(CMD_START + r'python[\d.]* -m unittest\b')),
+    ('pytest', re.compile(CMD_START + r'(?:python[\d.]* -m |py(?: -[\d.]+)? -m )?pytest\b(?!-)')),
+    ('go-test', re.compile(r'\bgo test\b')),
+]
+CI_THRESHOLDS = [
+    (re.compile(r'--fail-under-(lines|functions|regions)[ =](\d+(?:\.\d+)?)'), None),
+    (re.compile(r'--cov-fail-under[ =](\d+(?:\.\d+)?)'), 'total'),
+    (re.compile(r'--fail-under[ =](\d+(?:\.\d+)?)'), 'total'),
+]
 
 def rel(p: Path, root: Path) -> str:
     return PurePosixPath(p.relative_to(root)).as_posix()
@@ -556,6 +592,85 @@ class Detector:
                         commands.append(cmd)
         return ci_files, commands
 
+    def ci_gates(self, ci_files: list[str]) -> list[dict]:
+        """Test and coverage gates in CI: every command line that runs cargo test, cargo nextest, cargo llvm-cov,
+        cargo tarpaulin, pytest, python -m unittest, coverage run -m unittest|pytest, coverage report --fail-under or
+        go test, with {file, line, job, step, command, runner, fail_under: {lines|functions|regions|total: N} | None}.
+        The job is the GitHub Actions job id (or Azure DevOps job name) the line sits under; the step its name."""
+        gates = []
+        for f in ci_files:
+            lines = read(self.root / f).splitlines()
+            job, jobs_indent, step = None, None, None
+            for i, line in enumerate(lines, 1):
+                ind = len(line) - len(line.lstrip())
+                st = line.strip()
+                if re.match(r'^jobs\s*:\s*$', st):
+                    jobs_indent, job = ind, None
+                    continue
+                if jobs_indent is not None and ind == jobs_indent + 2 and re.match(r'^[\w.-]+\s*:\s*$', st):
+                    job, step = st.rstrip(':').strip(), None
+                    continue
+                m = re.match(r'^-\s*(?:job|deployment)\s*:\s*(\S+)', st)
+                if m:
+                    job, step = m.group(1).strip('\'"'), None
+                m = re.match(r'^-?\s*(?:name|displayName)\s*:\s*(.+)$', st)
+                if m and (st.startswith('-') or step is None or ind > (jobs_indent or 0) + 2):
+                    step = m.group(1).strip().strip('\'"')
+                    continue
+                if st.startswith('- ') and not re.match(r'^-\s*(run|script|bash|pwsh|powershell)\s*:', st):
+                    step = None
+                cmd = re.sub(r'^\s*(-\s*)?(run|script|command|sh|bash|pwsh|powershell)\s*:\s*[|>]?[-+]?\s*', '', line).strip()
+                if len(cmd) > 1 and cmd[0] == cmd[-1] and cmd[0] in '\'"':
+                    cmd = cmd[1:-1]
+                if not cmd or cmd.startswith('#') or len(cmd) > 400:
+                    continue
+                runner = next((r for r, rx in CI_GATE_RUNNERS if rx.search(cmd)), None)
+                if not runner:
+                    continue
+                fail_under = {}
+                for rx, key in CI_THRESHOLDS:
+                    for mm in rx.finditer(cmd):
+                        k = key or mm.group(1)
+                        if k not in fail_under:
+                            fail_under[k] = float(mm.group(mm.lastindex))
+                gates.append({'file': f, 'line': i, 'job': job, 'step': step, 'command': cmd, 'runner': runner,
+                              'fail_under': fail_under or None})
+        return gates
+
+    def python_runner(self, area: dict, ci_gates: list[dict], has_pytest_config: bool) -> dict | None:
+        """{runner: unittest|pytest, reason, evidence, command} for an area with Python tests. unittest when CI runs
+        unittest (python -m unittest, coverage run -m unittest) or every test file is a unittest.TestCase module,
+        and nothing says pytest (config, conftest.py, a pytest import or marker); pytest otherwise. CI's own command
+        is given when there is one."""
+        py = [f for f in area['test_files'] if f.endswith('.py')]
+        if not py:
+            return None
+        texts = {f: read(self.root / f, 120_000) for f in py[:200]}
+        pytest_files = [f for f, t in texts.items() if re.search(r'^\s*(import pytest|from pytest\b)|@pytest\.', t, re.M)
+                        or PurePosixPath(f).name == 'conftest.py']
+        testcase_files = [f for f, t in texts.items() if re.search(r'unittest\.TestCase|\(\s*TestCase\s*\)', t)]
+        ci_unit = [g for g in ci_gates if g['runner'] in ('unittest', 'coverage-unittest')]
+        ci_pyt = [g for g in ci_gates if g['runner'] in ('pytest', 'coverage-pytest')]
+        if ci_unit and not ci_pyt and not pytest_files:
+            g = ci_unit[0]
+            return {'runner': 'unittest', 'reason': 'CI runs the tests with unittest and no test uses pytest',
+                    'evidence': [f"{g['file']}:{g['line']}"] + testcase_files[:2], 'command': g['command']}
+        if testcase_files and len(testcase_files) == len(texts) and not pytest_files and not has_pytest_config \
+                and not ci_pyt:
+            d = self._test_dir(py[0]) or '.'
+            return {'runner': 'unittest', 'reason': 'every Python test module defines unittest.TestCase classes and '
+                    'nothing configures or imports pytest', 'evidence': testcase_files[:3],
+                    'command': f'python -m unittest discover -s {d}'}
+        if ci_pyt:
+            g = ci_pyt[0]
+            return {'runner': 'pytest', 'reason': 'CI runs pytest', 'evidence': [f"{g['file']}:{g['line']}"],
+                    'command': g['command']}
+        if pytest_files or has_pytest_config:
+            return {'runner': 'pytest', 'reason': 'pytest is configured or imported by the tests',
+                    'evidence': pytest_files[:3], 'command': 'python -m pytest'}
+        return {'runner': 'pytest', 'reason': 'assumed: plain test functions with no runner named (pytest also runs '
+                'unittest classes); check CI', 'evidence': py[:2], 'command': 'python -m pytest'}
+
     def run(self, target: str | None) -> dict:
         self.walk()
         roots = self.area_roots()
@@ -571,7 +686,13 @@ class Detector:
                 if isinstance(name, str):
                     pkg_names[r] = name
         ci_files, ci_cmds = self.ci()
-        areas = {r: {'root': r, 'manifests': [], 'languages': {}, 'frameworks': {}, 'style': {}, 'test_files': [],
+        ci_gates = self.ci_gates(ci_files)
+        repo_langs: dict[str, dict] = {}
+        product_lines: dict[str, int] = {}
+        tooling_lines: dict[str, int] = {}
+        manifest_dirs = {r for r in roots if r != '.'}
+        areas = {r: {'root': r, 'manifests': [], 'languages': {}, 'language_lines': {}, 'frameworks': {}, 'style': {},
+                     'test_files': [],
                      'run_commands': [], 'e2e_blocks': {k: [] for k in E2E_BLOCKS}, 'selectors': {},
                      'config_files': []} for r in roots}
         def add_fw(area, cat, name, evidence):
@@ -590,6 +711,19 @@ class Detector:
             if p.suffix in LANG_EXT:
                 lang = LANG_EXT[p.suffix]
                 a['languages'][lang] = a['languages'].get(lang, 0) + 1
+                n_lines = sum(1 for x in read(self.root / f).splitlines() if x.strip())
+                a['language_lines'][lang] = a['language_lines'].get(lang, 0) + n_lines
+                rl = repo_langs.setdefault(lang, {'files': 0, 'lines': 0, 'test_files': 0, 'test_lines': 0})
+                rl['files'] += 1
+                rl['lines'] += n_lines
+                cname = (_lc.LANG_BY_EXT.get(p.suffix) if _lc else None) or lang
+                if (_lc.is_test_file(f, manifest_dirs) if _lc else is_test_file(f)):
+                    rl['test_files'] += 1
+                    rl['test_lines'] += n_lines
+                elif _lc and _lc.is_tooling_file(f):
+                    tooling_lines[cname] = tooling_lines.get(cname, 0) + n_lines
+                else:
+                    product_lines[cname] = product_lines.get(cname, 0) + n_lines
             name = p.name
             if name in MANIFESTS or p.suffix == '.csproj':
                 a['manifests'].append(f)
@@ -751,6 +885,7 @@ class Detector:
                 'root': r,
                 'has_tests': bool(a['test_files']),
                 'languages': dict(sorted(a['languages'].items(), key=lambda kv: -kv[1])),
+                'language_lines': dict(sorted(a['language_lines'].items(), key=lambda kv: -kv[1])),
                 'manifests': a['manifests'],
                 'frameworks': a['frameworks'],
                 'config_files': sorted(set(a['config_files'])),
@@ -765,6 +900,12 @@ class Detector:
             }
             if a.get('pytest'):
                 fingerprint['pytest'] = a['pytest']
+            pr = self.python_runner(a, [g for g in ci_gates if self._ci_applies(g, r, fw_names, [x for x in roots
+                                                                                         if x != '.'], pkg_names.get(r))],
+                                    bool(a.get('pytest')) or 'pytest' in fw_names - {'unittest'} and any(
+                                        'pytest' in c for c in a['config_files'] + a['manifests']))
+            if pr:
+                fingerprint['python_runner'] = pr
             if not a['test_files']:
                 fingerprint['proposal'] = self._proposal(fingerprint)
             result_areas.append(fingerprint)
@@ -776,6 +917,11 @@ class Detector:
             'tooling': self.tooling,
             'areas': result_areas,
             'has_tests': any(x['has_tests'] for x in result_areas),
+            'ci_gates': ci_gates,
+            'languages': dict(sorted(repo_langs.items(), key=lambda kv: -kv[1]['lines'])),
+            'dominant_language': (max(product_lines or tooling_lines, key=lambda k: (product_lines or tooling_lines)[k])
+                                  if (product_lines or tooling_lines) else None),
+            'dominant_by': 'product lines (lang_census rule: test files and tooling folders counted apart)',
             'build_output': self.build_output,
             'limitations': self.limitations + [
                 f"{b['path']}/ was not scanned: {b['reason']} (pass --include {b['path']} if it is source)"
@@ -962,6 +1108,96 @@ def base_url_of(text: str) -> dict | None:
     return out
 
 
+CI_RUST_UNITTEST = """name: ci
+on: [push]
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Coverage gate
+        run: cargo llvm-cov --workspace --all-features --fail-under-lines 90 --fail-under-functions 85
+      - name: Tests
+        run: |
+          cargo nextest run --workspace
+          cargo test --doc
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Helper script tests
+        run: |
+          coverage run -m unittest discover -s tests
+          coverage report --fail-under=80
+      - run: python -m unittest discover -s tests -p "test_*.py"
+      - name: Install tools
+        run: |
+          pip install pytest pytest-cov
+          python -m pip install --upgrade pytest
+          uv pip install pytest-xdist
+          pipx run pytest-check-links docs
+          echo "pytest is not used here"
+"""
+
+
+def _rust_unittest_checks() -> list:
+    """A tide-table Cargo workspace with Python helper scripts tested by unittest, and a GitHub workflow with a
+    cargo llvm-cov gate, nextest, and coverage run -m unittest."""
+    import tempfile
+    rs = 'pub fn level(h: f64) -> f64 {\n    h * 2.0\n}\n' * 30
+    files = {'Cargo.toml': '[workspace]\nmembers = ["crates/*"]\n',
+             'crates/tides-core/Cargo.toml': '[package]\nname = "tides-core"\n',
+             'crates/tides-core/src/lib.rs': rs + '#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() {}\n}\n',
+             'crates/tides-core/src/table.rs': rs,
+             'crates/tides-core/tests/levels.rs': '#[test]\nfn levels() {}\n',
+             '.github/workflows/ci.yml': CI_RUST_UNITTEST}
+    for i in range(6):
+        files[f'scripts/report{i}.py'] = 'def build():\n    return 1\n'
+        files[f'tests/test_report{i}.py'] = ('import sys, unittest\nfrom pathlib import Path\n'
+                                             'sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))\n'
+                                             f'import report{i}\n\n\nclass ReportTest(unittest.TestCase):\n'
+                                             '    def test_build(self):\n        self.assertEqual(report0.build(), 1)\n')
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for rel_path, body in files.items():
+            (root / rel_path).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel_path).write_text(body, encoding='utf-8')
+        try:
+            res = Detector(root, 10_000).run(None)
+        except Exception as e:   # noqa: BLE001
+            return [('detect_conventions runs on a Cargo workspace with unittest helpers', False, repr(e))]
+    areas = {a['root']: a for a in res['areas']}
+    gates = res.get('ci_gates') or []
+    by = {g.get('runner'): g for g in gates}
+    cov = by.get('cargo-llvm-cov', {})
+    checks = [
+        ('ci_gates: cargo llvm-cov with its --fail-under thresholds, the workflow file, line, job and step',
+         cov.get('file') == '.github/workflows/ci.yml' and cov.get('line') == 9 and cov.get('job') == 'rust'
+         and cov.get('step') == 'Coverage gate' and cov.get('fail_under') == {'lines': 90.0, 'functions': 85.0}, gates),
+        ('ci_gates: nextest, cargo test, coverage run -m unittest with its report threshold, python -m unittest',
+         {'cargo-nextest', 'cargo-test', 'coverage-unittest', 'unittest'} <= set(by)
+         and by.get('coverage-unittest', {}).get('line') == 19 and by.get('coverage-unittest', {}).get('step') == 'Helper script tests' and by.get('coverage-unittest', {}).get('job') == 'python'
+         and (by.get('coverage-report') or {}).get('fail_under') == {'total': 80.0}, sorted(by)),
+        ('ci_gates: installing pytest (pip install pytest pytest-cov) or mentioning it is not a pytest gate',
+         not [g for g in gates if g.get('runner') in ('pytest', 'coverage-pytest')],
+         [(g.get('line'), g.get('command')) for g in gates if g.get('runner') in ('pytest', 'coverage-pytest')]),
+        ('CI run commands include cargo llvm-cov and coverage run -m unittest',
+         {'cargo llvm-cov --workspace --all-features --fail-under-lines 90 --fail-under-functions 85',
+          'coverage run -m unittest discover -s tests'} <= {c['command'] for c in areas.get('.', {}).get('run_commands', [])},
+         [c['command'] for c in areas.get('.', {}).get('run_commands', [])]),
+        ('the Python runner is unittest when the tests are TestCase classes and CI runs unittest (not assumed pytest)',
+         (areas.get('.', {}).get('python_runner') or {}).get('runner') == 'unittest'
+         and 'coverage run -m unittest discover -s tests' in (areas.get('.', {}).get('python_runner') or {}).get('command', ''),
+         areas.get('.', {}).get('python_runner')),
+        ('per-area languages carry lines, Rust included',
+         (areas.get('crates/tides-core', {}).get('language_lines') or {}).get('rust', 0) >= 180,
+         areas.get('crates/tides-core', {}).get('language_lines')),
+        ('repository languages (files and lines) and the dominant one by product lines',
+         (res.get('languages') or {}).get('rust', {}).get('lines', 0) > 0 and res.get('dominant_language') == 'Rust',
+         (res.get('languages'), res.get('dominant_language'))),
+    ]
+    return checks
+
+
 def self_test() -> int:
     """Check product packages named e2e, gated framework signals, node:test, workspace filters and tooling."""
     import tempfile
@@ -1048,6 +1284,7 @@ def self_test() -> int:
         ('a Playwright config with no test script still gives a run command',
          'pnpm exec playwright test' in (cmds('apps/birds') if 'apps/birds' in areas else []), cmds('apps/birds') if 'apps/birds' in areas else sorted(areas)),
     ]
+    checks += _rust_unittest_checks()
     failed = 0
     for name, ok, extra in checks:
         failed += not ok

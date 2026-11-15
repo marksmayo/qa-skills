@@ -6,7 +6,7 @@
   "required": ["schema_version", "metadata", "tools", "baseline", "mutants", "findings", "coverage_gaps", "summary", "limitations", "files_changed"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": {"enum": ["1.0.0", "1.1.0", "1.2.0"]},
+    "schema_version": {"enum": ["1.0.0", "1.1.0", "1.2.0", "1.3.0"], "description": "Write 1.3.0 (the current version); older versions are still accepted. 1.3.0 requires metadata.language_coverage and a headline naming every P0 finding."},
     "metadata": {
       "type": "object",
       "required": ["repo", "commit", "code_hash", "scope", "engines", "coverage", "budget_minutes", "write_tests", "platform", "generated_at"],
@@ -39,7 +39,23 @@
         "write_tests": {"type": "boolean"},
         "critical_paths": {"type": "array", "items": {"type": "string"}, "description": "functions or files the user marked critical (journey-mapper P0/P1 steps)"},
         "platform": {"type": "string"},
-        "generated_at": {"type": "string"}
+        "generated_at": {"type": "string"},
+        "language_coverage": {
+          "type": "object",
+          "description": "Copied from mutants.json (normalize_results.py). Required from schema 1.3.0. When unmutated_dominant names a language, or tooling_scope_files is not empty, a limitation must say so.",
+          "required": ["dominant", "dominant_by", "product_lines", "mutated_languages", "status", "unmutated_dominant", "tooling_scope_files", "warning"],
+          "additionalProperties": false,
+          "properties": {
+            "dominant": {"type": ["string", "null"], "description": "the language with the most lines of product code (test code and tooling folders counted apart)"},
+            "dominant_by": {"enum": ["lines", "files", null]},
+            "product_lines": {"type": "object"},
+            "mutated_languages": {"type": "array", "items": {"type": "string"}},
+            "status": {"enum": ["ok", "partial", "unsupported_dominant", "no_source"]},
+            "unmutated_dominant": {"type": ["string", "null"], "description": "the product's main language when no mutant is in it"},
+            "tooling_scope_files": {"type": "array", "items": {"type": "string"}, "description": "scoped files in tooling folders (scripts/, tools/, ...) while the product is elsewhere"},
+            "warning": {"type": ["string", "null"]}
+          }
+        }
       }
     },
     "tools": {

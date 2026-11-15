@@ -45,6 +45,12 @@ source file and little else is a data tree: it is not walked and is listed under
 `prune_data_dirs(dirpath, dirnames, skipped)` applies the same rule inside any os.walk loop, so walkers looking for
 code never open thousands of data records (`data_dir_reason(files)` is the test on one directory's file names).
 
+UI markup for desktop and mobile toolkits (.slint Slint, .qml QML, .xaml XAML, .ui Qt Designer or GtkBuilder
+'UI definition', .glade Glade, .kv Kivy) is counted under `markup` and `ui_markup` ({kind: files}, examples in
+`ui_markup_examples`): never a language, never dominant. language_coverage() lists it under `ui_markup` with a note
+that it is present but not analysed (unless the caller names the kind among its supported languages); the status is
+unchanged.
+
 Markup is counted apart, under `markup` (HTML, CSS, Templates; an .html file under templates/, views/, layouts/ or
 partials/ is a template). `server_rendered` names a Python web app that renders templates (Flask, Django, Jinja2,
 Starlette/FastAPI templating, Bottle, Pyramid ...: an import or a render call) with its template count and
@@ -53,16 +59,27 @@ the tool reads those templates: a Python-dominant server-rendered site is then '
 the server, outside the tool's scope), never 'unsupported_dominant'. A tool that does not read templates still gets
 the warning.
 
+The dominant language is the one with the most non-blank lines of PRODUCT code (`dominant_by: 'lines'`). Test code
+(is_test_file: test_x.py, x_test.go, x.test.ts, XTest.java, tests.rs, or anything under tests/, test/, __tests__/,
+spec/, e2e/, testdata/, benches/, benchmarks/ ... unless that folder holds its own package manifest) is counted apart
+under `test_files` and `test_lines` and decides only a repository with no product line (a standalone test
+repository). Helper scripts under tooling folders (is_tooling_file: scripts/, tools/, docs/, hack/, ci/ ...) are
+counted apart under `tooling_files` and `tooling_lines` and decide only when neither product nor test code holds a
+line. `dominant_basis` says which lines decided ('product', 'test' or 'tooling') and `dominant_lines` counts them. `languages` keeps every counted file (product and test) per
+language; `product_files` and `lines` are the product part. With no product line at all the most product files decide
+(`dominant_by: 'files'`). In-source test modules (a Rust #[cfg(test)] module) are product lines here.
+
 Library use:
     import lang_census
-    c = lang_census.census(repo)                     # {'languages': {'Go': 225, ...}, 'dominant': 'Go', ...}
+    c = lang_census.census(repo)   # {'languages': {'Python': 36, 'Rust': 31}, 'lines': {'Rust': 9100, 'Python': 2400},
+                                   #  'dominant': 'Rust', 'dominant_by': 'lines', 'test_files': {...}, ...}
     cov = lang_census.language_coverage(c, {'Python', 'JavaScript', 'TypeScript'}, tool='scan_x.py')
     if cov['status'] == 'unsupported_dominant':
         print(cov['warning'], file=sys.stderr)       # and put cov in the output as `language_coverage`
     lang_census.excluded_path(c, 'drivers/ios/Agent/x.ts')   # the exclusion reason, or None
 """
 from __future__ import annotations
-import argparse, json, os, re, sys, tempfile
+import argparse, json, os, re, shutil, sys, tempfile
 from collections import Counter
 from pathlib import Path, PurePosixPath
 
@@ -120,6 +137,12 @@ MARKUP_BY_EXT = {'.html': 'HTML', '.htm': 'HTML', '.xhtml': 'HTML', '.css': 'CSS
                  '.ejs': 'Templates', '.twig': 'Templates', '.liquid': 'Templates', '.tmpl': 'Templates',
                  '.gohtml': 'Templates', '.pug': 'Templates', '.jade': 'Templates', '.haml': 'Templates',
                  '.slim': 'Templates', '.cshtml': 'Templates', '.razor': 'Templates', '.blade.php': 'Templates'}
+# UI markup for desktop and mobile toolkits: the UI is described in these files, but no tool here reads them. Counted
+# apart (under `markup` and `ui_markup`), never a language and never the dominant one; language_coverage names them.
+UI_MARKUP_BY_EXT = {'.slint': 'Slint', '.qml': 'QML', '.xaml': 'XAML', '.ui': 'UI definition', '.glade': 'Glade',
+                    '.kv': 'Kivy'}
+MARKUP_BY_EXT.update(UI_MARKUP_BY_EXT)
+UI_MARKUP_KINDS = set(UI_MARKUP_BY_EXT.values())
 TEMPLATE_DIRS = {'templates', 'template', 'views', 'layouts', 'partials', 'includes', '_includes', '_layouts'}
 # a Python module that serves pages from templates: the web framework it imports, or a template render call
 PY_WEB = re.compile(r'^\s*(?:from|import)\s+(flask|django|jinja2|bottle|pyramid|quart|sanic|starlette\.templating|'
@@ -252,10 +275,52 @@ def generated_reason(rel: str, text: str) -> str | None:
     return None
 
 
+# ---- test code: counted apart, never deciding the dominant language ----
+# directories that hold tests, fixtures or benchmarks (unless the directory itself holds a package manifest: then it
+# is a product package that happens to be named like tests, e.g. a CLI package called e2e/)
+TEST_DIRS = {'tests', 'test', '__tests__', '__mocks__', 'spec', 'specs', 'e2e', 'testdata', 'test_data', 'benches',
+             'benchmarks', 'cypress'}
+TEST_FILE = re.compile(r'(^test_.*\.py$|.*_test\.py$|^conftest\.py$|.*_test\.go$|.*\.(test|spec|e2e|cy)\.[cm]?[jt]sx?$|'
+                       r'.*(Test|Tests|IT)\.(java|kt|kts|cs|php|swift|scala)$|.*_(spec|test)\.rb$|^tests?\.rs$)')
+# folders of helper scripts and documentation tooling: counted apart (tooling_files, tooling_lines); they decide the
+# dominant language only when the repository holds no other product line
+TOOLING_DIRS = {'scripts', 'script', 'tools', 'tooling', 'docs', 'doc', 'hack', 'ci', '.github', 'devtools'}
+LINE_READ_MAX = 4 * 1024 * 1024
+LINE_RULE_MIN_LINES = 500
+
+
+def is_test_file(rel: str, manifest_dirs: set[str] | None = None) -> bool:
+    """Is rel (repo-relative, '/'-separated) test code: a test file name (test_x.py, x_test.go, x.test.ts, XTest.java,
+    tests.rs ...) or a file under a test directory (tests/, test/, __tests__/, spec/, e2e/, testdata/, benches/,
+    benchmarks/ ...)? A test-named directory listed in manifest_dirs (it holds its own package manifest) is a product
+    package, not test code."""
+    parts = rel.split('/')
+    if TEST_FILE.match(parts[-1]):
+        return True
+    for i, p in enumerate(parts[:-1]):
+        if p.lower() in TEST_DIRS and '/'.join(parts[:i + 1]) not in (manifest_dirs or ()):
+            return True
+    return False
+
+
+def is_tooling_file(rel: str) -> bool:
+    """Is rel (repo-relative) under a tooling folder (scripts/, tools/, docs/, hack/, ci/ ...)?"""
+    return any(p.lower() in TOOLING_DIRS for p in rel.split('/')[:-1])
+
+
+def count_lines(text: str) -> int:
+    """Non-blank lines of a source file's text."""
+    return sum(1 for line in text.splitlines() if line.strip())
+
+
 def _read_head(path: Path, n: int = GENERATED_READ) -> str:
+    """The first n characters of a file. A text-mode read(n) sizes its buffer by n, so the request is capped at the
+    file's own size (bytes are never fewer than the characters they decode to): reading a small file costs microseconds,
+    not the milliseconds a multi-megabyte buffer takes."""
     try:
+        size = os.path.getsize(path)
         with open(path, encoding='utf-8', errors='replace') as fh:
-            return fh.read(n)
+            return fh.read(min(n, size + 1))
     except OSError:
         return ''
 
@@ -567,6 +632,7 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
     evidence = BuildEvidence(root, inc)
     langs: Counter = Counter()
     markup: Counter = Counter()
+    ui_markup_examples: dict[str, list[str]] = {}
     generated: Counter = Counter()
     generated_files: list[dict] = []
     examples: dict[str, list[str]] = {}
@@ -577,9 +643,18 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
     data_trees: list[dict] = []
     py_files: list[str] = []
     template_files: list[str] = []
+    lines: Counter = Counter()
+    product_files: Counter = Counter()
+    test_files: Counter = Counter()
+    test_lines: Counter = Counter()
+    tooling_files: Counter = Counter()
+    tooling_lines: Counter = Counter()
+    manifest_dirs: set[str] = set()
     for dp, dns, fns in os.walk(root):
         rel = Path(dp).relative_to(root).as_posix()
         rel = '' if rel == '.' else rel
+        if rel and any(m in fns for m in MANIFESTS):
+            manifest_dirs.add(rel)
         keep = []
         for d in sorted(dns):
             sub = f'{rel}/{d}' if rel else d
@@ -618,14 +693,25 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
             frel = f'{rel}/{f}' if rel else f
             lang = LANG_BY_EXT.get(PurePosixPath(f).suffix)
             if lang:
+                text = _read_head(Path(dp) / f, LINE_READ_MAX)
                 if lang in JS_FAMILY:
-                    gen = generated_reason(frel, _read_head(Path(dp) / f))
+                    gen = generated_reason(frel, text[:GENERATED_READ])
                     if gen:
                         generated[lang] += 1
                         if len(generated_files) < 200:
                             generated_files.append({'path': frel, 'language': lang, 'reason': gen})
                         continue
                 langs[lang] += 1
+                n_lines = count_lines(text)
+                if is_test_file(frel, manifest_dirs):
+                    test_files[lang] += 1
+                    test_lines[lang] += n_lines
+                elif is_tooling_file(frel):
+                    tooling_files[lang] += 1
+                    tooling_lines[lang] += n_lines
+                else:
+                    product_files[lang] += 1
+                    lines[lang] += n_lines
                 if len(examples.setdefault(lang, [])) < 3:
                     examples[lang].append(frel)
                 top = rel.split('/')[0] if rel else '.'
@@ -636,14 +722,43 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
             mk = markup_kind(frel)
             if mk:
                 markup[mk] += 1
+                if mk in UI_MARKUP_KINDS and len(ui_markup_examples.setdefault(mk, [])) < 3:
+                    ui_markup_examples[mk].append(frel)
                 if mk == 'Templates':
                     template_files.append(frel)
     ordered = dict(sorted(langs.items(), key=lambda kv: (-kv[1], kv[0])))
-    dominant = next(iter(ordered), None)
+    # the dominant language: the most non-blank lines of product code; with no product code (a standalone test
+    # repository) the most lines of test code, and tooling folders only when neither holds a line; with no line at all
+    # (empty files), the most product files, then the most files
+    if sum(lines.values()):
+        basis, deciding_lines, deciding_files = 'product', lines, product_files
+    elif sum(test_lines.values()):
+        basis, deciding_lines, deciding_files = 'test', test_lines, test_files
+    else:
+        basis, deciding_lines, deciding_files = 'tooling', tooling_lines, tooling_files
+    if not sum(product_files.values()):
+        deciding_files = test_files if basis == 'test' else tooling_files
+    if sum(deciding_lines.values()):
+        dominant = max(deciding_lines, key=lambda k: (deciding_lines[k], deciding_files[k], k))
+        dominant_by = 'lines'
+    elif sum(deciding_files.values()):
+        dominant = min(deciding_files, key=lambda k: (-deciding_files[k], k))
+        dominant_by = 'files'
+    else:
+        dominant = next(iter(ordered), None)
+        dominant_by = 'files' if dominant else None
+    def _sorted(cnt: Counter) -> dict:
+        return dict(sorted(((k, v) for k, v in cnt.items()), key=lambda kv: (-kv[1], kv[0])))
     # app modules first (shallow paths, app/main/server names), so the framework import is found early
     py_files.sort(key=lambda r: (r.count('/'), not re.search(r'(^|/)(app|main|server|wsgi|asgi|views|urls|routes)\.py$', r), r))
     return {'root': root.name, 'languages': ordered, 'total_source_files': sum(langs.values()),
             'dominant': dominant, 'dominant_files': ordered.get(dominant, 0) if dominant else 0,
+            'dominant_by': dominant_by, 'dominant_lines': deciding_lines.get(dominant, 0) if dominant else 0,
+            'dominant_basis': basis if dominant_by == 'lines' else None,
+            'lines': _sorted(lines), 'product_files': _sorted(product_files),
+            'test_files': _sorted(test_files), 'test_lines': _sorted(test_lines),
+            'tooling_files': _sorted(tooling_files), 'tooling_lines': _sorted(tooling_lines),
+            'total_product_lines': sum(lines.values()), 'total_test_lines': sum(test_lines.values()),
             'top_dirs': {k: dict(v.most_common(5)) for k, v in by_lang_dirs.items()},
             'examples': examples,
             'excluded': excluded,
@@ -654,6 +769,8 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
             'generated_source_files': sum(generated.values()),
             'generated_files': generated_files,
             'markup': dict(sorted(markup.items())),
+            'ui_markup': {k: v for k, v in sorted(markup.items()) if k in UI_MARKUP_KINDS},
+            'ui_markup_examples': ui_markup_examples,
             'data_trees': data_trees,
             'server_rendered': server_rendered(root, py_files, template_files)}
 
@@ -694,9 +811,14 @@ def language_coverage(c: dict, supported, tool: str = 'this script', what: str =
                       min_files: int = 3, reads_templates: bool = False) -> dict:
     """Supported against unsupported source-file counts for a tool that analyses only `supported` languages.
 
-    status 'unsupported_dominant' (with a loud `warning`) when the largest unsupported language has more files than
-    all supported languages together (and at least min_files); 'partial' when some unsupported languages are present
-    but do not dominate; 'ok' when everything counted is supported; 'no_source' when nothing was counted.
+    status 'unsupported_dominant' (with a loud `warning`) when the unsupported language with the most lines of
+    PRODUCT code (census `lines`; test files and test directories are counted apart and never decide) has more lines
+    than all supported languages together, and at least min_files files (tests included) or LINE_RULE_MIN_LINES lines; so a
+    long Rust workspace next to many short Python scripts and tests is warned about even though Python has more files.
+    `decided_by` says which rule applied: 'lines', or 'files' (the old rule: more source files than all supported
+    languages together, and at least min_files) when the census counted no lines or a caller merged other file counts
+    into `languages`. 'partial' when some unsupported languages are present but do not dominate; 'ok' when everything
+    counted is supported; 'no_source' when nothing was counted.
 
     A tool that reads server-side templates (reads_templates=True, or 'HTML' among `supported`) is not warned about a
     server-rendered web app (census `server_rendered`: a Flask, Django or other Python framework rendering template
@@ -727,14 +849,21 @@ def language_coverage(c: dict, supported, tool: str = 'this script', what: str =
         parts = []
         for e in pruned[:3]:
             sup_n = {k: v for k, v in e['languages'].items() if k in supported}
-            what = ', '.join(f'{v} {k}' for k, v in sup_n.items())
-            parts.append(f'{e["path"]}/ ({what} file(s); {e["reason"]})')
+            counts = ', '.join(f'{v} {k}' for k, v in sup_n.items())
+            parts.append(f'{e["path"]}/ ({counts} file(s); {e["reason"]})')
         hint = (f' Left out as build output: {"; ".join(parts)}. If that folder is hand-written source, rerun with '
                 f'--include {pruned[0]["path"]}.')
         notes.append(hint.strip())
     for b in c.get('build_output') or []:
         if b.get('decision') == 'source':
             notes.append(f'{b["path"]}/ is counted as source although named like build output: {b["reason"]}.')
+    ui = {k: v for k, v in (c.get('ui_markup') or {}).items() if k not in supported}
+    if ui:
+        out['ui_markup'] = ui
+        for kind, n in sorted(ui.items(), key=lambda kv: (-kv[1], kv[0])):
+            shown = ', '.join((c.get('ui_markup_examples') or {}).get(kind, [])[:3])
+            notes.append(f'{n} {kind} UI markup file(s){" (" + shown + ("" if n <= 3 else ", ...") + ")" if shown else ""} '
+                         f'present but not analysed by {tool}: the user interface they describe is not assessed.')
     gen = c.get('generated') or {}
     if gen:
         out['generated'] = gen
@@ -749,19 +878,49 @@ def language_coverage(c: dict, supported, tool: str = 'this script', what: str =
             out['warning'] = f'No source file was counted.{hint}'
         return out
     if uns:
-        lang, n = max(uns.items(), key=lambda kv: (kv[1], kv[0]))
+        lines = c.get('lines') or {}
+        tests = c.get('test_files') or {}
+        prod = c.get('product_files') or {}
+        tooling = c.get('tooling_files') or {}
+        basis = 'product code'
+        if not sum(lines.values()):   # as in census: test code decides a repository with no product code, tooling
+            if sum((c.get('test_lines') or {}).values()):   # folders only when nothing else holds a line
+                lines, prod, basis = c.get('test_lines') or {}, tests, 'test code (there is no product code)'
+            else:
+                lines, prod, basis = c.get('tooling_lines') or {}, tooling, 'tooling code (nothing else has a line)'
+        # lines decide when the census counted them and nobody merged other counts into `languages` since
+        by_lines = (c.get('dominant_by') == 'lines' and sum(lines.values()) > 0
+                    and sum((c.get('product_files') or {}).values()) + sum(tests.values()) + sum(tooling.values())
+                    == sum(langs.values()))
+        if by_lines:
+            uns_l = {k: lines.get(k, 0) for k in uns}
+            sup_l = sum(lines.get(k, 0) for k in sup)
+            lang = max(uns_l, key=lambda k: (uns_l[k], prod.get(k, 0), k))
+            n_l, n = uns_l[lang], prod.get(lang, 0)
+            dominates = n_l > sup_l and (langs.get(lang, 0) >= min_files or n_l >= LINE_RULE_MIN_LINES)
+            out.update({'decided_by': 'lines', 'supported_lines': sup_l, 'unsupported_lines': sum(uns_l.values())})
+            size = (f'{n_l} lines of {basis} in {n} file(s), against {sup_l} line(s) in the supported '
+                    f'language(s); ' + ('test code and tooling folders counted apart' if basis == 'product code'
+                                        else 'other code counted apart'))
+        else:
+            lang, n = max(uns.items(), key=lambda kv: (kv[1], kv[0]))
+            dominates = n > n_sup and n >= min_files
+            out['decided_by'] = 'files'
+            size = f'{n} source files'
         sr = c.get('server_rendered') or {}
-        if n > n_sup and n >= min_files and reads_templates and sr.get('server_language') == lang:
+        if dominates and reads_templates and sr.get('server_language') == lang:
             out['status'] = 'partial'
             out['server_rendered'] = sr
             out['note'] = (f'This repository is a server-rendered {sr["framework"]} web app: its {sr["templates"]} '
                            f'template file(s) ({", ".join(sr["template_dirs"][:3])}) are the browser-facing code, which '
                            f'{tool} reads. Its {n} {lang} file(s) are the server that renders them, not browser code; '
                            f'record that server code as outside this {what}, not as the UI left unread.')
-        elif n > n_sup and n >= min_files:
+        elif dominates:
             out['status'] = 'unsupported_dominant'
             out['dominant_unsupported_language'], out['dominant_unsupported_files'] = lang, n
-            out['warning'] = (f'This repository is predominantly {lang} ({n} source files, vendored and third-party '
+            if by_lines:
+                out['dominant_unsupported_lines'] = n_l
+            out['warning'] = (f'This repository is predominantly {lang} ({size}, vendored and third-party '
                               f'trees excluded), which {tool} does not analyse: it covers '
                               f'{", ".join(sorted(supported)) or "no language"} only. {n_sup} supported source '
                               f'file(s) were found, so its output covers that minority and is NOT a {what} of this '
@@ -918,6 +1077,89 @@ def _build_output_checks(tree) -> list:
     return checks
 
 
+def _line_checks(tree) -> list:
+    """Self-test cases for deciding the dominant language by product lines, with test code counted apart."""
+    checks = []
+    # a tide-table Cargo workspace (8 Rust files, long) next to many short Python helper scripts, half of them tests
+    rs_body = 'pub fn tide(h: f64) -> f64 {\n    h * 2.0\n}\n' * 40       # 120 lines per file
+    ws = {'Cargo.toml': '[workspace]\nmembers = ["crates/*"]\n'}
+    for crate in ('tides-core', 'tides-cli'):
+        ws[f'crates/{crate}/Cargo.toml'] = f'[package]\nname = "{crate}"\n'
+        ws.update({f'crates/{crate}/src/m{i}.rs': rs_body for i in range(3)})
+        ws[f'crates/{crate}/tests/it.rs'] = '#[test]\nfn t() {}\n'
+    py_body = 'def f():\n    return 1\n'
+    ws.update({f'gauges/g{i}.py': py_body for i in range(8)})
+    ws.update({f'tests/test_tool{i}.py': 'import unittest\n' + py_body * 30 for i in range(8)})
+    c = census(tree(ws))
+    checks.append(('dominance is decided by product lines: a long Rust workspace beats more, shorter Python files',
+                   c.get('dominant') == 'Rust' and c.get('dominant_by') == 'lines'
+                   and c['languages'].get('Python', 0) > c['languages'].get('Rust', 0),
+                   (c.get('dominant'), c.get('dominant_by'), c.get('languages'), c.get('lines'))))
+    checks.append(('test files and test directories are counted apart (test_files, test_lines), never as product lines',
+                   (c.get('test_files') or {}).get('Python') == 8 and (c.get('test_files') or {}).get('Rust') == 2
+                   and (c.get('lines') or {}).get('Python') == 16 and (c.get('lines') or {}).get('Rust') == 720
+                   and (c.get('test_lines') or {}).get('Python', 0) > 400
+                   and (c.get('product_files') or {}).get('Python') == 8,
+                   (c.get('lines'), c.get('test_lines'), c.get('test_files'), c.get('product_files'))))
+    # helper scripts in scripts/ and docs/ (longer than the Rust code) are tooling: counted apart, not deciding
+    tl = dict(ws)
+    tl.update({f'scripts/report{i}.py': py_body * 60 for i in range(8)})
+    tl.update({'docs/build_site.py': py_body * 20})
+    c2 = census(tree(tl))
+    checks.append(('helper scripts under scripts/ and docs/ are tooling (tooling_lines) and never beat the product',
+                   c2.get('dominant') == 'Rust' and (c2.get('tooling_lines') or {}).get('Python') == 1000
+                   and (c2.get('tooling_files') or {}).get('Python') == 9 and (c2.get('lines') or {}).get('Python') == 16,
+                   (c2.get('dominant'), c2.get('lines'), c2.get('tooling_lines'), c2.get('tooling_files'))))
+    only = census(tree({f'scripts/s{i}.py': py_body for i in range(4)}))
+    checks.append(('a repository of tooling scripts alone is still decided by them',
+                   only.get('dominant') == 'Python' and only.get('dominant_by') == 'lines', only.get('dominant_by')))
+    # a standalone Playwright test repository: TypeScript specs, no product code, three Python helper scripts
+    spec = "import { test, expect } from '@playwright/test';\n" + "test('x', async ({ page }) => {\n  await page.goto('/');\n});\n" * 20
+    pw = {'package.json': '{"devDependencies": {"@playwright/test": "1.48.0"}}\n',
+          'e2e/playwright.config.ts': 'export default {};\n'}
+    pw.update({f'e2e/recipe{i}.spec.ts': spec for i in range(6)})
+    pw.update({f'scripts/seed{i}.py': py_body * 10 for i in range(3)})
+    tr = census(tree(pw))
+    checks.append(('a standalone test repository (no product code): its test lines decide before tooling lines',
+                   tr.get('dominant') == 'TypeScript' and tr.get('dominant_by') == 'lines',
+                   (tr.get('dominant'), tr.get('lines'), tr.get('test_lines'), tr.get('tooling_lines'))))
+    cov = language_coverage(tr, {'JavaScript', 'TypeScript'}, tool='scan_ts.py') if tr.get('languages') else {}
+    checks.append(('a TypeScript tool on that test repository gets no loud warning from the helper scripts',
+                   cov.get('status') != 'unsupported_dominant' and not cov.get('warning'), cov))
+    cov = language_coverage(c, {'Python'}, tool='scan_py.py') if c.get('languages') else {}
+    checks.append(('a Python-only tool is warned loudly when Rust has the most product lines, though Python has more files',
+                   cov.get('status') == 'unsupported_dominant' and cov.get('dominant_unsupported_language') == 'Rust'
+                   and 'lines' in (cov.get('warning') or ''), cov))
+    cov = language_coverage(c, {'Rust'}, tool='scan_rs.py') if c.get('languages') else {}
+    checks.append(('a Rust tool on the same repository is partial, not warned because Python has more (test) files',
+                   cov.get('status') == 'partial' and not cov.get('warning'), cov))
+    # an e2e/ folder that holds a package manifest is a product package, not test code
+    pk = {'e2e/package.json': '{"name": "e2e", "bin": "cli.js"}', 'e2e/cli.js': 'console.log(1);\n' * 5,
+          'e2e/test/cli.test.js': 'test("x", () => {});\n'}
+    c = census(tree(pk))
+    checks.append(('a test-named folder holding a package manifest is product code; its own test/ is test code',
+                   (c.get('lines') or {}).get('JavaScript') == 5 and (c.get('test_files') or {}).get('JavaScript') == 1,
+                   (c.get('lines'), c.get('test_files'))))
+    # a weather-station logger with a desktop UI described in UI markup files next to its Rust code
+    ui = dict(ws)
+    ui.update({f'crates/tides-cli/ui/panel{i}.slint': 'export component Panel {\n  Text { text: "x"; }\n}\n' * 200
+               for i in range(4)})
+    ui.update({'qml/Main.qml': 'Item {}\n', 'win/App.xaml': '<Window/>\n', 'forms/main.ui': '<ui/>\n',
+               'gtk/main.glade': '<interface/>\n', 'kivy/app.kv': '<Root>:\n'})
+    c = census(tree(ui))
+    um = c.get('ui_markup') or {}
+    checks.append(('UI markup (.slint, .qml, .xaml, .ui, .glade, .kv) is counted apart and never decides dominance',
+                   um == {'Slint': 4, 'QML': 1, 'XAML': 1, 'UI definition': 1, 'Glade': 1, 'Kivy': 1}
+                   and c.get('dominant') == 'Rust' and 'Slint' not in c['languages']
+                   and (c.get('markup') or {}).get('Slint') == 4, (um, c.get('dominant'), c.get('markup'))))
+    cov = language_coverage(c, {'Rust', 'Python'}, tool='scan_rs.py')
+    notes = ' '.join(cov.get('notes') or [])
+    checks.append(('language_coverage names UI markup as present but not analysed, without changing the status',
+                   cov.get('status') == 'ok' and 'Slint' in notes and 'panel0.slint' in notes and 'not analysed' in notes
+                   and (cov.get('ui_markup') or {}).get('Slint') == 4, cov))
+    return checks
+
+
 def self_test() -> int:
     checks = []
 
@@ -953,6 +1195,34 @@ def self_test() -> int:
                    all(p in reasons for p in ('drivers/ios/prebuilt/Runner.app', 'vendor', 'npm/wrapper/node_modules')),
                    sorted(reasons)))
     nm = next((e for e in c['excluded'] if e['path'] == 'npm/wrapper/node_modules'), {})
+    # reading a small file never asks for a multi-megabyte buffer (text-mode read(n) sizes its buffer by n)
+    asked = []
+    real_open = open
+
+    class _Recording:
+        def __init__(self, fh):
+            self.fh = fh
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return self.fh.__exit__(*a)
+
+        def read(self, n=-1):
+            asked.append(n)
+            return self.fh.read(n)
+    small_dir = Path(tempfile.mkdtemp(prefix='lang-census-read-'))
+    small = small_dir / 'small.go'
+    small.write_text('package main\n\nfunc main() {}\n', encoding='utf-8')
+    globals()['open'] = lambda *a, **k: _Recording(real_open(*a, **k))
+    try:
+        text = _read_head(small, LINE_READ_MAX)
+    finally:
+        del globals()['open']
+        shutil.rmtree(small_dir, ignore_errors=True)
+    checks.append(('a small file is read with a buffer the size of the file, not the read cap',
+                   text.startswith('package main') and all(0 <= n <= 4096 for n in asked), asked))
     checks.append(('a dependency tree (node_modules/) is listed without being walked to count it',
                    nm.get('source_files_counted') is False and nm.get('source_files') == 0, nm))
     checks.append(('a header-only tree under drivers/ is excluded', 'header-only' in reasons.get('drivers/ios/headers-only', ''),
@@ -1022,6 +1292,7 @@ def self_test() -> int:
                    'recipes' not in dns and 'templates' in dns and pruned and pruned[0]['path'] == 'recipes'
                    and 'data' in pruned[0]['reason'], (dns, pruned)))
     checks += _build_output_checks(tree)
+    checks += _line_checks(tree)
     failed = 0
     for name, ok, extra in checks:
         failed += not ok
@@ -1054,7 +1325,9 @@ def main(argv=None) -> int:
     else:
         sys.stdout.write(text)
     langs = ', '.join(f'{k} {v}' for k, v in list(c['languages'].items())[:6]) or 'none'
-    print(f'dominant: {c["dominant"]}; {langs}; {len(c["excluded"])} tree(s) excluded '
+    by = (f' (by {c["dominant_by"]}: {c["dominant_lines"]} product lines)' if c.get('dominant_by') == 'lines'
+          else f' (by {c.get("dominant_by")})')
+    print(f'dominant: {c["dominant"]}{by}; files: {langs}; {len(c["excluded"])} tree(s) excluded '
           f'({c["excluded_source_files"]} source files); {c["generated_source_files"]} generated file(s) counted apart',
           file=sys.stderr)
     for b in c['build_output']:

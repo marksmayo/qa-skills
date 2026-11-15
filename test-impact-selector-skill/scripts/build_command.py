@@ -27,11 +27,13 @@ from pathlib import Path, PurePosixPath
 CYPRESS_RX = re.compile(r'\.cy\.[jt]sx?$')
 
 
-def framework_for(test: str, level: str | None, frameworks: list[str]) -> str | None:
+def framework_for(test: str, level: str | None, frameworks: list[str], python_runner: str | None = None) -> str | None:
     ext = PurePosixPath(test).suffix
     fw = set(frameworks)
     if ext == '.py':
-        return 'pytest'
+        return 'unittest' if python_runner == 'unittest' else 'pytest'
+    if ext == '.rs':
+        return 'cargo-test'
     if ext in ('.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts'):
         if CYPRESS_RX.search(test) and 'cypress' in fw:
             return 'cypress'
@@ -133,8 +135,10 @@ def argv_for(fw: str, tests: list[str], full: bool, go_flags: list[str] | None =
         'mocha': ['npx', 'mocha'], 'playwright': ['npx', 'playwright', 'test'], 'cypress': ['npx', 'cypress', 'run'],
         'go-testing': ['go', 'test'], 'gradle': ['./gradlew', 'test'], 'maven': ['mvn', 'test'],
         'xctest': ['xcodebuild', 'test'], 'flutter_test': ['flutter', 'test'], 'rspec': ['bundle', 'exec', 'rspec'],
-        'node-test': ['node', '--test'],
+        'node-test': ['node', '--test'], 'unittest': ['python', '-m', 'unittest'],
     }[fw]
+    if fw == 'unittest' and full:
+        return base + ['discover']
     if fw == 'go-testing' and go_flags:
         base = base + list(go_flags)
     if full:
@@ -188,46 +192,175 @@ def script_runner(fw: str, script: str | None) -> tuple[str | None, str | None]:
     return None, f'its test script runs `{script.strip()[:120]}`, not a runner this selector can pass files to'
 
 
+def cargo_commands(files: list[str], cargo: dict, max_chars: int) -> tuple[list[dict], list[dict], list[str]]:
+    """(commands, feature_gated, files with no test id) for the selected Rust test files.
+
+    Every Rust test file of the workspace selected: one workspace-wide command (the CI's own `cargo test
+    --workspace ...` line when there is one). Every test file of a crate: `cargo test -p <crate>`. Otherwise
+    `cargo test -p <crate> --lib|--bin <b>|--test <t> -- --exact <paths>` from the files' libtest ids
+    (`<target>::<path>`), the same arguments run_tests.py's cargo preset builds from those ids (`test_ids`).
+    Tests behind a cargo feature the crate does not enable by default only run with `--features`: they are listed
+    under feature_gated, never silently counted as run."""
+    tests, crates = cargo['tests'], cargo['crates']
+    unknown, by_crate = [], {}
+    gated: dict[tuple[str, str], dict] = {}
+    for f in files:
+        ts = tests.get(f)
+        if not ts:
+            unknown.append(f)
+            continue
+        by_crate.setdefault(ts[0]['crate'], []).append(f)
+        for t in ts:
+            for feat in t['features']:
+                g = gated.setdefault((t['crate'], feat), {'package': t['package'], 'crate': t['crate'], 'feature': feat,
+                                                          'tests': []})
+                g['tests'].append(t['id'])
+    commands = []
+    roots = {crates[c]['root'] for c in by_crate}
+    all_rust = {f for c in crates.values() for f in c['test_files']}
+    if by_crate and len(roots) == 1 and all_rust <= set(files) and \
+            len({c['root'] for c in crates.values()}) == 1:
+        root = roots.pop()
+        ws = cargo.get('workspace_command')
+        cmd = {'package': root, 'cwd': root, 'framework': 'cargo-test', 'full_suite': True,
+               'argv': list(ws['argv']) if ws else ['cargo', 'test', '--workspace'],
+               'tests': len(files) - len(unknown), 'part': 1, 'parts': 1}
+        if ws:
+            cmd['command_from'] = ws['from']
+        commands.append(cmd)
+    else:
+        for crate in sorted(by_crate):
+            mine, info = by_crate[crate], crates[crate]
+            base = {'package': info['dir'], 'cwd': info['root'], 'framework': 'cargo-test'}
+            if set(info['test_files']) <= set(mine):
+                commands.append({**base, 'full_suite': True, 'argv': ['cargo', 'test', '-p', crate], 'tests': len(mine),
+                                 'part': 1, 'parts': 1})
+                continue
+            ids, param = [], set()
+            for f in mine:
+                ids += [t['id'] for t in tests[f] if t['id'] not in ids]
+                param |= {t['id'] for t in tests[f] if t.get('parameterised')}
+            kind_of = {t['id']: (t['target_kind'], t['target']) for f in mine for t in tests[f]}
+
+            def argv_of(chunk: list[str], exact: bool) -> list[str]:
+                sel: list[list[str]] = []
+                for i in chunk:
+                    kind, target = kind_of[i]
+                    flag = ['--lib'] if kind == 'lib' else [f'--{kind}', target]
+                    if flag not in sel:
+                        sel.append(flag)
+                return ['cargo', 'test', '-p', crate, *[x for f in sel for x in f], '--',
+                        *(['--exact'] if exact else []), *[i.partition('::')[2] for i in chunk]]
+            # #[rstest] / #[test_case] functions are modules of generated tests (`fn::case_1`): --exact would match
+            # none, so they run as name filters (a substring match) in commands of their own
+            chunks = []
+            for exact, group in ((True, [i for i in ids if i not in param]), (False, sorted(i for i in ids if i in param))):
+                cur: list[str] = []
+                for i in group:
+                    if cur and len(' '.join(argv_of(cur + [i], exact))) > max_chars:
+                        chunks.append((exact, cur))
+                        cur = [i]
+                    else:
+                        cur.append(i)
+                if cur:
+                    chunks.append((exact, cur))
+            for n, (exact, chunk) in enumerate(chunks, 1):
+                files_in = sorted({f for f in mine if any(t['id'] in chunk for t in tests[f])})
+                cmd = {**base, 'full_suite': False, 'argv': argv_of(chunk, exact), 'tests': len(files_in),
+                       'test_ids': chunk, 'part': n, 'parts': len(chunks)}
+                if not exact:
+                    cmd['note'] = ('parameterised tests (#[rstest], #[test_case]) generate child tests named '
+                                   '<fn>::<case>, which --exact <fn> would not match: these names are substring '
+                                   'filters without --exact, so they run every case and may also run other tests '
+                                   'whose names contain them')
+                commands.append(cmd)
+    return commands, sorted(gated.values(), key=lambda g: (g['crate'], g['feature'])), unknown
+
+
+def safe_command(cmd: str | None) -> list[str] | None:
+    """A CI command line as argv when it is one plain command (no pipes, redirects, chaining or variables)."""
+    import shlex
+    if not cmd or re.search(r'[|&;<>`$]', cmd):
+        return None
+    try:
+        return shlex.split(cmd)
+    except ValueError:
+        return None
+
+
 def build(selected: list[dict], packages: list[dict], full_packages: set[str], tests_by_package: dict[str, list[str]],
           levels: dict[str, str | None], max_chars: int = 8000, scripts: dict[str, str] | None = None,
-          builds: list[dict] | None = None, go_flags: list[str] | None = None, go_flags_from: str | None = None) -> dict:
+          builds: list[dict] | None = None, go_flags: list[str] | None = None, go_flags_from: str | None = None,
+          cargo: dict | None = None, python_runners: dict[str, dict] | None = None) -> dict:
     """selected: [{test_id, file, package}], ordered. full_packages: packages whose whole suite is selected.
     scripts: each JS package's own `test` script (package.json), which decides the runner where it names
     one; a package whose script runs something else gets no command, and its tests go to no_runner.
-    builds: workspace packages to build first (their tests load another package's build output)."""
+    builds: workspace packages to build first (their tests load another package's build output).
+    cargo: select_tests.py's cargo_info() (libtest ids per Rust test file, crates, the CI's workspace command).
+    python_runners: detect_conventions' python_runner per package: unittest runs `python -m unittest <files>`
+    (the CI's own command for the whole suite), pytest `python -m pytest`."""
     by_pkg: dict[tuple[str, str], list[str]] = {}
     unknown = []
     reasons: dict[str, str] = {}
+    rust: list[str] = []
     fws = {p['root']: p.get('frameworks', []) for p in packages}
+    runners = python_runners or {}
     for s in selected:
         pkg = s['package']
         rel = s['file'] if pkg == '.' else s['file'][len(pkg) + 1:]
-        fw = framework_for(s['file'], levels.get(s['file']), fws.get(pkg, []))
+        fw = framework_for(s['file'], levels.get(s['file']), fws.get(pkg, []), (runners.get(pkg) or {}).get('runner'))
+        if fw == 'cargo-test':
+            if cargo:
+                rust.append(s['file'])
+            else:
+                unknown.append(s['file'])
+                reasons.setdefault(pkg, 'Rust test files with no Cargo model (no Cargo.toml was read), so no cargo '
+                                        'command can name their tests')
+            continue
         if fw is not None and scripts is not None:
             fw, why = script_runner(fw, scripts.get(pkg))
             if why:
                 reasons[pkg] = why
         if fw is None:
             unknown.append(s['file'])
+            ext = PurePosixPath(s['file']).suffix
+            if pkg not in reasons:
+                reasons[pkg] = f'no runner this selector knows for {ext or "these"} test files: run them with the package\'s own test command'
             continue
         by_pkg.setdefault((pkg, fw), []).append(rel)
     commands = []
     for (pkg, fw), tests in by_pkg.items():
-        all_fw = [t for t in tests_by_package.get(pkg, []) if framework_for(t, levels.get(t), fws.get(pkg, [])) == fw]
+        pr = (runners.get(pkg) or {}).get('runner')
+        all_fw = [t for t in tests_by_package.get(pkg, []) if framework_for(t, levels.get(t), fws.get(pkg, []), pr) == fw]
         full = pkg in full_packages and len(tests) >= len(all_fw)
         flags = go_flags if fw == 'go-testing' else None
         chunks = [tests] if full else split(fw, tests, max_chars, flags)
         for i, chunk in enumerate(chunks, 1):
             argv = argv_for(fw, chunk, full, flags)
+            from_ci = None
+            if fw == 'unittest' and full:
+                own = safe_command((runners.get(pkg) or {}).get('command'))
+                if own:
+                    argv = own
+                    from_ci = next((e for e in (runners.get(pkg) or {}).get('evidence', []) if ':' in e), None)
             cmd = {'package': pkg, 'cwd': pkg, 'framework': fw, 'full_suite': full,
                    'argv': argv, 'tests': len(chunk), 'part': i, 'parts': len(chunks)}
+            if from_ci:
+                cmd['command_from'] = from_ci
             if fw == 'go-testing':
                 # go test takes package directories, not test files: `args` counts the trailing arguments
                 cmd['args'] = len(argv) - 2 - len(flags or [])
                 if flags:
                     cmd['flags_from'] = go_flags_from
             commands.append(cmd)
+    gated: list[dict] = []
+    if rust:
+        cargo_cmds, gated, no_ids = cargo_commands(rust, cargo, max_chars)
+        commands += cargo_cmds
+        unknown += no_ids
     out = {'commands': commands, 'split_into': len(commands), 'max_chars': max_chars, 'no_runner': unknown}
+    if gated:
+        out['feature_gated'] = gated
     if reasons:
         out['no_runner_reasons'] = dict(sorted(reasons.items()))
     if builds:
@@ -269,9 +402,16 @@ def main(argv=None) -> int:
         go = next((c for c in command['commands'] if c['framework'] == 'go-testing'), None)
         flags = go['argv'][2:len(go['argv']) - go['args']] if go and 'args' in go and not go['full_suite'] else \
             (go['argv'][2:-1] if go else [])
-        command = {**build(sel['selected'], sel['packages'], full, {p['root']: p.get('test_files', []) for p in sel['packages']},
+        # cargo and unittest commands need the selection's Cargo model and runner detection: keep them as they are
+        kept = [c for c in command['commands'] if c['framework'] in ('cargo-test', 'unittest')]
+        done = {c['package'] for c in kept if c['framework'] == 'unittest'}
+        rest = [s for s in sel['selected'] if not s['file'].endswith('.rs') and
+                not (s['file'].endswith('.py') and s['package'] in done)]
+        command = {**build(rest, sel['packages'], full, {p['root']: p.get('test_files', []) for p in sel['packages']},
                            levels, args.max_chars, go_flags=flags, go_flags_from=(go or {}).get('flags_from')),
-                   **{k: v for k, v in command.items() if k in ('no_runner_reasons', 'build_first')}}
+                   **{k: v for k, v in command.items() if k in ('no_runner_reasons', 'build_first', 'feature_gated')}}
+        command['commands'] += kept
+        command['split_into'] = len(command['commands'])
     if args.ci:
         text = ci_snippet(command, args.ci)
         if args.ci_out:

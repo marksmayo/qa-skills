@@ -19,8 +19,12 @@ triaged, and that a secret found only in git history is not dismissed without sa
 was rotated (or why it needs no rotation). --recon checks every entry point recon.py found is in
 the report or in recon.removed_entry_points with a reason. A confirmed finding is proved either by
 an HTTP PoC against the verification target or by a local command PoC (run_poc.py --workdir) in
-verification.local_copy, outside the repository. --write-summary recomputes the summary counts in
-place (the headline is kept).
+verification.local_copy, outside the repository. --write-summary recomputes, in place, each finding's
+priority_score and priority and the summary counts (the headline and every judgement are kept).
+A dependency tool counted in dependency_advisories must name an output file that exists, whose
+advisories (cargo-audit, cargo-deny, pip-audit, npm/pnpm audit, osv-scanner, govulncheck) are all in
+dependencies, and no limitation may contradict the advisories status ("advisories were not assessed"
+when a tool ran; a partial report may name the lockfile or ecosystem that was not covered).
 Exit code 0 when valid, 1 when invalid.
 """
 from __future__ import annotations
@@ -256,7 +260,7 @@ def advisory_errors(d: dict) -> list[str]:
     adv = d.get('dependency_advisories')
     dep_ran = [t['name'] for t in d['tools'] if t['area'] == 'dependencies' and t['status'] == 'ran']
     if adv is None:
-        if d['schema_version'] in ('1.2', '1.3', '1.4', '1.5'):
+        if d['schema_version'] in ('1.2', '1.3', '1.4', '1.5', '1.6'):
             E('dependency_advisories: required from schema 1.2 (assessed, partial or not_assessed)')
     else:
         if adv['status'] in ('assessed', 'partial') and not dep_ran:
@@ -275,7 +279,88 @@ def advisory_errors(d: dict) -> list[str]:
                 E(f"limitations: dependency advisories were {adv['status'].replace('_', ' ')}; say so in limitations")
             if re.search(r'(?i)\b(no|zero|0)\s+(known[- ])?(vulnerable|vulnerabilities in)\s+(dependenc|packages|librar)', d['summary']['headline']):
                 E('summary.headline claims no vulnerable dependencies, but advisories were not (fully) assessed')
+        # a limitation must not say the opposite of the status: "advisories were not assessed" with a tool that ran
+        if adv['status'] in ('assessed', 'partial'):
+            for lim in d['limitations']:
+                for sentence in re.split(r'(?<=[.;])\s+', lim):
+                    m = NOT_ASSESSED.search(sentence)
+                    if not m:
+                        continue
+                    scoped = SCOPED.search(sentence[m.end():]) or SCOPED.search(sentence[:m.start()])
+                    if adv['status'] == 'assessed' or not scoped:
+                        E(f"limitations: {sentence.strip()[:120]!r} contradicts dependency_advisories status {adv['status']} "
+                          f"({', '.join(adv['tools']) or 'a dependency tool'} ran); say what was and was not covered")
+                        break
     return errors
+
+# "Dependency advisories were not assessed", "no dependency advisory tool ran": true only of not_assessed. A partial
+# report may say a named lockfile or ecosystem was not assessed ("... not assessed for web/package-lock.json").
+NOT_ASSESSED = re.compile(r'(?i)\b(?:dependenc\w*|advisor\w*)\b[^.;]{0,40}?\bwere\s+not\s+(?:been\s+)?(?:assessed|checked|scanned)\b|'
+                          r'\bno\s+(?:dependency|advisory)[\w -]{0,25}?\b(?:tool|scanner|scan|check)s?\s+(?:ran|was\s+run|were\s+run)\b')
+SCOPED = re.compile(r'(?i)\b(?:for|in|of|beyond|except|outside|only|but)\b|[\w.-]+\.(?:lock|json|ya?ml|toml|txt|mod)\b|'
+                    r'\b(?:npm|pypi|crates\.io|cargo|go|gems?|composer|pnpm|yarn|maven|nuget)\b')
+
+def _advisory_ids(path: Path) -> tuple[str | None, dict[str, frozenset]] | None:
+    """The tool name and advisories (each as its set of ids and aliases) in a dependency tool's output, read with
+    merge_findings.py's readers; None when the file is not a dependency advisory output they read."""
+    import merge_findings  # noqa: E402 - only needed when a report names a dependency tool output
+    try:
+        items, info = merge_findings.from_deps(path)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+    return info['tool'], {i['advisory']: frozenset({i['advisory'], *(i.get('aliases') or [])}) for i in items}
+
+def tool_output_errors(d: dict, base: Path) -> list[str]:
+    """A dependency tool row that counts toward dependency_advisories (status ran) names its output, the file exists
+    (relative to the report's directory, or absolute), its result count matches the output, and every advisory in
+    the output is in dependencies (by id or alias). A hand-added row with no output, or one whose advisories were
+    left out, would make advisories look assessed when they were not."""
+    errors: list[str] = []
+    adv = d.get('dependency_advisories') or {}
+    listed = set(adv.get('tools') or [])
+    have = [{x['advisory'], *(x.get('aliases') or [])} for x in d.get('dependencies') or []]
+    for t in d['tools']:
+        if t['area'] != 'dependencies' or t['status'] != 'ran' or (listed and t['name'] not in listed):
+            continue
+        out = t.get('output')
+        if not out:
+            errors.append(f"tools[{t['name']}]: a dependency tool that ran must name its output file (the advisories it found)")
+            continue
+        p = Path(out) if Path(out).is_absolute() else base / out
+        if not p.is_file():
+            errors.append(f"tools[{t['name']}]: output {out} does not exist; dependency_advisories cannot rest on it")
+            continue
+        got = _advisory_ids(p)
+        if got is None:
+            continue  # a format the merge does not read (e.g. a SARIF from trivy): existence is all that can be checked
+        tool, ids = got
+        if t.get('results') is not None and t['results'] != len(ids) and t['results'] != _raw_count(p):
+            errors.append(f"tools[{t['name']}]: results {t['results']} but {out} holds {len(ids)} advisory(ies)")
+        for aid, group in ids.items():
+            if not any(group & h for h in have):
+                errors.append(f"dependencies: {aid} from {t['name']} ({out}) is not in dependencies; "
+                              'every advisory the tool reported needs a row with its reachability')
+    return errors
+
+def _raw_count(p: Path) -> int | None:
+    try:
+        import run_scanners  # noqa: E402
+        return run_scanners.count_results(p)
+    except Exception:  # noqa: BLE001 - only a second opinion on the count
+        return None
+
+def fill_computed(d: dict) -> None:
+    """--write-summary: each finding's priority_score and priority (from severity, confidence, exposure and business
+    impact) and the summary counts. The headline and every judgement stay as written."""
+    for f in d.get('findings') or []:
+        try:
+            ps = priority_score(f)
+        except (KeyError, TypeError):
+            continue
+        f['priority_score'] = ps
+        f['priority'] = priority(ps, f.get('confidence'), f.get('business_impact'))
+    if isinstance(d.get('summary'), dict):
+        d['summary']['counts'] = compute_summary(d)
 
 def recon_errors(d: dict, recon: dict) -> list[str]:
     """Every entry point recon.py found is in the report, or listed in recon.removed_entry_points with a reason.
@@ -681,7 +766,7 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None, recon
                 E(f"observations[{o['id']}]: {o['file']}:{o['line']} does not exist")
             elif o.get('excerpt') and norm(o['excerpt']) not in norm(got[0]):
                 E(f"observations[{o['id']}]: excerpt is not on {o['file']}:{o['line']} (line reads {got[0].strip()[:80]!r})")
-            elif not o.get('excerpt') and d['schema_version'] in ('1.2', '1.3', '1.4', '1.5'):
+            elif not o.get('excerpt') and d['schema_version'] in ('1.2', '1.3', '1.4', '1.5', '1.6'):
                 W(f"observations[{o['id']}]: no excerpt, so {o['file']}:{o['line']} can only be checked for existence")
         # recon entry points: the handler line must exist and, in Python, not sit inside a string or docstring
         for e in eps.values():
@@ -694,6 +779,7 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None, recon
                   '(a usage example, not a route)')
 
     errors += advisory_errors(d)
+    errors += tool_output_errors(d, base)
     if recon is not None:
         errors += recon_errors(d, recon)
 
@@ -777,7 +863,7 @@ def main() -> int:
         print(f'Unable to read input: {exc}', file=sys.stderr)
         return 1
     if args.write_summary and isinstance(d.get('summary'), dict):
-        d['summary']['counts'] = compute_summary(d)
+        fill_computed(d)
         args.report.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     errors, warnings = check(d, args.report.resolve().parent, args.repo.resolve() if args.repo else None, cands, recon)
     for w in warnings:

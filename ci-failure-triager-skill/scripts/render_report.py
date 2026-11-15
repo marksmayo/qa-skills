@@ -51,7 +51,9 @@ def main() -> int:
     r, s = d['run'], d['summary']
     out = [c('# CI failure triage', 'bold'), '',
            f'{r["system"]} run {r["id"]} (attempt {r["attempt"]}) on {r["branch"]} @ `{r["commit"][:12]}`; last green run '
-           f'{(r.get("last_green") or {}).get("id", "none")}. {r.get("url") or ""}'
+           f'{(r.get("last_green") or {}).get("id", "none")}'
+           + (f' (on the default branch {r["last_green"]["branch"]}: the branch has none)'
+              if (r.get('last_green') or {}).get('branch') not in (None, r['branch']) else '') + f'. {r.get("url") or ""}'
            + (f' (requested as {r["repo"]}; the CI names it {r["repo_api"]})' if r.get('repo_api') else ''), '', s['headline'], '']
     if d.get('run_status') not in (None, 'complete'):
         out += [c(f'Run status: {d["run_status"]} ({d.get("run_status_reason") or "no reason given"}).', 'bold'), '']
@@ -73,6 +75,8 @@ def main() -> int:
                     + (f' A consequence of {", ".join(f["signals"]["consequence_of"])}.' if f['signals'].get('consequence_of') else '')
                     + (f' Local repeat runs on this commit: {f["signals"]["local_runs"]["failed"]} of {f["signals"]["local_runs"]["runs"]} failed.'
                        if f['signals'].get('local_runs') else '')
+                    + (f' Waited {f["signals"]["queued_for_s"] // 60} min for a runner and never ran (queue time, not run time).'
+                       if f['signals'].get('queued_for_s') is not None else '')
                     + (f' Priority {f["priority"]}.' if f.get('priority') else ''), '']
             if f['log_excerpt']['lines']:
                 out += [f'`{f["log_excerpt"]["path"]}`:', '```'] + [f'{l["n"]:>4}  {l["text"]}' for l in f['log_excerpt']['lines']] + ['```']

@@ -17,6 +17,11 @@ Scoring anchors and rules for `mutation_report.json`. The validator enforces eve
 
 A mutmut survivor on a line no test executed (per `coverage.json`) becomes `no_coverage` with
 `reclassified_from: "survived"`, because mutmut tracks tests per function, not per line.
+cargo-mutants keeps no per-test coverage at all: its missed mutants are `survived` with a note
+saying the line may be unexecuted, its caught ones `killed` (with `killed_by` from the mutant's
+log when it names a failing test), `Unviable` is `compile_error`, and a failed baseline makes the
+engine `errored`. A builtin `no_coverage` mutant in a file the tests run only as a child process
+carries a note naming that test: the in-process tracer cannot see the child.
 
 ## Scores (computed, per engine)
 
@@ -62,7 +67,7 @@ How to tell them apart:
 | Factor | Values |
 |---|---|
 | Criticality (yours, with a reason) | 3: money, auth, permissions, data deletion, or a journey-mapper P0/P1 step (`critical_paths`). 2: ordinary logic. 1: formatting, logging, display text |
-| Kind (computed) | The highest over the finding's mutants, from `data/operators.json`: branch or boundary = 3 (comparison, negation, condition, logical, boolean constant, loop control, a string compared in a condition); value = 2 (arithmetic, number, returned value, `None`, arguments, removed call, removed `.upper()`/`.strip()`-style method call, an UPPER_CASE string constant); other string literal = 1 |
+| Kind (computed) | The highest over the finding's mutants, from `data/operators.json`: branch or boundary = 3 (comparison, negation, condition, logical, boolean constant, loop control, a string compared in a condition); value = 2 (arithmetic, number, returned value, `None`, arguments, removed call, removed `.upper()`/`.strip()`-style method call, an UPPER_CASE string constant, a string used as a key or a default: `d["k"]`, `.get("k", ["a"])`, a dict literal key, a parameter default such as `kinds=("sea", "river")`); other string literal = 1 |
 | Proximity (computed with `--repo`) | 2 when a covering test calls the mutated function directly (a unit test ran the line and still passed); 1 when only tests that reach it through other functions ran it, and always 1 for a module-level mutant. Python tests are read with `ast`; JS/TS tests are found by their describe chain and title (`ts_scan.py`) and their body searched for a call; Go tests (`<file>_test.go::TestName[/sub]`) by the top-level `func TestName` body, from Go tokens (`go_scan.py`). When every covering test is in another language (Rust, Java, ...), proximity is not computed and the validator says so, rather than guessing 1 |
 
 | Priority | Score |
@@ -96,6 +101,15 @@ run is therefore never 1.0.
 
 - Any percentage in the headline is one of the computed scores, and the headline shows its
   "N of M".
+- The headline is written, never a placeholder, and names every P0 finding by id (schema 1.3.0;
+  older reports may say "P0").
+- The report says what it did not mutate. `metadata.language_coverage` (from `mutants.json`,
+  re-derived from the repository with `--repo`) names the language with the most product code
+  (test code and tooling folders such as `scripts/` counted apart). When no mutant is in that
+  language (`unmutated_dominant`: a Rust workspace whose Python helper scripts were mutated), a
+  limitation names it; when the mutated files sit in tooling folders while the product is
+  elsewhere (`tooling_scope_files`), a limitation says they are tooling. The scores then speak
+  for the helper scripts, never for the product.
 - Never "well tested", "strong tests", "thoroughly tested", "fully tested" or "bulletproof".
 - With a `changed` or `path` scope, no text puts a score on the whole codebase, repo or suite.
 - `baseline.passed` must match the runs; a baseline that isn't green twice means no mutants.

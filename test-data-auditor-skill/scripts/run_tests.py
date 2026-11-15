@@ -25,15 +25,37 @@ unreadable and named in the run's warnings, never a crash. runs.json records the
 (`code_hash_basis`: method and file count), and a change during the runs names the files.
 
 Presets know each runner's JUnit, ordering, seed and worker flags; a variation a preset can't
-apply is an error, never silently ignored. The `nextest` preset runs `cargo nextest run --profile
-ci` (per-case JUnit, `--test-threads` workers) and copies target/nextest/ci/junit.xml to the per-run
-JUnit path; the `cargo` preset runs `cargo test`, which writes no JUnit and so yields no per-case
-data. A run that completes but parses no test cases is flagged `no_tests_parsed` on the run and
+apply is an error, never silently ignored. Rust: the `cargo` preset runs `cargo test --no-fail-fast` and
+parses libtest's output per test (parse_results.parse_libtest) into the run's JUnit: ids are
+`<target>::<path::name>` with cargo_project.py's target names (the lib's name, a bin's name, an integration
+test's file stem; `<crate>/<target>` where two crates share the name; `doctest:<lib>` for doc tests), panics are
+the failure messages, and a test binary that died mid-run is a `(crashed)` error case. --tests ids re-run as
+`-p <crate> --lib|--bin|--test <target> -- --exact <paths>` (targets from cargo_project.py; older ids written with
+the deps file name are read too; a name several crates share is resolved by the id's crate, -p in --runner-args or
+the static tests, else refused naming the candidates; ids of two crates in one run are refused: use --isolate;
+doc-test ids and parameterised tests (#[rstest], #[test_case]: name filters `path::`, no --exact) run as separate
+invocations, with a note), --workers is libtest's
+--test-threads, and --runner-args may hold cargo options and, after `--`, libtest options. A compile error,
+a missing target or a selection that matched nothing is an errored run that says so; a run whose tests ran is
+never errored for failing tests. The `nextest` preset runs `cargo nextest run --no-fail-fast` with any profile
+(--runner-args "--profile ci", else NEXTEST_PROFILE, else default): it copies the JUnit the profile configures
+([profile.<p>.junit] in .config/nextest.toml) from <target dir>/nextest/<p>/ only when this run wrote it (a file
+older than the run is never read), the target dir being CARGO_TARGET_DIR, .cargo/config.toml's target-dir or
+<workspace>/target; with no JUnit it reads nextest's own output. Ids are mapped to the same `<target>::<path>`
+and re-run with one -E filterset. A run that completes but parses no test cases is flagged `no_tests_parsed` on the run and
 warned loudly, so a zero-case run is never mistaken for a pass. `--minutes` caps the wall time:
 repeats stop early and the stop is recorded. The user's home directory is replaced with ~ in JUnit
 files and output.
 `--check-tree` hashes the working tree before and after and exits 3 if anything outside the
 JUnit directory changed. The script never edits test files.
+
+Python unittest: the `unittest` preset runs the tests as `python -m unittest discover` does (default `-s tests`;
+--runner-args takes discover's -s, -p and -t) through a generated runner that writes one JUnit case per test, with
+ids `<file>::<Class>::<method>` (the file relative to --cwd). A failing subTest fails its test; a module that cannot
+be imported is an `(import error)` case. --tests ids (`file::Class::method`, or dotted names) are loaded by name as
+`python -m unittest <module.Class.method>` would, with the top-level directory first on sys.path; --order shuffle
+shuffles the tests with the seed. The run is errored only when no test ran (nothing found, or only import or setup
+errors), never for failing tests.
 
 The repo's own test script: `--npm-script test` reads package.json's script and reuses its
 environment (`cross-env TZ=... ` or `TZ=... ` prefixes) and runner flags (`--configLoader
@@ -182,23 +204,31 @@ PRESETS = {
         'cmd': ['go', 'test', '-json', '-count=1'], 'tests': 'go', 'workers': ['-p', '{n}'],
         'shuffle': ['-shuffle={seed}'], 'go_json': True,
     },
-    # cargo-nextest writes JUnit to target/nextest/<profile>/junit.xml when the profile configures
-    # [profile.<profile>.junit] (e.g. .config/nextest.toml). run_one copies that file to the per-run
-    # {junit} path (`junit_from`). --test-threads sets the worker count; nextest has no seeded shuffle
-    # flag, so --order is refused for it (recorded as not_run), as with the other non-reordering runners.
+    # cargo-nextest: any profile (default unless --runner-args names one). Its JUnit is read from
+    # <target dir>/nextest/<profile>/<junit path> when .config/nextest.toml configures [profile.<p>.junit]
+    # and the file was written by this run (never an older one); otherwise nextest's own output is parsed.
+    # --test-threads sets the worker count; nextest has no seeded shuffle flag, so --order is refused.
     'nextest': {
-        'cmd': ['cargo', 'nextest', 'run', '--profile', 'ci'], 'tests': 'args',
-        'workers': ['--test-threads', '{n}'], 'junit_from': 'target/nextest/ci/junit.xml',
+        'cmd': ['cargo', 'nextest', 'run', '--no-fail-fast'], 'tests': 'nextest',
+        'workers': ['--test-threads', '{n}'],
     },
-    # Plain `cargo test` emits no JUnit, so a run parses 0 cases and is flagged `no_tests_parsed`
-    # (no per-case data). Install cargo-nextest and use --preset nextest for per-case results.
-    'cargo': {'cmd': ['cargo', 'test'], 'tests': 'args'},
+    # `cargo test`: libtest's text output is parsed per test (parse_results.parse_libtest) and written to the
+    # run's JUnit path; ids are <target>::<path::name>. --no-fail-fast runs every test binary.
+    'cargo': {'cmd': ['cargo', 'test', '--no-fail-fast'], 'tests': 'cargo', 'workers': ['--test-threads', '{n}'],
+              'libtest': True},
     # node:test (Node 20+). The junit reporter writes {junit}; spec keeps a readable log on stdout.
     'node-test': {
         'cmd': ['node', '--test', '--test-reporter=junit', '--test-reporter-destination={junit}',
                 '--test-reporter=spec', '--test-reporter-destination=stdout'],
         'tests': 'args', 'workers': ['--test-concurrency={n}'],
         'shuffle': ['--test-randomize', '--test-random-seed={seed}'],
+    },
+    # unittest: `python -m unittest discover` (default -s tests, or -s/-p/-t from --runner-args) through a generated
+    # runner that writes one JUnit case per test (ids <file>::<Class>::<method>); --tests ids are loaded by name the
+    # way `python -m unittest <module.Class.method>` loads them; --order shuffle shuffles the tests with the seed.
+    'unittest': {
+        'cmd': [sys.executable, '{unittest_runner}', '--junit', '{junit}'], 'tests': 'args',
+        'shuffle': ['--shuffle', '{seed}'], 'unittest': True,
     },
     'custom': {'cmd': None, 'tests': 'placeholder'},
 }
@@ -268,7 +298,14 @@ def skipped(rel_parts: list[str]) -> bool:
 
 def git_files(root: Path) -> list[str] | None:
     """Files git would track under root (tracked plus untracked-but-not-ignored), relative POSIX paths; None outside
-    a work tree, when git is missing, or when git lists nothing (root itself ignored)."""
+    a work tree, when git is missing, or when git lists nothing (root itself ignored). No git process is started when
+    no .git (a directory, or a worktree's .git file) exists in root or above it and GIT_DIR is not set."""
+    try:
+        here = Path(root).resolve()
+        if not os.environ.get('GIT_DIR') and not any((p / '.git').exists() for p in (here, *here.parents)):
+            return None
+    except OSError:
+        pass
     try:
         res = subprocess.run(['git', '-C', str(root), '-c', 'core.quotepath=off', 'ls-files', '-co', '--exclude-standard', '-z'],
                              capture_output=True, timeout=120)
@@ -492,7 +529,7 @@ def tree_snapshot(root: Path, skip: set[Path]) -> dict[str, str]:
 
 def runtime_of(preset_name: str, cmd: str | None) -> str:
     """Which runtime reads TZ for this run: python, node, go, rust or unknown."""
-    if preset_name == 'pytest':
+    if preset_name in ('pytest', 'unittest'):
         return 'python'
     if preset_name in NODE_RUNNERS or preset_name == 'node-test':
         return 'node'
@@ -878,6 +915,167 @@ def pytest_collection_finish(session):
             fh.write(os.path.relpath(str(path), cwd).replace(os.sep, "/") + sep + rest + "\n")
 '''
 
+UNITTEST_RUNNER = 'qa_skills_unittest'
+UNITTEST_IMPORT_ERROR = '(import error)'
+UNITTEST_SETUP_ERROR = '(setup error)'
+UNITTEST_RUNNER_SOURCE = r'''"""Generated by run_tests.py: run unittest as `python -m unittest discover` (or the named tests) would, and write
+one JUnit case per test: classname `<file>::<Class>` (file relative to the working directory), name the method, so
+ids are `<file>::<Class>::<method>`. A module that fails to import is a case with classname "(import error)"; a
+failing setUpClass/setUpModule one with classname "(setup error)". A failing subTest fails its test.
+
+    python qa_skills_unittest.py --junit J [discover] [-s START] [-p PATTERN] [-t TOP] [--shuffle SEED] [ID ...]
+
+IDs are `file::Class::method` (or `file::Class`, `file`) or dotted names (`module.Class.method`); they are loaded
+by name with the top-level directory (-t, else the start directory) first on sys.path, as discover imports them.
+Exit 0 when every test passed, 1 when one failed, 5 when no test ran."""
+import argparse, inspect, os, random, sys, time, traceback, unittest
+from xml.sax.saxutils import escape, quoteattr
+
+IMPORT_ERROR = "(import error)"
+SETUP_ERROR = "(setup error)"
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--junit", required=True)
+    ap.add_argument("-s", "--start-directory", dest="start")
+    ap.add_argument("-p", "--pattern", default="test*.py")
+    ap.add_argument("-t", "--top-level-directory", dest="top")
+    ap.add_argument("--shuffle", type=int)
+    ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("-q", "--quiet", action="store_true")
+    ap.add_argument("ids", nargs="*")
+    a = ap.parse_args([x for x in sys.argv[1:] if x != "discover"])
+    cwd = os.getcwd()
+    start = a.start or ("tests" if os.path.isdir("tests") else ".")
+    top = os.path.abspath(a.top or start)
+    loader = unittest.TestLoader()
+    if a.ids:
+        if top not in sys.path:
+            sys.path.insert(0, top)
+        names = []
+        for i in a.ids:
+            if "::" in i or i.endswith(".py"):
+                f, _, rest = i.partition("::")
+                mod = os.path.relpath(os.path.abspath(f), top).replace(os.sep, "/")
+                mod = mod[:-3] if mod.endswith(".py") else mod
+                names.append(".".join([mod.replace("/", ".")] + [x for x in rest.split("::") if x]))
+            else:
+                names.append(i)
+        suite = loader.loadTestsFromNames(names)
+    else:
+        suite = loader.discover(start, a.pattern, a.top)
+
+    def flat(s):
+        for t in s:
+            if isinstance(t, unittest.TestSuite):
+                yield from flat(t)
+            else:
+                yield t
+    tests = list(flat(suite))
+    if a.shuffle is not None:
+        random.Random(a.shuffle).shuffle(tests)
+    rows, order = {}, []
+
+    def where(t):
+        cls = type(t)
+        name = getattr(t, "_testMethodName", None)
+        if cls.__name__ == "_FailedTest":   # a module or name that could not be loaded
+            return IMPORT_ERROR, name or str(t), None
+        if name is None:                     # _ErrorHolder: setUpClass / setUpModule / tearDown... failed
+            return SETUP_ERROR, getattr(t, "description", str(t)), None
+        try:
+            f = inspect.getsourcefile(cls) or ""
+            f = os.path.relpath(f, cwd).replace(os.sep, "/")
+        except (TypeError, ValueError):
+            f = cls.__module__.replace(".", "/") + ".py"
+        return f"{f}::{cls.__qualname__}", name, f
+
+    def row(t):
+        key = id(t) if getattr(t, "_testMethodName", None) is None else t.id()
+        if key not in rows:
+            cn, nm, f = where(t)
+            rows[key] = {"classname": cn, "name": nm, "file": f, "status": "passed", "kind": None, "msg": "",
+                         "text": "", "t0": time.perf_counter(), "time": 0.0}
+            order.append(key)
+        return rows[key]
+
+    def bad(t, kind, err, result, msg=None):
+        r = row(t)
+        if r["kind"] in ("failure", "error"):
+            r["text"] += "\n" + (result._exc_info_to_string(err, t) if err else "")
+            return
+        r["kind"] = kind
+        r["status"] = "failed" if kind == "failure" else "error"
+        r["text"] = result._exc_info_to_string(err, t) if err else (msg or "")
+        r["msg"] = msg or (str(err[1]).splitlines()[0][:300] if err and str(err[1]) else kind)
+
+    class Result(unittest.TextTestResult):
+        def startTest(self, t):
+            super().startTest(t)
+            row(t)["t0"] = time.perf_counter()
+
+        def stopTest(self, t):
+            super().stopTest(t)
+            r = row(t)
+            r["time"] = time.perf_counter() - r["t0"]
+
+        def addFailure(self, t, err):
+            super().addFailure(t, err)
+            bad(t, "failure", err, self)
+
+        def addError(self, t, err):
+            super().addError(t, err)
+            bad(t, "error", err, self)
+
+        def addSubTest(self, t, sub, err):
+            super().addSubTest(t, sub, err)
+            if err is not None:
+                kind = "failure" if issubclass(err[0], t.failureException) else "error"
+                bad(t, kind, err, self, f"{sub._subDescription()}: " + (str(err[1]).splitlines() or [kind])[0][:280])
+
+        def addSkip(self, t, reason):
+            super().addSkip(t, reason)
+            r = row(t)
+            r["status"], r["kind"], r["msg"] = "skipped", "skipped", reason
+
+        def addUnexpectedSuccess(self, t):
+            super().addUnexpectedSuccess(t)
+            bad(t, "failure", None, self, "unexpected success (the test is marked expectedFailure)")
+
+    runner = unittest.TextTestRunner(stream=sys.stdout, verbosity=2 if a.verbose else 1, resultclass=Result)
+    result = runner.run(unittest.TestSuite(tests))
+    cases = [rows[k] for k in order]
+    n_fail = sum(1 for c in cases if c["status"] == "failed")
+    n_err = sum(1 for c in cases if c["status"] == "error")
+    n_skip = sum(1 for c in cases if c["status"] == "skipped")
+    out = ['<?xml version="1.0" encoding="utf-8"?>',
+           f'<testsuites><testsuite name="unittest" tests="{len(cases)}" failures="{n_fail}" errors="{n_err}" '
+           f'skipped="{n_skip}">']
+    for c in cases:
+        attrs = f'classname={quoteattr(c["classname"])} name={quoteattr(c["name"])} time="{c["time"]:.3f}"'
+        if c["file"]:
+            attrs += f' file={quoteattr(c["file"])}'
+        if c["kind"] in ("failure", "error"):
+            out.append(f'<testcase {attrs}><{c["kind"]} message={quoteattr(c["msg"])}>{escape(c["text"])}'
+                       f'</{c["kind"]}></testcase>')
+        elif c["kind"] == "skipped":
+            out.append(f'<testcase {attrs}><skipped message={quoteattr(c["msg"])}/></testcase>')
+        else:
+            out.append(f'<testcase {attrs}/>')
+    out.append("</testsuite></testsuites>")
+    os.makedirs(os.path.dirname(os.path.abspath(a.junit)), exist_ok=True)
+    with open(a.junit, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(out) + "\n")
+    if not result.testsRun:
+        return 5
+    return 0 if result.wasSuccessful() else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+
 TIMEBOX_PLUGIN = 'qa_skills_timebox'
 TIMEBOX_REASON = 'qa_skills_timebox: not run, the time box was reached'
 TIMEBOX_PLUGIN_SOURCE = r'''"""Generated by run_tests.py: stop the run cleanly at $QA_SKILLS_DEADLINE (epoch seconds).
@@ -1042,6 +1240,8 @@ def build(args, preset: dict, junit: Path, tests: list[str], seed: int | None) -
             cmd += tests
     else:
         cmd = [fill(x) for x in (shlex.split(args.cmd) if args.cmd else preset['cmd'])]
+        if '{unittest_runner}' in cmd:
+            cmd[cmd.index('{unittest_runner}')] = str(Path(plugin_dir(args), UNITTEST_RUNNER + '.py'))
         if args.cmd and '{junit}' not in args.cmd and preset is PRESETS['pytest']:
             cmd += [f'--junitxml={junit}']
         if args.preset == 'node-test' and not args.cmd:
@@ -1069,6 +1269,8 @@ def build(args, preset: dict, junit: Path, tests: list[str], seed: int | None) -
             cmd += ([f'--test-name-pattern={pattern}'] if pattern else []) + files
             env = {k: fill(v) for k, v in preset.get('env', {}).items()}
             return cmd, env
+        if preset.get('tests') in ('cargo', 'nextest') and not args.cmd:
+            return cargo_command(args, preset, cmd, tests, fill), {k: fill(v) for k, v in preset.get('env', {}).items()}
         cmd += getattr(args, 'script_args', [])
         cmd += shlex.split(args.runner_args or '')
         if args.workers:
@@ -1085,6 +1287,287 @@ def build(args, preset: dict, junit: Path, tests: list[str], seed: int | None) -
             cmd += tests
     env = {k: fill(v) for k, v in preset.get('env', {}).items()}
     return cmd, env
+
+
+def _split_dashdash(tokens: list[str]) -> tuple[list[str], list[str]]:
+    if '--' in tokens:
+        i = tokens.index('--')
+        return tokens[:i], tokens[i + 1:]
+    return tokens, []
+
+
+_CARGO_MODELS: dict = {}
+
+
+def cargo_model(cwd: Path) -> dict:
+    """cargo_project.read_cargo(cwd) (cargo_project.py beside this script), read once per directory; {} without it."""
+    key = str(Path(cwd).resolve())
+    if key not in _CARGO_MODELS:
+        try:
+            import cargo_project
+            _CARGO_MODELS[key] = cargo_project.read_cargo(Path(cwd))
+        except ImportError:
+            _CARGO_MODELS[key] = {}
+    return _CARGO_MODELS[key]
+
+
+def cargo_targets(cwd: Path) -> dict[str, list[tuple[str, str]]]:
+    """{target name: [(crate, kind)]} for the Cargo project at cwd (cargo_project.py beside this script)."""
+    out: dict[str, list[tuple[str, str]]] = {}
+    for c in cargo_model(cwd).get('crates', []):
+        for t in c['targets']:
+            out.setdefault(t['name'], []).append((c['name'], t['kind']))
+    return out
+
+
+def _cargo_candidates(model: dict, tname: str, path: str, doc: bool, crate: str | None = None,
+                      kind: str | None = None, packages: list[str] | None = None) -> list[dict]:
+    """The targets an id's target part may name: the exact name, else (an id written from cargo's deps file name,
+    as older runs recorded them) the name with dashes and underscores alike; only `crate` (and `kind`) when the id
+    names them (<crate>/[<kind>/]<target>), only `packages` (the run's -p) when one of them has it. A target whose
+    static tests include the id's path is preferred, so a bin's test is never re-run as the same-named lib's."""
+    norm = tname.replace('-', '_')
+    exact, loose = [], []
+    pkgs = set(packages or [])
+    if pkgs and not crate and not any(c['name'] in pkgs for c in model.get('crates', [])):
+        pkgs = set()
+    for c in model.get('crates', []):
+        if (crate and c['name'] != crate) or (pkgs and not crate and c['name'] not in pkgs):
+            continue
+        static: dict[tuple, set] = {}
+        for t in c.get('tests') or []:
+            static.setdefault((t.get('target'), t.get('target_kind')), set()).add(t.get('name'))
+        for t in c['targets']:
+            if t['kind'] == 'build' or (doc and t['kind'] != 'lib') or (kind and t['kind'] != kind):
+                continue
+            hit = {'crate': c['name'], 'kind': t['kind'], 'name': t['name'],
+                   'has_path': path in static.get((t['name'], t['kind']), set())}
+            if t['name'] == tname:
+                exact.append(hit)
+            elif t['name'].replace('-', '_') == norm:
+                loose.append(hit)
+    pool = exact + loose
+    with_path = [h for h in pool if h['has_path']]
+    return with_path or exact or loose
+
+
+def _cargo_parameterised(model: dict, test_id: str) -> bool:
+    """Whether a cargo id names a parameterised test function (#[rstest], #[test_case], #[test_matrix]) as
+    cargo_project records it: libtest runs only its generated cases (path::case_1 ...), which --exact never matches."""
+    target, _, path = re.sub(r'#\d+$', '', test_id).partition('::')
+    if not path or target.startswith('doctest:'):
+        return False
+    q = target.split('/')
+    return any(t.get('parameterised') and t.get('name') == path and t.get('target') == q[-1]
+               and (len(q) == 1 or c['name'] == q[0])
+               for c in model.get('crates', []) for t in c.get('tests') or [])
+
+
+def _cargo_packages(cargo_args: list[str]) -> list[str]:
+    """The -p/--package values among cargo options."""
+    out = []
+    for i, a in enumerate(cargo_args):
+        if a in ('-p', '--package') and i + 1 < len(cargo_args):
+            out.append(cargo_args[i + 1])
+        elif a.startswith('--package='):
+            out.append(a.split('=', 1)[1])
+        elif a.startswith('-p') and len(a) > 2:
+            out.append(a[2:])
+    return out
+
+
+def cargo_ids(tests: list[str], cwd: Path, packages: list[str] | None = None) -> tuple[list[str], list[str], bool]:
+    """(cargo selection args, libtest filters, exact) for --tests: ids `<target>::<path::name>` (as parse_libtest
+    and cargo_project record them; `<crate>/<target>` or `<crate>/<kind>/<target>` where the name is not unique;
+    `doctest:<lib>::<name>` for doc tests) become `-p <crate> --lib|--bin|--test|--bench|--example <target>` plus
+    `--exact` paths. A target name several crates (or kinds) share is resolved by the crate in the id, the run's -p
+    (packages), or the one target whose static tests hold the path; otherwise it is refused, naming the candidates,
+    so another crate's same-named test never runs. Ids of two crates in one run are refused (use --isolate).
+    Anything else is a plain libtest name filter."""
+    ids = [re.sub(r'#\d+$', '', t) for t in tests if '::' in t]
+    if not ids:
+        return [], list(tests), False
+    if len(ids) != len(tests):
+        raise ValueError('cargo: a mix of test ids and plain name filters in one run; run them separately or use '
+                         '--isolate')
+    model = cargo_model(cwd)
+    docs = [t for t in ids if t.startswith('doctest:')]
+    if docs and len(docs) != len(ids):
+        raise ValueError('cargo: doc-test ids and other ids in one invocation; cargo rejects --doc with --lib, --bin '
+                         'or --test. Run them separately (run_tests does, with cargo_batches), or use --isolate')
+    params = [t for t in ids if _cargo_parameterised(model, t)]
+    if params and len(params) != len(ids):
+        raise ValueError('cargo: parameterised test ids (#[rstest], #[test_case], #[test_matrix]) and other ids in one '
+                         'invocation; --exact matches none of their generated cases. Run them separately (run_tests '
+                         'does, with cargo_batches), or use --isolate')
+    crates, sel, names = [], [], []
+    for t in ids:
+        target, _, path = t.partition('::')
+        doc = target.startswith('doctest:')
+        tname = target.split(':', 1)[1] if doc else target
+        parts = tname.split('/')
+        q_crate, q_kind = (parts[0], parts[1] if len(parts) == 3 else None) if len(parts) > 1 else (None, None)
+        tname = parts[-1]
+        hits = _cargo_candidates(model, tname, path, doc, q_crate, q_kind, packages)
+        if not hits:
+            raise ValueError(f'cargo: no target named {target!r} in the Cargo project at {cwd} (ids are '
+                             '<target>::<path>; cargo_project.py lists the targets)')
+        if len({(h['crate'], h['kind'], h['name']) for h in hits}) > 1:
+            many_crates = len({h['crate'] for h in hits}) > 1
+            named = ', '.join(f"{h['crate']}/{h['name']}" if many_crates else f"{h['crate']}/{h['kind']}/{h['name']}"
+                              for h in hits)
+            raise ValueError(f'cargo: {t!r} could be the test of any of {len(hits)} targets ({named}); give the id as '
+                             '<crate>/<target>::<path> (or -p <crate> in --runner-args), so another crate\'s '
+                             'same-named test is never run')
+        h = hits[0]
+        crate, kind, tname = h['crate'], h['kind'], h['name']
+        if crate not in crates:
+            crates.append(crate)
+        if doc:
+            flag = ['--doc']
+        elif kind == 'lib':
+            flag = ['--lib']
+        elif kind in ('bin', 'test', 'bench', 'example'):
+            flag = [f'--{kind}', tname]
+        else:
+            flag = []
+        if flag and flag not in sel:
+            sel.append(flag)
+        if params:   # the generated cases are path::<case>; a name filter reaches them, --exact never does
+            path += '::'
+        if path not in names:
+            names.append(path)
+    if len(crates) > 1:
+        raise ValueError(f'cargo: test ids from {len(crates)} crates ({", ".join(crates)}) in one run; libtest filters '
+                         'apply to every selected binary. Run each crate separately, or use --isolate')
+    return ([] if crates[0] in (packages or []) else ['-p', crates[0]]) + [x for f in sel for x in f], names, \
+        not params
+
+
+def cargo_batches(tests: list[str], cwd: Path) -> tuple[list[list[str]], str | None]:
+    """The invocations one cargo selection needs, and a note when it needs more than one: doc-test ids
+    (`doctest:...`, run with --doc, which cargo accepts with no other target) and parameterised test functions
+    (#[rstest], #[test_case], #[test_matrix]: run as name filters `path::` without --exact, which would match none
+    of their generated cases) apart from the rest."""
+    model = cargo_model(cwd)
+    groups: dict[str, list[str]] = {}
+    for t in tests:
+        k = 'doc' if t.startswith('doctest:') else ('param' if _cargo_parameterised(model, t) else 'exact')
+        groups.setdefault(k, []).append(t)
+    batches = [groups[k] for k in ('exact', 'doc', 'param') if k in groups]
+    if len(batches) < 2:
+        return [list(tests)], None
+    why = [w for k, w in (('doc', 'doc tests: cargo rejects --doc with --lib, --bin or --test'),
+                          ('param', 'parameterised tests: run as name filters, since --exact matches none of their '
+                                    'generated cases')) if k in groups]
+    return batches, (f'cargo: the {len(tests)} selected ids ran as {len(batches)} separate invocations ('
+                     + '; '.join(why) + ')')
+
+
+def nextest_filter(tests: list[str], cwd: Path | None = None) -> list[str]:
+    """`-E` filterset for ids `<target>::<path>` (nextest's binary names: the crate for a lib, the target
+    otherwise; a `<crate>/[<kind>/]<target>` id by its binary id, `<crate>`, `<crate>::<target>` or
+    `<crate>::<kind>/<target>`), or the tests as plain name filters."""
+    ids = [re.sub(r'#\d+$', '', t) for t in tests if '::' in t]
+    if not ids:
+        return list(tests)
+    if len(ids) != len(tests):
+        raise ValueError('nextest: a mix of test ids and plain name filters in one run; run them separately')
+    parts = []
+    for t in ids:
+        target, _, path = t.partition('::')
+        q = target.split('/')
+        if len(q) == 1:
+            parts.append(f'(binary(={target}) & test(={path}))')
+            continue
+        crate, name = q[0], q[-1]
+        kind = q[1] if len(q) == 3 else next(
+            (tg['kind'] for c in (cargo_model(cwd) if cwd else {}).get('crates', []) if c['name'] == crate
+             for tg in c['targets'] if tg['name'] == name and tg['kind'] != 'build'), 'test')
+        bid = crate if kind == 'lib' else (f'{crate}::{name}' if kind == 'test' else f'{crate}::{kind}/{name}')
+        parts.append(f'(binary_id(={bid}) & test(={path}))')
+    return ['-E', ' | '.join(parts)]
+
+
+def cargo_command(args, preset: dict, base: list[str], tests: list[str], fill) -> list[str]:
+    """The cargo test / cargo nextest command: cargo options, the selection, then (for cargo test) `--` and libtest
+    options (--test-threads, --exact, the names). --runner-args may hold both sides of a `--`."""
+    cargo_side, lib_side = _split_dashdash(shlex.split(args.runner_args or ''))
+    cmd = list(base) + list(getattr(args, 'script_args', [])) + cargo_side
+    cwd = Path(getattr(args, 'cwd', '.')).resolve()
+    if preset.get('tests') == 'nextest':
+        if args.workers:
+            cmd += [fill(x) for x in preset['workers']]
+        cmd += nextest_filter(tests, cwd)
+        return cmd + (['--'] + lib_side if lib_side else [])
+    sel, names, exact = cargo_ids(tests, cwd, _cargo_packages(cargo_side))
+    cmd += sel
+    lib = list(lib_side)
+    if args.workers:
+        lib += [fill(x) for x in preset['workers']]
+    if exact:
+        lib.append('--exact')
+    lib += names
+    return cmd + (['--'] + lib if lib else [])
+
+
+def nextest_profile(runner_args: list[str], env: dict) -> str:
+    for i, a in enumerate(runner_args):
+        if a in ('--profile', '-P') and i + 1 < len(runner_args):
+            return runner_args[i + 1]
+        if a.startswith('--profile='):
+            return a.split('=', 1)[1]
+    return env.get('NEXTEST_PROFILE') or 'default'
+
+
+def cargo_target_dir(cwd: Path, env: dict) -> Path:
+    """Where cargo builds: CARGO_TARGET_DIR, else build.target-dir in .cargo/config.toml (cwd and its parents),
+    else <workspace root>/target."""
+    if env.get('CARGO_TARGET_DIR'):
+        p = Path(env['CARGO_TARGET_DIR'])
+        return p if p.is_absolute() else (cwd / p)
+    ws = cwd
+    for d in [cwd, *cwd.parents]:
+        for cfg in (d / '.cargo' / 'config.toml', d / '.cargo' / 'config'):
+            if cfg.is_file():
+                m = re.search(r'^\s*target-dir\s*=\s*"([^"]+)"', cfg.read_text(encoding='utf-8', errors='replace'), re.M)
+                if m:
+                    p = Path(m.group(1))
+                    return p if p.is_absolute() else d / p
+        man = d / 'Cargo.toml'
+        if man.is_file() and re.search(r'^\s*\[workspace\]', man.read_text(encoding='utf-8', errors='replace'), re.M):
+            ws = d
+            break
+    return ws / 'target'
+
+
+def nextest_junit(cwd: Path, env: dict, runner_args: list[str], started: float) -> tuple[Path | None, str]:
+    """(the JUnit file this nextest run wrote, or None, and a note). The profile is --profile/NEXTEST_PROFILE or
+    `default`; its [profile.<p>.junit] path comes from .config/nextest.toml at the workspace root (or cwd). A file
+    older than the run's start is never read."""
+    profile = nextest_profile(runner_args, env)
+    tdir = cargo_target_dir(cwd, env)
+    junit_rel = None
+    for d in [cwd, *cwd.parents]:
+        cfg = d / '.config' / 'nextest.toml'
+        if cfg.is_file():
+            text = cfg.read_text(encoding='utf-8', errors='replace')
+            m = re.search(r'^\s*\[profile\.' + re.escape(profile) + r'\.junit\]\s*$(.*?)(?=^\s*\[|\Z)', text,
+                          re.M | re.S)
+            if m:
+                pm = re.search(r'^\s*path\s*=\s*"([^"]+)"', m.group(1), re.M)
+                junit_rel = pm.group(1) if pm else None
+            break
+    if not junit_rel:
+        return None, (f'cargo-nextest profile {profile!r} configures no JUnit ([profile.{profile}.junit] path in '
+                      '.config/nextest.toml); per-test results were read from its output instead.')
+    path = tdir / 'nextest' / profile / junit_rel
+    if not os.path.isfile(long_path(path)):
+        return None, f'cargo-nextest wrote no JUnit at {path}; per-test results were read from its output instead.'
+    if os.path.getmtime(long_path(path)) < started - 1:
+        return None, (f'{path} is older than the run (a stale JUnit from an earlier run), so it was not read; '
+                      'per-test results were read from the output instead.')
+    return path, f'Copied JUnit from {path} (cargo-nextest profile {profile!r}).'
 
 
 CMD_META = re.compile(r'[\^&|<>()%!"]')
@@ -1142,6 +1625,18 @@ def run_error(code: int | None, timed_out: bool, cases: list, is_pytest: bool, o
         return (f'{len(broken)} Go package(s) failed to build or set up, so their tests did not run: '
                 + ', '.join(broken[:5]) + (' ...' if len(broken) > 5 else ''))
     if not cases:
+        m = re.search(r'error: could not compile `([^`]+)`', output or '')
+        if m:
+            first = re.search(r'^error(\[E\d+\])?: (?!could not compile).*$', output or '', re.M)
+            return (f'cargo could not compile `{m.group(1)}`, so no test ran'
+                    + (f' ({first.group(0).strip()[:160]})' if first else ''))
+        if re.search(r'no such (sub)?command:? .?nextest', output or ''):
+            return 'cargo-nextest is not installed (cargo: no such command `nextest`); no test ran'
+        m = re.search(r'error: no (test|bin|bench|example) target named `([^`]+)`', output or '')
+        if m:
+            return f'cargo has no {m.group(1)} target named `{m.group(2)}`; no test ran'
+        if re.search(r'^running 0 tests', output or '', re.M) and not re.search(r'^running [1-9]', output or '', re.M):
+            return f'cargo ran the test binaries but no test matched the selection (exit {code})'
         if code in (132, 134, 135, 136, 137, 139):   # a shell reporting 128 + signal
             return f'the process was killed by signal {code - 128} (exit {code}) and wrote no test results'
         return f'no test cases were parsed (exit {code}); the tests did not run, or wrote no JUnit'
@@ -1153,7 +1648,7 @@ def plugin_dir(args) -> str:
     if not getattr(args, 'ids_dir', None):
         args.ids_dir = tempfile.mkdtemp(prefix='qa-ids-')
         for name, src in ((IDS_PLUGIN, IDS_PLUGIN_SOURCE), (COLLECT_PLUGIN, COLLECT_PLUGIN_SOURCE),
-                          (TIMEBOX_PLUGIN, TIMEBOX_PLUGIN_SOURCE)):
+                          (TIMEBOX_PLUGIN, TIMEBOX_PLUGIN_SOURCE), (UNITTEST_RUNNER, UNITTEST_RUNNER_SOURCE)):
             Path(args.ids_dir, name + '.py').write_text(src, encoding='utf-8')
     return args.ids_dir
 
@@ -1194,6 +1689,7 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
     kw = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' else {'start_new_session': True}
     exe = resolve_exe(cmd, env, cwd)
     hogs = start_hogs(args.cpu_load) if args.cpu_load else []
+    wall0 = time.time()
     t0 = time.monotonic()
     timed_out = False
     try:
@@ -1210,20 +1706,30 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
             kill_tree(h)
     duration = round(time.monotonic() - t0, 3)
     copy_notes = []
-    junit_from = preset.get('junit_from')   # nextest writes JUnit to a profile path, not {junit}: copy it here
-    if junit_from and not junit.exists():
-        src = cwd / junit_from
-        if os.path.isfile(long_path(src)):
+    text_out = (out or b'').decode('utf-8', 'replace')
+    if preset.get('libtest') and not args.cmd:   # cargo test: libtest's text output becomes the run's JUnit
+        junit.write_text(parse_results.libtest_to_junit(
+            text_out, cargo_model(cwd) or None, _cargo_packages(_split_dashdash(cmd)[0]), copy_notes),
+            encoding='utf-8')
+    if preset.get('tests') == 'nextest' and not args.cmd and not junit.exists():
+        src, note = nextest_junit(cwd, env, _split_dashdash(shlex.split(args.runner_args or ''))[0], wall0)
+        copy_notes.append(note)
+        if src:
             shutil.copyfile(long_path(src), long_path(junit))
-            copy_notes.append(f'Copied JUnit from {junit_from} (cargo-nextest profile output) to {junit.name}.')
         else:
-            copy_notes.append(f'cargo-nextest wrote no JUnit at {junit_from}; this run has no per-case data '
-                              '(configure [profile.ci.junit] in .config/nextest.toml, or install cargo-nextest).')
+            junit.write_text(parse_results.nextest_output_to_junit(text_out), encoding='utf-8')
     if preset.get('go_json'):   # go test -json: the events on stdout become gotestsum-shaped JUnit
         junit.write_text(parse_results.go_json_to_junit((out or b'').decode('utf-8', 'replace')), encoding='utf-8')
     if junit.exists():
         junit.write_text(redact_home(junit.read_text(encoding='utf-8', errors='replace')), encoding='utf-8')
     cases, pnotes = parse_results.parse_junit(junit, run_id, cwd) if junit.exists() else ([], [f'{junit.name}: not written'])
+    if preset.get('tests') == 'nextest':   # nextest binary ids (crate, crate::target, crate::bin/name) -> target names
+        for c in cases:
+            if c.get('classname'):
+                tg = parse_results.nextest_target(c['classname'], cargo_model(cwd) or None)
+                rep_n = re.search(r'#\d+$', c['id'])
+                c['id'] = f"{tg}::{c['name']}" + (rep_n.group(0) if rep_n else '')
+                c['classname'] = tg
     prefix = getattr(args, 'id_prefix', '')
     if prefix:   # --repo-root: ids and files relative to the repository, so packages never pool
         for c in cases:
@@ -1250,6 +1756,10 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
                              f'and {box["not_run"]} did not; the run stopped cleanly (JUnit and coverage were written), '
                              'so its results are partial, not a full run.')
     error = run_error(code, timed_out, cases, is_pytest, text)
+    if not error and preset.get('unittest') and cases and all(
+            c.get('classname') in (UNITTEST_IMPORT_ERROR, UNITTEST_SETUP_ERROR) for c in cases):
+        error = (f'no test ran: every case is a module that failed to import or a class or module setup that failed '
+                 f'({", ".join(c["name"] for c in cases[:3])})')
     if box and box['reached'] and not timed_out and code in (0, 1, 2) and cases and \
             (error is None or error == PYTEST_EXIT.get(2)):
         error = None   # exit 2 here is the time box's own clean stop, not a collection error
@@ -1263,6 +1773,8 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
     shown = ' '.join('python' if c == sys.executable else (shlex.quote(c) if re.search(r'\s', c) else c) for c in cmd)
     rel = os.path.relpath(junit, args.out.resolve().parent).replace(os.sep, '/')
     shown = shown.replace(str(junit), rel)
+    if preset.get('unittest') and not args.cmd:
+        shown = shown.replace(str(Path(plugin_dir(args), UNITTEST_RUNNER + '.py')), f'<run_tests {UNITTEST_RUNNER}.py>')
     shown = scrub(shown)
     missing = [] if error or (box and box['reached']) else tests_not_run(tests, cases, cwd, prefix)
     if missing:
@@ -1302,6 +1814,230 @@ def tests_not_run(tests: list[str], cases: list[dict], cwd: Path, prefix: str = 
         elif os.path.isfile(long_path(cwd / t)) and want not in files:
             out.append(want)
     return out
+
+
+CARGO_FIXTURE = {
+    'Cargo.toml': '[workspace]\nmembers = ["gauge", "tidectl", "tide-log", "tide-plot"]\nresolver = "2"\n',
+    'gauge/Cargo.toml': '[package]\nname = "gauge"\nversion = "0.1.0"\nedition = "2021"\n',
+    'gauge/src/lib.rs': ('pub fn feet(m: f64) -> f64 { m * 3.28084 }\n\n#[cfg(test)]\nmod tests {\n'
+                         '    #[test]\n    fn converts() { assert!(super::feet(1.0) > 3.0); }\n'
+                         '    #[test]\n    fn rounds_badly() { assert_eq!(super::feet(1.0) as i64, 4); }\n'
+                         '    #[test]\n    #[ignore = "needs a tide gauge"]\n    fn live_reading() {}\n}\n'),
+    'tidectl/Cargo.toml': '[package]\nname = "tidectl"\nversion = "0.1.0"\nedition = "2021"\n',
+    'tidectl/src/main.rs': 'fn main() {}\n',
+    'tidectl/tests/cli.rs': '#[test]\nfn prints_help() {}\n\n#[test]\nfn slow_station() {}\n',
+    # a package with a lib and a bin of the same name (cargo builds both as deps/tide_log-<hash>), an integration
+    # test with a dash in its name, and a bin-only package whose name has a dash
+    'tide-log/Cargo.toml': '[package]\nname = "tide-log"\nversion = "0.1.0"\nedition = "2021"\n',
+    'tide-log/src/lib.rs': '#[cfg(test)]\nmod tests {\n    #[test]\n    fn opens() {}\n}\n',
+    'tide-log/src/main.rs': 'fn main() {}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn parses_args() {}\n}\n',
+    'tide-log/tests/round-trip.rs': '#[test]\nfn reads_back() {}\n',
+    # a second tests/cli.rs (target `cli` in two crates), sharing one test name with tidectl's
+    'tide-log/tests/cli.rs': '#[test]\nfn prints_help() {}\n\n#[test]\nfn writes_log() {}\n',
+    'tide-plot/Cargo.toml': '[package]\nname = "tide-plot"\nversion = "0.1.0"\nedition = "2021"\n',
+    'tide-plot/src/main.rs': 'fn main() {}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn scales() {}\n}\n',
+}
+
+
+def cargo_self_checks() -> list:
+    """The cargo and nextest presets: commands for whole runs and chosen ids, CARGO_TARGET_DIR, nextest's JUnit
+    (any profile, never a stale file), accurate errors, and (with cargo on PATH) a real run of a tiny synthetic
+    workspace with passing, failing and ignored tests. QA_SKILLS_CARGO_TARGET_DIR names the (deleted) target dir."""
+    import types
+    checks = []
+    d = Path(tempfile.mkdtemp(prefix='qa-cargo-'))
+    for rel, body in CARGO_FIXTURE.items():
+        (d / rel).parent.mkdir(parents=True, exist_ok=True)
+        (d / rel).write_text(body, encoding='utf-8')
+
+    def mk(preset, workers=None, runner_args=None):
+        return types.SimpleNamespace(cmd=None, preset=preset, workers=workers, order='given', runner_args=runner_args,
+                                     script_args=[], cwd=d)
+
+    def try_build(a, tests):
+        try:
+            return build(a, PRESETS[a.preset], Path('j.xml'), tests, None)[0]
+        except Exception as e:   # noqa: BLE001
+            return repr(e)
+    cmd = try_build(mk('cargo', 2), [])
+    checks.append(('cargo: a whole run is cargo test --no-fail-fast, --test-threads after --',
+                   isinstance(cmd, list) and cmd[:3] == ['cargo', 'test', '--no-fail-fast']
+                   and cmd[-3:] == ['--', '--test-threads', '2'], cmd))
+    cmd = try_build(mk('cargo'), ['tidectl/cli::prints_help', 'cli::slow_station'])
+    checks.append(('cargo: ids <target>::<path> (and <crate>/<target>::<path>) re-run as -p <crate> --test <target> '
+                   '-- --exact <paths>',
+                   cmd == ['cargo', 'test', '--no-fail-fast', '-p', 'tidectl', '--test', 'cli', '--', '--exact',
+                           'prints_help', 'slow_station'], cmd))
+    cmd = try_build(mk('cargo'), ['gauge::tests::converts'])
+    checks.append(('cargo: a lib id re-runs with --lib', cmd == ['cargo', 'test', '--no-fail-fast', '-p', 'gauge',
+                                                                '--lib', '--', '--exact', 'tests::converts'], cmd))
+    cmd = try_build(mk('cargo'), ['gauge::tests::converts', 'cli::slow_station'])
+    checks.append(('cargo: ids from two crates in one run are refused (use --isolate)',
+                   isinstance(cmd, str) and '--isolate' in cmd, cmd))
+    base = ['cargo', 'test', '--no-fail-fast']
+    cmd = try_build(mk('cargo'), ['tide-log::tests::parses_args'])
+    checks.append(('cargo: a bin id (cargo_project\'s name, with its dash) re-runs with --bin <name>',
+                   cmd == base + ['-p', 'tide-log', '--bin', 'tide-log', '--', '--exact', 'tests::parses_args'], cmd))
+    cmd = try_build(mk('cargo'), ['tide_log::tests::parses_args'])
+    checks.append(('cargo: an older id naming a bin test by the deps file name (tide_log) re-runs the bin, not --lib',
+                   cmd == base + ['-p', 'tide-log', '--bin', 'tide-log', '--', '--exact', 'tests::parses_args'], cmd))
+    cmd = try_build(mk('cargo'), ['tide_log::tests::opens'])
+    checks.append(('cargo: the lib of a package that also has a same-named bin re-runs with --lib',
+                   cmd == base + ['-p', 'tide-log', '--lib', '--', '--exact', 'tests::opens'], cmd))
+    cmd = try_build(mk('cargo'), ['tide_plot::tests::scales'])
+    checks.append(('cargo: an older id of a dashed bin-only package (tide_plot) re-runs --bin tide-plot',
+                   cmd == base + ['-p', 'tide-plot', '--bin', 'tide-plot', '--', '--exact', 'tests::scales'], cmd))
+    cmd = try_build(mk('cargo'), ['cli::prints_help'])
+    checks.append(('cargo: a target name two crates share, whose test both have, is refused naming the candidates',
+                   isinstance(cmd, str) and 'tidectl/cli' in cmd and 'tide-log/cli' in cmd, cmd))
+    cmd = try_build(mk('cargo'), ['cli::writes_log'])
+    checks.append(('cargo: a shared target name is resolved to the crate whose test file has the test',
+                   cmd == base + ['-p', 'tide-log', '--test', 'cli', '--', '--exact', 'writes_log'], cmd))
+    cmd = try_build(mk('cargo', runner_args='-p tide-log'), ['cli::prints_help'])
+    checks.append(('cargo: -p in --runner-args picks the crate of a shared target name (and is not repeated)',
+                   cmd == base + ['-p', 'tide-log', '--test', 'cli', '--', '--exact', 'prints_help'], cmd))
+    cmd = try_build(mk('cargo'), ['tide-log/cli::prints_help'])
+    checks.append(('cargo: a <crate>/<target> id runs that crate\'s target only',
+                   cmd == base + ['-p', 'tide-log', '--test', 'cli', '--', '--exact', 'prints_help'], cmd))
+    cmd = try_build(mk('cargo'), ['round_trip::reads_back'])
+    checks.append(('cargo: an older id of a dashed integration test (round_trip) re-runs --test round-trip',
+                   cmd == base + ['-p', 'tide-log', '--test', 'round-trip', '--', '--exact', 'reads_back'], cmd))
+    cmd = try_build(mk('nextest', 2), ['tidectl/cli::prints_help', 'gauge::tests::converts'])
+    checks.append(('nextest: no ci profile is required; ids become one -E filterset of binary and test (a '
+                   '<crate>/<target> id by its binary id)',
+                   isinstance(cmd, list) and '--profile' not in cmd and '-E' in cmd
+                   and cmd[cmd.index('-E') + 1] == ('(binary_id(=tidectl::cli) & test(=prints_help)) | '
+                                                    '(binary(=gauge) & test(=tests::converts))')
+                   and cmd[cmd.index('--test-threads') + 1] == '2', cmd))
+    # nextest JUnit: the default profile's junit under CARGO_TARGET_DIR, and never a stale one
+    tdir = d / 'elsewhere-target'
+    (d / '.config').mkdir(exist_ok=True)
+    (d / '.config' / 'nextest.toml').write_text('[profile.default.junit]\npath = "junit.xml"\n', encoding='utf-8')
+    jx = tdir / 'nextest' / 'default' / 'junit.xml'
+    jx.parent.mkdir(parents=True)
+    jx.write_text('<testsuites/>', encoding='utf-8')
+    fn = globals().get('nextest_junit')
+    got = fn(d, {'CARGO_TARGET_DIR': str(tdir)}, [], time.time() + 5) if fn else 'nextest_junit is missing'
+    checks.append(('nextest: a junit.xml older than the run is never read', isinstance(got, tuple) and got[0] is None
+                   and 'older than the run' in got[1], got))
+    got = fn(d, {'CARGO_TARGET_DIR': str(tdir)}, [], time.time() - 60) if fn else None
+    checks.append(('nextest: the default profile\'s junit is found under CARGO_TARGET_DIR',
+                   isinstance(got, tuple) and got[0] == jx, got))
+    got = fn(d, {}, ['--profile', 'ci'], time.time() - 60) if fn else None
+    checks.append(('nextest: a profile with no junit configured falls back to the output, and says so',
+                   isinstance(got, tuple) and got[0] is None and 'no JUnit' in got[1], got))
+    out = ('   Compiling gauge v0.1.0\nerror[E0425]: cannot find value `x` in this scope\n'
+           'error: could not compile `gauge` (lib test) due to 1 previous error\n')
+    err = run_error(101, False, [], False, out)
+    checks.append(('cargo: a compile error is reported as such, naming the crate', 'could not compile' in (err or '')
+                   and 'gauge' in (err or ''), err))
+    err = run_error(101, False, [], False, 'error: no such command: `nextest`\n')
+    checks.append(('nextest: a missing cargo-nextest is reported as not installed', 'not installed' in (err or ''), err))
+    fx = getattr(parse_results, 'parse_nextest_output', None)
+    sample = ('        PASS [   0.004s] gauge tests::converts\n        FAIL [   0.005s] (2/3) gauge tests::rounds_badly\n'
+              '        PASS [   0.010s] tidectl::cli prints_help\n'
+              '     Summary [   0.1s] 3 tests run: 2 passed, 1 failed, 1 skipped\n')
+    got = sorted((c['id'], c['status']) for c in fx(sample, 'R')[0]) if fx else 'parse_nextest_output is missing'
+    checks.append(('nextest: its own output is read when there is no JUnit, ids as cargo test gives them', got == [
+        ('cli::prints_help', 'passed'), ('gauge::tests::converts', 'passed'), ('gauge::tests::rounds_badly', 'failed')],
+        got))
+    try:
+        got = [parse_results.nextest_target(b, cargo_model(d)) for b in
+               ('tidectl::cli', 'tide-log::cli', 'tide-log', 'tide-log::bin/tide-log', 'gauge')]
+    except Exception as e:   # noqa: BLE001
+        got = repr(e)
+    checks.append(('nextest (model known): a binary id of a target name two crates share carries the crate',
+                   got == ['tidectl/cli', 'tide-log/cli', 'tide_log', 'tide-log', 'gauge'], got))
+    if shutil.which('cargo'):
+        tgt = Path(os.environ.get('QA_SKILLS_CARGO_TARGET_DIR') or tempfile.mkdtemp(prefix='qa-cargo-target-'))
+        out_dir = Path(tempfile.mkdtemp(prefix='qa-cargo-runs-'))
+        old = {k: os.environ.get(k) for k in ('CARGO_TARGET_DIR', 'CARGO_BUILD_JOBS')}
+        os.environ['CARGO_TARGET_DIR'], os.environ['CARGO_BUILD_JOBS'] = str(tgt), '1'
+        want = {'gauge::tests::converts': 'passed', 'gauge::tests::rounds_badly': 'failed',
+                'gauge::tests::live_reading': 'skipped', 'tidectl/cli::prints_help': 'passed',
+                'tidectl/cli::slow_station': 'passed', 'tide-log/cli::prints_help': 'passed',
+                'tide-log/cli::writes_log': 'passed',
+                'tide_log::tests::opens': 'passed', 'tide-log::tests::parses_args': 'passed',
+                'round-trip::reads_back': 'passed', 'tide-plot::tests::scales': 'passed'}
+        try:
+            rc = main(['--preset', 'cargo', '--cwd', str(d), '--out', str(out_dir / 'runs.json')])
+            data = json.loads((out_dir / 'runs.json').read_text(encoding='utf-8'))
+            run = data['runs'][0]
+            got = {c['id']: c['status'] for c in data['cases']}
+            checks.append(('cargo (real run): a run with a failing test is not errored, every case is parsed',
+                           rc == 0 and run['errored'] is False and got == want, (run.get('error'), got)))
+            files = {c['id']: c.get('file') for c in data['cases']}
+            checks.append(('cargo (real run): integration test files are relative to the workspace root, per crate',
+                           files.get('tide-log/cli::writes_log') == 'tide-log/tests/cli.rs'
+                           and files.get('tidectl/cli::prints_help') == 'tidectl/tests/cli.rs', files))
+            checks.append(('cargo (real run): CARGO_TARGET_DIR is honoured (no target/ in the workspace)',
+                           not (d / 'target').exists() and tgt.exists(), sorted(p.name for p in d.iterdir())))
+            main(['--preset', 'cargo', '--cwd', str(d), '--out', str(out_dir / 'runs.json'), '--tests',
+                  'gauge::tests::rounds_badly', '--workers', '1'])
+            data = json.loads((out_dir / 'runs.json').read_text(encoding='utf-8'))
+            last = data['runs'][-1]
+            got = {c['id']: c['status'] for c in data['cases'] if c['run_id'] == last['id']}
+            checks.append(('cargo (real run): a chosen id re-runs alone, with --test-threads',
+                           got == {'gauge::tests::rounds_badly': 'failed'} and '--test-threads 1' in last['command']
+                           and not last['errored'], (got, last['command'], last.get('error'))))
+        except Exception as e:   # noqa: BLE001
+            checks.append(('cargo (real run): completes', False, repr(e)))
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+            shutil.rmtree(tgt, ignore_errors=True)
+            shutil.rmtree(out_dir, ignore_errors=True)
+    else:
+        print('SKIP cargo real-run cases: cargo is not on PATH')
+    shutil.rmtree(d, ignore_errors=True)
+    return checks + cargo_split_checks()
+
+
+def cargo_split_checks() -> list:
+    """Selections cargo cannot run in one invocation: doc-test ids with other ids (cargo rejects --doc with --lib),
+    and parameterised tests (#[rstest], #[test_case]) whose function path --exact never matches. No build."""
+    import types
+    checks = []
+    d = Path(tempfile.mkdtemp(prefix='qa-cargo-split-'))
+    (d / 'src').mkdir()
+    (d / 'Cargo.toml').write_text('[package]\nname = "scaler"\nversion = "0.1.0"\nedition = "2021"\n', encoding='utf-8')
+    (d / 'src' / 'lib.rs').write_text(
+        '/// ```\n/// assert_eq!(scaler::half(4), 2);\n/// ```\npub fn half(x: u32) -> u32 { x / 2 }\n\n'
+        '#[cfg(test)]\nmod tests {\n    use rstest::rstest;\n\n    #[rstest]\n    #[case(4, 2)]\n'
+        '    fn halves(#[case] a: u32, #[case] b: u32) { assert_eq!(super::half(a), b); }\n\n'
+        '    #[test]\n    fn plain() {}\n}\n', encoding='utf-8')
+    a = types.SimpleNamespace(cmd=None, preset='cargo', workers=None, order='given', runner_args=None, script_args=[],
+                              cwd=d)
+
+    def try_build(tests):
+        try:
+            return build(a, PRESETS['cargo'], Path('j.xml'), tests, None)[0]
+        except Exception as e:   # noqa: BLE001
+            return repr(e)
+    base = ['cargo', 'test', '--no-fail-fast', '-p', 'scaler', '--lib', '--']
+    doc = 'doctest:scaler::src/lib.rs - half (line 1)'
+    cmd = try_build([doc, 'scaler::tests::plain'])
+    checks.append(('cargo: doc-test ids and lib ids in one invocation are refused (cargo rejects --doc with --lib)',
+                   isinstance(cmd, str) and '--doc' in cmd, cmd))
+    cmd = try_build(['scaler::tests::halves'])
+    checks.append(('cargo: a parameterised test (#[rstest]) re-runs its generated cases: a name filter `path::`, no '
+                   '--exact', cmd == base + ['tests::halves::'], cmd))
+    cmd = try_build(['scaler::tests::halves', 'scaler::tests::plain'])
+    checks.append(('cargo: parameterised and exact ids in one invocation are refused (--exact would apply to both)',
+                   isinstance(cmd, str) and 'parameterised' in cmd, cmd))
+    fn = globals().get('cargo_batches')
+    got = fn(['scaler::tests::plain', doc], d) if fn else 'cargo_batches is missing'
+    checks.append(('cargo_batches runs doc-test ids as a separate invocation, with a note', isinstance(got, tuple)
+                   and got[0] == [['scaler::tests::plain'], [doc]] and 'separate' in got[1], got))
+    got = fn(['scaler::tests::halves', 'scaler::tests::plain'], d) if fn else 'cargo_batches is missing'
+    checks.append(('cargo_batches runs parameterised ids as a separate invocation, with a note', isinstance(got, tuple)
+                   and got[0] == [['scaler::tests::plain'], ['scaler::tests::halves']] and 'parameterised' in got[1],
+                   got))
+    shutil.rmtree(d, ignore_errors=True)
+    return checks
 
 
 def go_self_checks() -> list:
@@ -1507,11 +2243,92 @@ def pytest_self_checks() -> list:
     return checks
 
 
+def unittest_self_checks() -> list:
+    """unittest runs on a synthetic recipe scaler whose tests add scripts/ to sys.path, as `python -m unittest
+    discover -s tests` would run them: per-test ids file::Class::method, failures, skips and subTest failures,
+    re-running chosen ids, --runner-args start dir and pattern, a seeded shuffle, and errored only when no test ran."""
+    checks = []
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'scaler'
+        (root / 'scripts').mkdir(parents=True)
+        (root / 'tests').mkdir()
+        (root / 'scripts' / 'scale.py').write_text('def scale(q, f):\n    return q * f\n', encoding='utf-8')
+        head = ('import sys, unittest\nfrom pathlib import Path\n'
+                'sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))\nimport scale\n\n\n')
+        (root / 'tests' / 'test_scale.py').write_text(
+            head + 'class ScaleTest(unittest.TestCase):\n'
+            '    def test_doubles(self):\n        self.assertEqual(scale.scale(2, 2), 4)\n\n'
+            '    def test_wrong(self):\n        self.assertEqual(scale.scale(2, 2), 5)\n\n'
+            '    @unittest.skip("needs a kitchen scale")\n    def test_later(self):\n        pass\n\n'
+            '    def test_sub(self):\n        for f in (1, 2):\n            with self.subTest(f=f):\n'
+            '                self.assertEqual(scale.scale(1, f), 1)\n', encoding='utf-8')
+        (root / 'tests' / 'test_units.py').write_text(
+            head + 'class UnitsTest(unittest.TestCase):\n    def test_grams(self):\n        self.assertTrue(scale.scale(1, 1))\n',
+            encoding='utf-8')
+        out = Path(d) / 'out' / 'runs.json'
+
+        def run(*extra):
+            try:
+                code = main(['--preset', 'unittest', '--cwd', str(root), '--out', str(out), *extra])
+            except SystemExit as e:
+                code = f'exit {e.code}'
+            data = json.loads(out.read_text(encoding='utf-8')) if out.exists() else {'runs': [{}], 'cases': []}
+            r = data['runs'][-1] if data['runs'] else {}
+            return code, r, {c['id']: c['status'] for c in data['cases'] if c.get('run_id') == r.get('id')}
+        code, r, cases = run()
+        want = {'tests/test_scale.py::ScaleTest::test_doubles': 'passed',
+                'tests/test_scale.py::ScaleTest::test_wrong': 'failed',
+                'tests/test_scale.py::ScaleTest::test_later': 'skipped',
+                'tests/test_scale.py::ScaleTest::test_sub': 'failed',
+                'tests/test_units.py::UnitsTest::test_grams': 'passed'}
+        checks.append(('unittest: discover -s tests by default, one case per test with id file::Class::method; a '
+                       'failing subTest fails its test; failing tests do not make the run errored',
+                       cases == want and r.get('errored') is False, (code, r.get('error'), cases)))
+        code, r, cases = run('--tests', 'tests/test_scale.py::ScaleTest::test_wrong')
+        checks.append(('unittest: a chosen id is run back alone by name',
+                       cases == {'tests/test_scale.py::ScaleTest::test_wrong': 'failed'} and not r.get('tests_not_run'),
+                       (code, r.get('command'), cases)))
+        code, r, cases = run('--runner-args', '-s tests -p test_units.py')
+        checks.append(('unittest: --runner-args sets the start directory and pattern',
+                       cases == {'tests/test_units.py::UnitsTest::test_grams': 'passed'}, (code, cases)))
+        code, r, cases = run('--order', 'shuffle', '--seed', '7')
+        checks.append(('unittest: a seeded shuffle runs every test', cases == want, (code, cases)))
+        (root / 'tests' / 'test_broken.py').write_text('import no_such_module_here\n', encoding='utf-8')
+        code, r, cases = run('--runner-args', '-p test_broken.py')
+        checks.append(('unittest: a run whose only case is an import error is errored (no test ran)',
+                       r.get('errored') is True and 'no test ran' in (r.get('error') or ''), (code, r.get('error'), cases)))
+        code, r, cases = run('--runner-args', '-p nothing_matches_*.py')
+        checks.append(('unittest: a run that found no test is errored', r.get('errored') is True, (code, r.get('error'))))
+    return checks
+
+
 def self_test() -> int:
     """Check id patterns, npm script chains and workspace delegation, and (with node on PATH) a node-test run with
     --repo-root on a small synthetic workspace."""
     checks = []
+    with tempfile.TemporaryDirectory() as d:
+        calls = []
+        real_run = subprocess.run
+        subprocess.run = lambda *a, **k: calls.append(a) or real_run(*a, **k)
+        try:
+            got = git_files(Path(d))
+        finally:
+            subprocess.run = real_run
+        no_git_above = not any((p / '.git').exists() for p in [Path(d).resolve(), *Path(d).resolve().parents])
+        try:   # inside a real git work tree (this repository) it lists files instead of failing
+            in_repo = git_files(Path(__file__).resolve().parent)
+            in_repo_err = None
+        except Exception as exc:  # noqa: BLE001 - the check reports the error
+            in_repo, in_repo_err = None, f'{type(exc).__name__}: {exc}'
+        if subprocess.run(['git', '--version'], capture_output=True).returncode == 0 \
+                and (Path(__file__).resolve().parent / '..' / '..' / '.git').exists():
+            checks.append(('git_files lists the files of the git work tree it runs in',
+                           in_repo_err is None and bool(in_repo) and any(r.endswith('run_tests.py') for r in in_repo),
+                           in_repo_err or (in_repo or [])[:3]))
+        checks.append(('git_files starts no git process when no .git exists above the path',
+                       not no_git_above or (got is None and not calls), (no_git_above, got, calls)))
     checks += pytest_self_checks()
+    checks += unittest_self_checks()
     _, pat = vitest_ids(['tests/a.test.ts::cart > totals > adds tax'])
     rx = re.compile(pat)
     checks.append(('a vitest -t pattern matches the " > " and the space-joined name',
@@ -1519,6 +2336,7 @@ def self_test() -> int:
     _, pat = node_test_ids(['a.test.mjs::sum > inner > deep # 1'])
     checks.append(('a node-test pattern matches the space-joined name', bool(re.match(pat, 'sum inner deep # 1')), pat))
     checks += go_self_checks()
+    checks += cargo_self_checks()
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         (root / 'pnpm-workspace.yaml').write_text('packages:\n  - packages/*\n', encoding='utf-8')
@@ -1808,6 +2626,11 @@ def main(argv=None) -> int:
     before = tree_snapshot(cwd, {junit_dir, args.out.resolve().parent}) if args.check_tree else None
     deadline = time.monotonic() + args.minutes * 60
     batches = [[t] for t in tests] if args.isolate else [tests]
+    if preset.get('tests') == 'cargo' and not args.cmd and not args.isolate and tests:
+        batches, split_note = cargo_batches(tests, cwd)
+        if split_note:
+            notes.append(split_note)
+            print(f'NOTE: {split_note}')
     done, planned, stopped = 0, args.repeat * len(batches), False
     if collect_error:   # record the failed collection as an errored run, so a scripted campaign never loses it
         run_id = f'{args.run_prefix}-{n0 + 1}'

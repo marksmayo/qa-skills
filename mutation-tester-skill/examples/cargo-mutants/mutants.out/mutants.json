@@ -1,0 +1,302 @@
+[
+  {
+    "package": "tide-cli",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "band",
+      "return_type": "-> &'static str",
+      "span": {
+        "start": {
+          "line": 4,
+          "column": 1
+        },
+        "end": {
+          "line": 10,
+          "column": 2
+        }
+      }
+    },
+    "span": {
+      "start": {
+        "line": 5,
+        "column": 18
+      },
+      "end": {
+        "line": 5,
+        "column": 20
+      }
+    },
+    "replacement": "<",
+    "genre": "BinaryOperator"
+  },
+  {
+    "package": "tide-cli",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "band",
+      "return_type": "-> &'static str",
+      "span": {
+        "start": {
+          "line": 4,
+          "column": 1
+        },
+        "end": {
+          "line": 10,
+          "column": 2
+        }
+      }
+    },
+    "span": {
+      "start": {
+        "line": 5,
+        "column": 18
+      },
+      "end": {
+        "line": 5,
+        "column": 20
+      }
+    },
+    "replacement": ">",
+    "genre": "BinaryOperator"
+  },
+  {
+    "package": "tide-cli",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "gap_minutes",
+      "return_type": "-> u32",
+      "span": {
+        "start": {
+          "line": 13,
+          "column": 1
+        },
+        "end": {
+          "line": 19,
+          "column": 2
+        }
+      }
+    },
+    "span": {
+      "start": {
+        "line": 14,
+        "column": 11
+      },
+      "end": {
+        "line": 14,
+        "column": 13
+      }
+    },
+    "replacement": "<",
+    "genre": "BinaryOperator"
+  },
+  {
+    "package": "tide-cli",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "gap_minutes",
+      "return_type": "-> u32",
+      "span": {
+        "start": {
+          "line": 13,
+          "column": 1
+        },
+        "end": {
+          "line": 19,
+          "column": 2
+        }
+      }
+    },
+    "span": {
+      "start": {
+        "line": 17,
+        "column": 17
+      },
+      "end": {
+        "line": 17,
+        "column": 18
+      }
+    },
+    "replacement": "+",
+    "genre": "BinaryOperator"
+  },
+  {
+    "package": "tide-cli",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "gap_minutes",
+      "return_type": "-> u32",
+      "span": {
+        "start": {
+          "line": 13,
+          "column": 1
+        },
+        "end": {
+          "line": 19,
+          "column": 2
+        }
+      }
+    },
+    "span": {
+      "start": {
+        "line": 17,
+        "column": 12
+      },
+      "end": {
+        "line": 17,
+        "column": 13
+      }
+    },
+    "replacement": "/",
+    "genre": "BinaryOperator"
+  },
+  {
+    "package": "tide-cli",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "can_cross",
+      "return_type": "-> bool",
+      "span": {
+        "start": {
+          "line": 22,
+          "column": 1
+        },
+        "end": {
+          "line": 24,
+          "column": 2
+        }
+      }
+    },
+    "span": {
+      "start": {
+        "line": 23,
+        "column": 11
+      },
+      "end": {
+        "line": 23,
+        "column": 13
+      }
+    },
+    "replacement": "&&",
+    "genre": "BinaryOperator"
+  },
+  {
+    "package": "tide-cli",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "can_cross",
+      "return_type": "-> bool",
+      "span": {
+        "start": {
+          "line": 22,
+          "column": 1
+        },
+        "end": {
+          "line": 24,
+          "column": 2
+        }
+      }
+    },
+    "span": {
+      "start": {
+        "line": 23,
+        "column": 24
+      },
+      "end": {
+        "line": 23,
+        "column": 25
+      }
+    },
+    "replacement": ">=",
+    "genre": "BinaryOperator"
+  },
+  {
+    "package": "tide-cli",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "can_cross",
+      "return_type": "-> bool",
+      "span": {
+        "start": {
+          "line": 22,
+          "column": 1
+        },
+        "end": {
+          "line": 24,
+          "column": 2
+        }
+      }
+    },
+    "span": {
+      "start": {
+        "line": 22,
+        "column": 72
+      },
+      "end": {
+        "line": 24,
+        "column": 2
+      }
+    },
+    "replacement": "{\n    true /* ~ changed by cargo-mutants ~ */\n}",
+    "genre": "FnValue"
+  },
+  {
+    "package": "tide-cli",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "can_cross",
+      "return_type": "-> bool",
+      "span": {
+        "start": {
+          "line": 22,
+          "column": 1
+        },
+        "end": {
+          "line": 24,
+          "column": 2
+        }
+      }
+    },
+    "span": {
+      "start": {
+        "line": 22,
+        "column": 72
+      },
+      "end": {
+        "line": 24,
+        "column": 2
+      }
+    },
+    "replacement": "{\n    false /* ~ changed by cargo-mutants ~ */\n}",
+    "genre": "FnValue"
+  },
+  {
+    "package": "tide-cli",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "gap_minutes",
+      "return_type": "-> u32",
+      "span": {
+        "start": {
+          "line": 13,
+          "column": 1
+        },
+        "end": {
+          "line": 19,
+          "column": 2
+        }
+      }
+    },
+    "span": {
+      "start": {
+        "line": 13,
+        "column": 47
+      },
+      "end": {
+        "line": 19,
+        "column": 2
+      }
+    },
+    "replacement": "{\n    1 /* ~ changed by cargo-mutants ~ */\n}",
+    "genre": "FnValue"
+  }
+]

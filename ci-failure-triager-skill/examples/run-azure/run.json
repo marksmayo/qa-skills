@@ -68,7 +68,8 @@
    "started_at": "2026-11-09T01:20:00Z",
    "event": "individualCI",
    "workflow_id": 4,
-   "jobs": null
+   "jobs": null,
+   "branch": "main"
   }
  ],
  "history_scope": "same workflow",
@@ -76,7 +77,8 @@
   "id": 2201,
   "commit": "1e537ac23f72913514214744dcf1bae69cddab0c",
   "event": "individualCI",
-  "basis": "the newest successful run of the same workflow on the branch started before this run, same event"
+  "basis": "the newest successful run of the same workflow on the branch started before this run, same event",
+  "branch": "main"
  },
  "fetch_problems": [],
  "source": "recorded",

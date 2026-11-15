@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-11-10T23:30:45Z",
+ "generated_at": "2026-11-15T12:34:12Z",
  "scope": {
   "source": {
    "kind": "diff",
@@ -91,6 +91,7 @@
     "seed": 1
    },
    "tree_changed": [],
+   "run_by": "skill",
    "generated": 31,
    "in_scope": 31,
    "out_of_scope": 0,
@@ -113,6 +114,7 @@
    "timeout_s": null,
    "sampled": null,
    "tree_changed": [],
+   "run_by": "skill",
    "generated": 41,
    "in_scope": 34,
    "out_of_scope": 7,
@@ -1448,5 +1450,19 @@
    "killed_by": null,
    "note": "no test executed this line (per-test line coverage); the engine only tracks functions"
   }
- ]
+ ],
+ "language_coverage": {
+  "dominant": "Python",
+  "dominant_by": "lines",
+  "product_lines": {
+   "Python": 47
+  },
+  "mutated_languages": [
+   "Python"
+  ],
+  "status": "ok",
+  "unmutated_dominant": null,
+  "tooling_scope_files": [],
+  "warning": null
+ }
 }

@@ -18,7 +18,7 @@ BRIEF_ITEMS = 20     # --brief lists at most this many selected files and test a
 KIND_LABEL = {'global_config': 'global config', 'shared_fixture': 'shared fixture', 'dynamic_reference': 'dynamic reference',
               'data_or_schema': 'data or schema', 'unmapped_source': 'unmapped source', 'deleted_or_renamed': 'deleted or renamed',
               'non_code': 'non-code', 'huge_change': 'huge change'}
-SCOPE_LABEL = {'full_suite': 'full suite', 'package': 'whole package', 'fixture_reach': "fixture's reach",
+SCOPE_LABEL = {'full_suite': 'full suite', 'language': 'every test of its language', 'package': 'whole package', 'fixture_reach': "fixture's reach",
                'package_and_contract': 'package + contract tests', 'importers': 'former importers',
                'e2e_and_visual': 'e2e and visual tests', 'labelled': 'labelled only (not widened)'}
 
@@ -60,6 +60,9 @@ def main() -> int:
                + ('n/a' if s['evidence_completeness'] is None else f'{100 * s["evidence_completeness"]:.0f}%'))
     out.append('')
     out.append(P(s['headline'], BOLD))
+    warning = (d.get('language_coverage') or {}).get('warning')
+    if warning:
+        out.append(P(f'WARNING: {warning}', RED))
     out.append('')
 
     if not args.brief:
@@ -83,12 +86,19 @@ def main() -> int:
         argv = cmd['argv']
         # the trailing arguments: test files, or (go test) package directories, counted in `args`
         n_args = cmd.get('args', 0 if cmd.get('full_suite') else cmd.get('tests', 0))
+        if cmd.get('framework') == 'cargo-test':      # cargo test ... -- --exact <libtest names>
+            n_args = 0 if cmd.get('full_suite') else len(cmd.get('test_ids', []))
         if args.brief and n_args > BRIEF_ITEMS and n_args < len(argv):
-            what = 'packages' if cmd.get('framework') == 'go-testing' else 'test files'
+            what = {'go-testing': 'packages', 'cargo-test': 'test names'}.get(cmd.get('framework'), 'test files')
             argv = argv[:len(argv) - n_args] + [f'<{n_args} {what}>']
         out.append(f'    (cd {cmd["cwd"]} && {" ".join(argv)}){part}')
+        if cmd.get('note'):
+            out.append(f'    # {cmd["note"]}')
     for pkg, why in d['command'].get('no_runner_reasons', {}).items():
         out.append(f'    # {pkg}: no command, {why}')
+    for g in d['command'].get('feature_gated', []):
+        out.append(P(f'    # {len(g["tests"])} selected test(s) of {g["crate"]} only run with --features {g["feature"]}; '
+                     'the commands above do not run them', YELLOW))
     out.append('')
 
     out.append(P(f'## Selected ({len(d["selected"])})', BOLD))

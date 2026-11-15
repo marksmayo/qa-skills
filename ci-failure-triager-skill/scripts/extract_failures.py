@@ -33,7 +33,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from parse_results import parse_junit  # noqa: E402
+from parse_results import (LT_ASSERT, LT_DOC, LT_PANIC_AT, LT_RUNNING, NT_LINE, libtest_target, nextest_target,  # noqa: E402
+                           parse_junit, parse_libtest, parse_nextest_output)
 
 SIG = json.loads((HERE.parent / 'data' / 'signatures.json').read_text(encoding='utf-8'))
 TEST_STEP = re.compile(SIG['test_step'], re.I)
@@ -62,11 +63,15 @@ def strip(line: str) -> str:
 # Frames that are never the project's: the Go toolchain (GOROOT on hosted runners, /usr/local/go, a toolchain
 # downloaded by GOTOOLCHAIN), the module cache (GOPATH/pkg/mod, vendored modules), the runtime.
 TOOLCHAIN_FRAME = re.compile(r'(/hostedtoolcache/(windows/)?go/|^/usr/(local/|lib/)?go/|/golang\.org/toolchain@|/pkg/mod/|^/?(go/)?src/(testing|runtime|time|sync|net|os|reflect|internal)/|'
-                             r'^(testing|runtime|time|sync|reflect)/[\w.]+\.go$|/go-build\d*/|^_testmain\.go$|/vendor/)')
+                             r'^(testing|runtime|time|sync|reflect)/[\w.]+\.go$|/go-build\d*/|^_testmain\.go$|/vendor/|'
+                             r'^/rustc/|/\.cargo/(registry|git)/|/\.rustup/toolchains/)')
 # The runner's checkout directory: GitHub /home/runner/work/<repo>/<repo>/ (D:\a\<repo>\<repo>\ on Windows,
 # /Users/runner/work/... on macOS), Azure DevOps /home/vsts/work/1/s/ (D:\a\1\s\).
 CHECKOUT = re.compile(r'^(?:/home/runner/work|/Users/runner/work|[A-Za-z]:/a|/__w)/[^/]+/[^/]+/|^(?:/home/vsts/work|[A-Za-z]:/a)/\d+/s/')
 ANNOT = re.compile(r'::(?:error|warning)\s+file=([^,:]+),line=(\d+)')
+# Rust locations: a compiler or clippy finding (`  --> src/x.rs:12:5`), a panic (`panicked at src/x.rs:12:5`, older
+# `panicked at 'msg', src/x.rs:12:5`) and a rustfmt diff (`Diff in /path/src/x.rs:12:` or `... at line 12:`)
+RUST_FRAME = re.compile(r"(?:-->\s+|panicked at (?:'.*?',\s+)?|^Diff in\s+)([^\s:'\"]+\.rs)(?::| at line )(\d+)", re.M)
 
 
 def frames(text: str) -> list[dict]:
@@ -76,18 +81,26 @@ def frames(text: str) -> list[dict]:
     out, seen = [], set()
     found = [(m.start(), m.group(1) or m.group(3), m.group(2) or m.group(4)) for m in FRAME.finditer(text or '')]
     found += [(m.start(), m.group(1), m.group(2)) for m in ANNOT.finditer(text or '')]
+    found += [(m.start(), m.group(1), m.group(2)) for m in RUST_FRAME.finditer(text or '')]
     for _, f, n in sorted(found, key=lambda x: x[0]):
         f = f.replace('\\', '/')
         if '/node_modules/' in f or f.startswith(('node:', 'internal/')) or TOOLCHAIN_FRAME.search(f):
             continue
         f, n_sub = CHECKOUT.subn('', f)
-        if not n_sub:
+        if not n_sub and re.match(r'^(/|[A-Za-z]:/)', f):   # an absolute path outside the checkout: keep from tests/, src/ ...
             f = re.sub(r'^.*?/(?=(tests?|src|lib|app|packages|e2e|spec)/)', '', f)
         key = (f, int(n))
         if key not in seen:
             seen.add(key)
             out.append({'file': key[0], 'line': key[1]})
     return out
+
+
+def hms(seconds: int) -> str:
+    """976 -> 16m16s, 7010 -> 1h56m50s, 2 -> 2s."""
+    h, rest = divmod(int(seconds), 3600)
+    m, sec = divmod(rest, 60)
+    return (f'{h}h{m:02d}m{sec:02d}s' if h else f'{m}m{sec:02d}s' if m else f'{sec}s')
 
 
 def step_sections(lines: list[str]) -> list[dict]:
@@ -139,7 +152,7 @@ def excerpt(lines: list[str], start: int, end: int, limit: int = 12) -> list[dic
 
 
 def _is_err(text: str) -> bool:
-    return (bool(ERR.search(text)) or bool(GO_ANCHOR.search(text))) and not PASSING.search(text) and not PROCESS_DONE.match(text)
+    return (bool(ERR.search(text)) or bool(GO_ANCHOR.search(text)) or bool(RUST_ANCHOR.search(text))) and not PASSING.search(text) and not PROCESS_DONE.match(text)
 
 
 def section_excerpt(lines: list[str], sec: dict | None) -> list[dict]:
@@ -150,7 +163,7 @@ def section_excerpt(lines: list[str], sec: dict | None) -> list[dict]:
         (sec['errors'][-1] if sec and sec['errors'] else hi)
     tail_lo = max(lo, close - TAIL)
     # a lint, vet, compile or format finding is the error itself, before any generic error-like line
-    first = next((n for n in range(lo, close + 1) if GO_ANCHOR.search(strip(lines[n - 1]))), None) or next((n for n in range(tail_lo, close + 1) if _is_err(strip(lines[n - 1]))), None) \
+    first = next((n for n in range(lo, close + 1) if GO_ANCHOR.search(strip(lines[n - 1])) or RUST_ANCHOR.search(strip(lines[n - 1]))), None) or next((n for n in range(tail_lo, close + 1) if _is_err(strip(lines[n - 1]))), None) \
         or next((n for n in range(lo, close + 1) if _is_err(strip(lines[n - 1]))), None)
     if first is None:
         return excerpt(lines, max(lo, close - 7), close, 8)
@@ -182,7 +195,7 @@ NODE_FAILING = re.compile(r'^\s*✖ failing tests:\s*$')
 NODE_AT = re.compile(r'^\s*test at ' + JSFILE + r':(\d+):\d+\s*$')
 NODE_CASE = re.compile(r'^\s*✖ (.+?) \([\d.]+m?s\)\s*$')
 BLOCK_END = re.compile(r'^\s*(⎯{3,}|-{20,}|={20,}|Test Files\b|Tests:|Test Suites:|ℹ tests \d)')
-SUMMARY = re.compile(r'^\s*(--- FAIL: |(ok|FAIL)\s+\S+\s+([\d.]+s|\(cached\)|\[(build|setup) failed\])|panic: test timed out after|Test Files\s+\d|Tests:\s+\d|Test Suites:\s+\d|ℹ tests \d|=+ .*\b(passed|failed)\b.* =+$|test result: )')
+SUMMARY = re.compile(r'^\s*(Summary \[|--- FAIL: |(ok|FAIL)\s+\S+\s+([\d.]+s|\(cached\)|\[(build|setup) failed\])|panic: test timed out after|Test Files\s+\d|Tests:\s+\d|Test Suites:\s+\d|ℹ tests \d|=+ .*\b(passed|failed)\b.* =+$|test result: )')
 
 
 def _ftype(msg: str) -> str:
@@ -369,6 +382,135 @@ def go_tests(lines: list[str], lo: int, hi: int) -> list[dict]:
     return res
 
 
+# --- cargo test and cargo nextest ----------------------------------------------------------------------
+
+LT_HEADER = re.compile(r'^---- (.+?) std(out|err) ----$')
+LT_BLOCK_END = re.compile(r'^(---- .+ std(out|err) ----|failures:|test result: )')
+LT_THREAD = re.compile(r"^thread '[^']*' panicked at ([^\s:]+\.rs:\d+:\d+):?\s*(.*)$")
+
+
+def _panic_message(body: list[str]) -> str | None:
+    """`panicked at src/x.rs:12:5: <message>` from a panic (the message is on the next line since Rust 1.73)."""
+    for k, t in enumerate(body):
+        m = LT_THREAD.match(t.strip())
+        if m:
+            rest = m.group(2).strip() or next((x.strip() for x in body[k + 1:] if x.strip()), '')
+            return f'panicked at {m.group(1)}: {rest}'.rstrip(': ')
+    return None
+
+
+CARGO_MARKERS = ('test result', 'panicked', ' ... ', 'running ', 'Running', 'FAIL', 'PASS', 'TIMEOUT', 'SIGSEGV',
+                 'SIGABRT', 'SIGKILL', 'SIGTERM', 'SIGILL', 'SIGBUS', 'Summary [')
+
+
+def cargo_tests(lines: list[str], lo: int, hi: int) -> list[dict]:
+    """Failing Rust tests in a step's output, lines lo..hi (1-based): cargo-nextest's status lines (`FAIL [ 0.006s]
+    crate::bin test::path`, TIMEOUT, SIG*), else libtest's (`cargo test`, with the target from its `Running` line).
+    Ids are `<target>::<test path>` as parse_results gives them; the message is the panic with its location, the test
+    file the panic location (else the integration test's file), the excerpt the test's own output."""
+    # a cheap look at the raw lines first: a step with no libtest or nextest output in it is not parsed (the markers
+    # are generous on purpose, so cargo output is never missed)
+    if not any(any(k in l for k in CARGO_MARKERS) for l in lines[lo - 1:hi]):
+        return []
+    txt = {n: strip(lines[n - 1]) for n in range(lo, hi + 1)}
+    out = []
+    if any(NT_LINE.match(t) for t in txt.values()):
+        cases, _ = parse_nextest_output('\n'.join(txt[n] for n in range(lo, hi + 1)), 'ci')
+        status_at = [(n, NT_LINE.match(t)) for n, t in txt.items() if NT_LINE.match(t)]
+        for c in cases:
+            if c['status'] not in ('failed', 'error'):
+                continue
+            hit = next(((n, m) for n, m in status_at if f'{nextest_target(m.group(2))}::{m.group(3)}' == c['id'] and m.group(1) != 'PASS'), None)
+            if not hit:
+                continue
+            n, m = hit
+            end = next((x - 1 for x, _ in status_at if x > n), hi)
+            end = next((x - 1 for x in range(n + 1, end + 1) if re.match(r'^\s*Summary \[', txt[x])), end)
+            body = [txt[x] for x in range(n + 1, end + 1)]
+            ftype = 'timeout' if m.group(1) == 'TIMEOUT' else 'error' if c['status'] == 'error' else \
+                'assertion' if LT_ASSERT.search('\n'.join(body)) else 'error'
+            pm = LT_PANIC_AT.search('\n'.join(body))
+            out.append({'test_id': c['id'], 'test_file': pm.group(1).replace('\\', '/') if pm else None, 'line': n, 'end': end,
+                        'message': _panic_message(body) or txt[n].strip(), 'failure_type': ftype, 'frames': frames('\n'.join(body))})
+        return out
+    if not any(LT_RUNNING.match(t) or LT_DOC.match(t) for t in txt.values()):
+        return []
+    cases, _ = parse_libtest('\n'.join(txt[n] for n in range(lo, hi + 1)), 'ci')
+    target, at = None, {}
+    for n in range(lo, hi + 1):
+        t = txt[n]
+        m, d = LT_RUNNING.match(t), LT_DOC.match(t)
+        if m or d:
+            target = libtest_target(m.group(2)) if m else f'doctest:{d.group(1)}'
+            continue
+        h = LT_HEADER.match(t)
+        if h and target is not None:
+            at.setdefault((target, h.group(1)), n)
+            continue
+        f = re.match(r'^test (.+?) \.\.\. FAILED\s*$', t)
+        if f and target is not None:
+            at.setdefault((target, re.sub(r' - should panic$', '', f.group(1)), 'line'), n)
+        if re.search(r"process didn't exit successfully", t) and target is not None:
+            at.setdefault((target, '(crashed)'), n)
+    for c in cases:
+        if c['status'] not in ('failed', 'error'):
+            continue
+        key = (c['classname'], c['name'])
+        n = at.get(key) or at.get(key + ('line',))
+        if not n:
+            continue
+        end = next((x - 1 for x in range(n + 1, hi + 1) if LT_BLOCK_END.match(txt[x]) or LT_RUNNING.match(txt[x])), hi) if key in at else n
+        body = [txt[x] for x in range(n + 1, end + 1)]
+        out.append({'test_id': c['id'], 'test_file': c.get('file'), 'line': n, 'end': end,
+                    'message': _panic_message(body) or (c.get('message_excerpt') or '').split('\n')[0] or txt[n].strip(),
+                    'failure_type': c.get('failure_type') or 'error', 'frames': frames('\n'.join(body))})
+    return out
+
+
+def log_tests(lines: list[str], lo: int, hi: int) -> list[dict]:
+    """Failing tests in a step's console output: a Vitest, Jest or node:test summary, go test, or cargo test/nextest."""
+    return console_tests(lines, lo, hi) or go_tests(lines, lo, hi) or cargo_tests(lines, lo, hi)
+
+
+# A Rust compiler, clippy or rustfmt finding a step failed on (case-sensitive: `error[E0425]: ...`, `error: <lint>`,
+# not cargo's closing `error: could not compile ...`), and a coverage gate's verdict.
+RUST_ANCHOR = re.compile(r"^error(\[E\d{4}\])?: (?!could not compile|test failed|aborting due to|build failed|\d+ targets? failed|"
+                         r"process didn't exit|test run failed|Recipe `)|^Diff in \S+|"
+                         r'Coverage failure: total of \S+ is less than fail-under|Required test coverage of \S+ not reached|'
+                         r'Coverage is below the failure threshold|\bcoverage (rate )?(of )?\S*\s?.{0,40}\bis (less|lower) than\b')
+# What kind of step failure it is, from the real signature its excerpt and message carry (data/signatures.json)
+STEP_FAILURE_TYPE = (('REAL-COMPILE', 'compile'), ('REAL-LINT', 'lint'), ('REAL-FORMAT', 'format'), ('REAL-COVERAGE', 'coverage_gate'))
+FAIL_UNDER = re.compile(r'--fail-under(-lines|-functions|-regions)?[ =]\d+|--cov-fail-under[ =]\d+|fail_under\s*=\s*\d+')
+
+
+_STEP_SIGS: dict | None = None   # the signatures step_failure_type tries, compiled once
+
+
+def step_failure_type(texts: list[str]) -> str:
+    global _STEP_SIGS
+    if _STEP_SIGS is None:
+        _STEP_SIGS = {s['id']: re.compile(s['pattern'], re.I) for s in SIG['signatures']}
+    sigs = _STEP_SIGS
+    for sid, kind in STEP_FAILURE_TYPE:
+        if sid in sigs and any(sigs[sid].search(t or '') for t in texts):
+            return kind
+    return 'step'
+
+
+def coverage_gate_excerpt(lines: list[str], sec: dict | None) -> list[dict] | None:
+    """A coverage step that failed without saying why: when its command names a threshold (`--fail-under-lines 80`)
+    and its output ends with a TOTAL row, the excerpt is the command line (the threshold) and that row."""
+    if not sec or not FAIL_UNDER.search(sec['title']):
+        return None
+    close = sec['errors'][-1] if sec['errors'] else sec['end']
+    if any(RUST_ANCHOR.search(strip(lines[n - 1])) for n in range(sec['body'], close + 1)):
+        return None
+    total = next((n for n in range(close, sec['body'] - 1, -1) if re.match(r'^\s*TOTAL\s', strip(lines[n - 1]))), None)
+    if total is None:
+        return None
+    return [{'n': sec['start'], 'text': redact(strip(lines[sec['start'] - 1]))}, {'n': total, 'text': redact(strip(lines[total - 1]))}]
+
+
 # A lint or format finding a step failed on: `file.go:12:5: message (linter)` (golangci-lint, go vet, staticcheck,
 # also a compile error), a `::error file=...` annotation, or a formatting check's verdict.
 GO_ANCHOR = re.compile(r'^\s*(?:\.{0,2}/)?[\w./@-]+\.go:\d+:\d+: \S|^::error\s+file=|\b(these|following|some) files? (are|is|were) not (properly )?(formatted|gofmt)|'
@@ -407,7 +549,9 @@ def extract(run_dir: Path, run: dict, attempt: int) -> list[dict]:
         log_status = j.get('log_status') or ('fetched' if lines else 'missing')
         base = {'job': j['name'], 'job_id': j['id'], 'log_status': log_status,
                 # the CI's own explanation of the job (check-run annotations): quoted, untrusted text
-                **({'annotations': [redact(a['message'])[:500] for a in j['annotations']]} if j.get('annotations') else {})}
+                **({'annotations': [redact(a['message'])[:500] for a in j['annotations']]} if j.get('annotations') else {}),
+                # a never-started job's start-to-completion time is queue time, not run time
+                **({'queued_for_s': j['queued_for_s']} if j.get('never_started') and j.get('queued_for_s') is not None else {})}
         cases = []
         for x in j.get('junit', []):
             cs, _ = parse_junit(run_dir / x, f'A{attempt}')
@@ -425,7 +569,7 @@ def extract(run_dir: Path, run: dict, attempt: int) -> list[dict]:
             kind = step_kind(s['name'], sec, lines)
             if cases and (TEST_STEP.search(s['name']) or kind == 'test'):
                 continue  # explained by its failing JUnit cases
-            ctests = (console_tests(lines, sec['body'], sec['end']) or go_tests(lines, sec['body'], sec['end'])) if sec else []
+            ctests = log_tests(lines, sec['body'], sec['end']) if sec else []
             if ctests:
                 for c in ctests:
                     out.append({**base, 'step': s['name'], 'kind': 'test', 'source': 'console', 'step_kind': 'test', 'test_id': c['test_id'],
@@ -433,19 +577,22 @@ def extract(run_dir: Path, run: dict, attempt: int) -> list[dict]:
                                 'section': {'title': sec['title'], 'basis': basis},
                                 'log_excerpt': {'path': j.get('log'), 'lines': excerpt(lines, c['line'], c['end'], 12)}})
                 continue
-            ex = section_excerpt(lines, sec) if lines else []
-            msg = next((re.sub(r'^##\[error\]', '', l['text']) for l in ex if _is_err(l['text'])), ex[-1]['text'] if ex else '')
+            gate = coverage_gate_excerpt(lines, sec) if lines else None
+            ex = gate or (section_excerpt(lines, sec) if lines else [])
+            msg = gate[-1]['text'] if gate else next((re.sub(r'^##\[error\]', '', l['text']) for l in ex if _is_err(l['text'])), ex[-1]['text'] if ex else '')
             if not lines:
                 msg = f'no log ({log_status}' + (f': {j.get("log_error")}' if j.get('log_error') else '') + ')'
             f = {**base, 'step': s['name'], 'kind': 'step', 'source': 'log', 'step_kind': kind, 'test_id': None, 'test_file': None,
-                 'failure_type': 'step', 'message': msg[:300], 'frames': frames('\n'.join(l['text'] for l in ex)),
+                 'failure_type': step_failure_type([msg] + [l['text'] for l in ex]) if lines else 'step', 'message': msg[:300], 'frames': frames('\n'.join(l['text'] for l in ex)),
                  'section': {'title': sec['title'] if sec else None, 'basis': basis}, 'log_excerpt': {'path': j.get('log'), 'lines': ex}}
             if is_gate(j, s['name'], sec, lines):
                 f['aggregate_gate'] = True
             out.append(f)
         if not cases and not failed_steps:
             out.append({**base, 'step': None, 'kind': 'step', 'source': 'log', 'step_kind': 'other', 'test_id': None, 'test_file': None, 'failure_type': 'job',
-                        'message': (f'job concluded {j["conclusion"]} and never started on a runner (no steps, no log)' if j.get('never_started')
+                        'message': (f'job concluded {j["conclusion"]} and never started on a runner (no steps, no log)'
+                                    + (f'; its {hms(j["queued_for_s"])} between start and completion is time waiting for a runner, not time running'
+                                       if j.get('queued_for_s') is not None else '') if j.get('never_started')
                                     else f'job concluded {j["conclusion"]} with no failed step'), 'frames': [],
                         'log_excerpt': {'path': j.get('log'), 'lines': excerpt(lines, max(1, len(lines) - 7), len(lines), 8) if lines else []}})
     for i, f in enumerate(out, 1):
@@ -518,6 +665,127 @@ GO_LOGS = {
         'gofmt -l .', 'pkg/quote/quote.go', 'these files are not formatted; run gofmt -w', 'make: *** [Makefile:12: fmt-check] Error 1',
         '##[error]Process completed with exit code 2.']),
 }
+
+
+RS = '/home/runner/work/tides/tides'
+RUST_LOGS = {
+    # cargo test --no-fail-fast over a workspace: a unit test in a #[cfg(test)] module and an integration test fail
+    'rust-test': ('cargo test --workspace --no-fail-fast', 'Unit tests', [
+        f'   Compiling tides-core v0.1.0 ({RS}/crates/tides-core)', '    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.20s',
+        '     Running unittests src/lib.rs (target/debug/deps/tides_core-1a2b3c4d5e6f7a8b)', '', 'running 3 tests',
+        'test tables::tests::parses_header ... ok', 'test tables::tests::rounds_half_metre ... FAILED', 'test tables::tests::sorts_by_time ... ok', '',
+        'failures:', '', '---- tables::tests::rounds_half_metre stdout ----', '',
+        "thread 'tables::tests::rounds_half_metre' panicked at crates/tides-core/src/tables.rs:88:9:", 'assertion `left == right` failed',
+        '  left: 1.4', ' right: 1.5', 'note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace', '', '',
+        'failures:', '    tables::tests::rounds_half_metre', '',
+        'test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s', '',
+        '     Running tests/cli.rs (target/debug/deps/cli-9f8e7d6c5b4a3921)', '', 'running 2 tests',
+        'test prints_today ... ok', 'test rejects_unknown_port ... FAILED', '', 'failures:', '', '---- rejects_unknown_port stdout ----', '',
+        "thread 'rejects_unknown_port' panicked at crates/tides-cli/tests/cli.rs:41:5:", 'expected exit code 2, got 0', '', '',
+        'failures:', '    rejects_unknown_port', '', 'test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s', '',
+        'error: 2 targets failed:', '    `-p tides-core --lib`', '    `-p tides-cli --test cli`', '##[error]Process completed with exit code 101.']),
+    # cargo nextest: a failing test (its output under STDOUT/STDERR headers) and a test that timed out
+    'rust-nextest': ('cargo nextest run --workspace --no-fail-fast', 'Unit tests', [
+        '    Starting 4 tests across 2 binaries', '        PASS [   0.004s] tides-core tables::tests::parses_header',
+        '        FAIL [   0.006s] tides-core tables::tests::rounds_half_metre',
+        '──── STDOUT:             tides-core tables::tests::rounds_half_metre', '', 'running 1 test', 'test tables::tests::rounds_half_metre ... FAILED', '',
+        'test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s',
+        '──── STDERR:             tides-core tables::tests::rounds_half_metre', '',
+        "thread 'tables::tests::rounds_half_metre' panicked at crates/tides-core/src/tables.rs:88:9:", 'assertion `left == right` failed',
+        '  left: 1.4', ' right: 1.5', '', '        PASS [   0.010s] tides-cli::cli prints_today',
+        '     TIMEOUT [  60.002s] tides-cli::cli waits_for_feed', '────────────',
+        '     Summary [  60.020s] 4 tests run: 2 passed, 1 failed, 1 timed out, 0 skipped',
+        '        FAIL [   0.006s] tides-core tables::tests::rounds_half_metre', '     TIMEOUT [  60.002s] tides-cli::cli waits_for_feed',
+        'error: test run failed', '##[error]Process completed with exit code 100.']),
+    # a compile error stops cargo test before any test runs
+    'rust-compile': ('cargo test --workspace', 'Unit tests', [
+        f'   Compiling tides-core v0.1.0 ({RS}/crates/tides-core)', 'error[E0425]: cannot find value `max_height` in this scope',
+        '  --> crates/tides-core/src/tables.rs:52:17', '   |', '52 |     let cap = max_height * 2.0;', '   |               ^^^^^^^^^^ not found in this scope',
+        '', 'For more information about this error, try `rustc --explain E0425`.',
+        'error: could not compile `tides-core` (lib test) due to 1 previous error', '##[error]Process completed with exit code 101.']),
+    # clippy with -D warnings
+    'rust-clippy': ('cargo clippy --workspace --all-targets -- -D warnings', 'Clippy', [
+        f'    Checking tides-core v0.1.0 ({RS}/crates/tides-core)', 'error: this `if` has identical blocks',
+        '  --> crates/tides-core/src/tables.rs:61:21', '   |', '61 |     let step = if rising { 1 } else { 1 };', '   |                          ^^^^^', '   |',
+        '   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#if_same_then_else',
+        '   = note: `-D clippy::if-same-then-else` implied by `-D warnings`',
+        '   = help: to override `-D warnings` add `#[allow(clippy::if_same_then_else)]`', '',
+        'error: could not compile `tides-core` (lib) due to 1 previous error', '##[error]Process completed with exit code 101.']),
+    # cargo fmt --check
+    'rust-fmt': ('cargo fmt --all -- --check', 'Format', [
+        f'Diff in {RS}/crates/tides-core/src/tables.rs:12:', ' use std::fmt;', '-use crate::units::{Metres,Feet};', '+use crate::units::{Feet, Metres};', ' ',
+        '##[error]Process completed with exit code 1.']),
+    # a coverage gate: every test passed, the total is under the threshold the command names
+    'rust-coverage': ('cargo llvm-cov --workspace --fail-under-lines 80', 'Coverage gate', [
+        '     Running unittests src/lib.rs (target/llvm-cov-target/debug/deps/tides_core-1a2b3c4d5e6f7a8b)', '', 'running 3 tests',
+        'test tables::tests::parses_header ... ok', 'test tables::tests::rounds_half_metre ... ok', 'test tables::tests::sorts_by_time ... ok', '',
+        'test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s', '',
+        'Filename                      Regions    Missed Regions     Cover   Functions  Missed Functions  Executed       Lines      Missed Lines     Cover',
+        'crates/tides-core/src/tables.rs     120                40    66.67%          14                 4    71.43%         210                63    70.00%',
+        'TOTAL                               120                40    66.67%          14                 4    71.43%         210                63    70.00%',
+        '##[error]Process completed with exit code 1.']),
+    # the same gate where the tool says why (cargo tarpaulin)
+    'rust-tarpaulin': ('cargo tarpaulin --workspace --fail-under 80', 'Coverage gate', [
+        '|| Tested/Total Lines:', '|| crates/tides-core/src/tables.rs: 147/210', '|| ', '70.00% coverage, 147/210 lines covered',
+        'Coverage is below the failure threshold 70.00% < 80.00%', 'Error: "Coverage is below the failure threshold 70.00% < 80.00%"',
+        '##[error]Process completed with exit code 1.']),
+}
+
+
+def rust_self_test(d: Path, check) -> None:
+    rjobs = []
+    for i, (name, (script, step, body)) in enumerate(RUST_LOGS.items(), 60):
+        (d / 'logs' / f'{i}.txt').write_text(_gh_log([(script, [script], body)]), encoding='utf-8')
+        rjobs.append({'id': i, 'name': name, 'conclusion': 'failure', 'junit': [], 'log': f'logs/{i}.txt', 'log_status': 'fetched',
+                      'steps': [{'number': 1, 'name': 'Set up job', 'conclusion': 'success'}, {'number': 2, 'name': step, 'conclusion': 'failure'}]})
+    fs = extract(d, {'run': {'id': 3}, 'attempts': [{'n': 1, 'jobs': rjobs}]}, 1)
+    by: dict[str, list] = {}
+    for f in fs:
+        by.setdefault(f['job'], []).append(f)
+    view = lambda fs: [(f['kind'], f['test_id'], f['failure_type'], f['message'], f['frames'][:1], f.get('test_file')) for f in fs]  # noqa: E731
+    t = by['rust-test']
+    check(view(t) == [('test', 'tides_core::tables::tests::rounds_half_metre', 'assertion',
+                       'panicked at crates/tides-core/src/tables.rs:88:9: assertion `left == right` failed',
+                       [{'file': 'crates/tides-core/src/tables.rs', 'line': 88}], 'crates/tides-core/src/tables.rs'),
+                      ('test', 'cli::rejects_unknown_port', 'error', 'panicked at crates/tides-cli/tests/cli.rs:41:5: expected exit code 2, got 0',
+                       [{'file': 'crates/tides-cli/tests/cli.rs', 'line': 41}], 'crates/tides-cli/tests/cli.rs')],
+          f'cargo test: one failure per failing test, with its panic: {view(t)}')
+    check(all(f['log_excerpt']['lines'] and f['log_excerpt']['lines'][0]['text'].startswith('---- ') for f in t),
+          f'cargo test: the excerpt starts at the test\'s own output: {[f["log_excerpt"]["lines"][:1] for f in t]}')
+    n = by['rust-nextest']
+    check([(f['test_id'], f['failure_type']) for f in n] == [('tides_core::tables::tests::rounds_half_metre', 'assertion'), ('cli::waits_for_feed', 'timeout')]
+          and n[0]['frames'][:1] == [{'file': 'crates/tides-core/src/tables.rs', 'line': 88}] and 'assertion `left == right` failed' in n[0]['message'],
+          f'cargo nextest: {view(n)}')
+    for job, ftype, start, frame in (('rust-compile', 'compile', 'error[E0425]: cannot find value `max_height`', ('crates/tides-core/src/tables.rs', 52)),
+                                     ('rust-clippy', 'lint', 'error: this `if` has identical blocks', ('crates/tides-core/src/tables.rs', 61)),
+                                     ('rust-fmt', 'format', f'Diff in {RS}/crates/tides-core/src/tables.rs:12:', ('crates/tides-core/src/tables.rs', 12)),
+                                     ('rust-coverage', 'coverage_gate', 'TOTAL ', None),
+                                     ('rust-tarpaulin', 'coverage_gate', 'Coverage is below the failure threshold 70.00% < 80.00%', None)):
+        fx = by[job]
+        ok = len(fx) == 1 and fx[0]['kind'] == 'step' and fx[0]['failure_type'] == ftype and fx[0]['message'].startswith(start) \
+            and (frame is None or fx[0]['frames'][:1] == [{'file': frame[0], 'line': frame[1]}])
+        check(ok, f'{job}: a {ftype} failure of its own, message from the first finding: {view(fx)}')
+    cov = by['rust-coverage'][0]
+    check(any('--fail-under-lines 80' in l['text'] for l in cov['log_excerpt']['lines']),
+          f'coverage gate: the excerpt quotes the threshold the step ran with: {cov["log_excerpt"]["lines"]}')
+    # cost on logs with no Rust in them: the signatures are compiled once, and a step's lines are not stripped for the
+    # cargo parser when nothing in them is cargo output
+    step_failure_type(['warm up'])
+    real_compile, compiled = re.compile, []
+    re.compile = lambda *a, **k: compiled.append(a[0]) or real_compile(*a, **k)
+    try:
+        step_failure_type(['npm ERR! code ELIFECYCLE'])
+    finally:
+        re.compile = real_compile
+    check(not compiled, f'step_failure_type compiles its signatures on every call ({len(compiled)} compiled)')
+    plain = ['npm ERR! code ELIFECYCLE', 'Error: expected 200 to be 400', '    at tests/unit/parcels.test.ts:21:17']
+    real_strip, stripped = globals()['strip'], []
+    globals()['strip'] = lambda s: stripped.append(s) or real_strip(s)
+    try:
+        none = cargo_tests(plain, 1, len(plain))
+    finally:
+        globals()['strip'] = real_strip
+    check(none == [] and not stripped, f'cargo_tests strips {len(stripped)} lines of a log with no cargo output')
 
 
 def go_self_test(d: Path, check) -> None:
@@ -623,12 +891,14 @@ def self_test() -> int:
         check([c['test_id'] for c in cj] == ['src/cart.test.ts > cart > adds an item'] and cj[0]['frames'] == [{'file': 'src/cart.test.ts', 'line': 14}], f'jest {cj}')
         check([c['test_id'] for c in cn] == ['test/quote.test.mjs > rounds a half fare'] and cn[0]['failure_type'] == 'assertion', f'node:test {cn}')
         go_self_test(d, check)
+        rust_self_test(d, check)
     if fails:
         print('extract_failures self-test: FAILED'); [print('  -', f) for f in fails]
         return 1
     print('extract_failures self-test: ok (step groups by title or error order, echoed script skipped, ANSI stripped, '
           'Vitest/Jest/node:test console failures, go test plain and -json with timeouts, build failures and races, '
-          'golangci-lint and gofmt steps, project frames over Go toolchain frames, aggregate gate, failed log fetch)')
+          'golangci-lint and gofmt steps, cargo test and nextest per test, Rust compile, clippy, rustfmt and coverage-gate steps, '
+          'project frames over Go toolchain frames, aggregate gate, failed log fetch)')
     return 0
 
 

@@ -49,7 +49,7 @@ Besides HTTP routes (kind `routes`), it lists the interfaces of a library, a CLI
 
     cli              package.json "bin" entries (node-bin), commander / yargs / cac sub-commands
                      (`program.command('run')`), Python argparse sub-commands and click/typer commands
-                     (from py_routes.py), pyproject [project.scripts], Cargo [[bin]] and src/main.rs
+                     (from py_routes.py), pyproject [project.scripts], and Rust (below)
     package_exports  package.json "exports" subpaths (or "main") of every package that is not private
     tools            MCP tools: registerTool('name') / tool('name') on an @modelcontextprotocol/sdk server
                      (transport noted: stdio or HTTP), and Python FastMCP @mcp.tool() functions
@@ -78,12 +78,32 @@ Go (go.mod and *.go, read with comment- and string-aware patterns, never compile
 Only _test.go files are Go tests. A command is also reached when a _test.go file of its package
 names the variable holding it, and a package by its own _test.go files.
 
+Rust (every Cargo project, through the shared cargo_project.py; never built):
+
+    cli              each binary target (helper binaries under tests/ are left out and named in notes), and where
+                     clap parses its arguments (derive Parser/Subcommand/Args, or the builder API) each sub-command
+                     and nested sub-command, at its line, with `options` (--long or -s), `option_lines`,
+                     `positionals`, `env` and the binary's `required_features`; a binary with no clap parser is one
+                     cargo-bin entry. A crate depending on an HTTP framework (axum, actix-web, rocket, warp...) is
+                     listed in not_read: Rust routes are not read. Cargo's target/ beside a Cargo.toml is skipped.
+
+A Rust binary or sub-command is reached only by a command line, never by its name in a string: a Cargo
+integration test (tests/*.rs, and helper modules it declares) running the binary through env!("CARGO_BIN_EXE_x"),
+assert_cmd's cargo_bin("x") or Command::new on a path to it, with the sub-command's words among the strings it
+passes in .arg/.args calls or string arrays; a #[cfg(test)] module calling clap's parse_from/try_parse_from/
+get_matches_from with them; or a Python or JavaScript test whose process call has the binary in program position
+(the first element, after --bin, or a path under target/debug or target/release). Rust tests are read whenever
+--tests is given, wherever they are. `options_reached` lists the options those tests pass.
+
 Languages are counted by the shared lang_census.py. Its excluded trees (vendor/, third_party/, header
 trees, bundles, submodules, embedded third-party packages) and bundled copies of other projects (a
 directory with its own licence whose manifest names another repository than the root's) are skipped
-and named in notes. `language_coverage` is the census's coverage block: when the dominant language is
-not read (status unsupported_dominant), a WARNING goes to stderr and notes and the exit status is 3;
-a mostly-Rust repository (read in part) is partial_dominant, with a warning and exit 0.
+and named in notes. `language_coverage` is the census's coverage block, decided by lines of product code (test
+files and tooling folders such as scripts/ counted apart, so many short Python scripts and tests do not outvote a
+Rust workspace): when the dominant language is not read (status unsupported_dominant), a WARNING goes to stderr
+and notes and the exit status is 3; a mostly-Rust repository (read in part) is partial_dominant, with a warning
+and exit 0; and when Rust holds 30% or more of the product lines without dominating, the status stays partial
+but the warning is given too (`partially_read` names what is read).
 
 A CLI command or tool is reached when a test string literal names it (the command word, `prog cmd`,
 or the tool name); a package export when a test imports it by package name, or imports the source
@@ -108,6 +128,7 @@ from pathlib import Path, PurePosixPath
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import lang_census, py_routes  # noqa: E402  (shared language census and route reader)
 import py_extras  # noqa: E402  (static mounts, conditions, middleware, flags-only CLIs, PHP, build-output folders)
+import cargo_project  # noqa: E402  (shared Cargo workspace model: targets, clap CLIs, tests)
 
 PRUNE = {'.git', '.hg', '.svn', 'node_modules', '.venv', 'venv', 'env', '__pycache__', '.mypy_cache', '.pytest_cache',
          '.tox', '.nox', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'site-packages', '.turbo', '.cache',
@@ -129,6 +150,11 @@ def walk(root: Path, include: tuple = (), skipped: list | None = None, kept: lis
         keep = []
         for d in sorted(dns):
             sub = d if rel == '.' else f'{rel}/{d}'
+            if d == 'target' and (Path(dp) / 'Cargo.toml').is_file():
+                if sub not in include and d not in include:
+                    if skipped is not None:
+                        skipped.append({'path': sub, 'reason': "build output: Cargo's target directory", 'files': None})
+                    continue
             if d in py_extras.BUILD_DIRS and d in PRUNE:
                 if sub in include or d in include:
                     keep.append(d)
@@ -243,7 +269,7 @@ def python_interfaces(root: Path, files: list[str]) -> tuple[list[dict], list[st
                          f'function shape), which is not a supported framework: not read as an interface; check by hand '
                          f'whether it is deployed or retired')
     name = lambda key: f'{dotted(key[0])}:{key[1]}'  # noqa: E731
-    conds = py_extras.Conditions(project)
+    conds = py_extras.Conditions.of(project)
     out = []
     for h in project.hits():
         m, fn, call, attr, key = h['module'], h['fn'], h['call'], h['attr'], h['key']
@@ -642,16 +668,6 @@ def manifest_interfaces(root: Path, files: list[str]) -> tuple[list[dict], dict[
                     progs.setdefault(pdir, m.group(1))
                     out.append({'kind': 'cli', 'framework': 'python-script', 'method': 'CLI', 'path': m.group(1), 'file': rel,
                                 'line': line_at(text, sec.start(1) + m.start()), 'target': m.group(2), 'included': True})
-        elif name == 'Cargo.toml':
-            text = (root / rel).read_text(encoding='utf-8', errors='replace')
-            bins = [m.group(1) for m in re.finditer(r'^\[\[bin\]\]\s*\n(?:[^\[]*?\n)?\s*name\s*=\s*"([^"]+)"', text, re.M)]
-            if not bins and (root / pdir / 'src' / 'main.rs').is_file():
-                pm = re.search(r'^\[package\][^\[]*?^\s*name\s*=\s*"([^"]+)"', text, re.M | re.S)
-                bins = [pm.group(1)] if pm else []
-            for b in bins:
-                progs.setdefault(pdir, b)
-                out.append({'kind': 'cli', 'framework': 'cargo-bin', 'method': 'CLI', 'path': b, 'file': rel, 'line': 1,
-                            'included': True, 'note': 'sub-commands (clap derive or a dispatch table) are not listed: map them by hand'})
     return out, progs
 
 
@@ -1147,9 +1163,265 @@ def match_go(interfaces: list[dict], masked_by: dict[str, str]) -> None:
             itf['reached'] = True
 
 
+# ---------------------------------------------------------------- Rust (Cargo workspaces and clap CLIs)
+RUST_FW = ('cargo-bin', 'clap-derive', 'clap-builder')
+RUST_HTTP = ('axum', 'actix-web', 'rocket', 'warp', 'poem', 'tide', 'salvo', 'hyper', 'tonic')
+BIN_EXE = re.compile(r'\benv!\s*\(\s*"CARGO_BIN_EXE_([\w-]+)"\s*\)')
+CARGO_BIN = re.compile(r'\bcargo_bin(?:!\s*\(|\s*\()\s*(?:"([\w-]+)"|env!\s*\(\s*"CARGO_PKG_NAME"\s*\))')
+CMD_NEW = re.compile(r'\bCommand::new\s*\(\s*"([^"]+)"')
+PARSE_FROM = re.compile(r'(?:\b(\w+)\s*::\s*)?\b(?:try_)?(?:parse_from|update_from|get_matches_from(?:_mut)?)\s*\(')
+ARG_CALL = re.compile(r'\.(?:arg|args|raw_args)\s*\(')
+STR_ARRAY = re.compile(r'\[(?:\s*"[^"\n]*"\s*,?)+\s*\]')     # on masked text: an array literal of strings
+
+
+def cargo_models(root: Path, files: list[str]) -> list[tuple[str, dict]]:
+    """[(repo-relative prefix, cargo_project model)] for every Cargo project: the root one (a workspace and its
+    members), then any Cargo.toml no earlier model holds."""
+    dirs = sorted({PurePosixPath(f).parent.as_posix() for f in files if PurePosixPath(f).name == 'Cargo.toml'},
+                  key=lambda d: (-1 if d == '.' else d.count('/'), d))
+    out, covered = [], set()
+    for d in dirs:
+        if d in covered:
+            continue
+        m = cargo_project.read_cargo(root if d == '.' else root / d)
+        if not m['is_cargo']:
+            continue
+        prefix = '' if d == '.' else d + '/'
+        for c in m['crates']:
+            covered.add(d if c['dir'] == '.' else prefix + c['dir'])
+        out.append((prefix, m))
+    return out
+
+
+def _flag(a: dict) -> str | None:
+    return f'--{a["long"]}' if a.get('long') else f'-{a["short"]}' if a.get('short') else None
+
+
+def rust_interfaces(models: list[tuple[str, dict]], notes: list[str], not_read: list[dict]) -> list[dict]:
+    """Each Cargo binary (helper binaries under tests/ left out) and, where clap parses its arguments (derive or
+    builder), each sub-command, with its options and their lines."""
+    out = []
+    for prefix, m in models:
+        for c in m['crates']:
+            fixture = {f['name'] for f in c['fixture_bins'] if f['declared']}
+            for f in c['fixture_bins']:
+                notes.append(f'{prefix}{f["file"]} ({f["name"]}): a helper binary for tests, not a product interface')
+            bins = [t for t in c['targets'] if t['kind'] == 'bin' and t['name'] not in fixture]
+            names = [t['name'] for t in bins]
+            http = [d for d in c['deps'] if d in RUST_HTTP]
+            if http:
+                not_read.append({'framework': 'rust-http', 'project': c['name'], 'kind': 'routes', 'count': 1,
+                                 'files': [prefix + c['manifest']],
+                                 'why': f'the crate depends on {", ".join(http)}; Rust HTTP routes are not read'})
+            with_cli = set()
+            for cli in c['clis']:
+                prog = cli['bin'] or (names[0] if len(names) == 1 else cli['name'])
+                with_cli.add(prog)
+                fw = 'clap-derive' if cli['style'] == 'derive' else 'clap-builder'
+                req = next((t['required_features'] for t in bins if t['name'] == prog and t['required_features']), None)
+
+                def entry(path, file, line, parent, prog=prog, fw=fw, req=req):
+                    args = [a for a in cli['args'] if a['parent'] == parent]
+                    flags = [(_flag(a), a) for a in args]
+                    e = {'kind': 'cli', 'framework': fw, 'method': 'CLI', 'path': path, 'file': prefix + file,
+                         'line': line, 'included': True, 'crate': c['name'], 'bin': prog,
+                         **({'struct': cli['struct']} if cli.get('struct') else {}),
+                         'options': [f for f, _ in flags if f],
+                         'option_lines': {f: a['line'] for f, a in flags if f}}
+                    pos = [a['name'] for a in args if a.get('positional')]
+                    env = sorted({a['env'] for a in args if a.get('env')})
+                    if pos:
+                        e['positionals'] = pos
+                    if env:
+                        e['env'] = env
+                    if req:
+                        e['required_features'] = req
+                    if len(names) == 1 and names[0] == prog:
+                        e['sole_bin'] = True
+                    return e
+                out.append(entry(prog, cli['file'], cli['line'], cli['name']))
+                by_name = {x['name']: x for x in cli['commands']}
+                for cmd in cli['commands']:
+                    chain, p, seen = [cmd['name']], cmd['parent'], set()
+                    while p and p != cli['name'] and p in by_name and p not in seen:
+                        seen.add(p)
+                        chain.insert(0, p)
+                        p = by_name[p]['parent']
+                    out.append(entry(' '.join([prog] + chain), cmd['file'], cmd['line'], cmd['name']))
+            for t in bins:
+                if t['name'] in with_cli:
+                    continue
+                e = {'kind': 'cli', 'framework': 'cargo-bin', 'method': 'CLI', 'path': t['name'], 'file': prefix + t['path'],
+                     'line': 1, 'included': True, 'crate': c['name'], 'bin': t['name'], 'options': [], 'option_lines': {},
+                     'note': 'no clap parser found for this binary: read its argument handling (std::env::args, another '
+                             'parser) by hand'}
+                if t['required_features']:
+                    e['required_features'] = t['required_features']
+                if len(names) == 1:
+                    e['sole_bin'] = True
+                out.append(e)
+    return out
+
+
+def _line_index(text: str):
+    import bisect
+    starts = [0] + [i + 1 for i, ch in enumerate(text) if ch == '\n']
+    return lambda pos: bisect.bisect_right(starts, pos)
+
+
+def rust_strings(text: str, masked: str) -> list[tuple[str, int]]:
+    """(value, position) of every string literal outside comments: cargo_project.mask keeps the quotes and blanks the
+    contents, so the quotes left in the masked text pair up."""
+    qs = [i for i, ch in enumerate(masked) if ch == '"']
+    return [(text[a + 1:b], a) for a, b in zip(qs[0::2], qs[1::2])]
+
+
+def rust_test_reach(root: Path, files: list[str], models: list[tuple[str, dict]]) -> list[dict]:
+    """For each Rust test file: the binaries it runs ({bin: line}: env!("CARGO_BIN_EXE_x"), assert_cmd cargo_bin("x"),
+    Command::new on a path to the built binary), the argument tokens it passes (strings in .arg/.args calls and string
+    array literals) and its clap parse_from calls (in a unit test module only after #[cfg(test)])."""
+    out = []
+    for prefix, m in models:
+        for c in m['crates']:
+            cdir = prefix + (c['dir'] + '/' if c['dir'] != '.' else '')
+            fixtures = {prefix + f['file'] for f in c['fixture_bins']}
+            all_bins = {t['name'] for cc in m['crates'] for t in cc['targets'] if t['kind'] == 'bin'}
+            integ = [f for f in files if f.startswith(cdir + 'tests/') and f.endswith('.rs') and f not in fixtures]
+            unit = sorted({prefix + t['file'] for t in c['tests'] if t['kind'] == 'unit'})
+            infos = {}
+            for rel in integ + [u for u in unit if u not in integ]:
+                try:
+                    text = (root / rel).read_text(encoding='utf-8', errors='replace')
+                except OSError:
+                    continue
+                masked = cargo_project.mask(text)
+                line = _line_index(text)
+                is_integ = rel in integ
+                runs: dict[str, int] = {}
+                if is_integ:
+                    for rx in (BIN_EXE, CARGO_BIN, CMD_NEW):
+                        for mm in rx.finditer(text):
+                            if masked[mm.start()] != text[mm.start()]:
+                                continue                      # inside a comment or a string
+                            name = mm.group(1) if mm.group(1) else c['name']
+                            if rx is CMD_NEW:
+                                name = re.sub(r'\.exe$', '', re.split(r'[\\/]', name)[-1])
+                                if name not in all_bins:
+                                    continue
+                            runs.setdefault(name, line(mm.start()))
+                strs = rust_strings(text, masked)
+                spans = []
+                for mm in ARG_CALL.finditer(masked):
+                    spans.append((mm.end(), cargo_project._balanced(masked, mm.end() - 1)))
+                spans += [(mm.start(), mm.end()) for mm in STR_ARRAY.finditer(masked)]
+                tokens: dict[str, int] = {}
+                for v, pos in strs:
+                    if any(a <= pos < b for a, b in spans):
+                        for tok in v.split():
+                            tokens.setdefault(tok, line(pos))
+                parses = []
+                start = 0 if is_integ else masked.find('#[cfg(test)]')
+                if start >= 0:
+                    for mm in PARSE_FROM.finditer(masked, start):
+                        end = cargo_project._balanced(masked, mm.end() - 1)
+                        toks: dict[str, int] = {}
+                        for v, pos in strs:
+                            if mm.end() <= pos < end:
+                                for tok in v.split():
+                                    toks.setdefault(tok, line(pos))
+                        parses.append({'struct': mm.group(1), 'tokens': toks, 'line': line(mm.start())})
+                infos[rel] = {'file': rel, 'crate': c['name'], 'runs': runs, 'tokens': tokens, 'parses': parses,
+                              'text': masked}
+            # a helper module under tests/ (tests/common/mod.rs) that runs a binary lends it to the files using it
+            for rel, info in infos.items():
+                helper = PurePosixPath(rel)
+                mod = helper.parent.name if helper.name == 'mod.rs' else helper.stem
+                if not info['runs'] or rel not in integ:
+                    continue
+                for other in infos.values():
+                    if other is not info and re.search(r'\bmod\s+' + re.escape(mod) + r'\s*;', other['text']):
+                        for b, ln in info['runs'].items():
+                            other['runs'].setdefault(b, ln)
+            out += infos.values()
+    return out
+
+
+def match_rust(interfaces: list[dict], rust_files: list[dict], argv: dict[str, dict[str, int]]) -> None:
+    """A Rust binary or sub-command is reached by a test that runs the binary with the sub-command's words among its
+    arguments (a Rust integration test, or a Python or JavaScript test whose process call names the binary), or by a
+    unit test whose clap parse_from call passes them. A name in a data string, a comment or an assertion is not a
+    command line. Options passed by those tests are listed in options_reached."""
+    for itf in interfaces:
+        if itf.get('framework') not in RUST_FW:
+            continue
+        b, words = itf['bin'], itf['path'].split()[1:]
+        hits, opts = [], set()
+
+        def take(tokens, file, run_line, how):
+            if not all(w in tokens for w in words):
+                return
+            hits.append({'file': file, 'line': tokens[words[-1]] if words else run_line, 'how': how})
+            for o in itf.get('options', []):
+                if any(t == o or t.startswith(o + '=') for t in tokens):
+                    opts.add(o)
+        for info in rust_files:
+            if b in info['runs']:
+                take(info['tokens'], info['file'], info['runs'][b], 'runs the binary')
+            for p in info['parses']:
+                if info['crate'] == itf['crate'] and itf['framework'] != 'cargo-bin' and \
+                        (p['struct'] in (None, 'Self') or p['struct'] == itf.get('struct', p['struct'])):
+                    take(p['tokens'], info['file'], p['line'], 'parses its arguments')
+        for file, f in argv.items():
+            run = f['progs'].get(b) or (f['progs'].get(itf['crate']) if itf.get('sole_bin') else None)
+            if run:
+                take(f['tokens'], file, run, 'runs the binary')
+        uniq = {(h['file'], h['line']): h for h in hits}
+        itf['reached_by'] = [uniq[k] for k in sorted(uniq)][:20]
+        itf['reached'] = bool(uniq)
+        if itf['framework'] != 'cargo-bin' or opts:
+            itf['options_reached'] = sorted(opts)
+
+
 # ---------------------------------------------------------------- what the readers cover
 READ_CENSUS = {'Python', 'JavaScript', 'TypeScript', 'Go'}     # lang_census names of the languages read
-PARTIAL_CENSUS = {'Rust': 'Cargo binaries only, not their sub-commands'}
+PARTIAL_CENSUS = {'Rust': 'Cargo binaries and their clap sub-commands and options (derive and builder), with the Rust, '
+                          'Python and JavaScript tests that run them; not Rust HTTP routes (axum, actix-web, rocket, '
+                          'warp), a library crate\'s public API, FFI exports or a hand-written argument parser'}
+PARTIAL_SHARE = 0.3     # a language read only in part that holds this share of the product lines is warned about
+
+
+def partial_language(coverage: dict, cen: dict) -> None:
+    """Adjust the census coverage block for the languages read in part (PARTIAL_CENSUS), deciding by product lines
+    (the census `lines`; tests and tooling counted apart). When one dominates it is `partial_dominant` (not
+    unsupported: exit 0) with a warning; when it holds PARTIAL_SHARE or more of the product lines without dominating,
+    the status stays `partial` but the warning is set too, so a large half of the product left half-read is never
+    quiet."""
+    lines = cen.get('lines') or {}
+    total = sum(lines.values())
+    lang = coverage.get('dominant_unsupported_language') if coverage['status'] == 'unsupported_dominant' else None
+    if lang is None and coverage['status'] != 'unsupported_dominant' and coverage.get('dominant') in PARTIAL_CENSUS \
+            and coverage.get('decided_by') != 'lines':
+        lang = coverage['dominant']                 # the file rule (no lines counted)
+    if lang in PARTIAL_CENSUS:
+        for k in ('dominant_unsupported_language', 'dominant_unsupported_files', 'dominant_unsupported_lines'):
+            coverage.pop(k, None)
+        size = f'{lines.get(lang, 0)} of {total} product lines' if total else 'most source files'
+        coverage['status'] = 'partial_dominant'
+        coverage['partially_read'] = {lang: PARTIAL_CENSUS[lang]}
+        coverage['warning'] = (f'this repository is mostly {lang} ({size}; tests and tooling counted apart), which '
+                               f'list_interfaces.py reads only in part: {PARTIAL_CENSUS[lang]}. Map the rest by hand '
+                               f'(SKILL.md Step 4) and record what was not read as not assessed')
+        return
+    if coverage['status'] != 'partial' or coverage.get('warning') or not total:
+        return
+    for lang, what in PARTIAL_CENSUS.items():
+        share = lines.get(lang, 0) / total
+        if share >= PARTIAL_SHARE:
+            coverage['partially_read'] = {lang: what}
+            coverage['warning'] = (f'{lang} holds {share:.0%} of the product lines ({lines[lang]} of {total}; tests and '
+                                   f'tooling counted apart), and list_interfaces.py reads it only in part: {what}. Map '
+                                   f'the rest by hand (SKILL.md Step 4) and record what was not read as not assessed')
+            return
 
 
 def repo_slug(url: str) -> tuple[str, str] | None:
@@ -1283,19 +1555,100 @@ def test_strings(base: Path, names: list[str], rel_base: str) -> list[dict]:
                 tree = ast.parse(text)
             except (SyntaxError, ValueError):
                 continue
+            argv = py_argv_nodes(tree)
             for n in ast.walk(tree):
                 if isinstance(n, ast.Constant) and isinstance(n.value, str) and 0 < len(n.value) < 200:
-                    out.append({'file': frel, 'line': n.lineno, 'value': n.value})
+                    out.append({'file': frel, 'line': n.lineno, 'value': n.value, 'argv': argv.get(id(n))})
             continue
         for m in JS_STRING.finditer(text):
             v = m.group(3)
             if not v or len(v) >= 200 or '\n' in v:
                 continue
-            item = {'file': frel, 'line': text.count('\n', 0, m.start()) + 1, 'value': v}
+            before = text[max(0, m.start() - 300):m.start()]
+            item = {'file': frel, 'line': text.count('\n', 0, m.start()) + 1, 'value': v,
+                    'argv': ('prog' if JS_PROC_FIRST.search(before) or BUILT_PATH.search(v) else 'argv')
+                    if JS_PROC.search(before) else None}
             if v.startswith('.') and IMPORT_CTX.search(text[max(0, m.start() - 12):m.start()]):
                 target = os.path.normpath(os.path.join(PurePosixPath(frel).parent.as_posix(), v)).replace('\\', '/')
                 item['import'] = stem_of(target)
             out.append(item)
+    return out
+
+
+PROC_FUNCS = {'run', 'call', 'check_call', 'check_output', 'Popen', 'system', 'popen', 'spawnv', 'spawnvp', 'spawnl',
+              'spawnlp', 'execv', 'execvp', 'execl', 'execlp', 'create_subprocess_exec', 'create_subprocess_shell',
+              'getoutput', 'getstatusoutput', 'which'}
+JS_PROC = re.compile(r'\b(?:spawn|spawnSync|exec|execSync|execFile|execFileSync|execa|execaSync|execaCommand)\s*\([^;]*$')
+JS_PROC_FIRST = re.compile(r'\b(?:spawn|spawnSync|exec|execSync|execFile|execFileSync|execa|execaSync|execaCommand)\s*'
+                           r'\(\s*$')
+BUILT_PATH = re.compile(r'(?:^|[\\/])target[\\/](?:[\w.-]+[\\/])?(?:debug|release)[\\/]')
+
+
+def py_argv_nodes(tree: ast.AST) -> dict[int, str]:
+    """{id of a string constant: 'argv' or 'prog'} for the strings on a command line: arguments of a process call
+    (subprocess.run, Popen, os.system, shutil.which...) and elements of a list or tuple in a function (or module
+    body) that makes such a call are 'argv'; the program position is 'prog': the first element of such a list, the
+    first argument of the call (a shell string's first word is the program), the value after --bin or -p, the last
+    part of a path to a built Cargo binary (ROOT / "target" / "debug" / "x") and a string holding such a path."""
+    def fname(call):
+        f = call.func
+        return f.attr if isinstance(f, ast.Attribute) else f.id if isinstance(f, ast.Name) else None
+
+    def is_str(n):
+        return isinstance(n, ast.Constant) and isinstance(n.value, str)
+    marked: dict[int, str] = {}
+
+    def argv(node):
+        for n in ast.walk(node):
+            if is_str(n):
+                marked.setdefault(id(n), 'argv')
+
+    def seq(n):
+        elts = n.elts
+        if elts and is_str(elts[0]):
+            marked[id(elts[0])] = 'prog'
+        for a, b in zip(elts, elts[1:]):
+            if is_str(a) and a.value in ('--bin', '-p', '--package') and is_str(b):
+                marked[id(b)] = 'prog'
+    for call in ast.walk(tree):
+        if isinstance(call, ast.Call) and fname(call) in PROC_FUNCS:
+            for a in list(call.args) + [k.value for k in call.keywords]:
+                argv(a)
+            if call.args and is_str(call.args[0]):
+                marked[id(call.args[0])] = 'prog'
+    defs = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+    scopes = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    scopes.append(ast.Module(body=[st for st in getattr(tree, 'body', []) if not isinstance(st, defs)], type_ignores=[]))
+    for sc in scopes:
+        nodes = list(ast.walk(sc))
+        if any(isinstance(n, ast.Call) and fname(n) in PROC_FUNCS for n in nodes):
+            for n in nodes:
+                if isinstance(n, (ast.List, ast.Tuple)):
+                    argv(n)
+                    seq(n)
+    for n in ast.walk(tree):
+        if isinstance(n, ast.BinOp) and isinstance(n.op, ast.Div):
+            vals = {c.value for c in ast.walk(n) if isinstance(c, ast.Constant)}
+            if 'target' in vals and vals & {'debug', 'release'} and is_str(n.right):
+                marked[id(n.right)] = 'prog'
+        elif is_str(n) and BUILT_PATH.search(n.value):
+            marked[id(n)] = 'prog'
+    return marked
+
+
+def argv_tokens(strings: list[dict]) -> dict[str, dict]:
+    """{test file: {'tokens': {token: line}, 'progs': {program: line}}} from the strings on a command line. A
+    program is the string in program position (its first word; a path gives its file name without .exe)."""
+    out: dict[str, dict] = {}
+    for s_ in strings:
+        if not s_.get('argv'):
+            continue
+        f = out.setdefault(s_['file'], {'tokens': {}, 'progs': {}})
+        words = s_['value'].split()
+        for t in words:
+            f['tokens'].setdefault(t, s_['line'])
+        if s_['argv'] == 'prog' and words:
+            f['progs'].setdefault(re.sub(r'\.exe$', '', re.split(r'[\\/]', words[0])[-1]), s_['line'])
     return out
 
 
@@ -1412,7 +1765,8 @@ def main(argv=None) -> int:
     for k in kept:
         notes.append(f"{k['path']}/ read as product source: {k['reason']}")
     for sk in skipped:
-        notes.append(f"{sk['path']}/ skipped ({sk['files']} files): {sk['reason']}; pass --include {sk['path']} if it is "
+        count = f" ({sk['files']} files)" if sk['files'] is not None else ''
+        notes.append(f"{sk['path']}/ skipped{count}: {sk['reason']}; pass --include {sk['path']} if it is "
                      f"hand-written source")
     php, php_notes = py_extras.php_routes(root, files)
     notes += php_notes
@@ -1420,17 +1774,16 @@ def main(argv=None) -> int:
         notes.append(f'{b}/ skipped as third-party or generated: {why}; its interfaces are not the product\'s')
     coverage = lang_census.language_coverage(cen, READ_CENSUS, tool='list_interfaces.py',
                                              what='list of the product\'s interfaces')
-    if coverage['status'] != 'unsupported_dominant' and coverage.get('dominant') in PARTIAL_CENSUS:
-        coverage['status'] = 'partial_dominant'
-        coverage['warning'] = (f'this repository is mostly {coverage["dominant"]}, which list_interfaces.py reads only '
-                               f'in part ({PARTIAL_CENSUS[coverage["dominant"]]}); map the rest by hand')
+    partial_language(coverage, cen)
     if coverage.get('warning'):
         notes.append('WARNING: ' + coverage['warning'])
     manifests, progs = manifest_interfaces(root, files)
     gos = go_interfaces(root, files)
-    others = manifests + js_commands_and_tools(root, files, progs) + py_commands_and_tools(root, files, project) + \
-        [g for g in gos if g['kind'] != 'routes']
     nxt, not_read, handled = next_interfaces(root, files)
+    models = cargo_models(root, files)
+    rust = rust_interfaces(models, notes, not_read)
+    others = manifests + js_commands_and_tools(root, files, progs) + py_commands_and_tools(root, files, project) + \
+        [g for g in gos if g['kind'] != 'routes'] + rust
     interfaces = sorted(py + [{'kind': 'routes', **r} for r in php] + nxt + js_interfaces(root, files, handled)
                         + [g for g in gos if g['kind'] == 'routes'] + others,
                         key=lambda x: (x['kind'], x['path'], x['method'], x['file']))
@@ -1464,7 +1817,7 @@ def main(argv=None) -> int:
         res['tests_warnings'] = []
         for t in args.tests:
             t = t.resolve()
-            test_files = [n for n in (walk(t) if t.is_dir() else [t.name]) if n.endswith(('.py', '.go') + JS_EXT)]
+            test_files = [n for n in (walk(t) if t.is_dir() else [t.name]) if n.endswith(('.py', '.go', '.rs') + JS_EXT)]
             if not test_files:
                 notes.append(f'no test files under --tests {t}: "0 reached" says nothing about tests there')
                 print(f'WARNING: no test files under --tests {t}', file=sys.stderr)
@@ -1482,7 +1835,7 @@ def main(argv=None) -> int:
                 res['tests_warnings'].append(msg)
                 notes.append(msg)
                 print(f'WARNING: {msg}', file=sys.stderr)
-            code_files = [n for n in names if n.endswith(('.py', '.go') + JS_EXT)]
+            code_files = [n for n in names if n.endswith(('.py', '.go', '.rs') + JS_EXT)]
             if code_files and not any(is_test(repo_rel(n), root) for n in code_files):
                 msg = (f'--tests {t}: none of its {len(code_files)} code file(s) look like tests (no test_*.py, '
                        f'*.test.* or *.spec.*, _test.go, or tests/, e2e/, __tests__/ folder); they are read as test code '
@@ -1503,11 +1856,19 @@ def main(argv=None) -> int:
         match(interfaces, lits)
         match_names(interfaces, strings)
         match_go(interfaces, go_masked)
+        if rust:
+            match_rust(interfaces, rust_test_reach(root, files, models), argv_tokens(strings))
         res['summary']['reached'] = sum(1 for i in interfaces if i['reached'])
         res['summary']['method'] = ('test string literals matched against path templates ({id} and :id match one segment), '
                                     'with the client method when the literal is its first argument; commands, tools and '
                                     'package exports by a test string naming them or a test import of the export\'s '
-                                    'source (naming is weaker than calling): test_derived')
+                                    'source (naming is weaker than calling): test_derived'
+                                    + ('. Rust binaries and clap sub-commands only by a command line: every Cargo '
+                                       'integration test and #[cfg(test)] module (whatever --tests names) that runs the '
+                                       'binary (env!("CARGO_BIN_EXE_x"), assert_cmd cargo_bin, Command::new on its path) '
+                                       'or calls clap parse_from with the sub-command\'s words, and Python or JavaScript '
+                                       'tests whose process call names the binary; never a name in a data string'
+                                       if rust else ''))
     text = json.dumps(res, indent=2) + '\n'
     if args.out:
         args.out.write_text(text, encoding='utf-8')
@@ -1722,6 +2083,140 @@ NEXT_SELF_TEST_FILES = {
     'pages/archive/[year].tsx': 'export default function Archive() { return <main />; }\n',
     'pages/_app.tsx': 'export default function App({ Component, pageProps }) { return <Component {...pageProps} />; }\n',
     'lib/sightings.ts': 'export const list = () => ["/sightings/7"];\n',
+}
+
+
+# a Cargo workspace (a weather-station logger) beside a small Python package and its tests
+RUST_SELF_TEST_FILES = {
+    'Cargo.toml': '[workspace]\nmembers = ["crates/*"]\nresolver = "2"\n',
+    'crates/station/Cargo.toml': (
+        '[package]\nname = "weather-station"\nversion = "0.1.0"\nedition = "2021"\n\n'
+        '[[bin]]\nname = "wxlog"\npath = "src/main.rs"\n\n'
+        '[[bin]]\nname = "wxreport"\npath = "src/bin/wxreport.rs"\n\n'
+        '[[bin]]\nname = "fake-sensor"\npath = "tests/fixtures/fake_sensor.rs"\n\n'
+        '[dependencies]\nclap = { version = "4", features = ["derive", "env"] }\n\n'
+        '[dev-dependencies]\nassert_cmd = "2"\n'),
+    'crates/station/src/main.rs': (
+        'use clap::{Args, Parser, Subcommand};\n'
+        '\n'
+        '/// Weather-station logger\n'
+        '#[derive(Parser)]\n'
+        '#[command(name = "wxlog", version)]\n'
+        'struct Cli {\n'
+        '    /// Station id\n'
+        '    #[arg(long, short, env = "WXLOG_STATION")]\n'
+        '    station: Option<String>,\n'
+        '    #[command(subcommand)]\n'
+        '    command: Cmd,\n'
+        '}\n'
+        '\n'
+        '#[derive(Subcommand)]\n'
+        'enum Cmd {\n'
+        '    /// Record readings\n'
+        '    Record {\n'
+        '        #[arg(long)]\n'
+        '        interval: u32,\n'
+        '    },\n'
+        '    /// Export readings\n'
+        '    Export(ExportArgs),\n'
+        '    /// Delete every stored reading\n'
+        '    Purge {\n'
+        '        #[arg(long)]\n'
+        '        yes: bool,\n'
+        '    },\n'
+        '    /// Calibrate the sensors\n'
+        '    Calibrate,\n'
+        '}\n'
+        '\n'
+        '#[derive(Args)]\n'
+        'struct ExportArgs {\n'
+        '    #[command(subcommand)]\n'
+        '    format: Format,\n'
+        '}\n'
+        '\n'
+        '#[derive(Subcommand)]\n'
+        'enum Format {\n'
+        '    Csv,\n'
+        '    Json,\n'
+        '}\n'
+        '\n'
+        'fn main() {\n'
+        '    let cli = Cli::parse();\n'
+        '    let _ = cli.station;\n'
+        '}\n'
+        '\n'
+        '#[cfg(test)]\n'
+        'mod tests {\n'
+        '    use super::*;\n'
+        '\n'
+        '    #[test]\n'
+        '    fn parses_purge() {\n'
+        '        let cli = Cli::try_parse_from(["wxlog", "purge", "--yes"]).unwrap();\n'
+        '        assert!(matches!(cli.command, Cmd::Purge { yes: true }));\n'
+        '    }\n'
+        '}\n'),
+    'crates/station/src/bin/wxreport.rs': (
+        'fn main() {\n'
+        '    let args: Vec<String> = std::env::args().collect();\n'
+        '    println!("{}", args.len());\n'
+        '}\n'),
+    'crates/station/tests/fixtures/fake_sensor.rs': 'fn main() {\n    println!("21.5");\n}\n',
+    'crates/station/tests/cli.rs': (
+        'use std::process::Command;\n'
+        '\n'
+        '#[test]\n'
+        'fn records_at_an_interval() {\n'
+        '    let out = Command::new(env!("CARGO_BIN_EXE_wxlog"))\n'
+        '        .args(["record", "--interval", "5"])\n'
+        '        .output()\n'
+        '        .unwrap();\n'
+        '    assert!(out.status.success());\n'
+        '}\n'
+        '\n'
+        '// "calibrate" in a comment does not reach the command\n'),
+    'crates/admin/Cargo.toml': (
+        '[package]\nname = "station-admin"\nversion = "0.1.0"\nedition = "2021"\n\n'
+        '[[bin]]\nname = "wxadmin"\npath = "src/main.rs"\n\n'
+        '[dependencies]\nclap = "4"\n\n[dev-dependencies]\nassert_cmd = "2"\n'),
+    'crates/admin/src/main.rs': (
+        'use clap::{Arg, Command};\n'
+        '\n'
+        'fn main() {\n'
+        '    let _m = Command::new("wxadmin")\n'
+        '        .arg(Arg::new("verbose").long("verbose").short(\'v\'))\n'
+        '        .subcommand(Command::new("rotate").arg(Arg::new("keep").long("keep")))\n'
+        '        .subcommand(Command::new("wipe"))\n'
+        '        .get_matches();\n'
+        '}\n'),
+    'crates/admin/tests/admin.rs': (
+        'use assert_cmd::Command;\n'
+        '\n'
+        '#[test]\n'
+        'fn rotates_logs() {\n'
+        '    Command::cargo_bin("wxadmin").unwrap().args(["rotate", "--keep", "3"]).assert().success();\n'
+        '}\n'),
+    'wxtools/__init__.py': '',
+    'wxtools/convert.py': 'def c_to_f(c):\n    return c * 9 / 5 + 32\n',
+    'wxtools/units.py': 'KPA = "kPa"\n',
+    'wxtools/plot.py': 'def bars(xs):\n    return ["#" * x for x in xs]\n',
+    'tests/test_export.py': (
+        'import subprocess\n'
+        '\n'
+        '\n'
+        'def test_export_csv():\n'
+        '    subprocess.run(["cargo", "run", "--bin", "wxlog", "--", "export", "csv"], check=True)\n'),
+    'tests/test_station_names.py': (
+        'import subprocess, sys\n'
+        '\n'
+        'STATIONS = {"default": "wxreport", "backup": "wxadmin wipe"}\n'
+        '\n'
+        '\n'
+        'def test_names():\n'
+        '    assert STATIONS["default"] == "wxreport"\n'
+        '\n'
+        '\n'
+        'def test_plot_script():\n'
+        '    subprocess.run([sys.executable, "wxtools/plot.py", "--station", "wxreport", "wipe"], check=True)\n'),
 }
 
 
@@ -1949,6 +2444,68 @@ def self_test() -> int:
             except SystemExit as exc:
                 code = exc.code
         want(code == 2, '--no-tests with --tests is refused')
+
+        # ---- Rust: clap derive and builder CLIs, plain and helper binaries, the Rust and Python tests that run them
+        rs = tmp / 'rust'
+        for rel, text in RUST_SELF_TEST_FILES.items():
+            (rs / rel).parent.mkdir(parents=True, exist_ok=True)
+            (rs / rel).write_text(text, encoding='utf-8')
+        (rs / 'target' / 'debug').mkdir(parents=True)
+        (rs / 'target' / 'debug' / 'build.rs').write_text('fn main() {}\n', encoding='utf-8')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = main([str(rs), '--tests', str(rs / 'tests'), '--out', str(out)])
+        res = json.loads(out.read_text(encoding='utf-8'))
+        got = {(i['kind'], i['path']): i for i in res['interfaces']}
+        for p in ('wxlog', 'wxlog record', 'wxlog export', 'wxlog export csv', 'wxlog export json', 'wxlog purge',
+                  'wxlog calibrate', 'wxadmin', 'wxadmin rotate', 'wxadmin wipe', 'wxreport'):
+            want(('cli', p) in got, f'the Rust command {p!r} is listed')
+        root_i = got.get(('cli', 'wxlog'), {})
+        want(root_i.get('framework') == 'clap-derive' and root_i.get('line') == 6
+             and '--station' in root_i.get('options', []) and root_i.get('option_lines', {}).get('--station') == 9,
+             f'a clap derive CLI is listed at its Parser struct with its options and their lines (got {root_i})')
+        want(got.get(('cli', 'wxlog record'), {}).get('line') == 17
+             and got.get(('cli', 'wxlog record'), {}).get('options') == ['--interval'],
+             'a clap sub-command records its line and its own options')
+        want(got.get(('cli', 'wxadmin rotate'), {}).get('framework') == 'clap-builder'
+             and '--verbose' in got.get(('cli', 'wxadmin'), {}).get('options', []),
+             'a clap builder CLI is listed with its sub-commands and options')
+        want(got.get(('cli', 'wxreport'), {}).get('framework') == 'cargo-bin',
+             'a binary with no clap parser is one cargo-bin entry')
+        want(not any('fake' in i['path'] for i in res['interfaces'])
+             and any('fake-sensor' in n for n in res['notes']),
+             'a helper binary under tests/ is not a product interface, and notes say so')
+        want(root_i.get('reached') and any(h['file'] == 'crates/station/tests/cli.rs' for h in root_i.get('reached_by', [])),
+             'a Rust integration test running env!("CARGO_BIN_EXE_wxlog") reaches the binary')
+        rec = got.get(('cli', 'wxlog record'), {})
+        want(rec.get('reached') and rec.get('options_reached') == ['--interval'],
+             'the sub-command and option the integration test passes are reached')
+        want(got.get(('cli', 'wxadmin rotate'), {}).get('reached') and got.get(('cli', 'wxadmin'), {}).get('reached'),
+             'an assert_cmd Command::cargo_bin test reaches the binary and its sub-command')
+        want(got.get(('cli', 'wxlog purge'), {}).get('reached'),
+             'a unit test calling Cli::try_parse_from reaches the sub-command it parses')
+        want(got.get(('cli', 'wxlog export csv'), {}).get('reached'),
+             'a Python test running `cargo run --bin wxlog -- export csv` reaches the nested sub-command')
+        for p in ('wxlog calibrate', 'wxlog export json', 'wxadmin wipe', 'wxreport'):
+            want(not got.get(('cli', p), {}).get('reached', True),
+                 f'{p!r} is not reached (a comment, or a name in a Python data string, is not a command line)')
+        cov = res.get('language_coverage', {})
+        want(code == 0 and cov.get('status') == 'partial_dominant' and 'Rust' in (cov.get('warning') or '')
+             and 'Rust' in err.getvalue() and 'WARNING' in err.getvalue(),
+             f'a repository whose product lines are mostly Rust is partial_dominant with a loud warning (got '
+             f'{cov.get("status")}, exit {code})')
+        want(not any(i['file'].startswith('target/') for i in res['interfaces'])
+             and any(s['path'] == 'target' for s in res.get('skipped_dirs', [])),
+             'Cargo\'s target/ beside a Cargo.toml is skipped as build output')
+        # Rust is a large minority: still said loudly, never a quiet partial
+        (rs / 'wxtools' / 'big.py').write_text(''.join(f'X{i} = {i}\n' for i in range(120)), encoding='utf-8')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = main([str(rs), '--out', str(out)])
+        cov = json.loads(out.read_text(encoding='utf-8')).get('language_coverage', {})
+        want(code == 0 and cov.get('status') == 'partial' and 'Rust' in (cov.get('warning') or '')
+             and 'Rust' in err.getvalue(),
+             f'Rust holding a large share of the product lines warns even when it does not dominate (got {cov})')
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     if fails:

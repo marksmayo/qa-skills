@@ -16,7 +16,7 @@ The scope records `source.kind: "path"` and `source.paths` for the report's `met
 (`mode: "path"`, `paths`).
 """
 from __future__ import annotations
-import argparse, json, os, re, sys
+import argparse, json, os, re, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,6 +35,26 @@ def walk(root: Path) -> list[Path]:
         dirnames[:] = sorted(d for d in dirnames if d not in PRUNE and not d.endswith('.egg-info'))
         out += [Path(dirpath) / f for f in sorted(filenames)]
     return out
+
+
+def git(repo: Path, *args: str) -> str | None:
+    try:
+        res = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return res.stdout if res.returncode == 0 else None
+
+
+def git_head(repo: Path) -> str | None:
+    """The commit the scoped files were read at (HEAD), or None outside a git checkout."""
+    out = git(repo, 'rev-parse', 'HEAD')
+    return out.strip() if out else None
+
+
+def git_dirty(repo: Path, paths: list[str]) -> list[str] | None:
+    """Scoped paths with uncommitted changes (the lines read are then not HEAD's), or None outside git."""
+    out = git(repo, 'status', '--porcelain', '--', *[p.split(':')[0] for p in paths])
+    return None if out is None else sorted({l[3:].strip() for l in out.splitlines() if l.strip()})
 
 
 def entry_for(repo: Path, p: Path, span: tuple[int, int] | None) -> dict:
@@ -90,7 +110,8 @@ def main(argv=None) -> int:
     for f in files:
         by_kind[f['kind']] = by_kind.get(f['kind'], 0) + 1
     out = {'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'repo': repo.name,
-           'source': {'kind': 'path', 'paths': paths, 'diff_file': None, 'base_ref': None, 'merge_base': None, 'head': None},
+           'source': {'kind': 'path', 'paths': paths, 'diff_file': None, 'base_ref': None, 'merge_base': None,
+                      'head': git_head(repo), 'dirty': git_dirty(repo, paths)},
            'files': files,
            'summary': {'files': len(files), 'by_status': {'unchanged': len(files)} if files else {}, 'by_kind': by_kind,
                        'lines_in_scope': sum(b - a + 1 for f in files if f['kind'] == 'source' for a, b in f['ranges']),

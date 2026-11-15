@@ -29,6 +29,21 @@ Django templates are read for `{% extends|include|import|from "x" %}` (edges to 
 and for static files they link (`url_for('static', filename='x')`, `{% static 'x' %}`, a literal
 `/static/x`), so a partial or a stylesheet reaches the tests that import the views rendering it.
 
+Rust: when the repository (or a top-level folder) holds a Cargo.toml, cargo_project.py reads the crates,
+their targets and their tests. A file holding #[test] functions (in a #[cfg(test)] module or a tests/*.rs
+target) is a test file; helper binaries under tests/fixtures and benches are not. A file's build is the
+targets whose module tree (`mod x;`) holds it: a library file reaches its crate's lib, bin and test targets
+and those of every crate that depends on it by path (normal dependencies transitively, a dev-dependency one
+step); a binary's module reaches that binary's unit tests and its crate's integration tests (which may run the
+binary). The targets come from cargo_project.targets_reaching, so each .rs file is scanned once per graph.
+Each test file of a reached target gets an edge to the file (`via` names the target).
+
+Python test files that put a folder on sys.path (`sys.path.insert(0, str(Path(__file__).parent.parent /
+"scripts"))`, `os.path.join(os.path.dirname(__file__), "..", "scripts")`, also in a conftest.py above them)
+and then import a module by its bare name reach that folder's module. When the folder cannot be worked out
+statically, the bare import of a module that exists in the repository is recorded under `unresolved` with
+its candidate files, never dropped.
+
 Not followed: a package's `__init__.py` when a submodule is imported (Python runs it, but
 following it makes every module depend on everything the package imports), and test-runner
 setup files named only in configuration (Vitest/Jest `setupFiles`, `globalSetup`).
@@ -41,6 +56,14 @@ from pathlib import Path, PurePosixPath
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import detect_conventions  # noqa: E402
+
+READS = 0   # source files read by graphs in this process (the self-test's timing check counts them)
+STDLIB = set(getattr(sys, 'stdlib_module_names', ())) | {'__future__'}
+# attributes that turn one test function into several libtest tests named `fn::case...` (rstest, test-case)
+PARAM_ATTR = re.compile(r'#\[\s*(?:[\w:]+::)?(rstest|test_case|test_matrix|case|values)\b')
+RUST_CONFIG = {'Cargo.toml','Cargo.lock', 'rust-toolchain', 'rust-toolchain.toml', '.cargo/config', '.cargo/config.toml'}
+CODE_EXT = {'.py', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.mts', '.cts', '.vue', '.svelte', '.java', '.kt', '.kts',
+            '.cs', '.swift', '.dart', '.rb', '.php', '.scala', '.m'}
 
 KINDS = json.loads((HERE.parent / 'data' / 'file_kinds.json').read_text(encoding='utf-8'))
 SKIP_DIRS = detect_conventions.SKIP_DIRS | {'.git', '.hg', '.svn', '__snapshots__'}
@@ -93,6 +116,35 @@ def test_level(path: str) -> str | None:
     if match(path, KINDS['e2e_tests']):
         return 'e2e'
     return detect_conventions.level_of(path, set())
+
+
+def family(path: str) -> str | None:
+    """The test family a changed file or a test belongs to, for widening: 'rust' (.rs, and the workspace's Cargo
+    files), 'go' (.go), 'code' (other source languages), None for anything else (data, styles, config), which can be
+    read by any language and so widens to every test of its scope."""
+    p = PurePosixPath(path)
+    ext = p.suffix.lower()
+    if ext == '.rs' or path in RUST_CONFIG or p.name in ('Cargo.toml', 'Cargo.lock'):
+        return 'rust'
+    if ext == '.go':
+        return 'go'
+    return 'code' if ext in CODE_EXT else None
+
+
+def same_family(path: str, tests: list[str]) -> list[str]:
+    """The tests a change to path can reach by language: a Rust file only Rust tests, a Go file only Go tests, any
+    other source file every test but Rust and Go ones (they cannot import it); a file of no language every test."""
+    fam = family(path)
+    if fam in ('rust', 'go'):
+        return [t for t in tests if family(t) == fam]
+    if fam == 'code':
+        return [t for t in tests if family(t) not in ('rust', 'go')]
+    return list(tests)
+
+
+def is_rust_config(path: str) -> bool:
+    """A repository-level Cargo file: the workspace manifest, the lockfile, the toolchain or cargo configuration."""
+    return path in RUST_CONFIG
 
 
 def strip_js_comments(text: str) -> str:
@@ -155,8 +207,63 @@ def build_output(pkg_dir: Path) -> str | None:
     return None
 
 
+def eval_path(node, here: str, names: dict, depth: int = 0) -> str | None:
+    """The repository-relative path a path expression names, for the sys.path idioms of test files: __file__,
+    Path()/str()/os.fspath()/resolve()/absolute(), .parent, .parents[n], os.path.dirname/abspath/realpath/normpath/
+    join, `/` with literal parts, and names assigned earlier in the module. None when it cannot be worked out (an
+    environment variable, a computed value) or it leaves the repository."""
+    if depth > 12 or node is None:
+        return None
+    rec = lambda n: eval_path(n, here, names, depth + 1)  # noqa: E731
+    if isinstance(node, ast.Name):
+        if node.id == '__file__':
+            return here
+        return rec(names.get(node.id)) if node.id in names else None
+    if isinstance(node, ast.Attribute):
+        if node.attr == 'parent':
+            v = rec(node.value)
+            return None if v is None else _norm(f'{v}/..')
+        return None
+    if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute) and node.value.attr == 'parents':
+        idx = node.slice
+        if isinstance(idx, ast.Constant) and isinstance(idx.value, int):
+            v = rec(node.value.value)
+            return None if v is None else _norm(v + '/..' * (idx.value + 1))
+        return None
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+        left = rec(node.left)
+        right = node.right.value if isinstance(node.right, ast.Constant) and isinstance(node.right.value, str) else None
+        return None if left is None or right is None else _norm(f'{left}/{right}')
+    if isinstance(node, ast.Call):
+        f = node.func
+        name = f.attr if isinstance(f, ast.Attribute) else f.id if isinstance(f, ast.Name) else None
+        if name in ('resolve', 'absolute') and isinstance(f, ast.Attribute) and not node.args:
+            return rec(f.value)
+        if name in ('Path', 'PurePath', 'PosixPath', 'WindowsPath', 'PurePosixPath', 'str', 'fspath', 'abspath',
+                    'realpath', 'normpath') and len(node.args) == 1:
+            return rec(node.args[0])
+        if name == 'dirname' and len(node.args) == 1:
+            v = rec(node.args[0])
+            return None if v is None else _norm(f'{v}/..')
+        if name == 'join' and node.args:
+            v = rec(node.args[0])
+            rest = [a.value for a in node.args[1:] if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+            if v is None or len(rest) != len(node.args) - 1:
+                return None
+            return _norm('/'.join([v, *rest]))
+    return None
+
+
+def _norm(p: str) -> str | None:
+    out = os.path.normpath(p).replace(os.sep, '/')
+    return None if out == '..' or out.startswith('../') else ('.' if out in ('', '.') else out)
+
+
 class Graph:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, reuse: 'Graph | None' = None, changed: set[str] | None = None,
+                 reuse_packages: bool = False, cargo_metadata: dict | None = None):
+        """reuse: a graph of another tree that differs from this one only in the `changed` paths; its file reads and
+        parsed ASTs are used for every other file, and with reuse_packages its package detection and Cargo model."""
         self.root = root
         self.files: dict[str, dict] = {}
         self.languages: dict[str, str] = {}
@@ -165,6 +272,61 @@ class Graph:
         self.product_roots: set[str] = set()
         self._stripped: dict[str, str | None] = {}
         self.notes: list[str] = []
+        self._text: dict[str, str | None] = {}
+        self._ast: dict[str, object] = {}
+        self._syspath: dict[str, tuple[list[str], list[int]]] = {}
+        self._parsed: dict[str, dict] = {}
+        self.reuse, self.changed, self.reuse_packages = reuse, set(changed or ()), reuse_packages
+        self.cargo_metadata = cargo_metadata
+        self.python_runners: dict[str, dict] = {}
+        self.ci_gates: list[dict] = []
+        self.cargo_models: list[dict] = []
+        self.rust_tests: dict[str, list[dict]] = {}
+        self.rust_crates: dict[str, dict] = {}
+
+    # ------------------------------------------------------------ reads (each file once; shared with `reuse`)
+    def text(self, path: str) -> str | None:
+        global READS
+        if path not in self._text:
+            other = self.reuse
+            if other is not None and path not in self.changed and path in other._text:
+                self._text[path] = other._text[path]
+            else:
+                READS += 1
+                try:
+                    self._text[path] = (self.root / path).read_text(encoding='utf-8', errors='replace')
+                except OSError:
+                    self._text[path] = None
+        return self._text[path]
+
+    def tree(self, path: str):
+        """The parsed module (ast.Module), a SyntaxError/ValueError when it does not parse, None when unreadable."""
+        if path not in self._ast:
+            other = self.reuse
+            if other is not None and path not in self.changed and path in other._ast:
+                self._ast[path] = other._ast[path]
+            else:
+                text = self.text(path)
+                try:
+                    self._ast[path] = ast.parse(text) if text is not None else None
+                except (SyntaxError, ValueError) as exc:
+                    self._ast[path] = exc
+        return self._ast[path]
+
+    PARSED_KEYS = ('imports', 'unresolved', 'dynamic', 'renders', 'parse_error')
+
+    def parsed(self, path: str, entry: dict, handler) -> None:
+        """Run a language handler on a file, or copy its result from `reuse` when the file is unchanged and nothing
+        it resolves against can differ (same layout and configuration, no conftest.py changed)."""
+        o = self.reuse
+        if o is not None and self.reuse_packages and path not in self.changed and path in o._parsed and \
+                not any(PurePosixPath(c).name == 'conftest.py' for c in self.changed):
+            for k, v in o._parsed[path].items():
+                entry[k] = [dict(x) for x in v] if isinstance(v, list) else v
+        else:
+            handler(path, entry)
+        self._parsed[path] = {k: ([dict(x) for x in entry[k]] if isinstance(entry[k], list) else entry[k])
+                              for k in self.PARSED_KEYS if k in entry}
 
     # ------------------------------------------------------------ discovery
     def walk(self) -> list[str]:
@@ -177,9 +339,16 @@ class Graph:
         return out
 
     def find_packages(self, paths: list[str]) -> None:
+        if self.reuse is not None and self.reuse_packages:
+            self.packages = [dict(p) for p in self.reuse.packages]
+            self.python_runners, self.ci_gates = dict(self.reuse.python_runners), list(self.reuse.ci_gates)
+            return
         det = detect_conventions.Detector(self.root, 50_000)
         res = det.run(None)
+        self.ci_gates = res.get('ci_gates') or []
         for a in res['areas']:
+            if a.get('python_runner'):
+                self.python_runners[a['root']] = a['python_runner']
             frameworks = sorted({fw for cat in a.get('frameworks', {}).values() for fw in cat})
             manifests = a.get('manifests', [])
             name = a['root']
@@ -217,9 +386,15 @@ class Graph:
         paths = self.walk()
         self.find_packages(paths)
         self.py_index: dict[str, list[str]] = {}
+        self.py_module: dict[str, str] = {}
+        self.py_names: dict[str, list[str]] = {}   # bare module name -> files (for imports through sys.path)
         py_roots = sorted({p['root'] for p in self.packages} | {'.'})
         for path in paths:
             if path.endswith('.py'):
+                pp = PurePosixPath(path)
+                bare = pp.parent.name if pp.name == '__init__.py' else pp.stem
+                if bare.isidentifier():
+                    self.py_names.setdefault(bare, []).append(path)
                 for r in py_roots:
                     for base in ([r, f'{r}/src'] if r != '.' else ['.', 'src']):
                         prefix = '' if base == '.' else base + '/'
@@ -231,6 +406,9 @@ class Graph:
                                 continue
                             if all(part.isidentifier() for part in mod.split('.')):
                                 self.py_index.setdefault(mod, []).append(path)
+        for mod, files in self.py_index.items():       # module_of(): the first module (in index order) holding a file
+            for f in files:
+                self.py_module.setdefault(f, mod)
         self.js_aliases = self.tsconfig_aliases(paths)
         self.workspace_names = {p['name']: p['root'] for p in self.packages if p['name'] != p['root']}
         self.all_paths = set(paths)
@@ -248,34 +426,40 @@ class Graph:
         self.go_mods: dict[str, str] = {}
         for path in paths:
             if PurePosixPath(path).name == 'go.mod':
-                m = GO_MODULE.search((self.root / path).read_text(encoding='utf-8', errors='replace'))
+                m = GO_MODULE.search(self.text(path) or '')
                 if m:
                     self.go_mods[m.group(1)] = str(PurePosixPath(path).parent)
         self.go_src: dict[str, list[str]] = {}
         for path in paths:
             if path.endswith('.go') and not path.endswith('_test.go'):
                 self.go_src.setdefault(str(PurePosixPath(path).parent), []).append(path)
+        # Rust: the Cargo model (crates, targets, tests) of each top-level Cargo project
+        rust_files = self.read_cargo(paths)
         for path in paths:
             ext = PurePosixPath(path).suffix.lower()
             entry = {'package': self.package_of(path), 'lang': None, 'test_level': test_level(self.test_path(path)), 'imports': [],
                      'unresolved': [], 'dynamic': []}
             if ext in PY_EXT:
                 entry['lang'] = 'python'
-                self.python(path, entry)
+                self.parsed(path, entry, self.python)
                 self.languages['python'] = 'parsed'
             elif ext in JS_EXT:
                 entry['lang'] = 'typescript' if ext in ('.ts', '.tsx', '.mts', '.cts') else 'javascript'
-                self.javascript(path, entry)
+                self.parsed(path, entry, self.javascript)
                 self.languages[entry['lang']] = 'parsed'
             elif ext == '.go' and self.go_mods:
                 entry['lang'] = 'go'
-                self.go(path, entry)
+                self.parsed(path, entry, self.go)
                 self.languages['go'] = 'parsed'
+            elif ext == '.rs' and path in rust_files:
+                entry['lang'] = 'rust'
+                entry.update(rust_files[path])
+                self.languages['rust'] = 'parsed'
             elif ext in NO_PARSER:
                 entry['lang'] = NO_PARSER[ext]
                 self.languages.setdefault(NO_PARSER[ext], 'no_parser')
             elif ext in TEMPLATE_EXT and self.is_template(path):
-                self.template(path, entry)
+                self.parsed(path, entry, self.template)
             self.files[path] = entry
         if self.product_roots:
             self.notes.append('Product package(s) named like a test directory: ' + ', '.join(sorted(self.product_roots)) +
@@ -284,6 +468,7 @@ class Graph:
         for path, entry in self.files.items():
             if entry['lang'] == 'python' and (entry['test_level'] or PurePosixPath(path).name == 'conftest.py'):
                 self.conftests(path, entry)
+        self.rust_edges()
         for entry in self.files.values():
             for d in entry['dynamic']:
                 d['targets'] = self.dynamic_targets(d, entry)
@@ -292,6 +477,153 @@ class Graph:
             for imp in entry['imports']:
                 self.reverse.setdefault(imp['path'], []).append((path, imp['via']))
         return self
+
+    # ------------------------------------------------------------ Rust (cargo_project.py)
+    def read_cargo(self, paths: list[str]) -> dict[str, dict]:
+        """Read every top-level Cargo project (a Cargo.toml with none above it) with cargo_project.py and return
+        {file: {test_level, rust_role, crate, inline_tests?}} for its .rs files. A file is a test file when the scan
+        found a #[test] function in it. Roles: 'lib', 'bin', 'build', 'test_target' (in a tests/*.rs target),
+        'bench', 'example', 'fixture_bin' (a helper binary under tests/), 'unreached' (in no target)."""
+        self._rust_reach: dict[str, list[tuple[str, str, str]]] = {}
+        self._rust_files: dict[str, dict] = {}
+        roots = sorted({str(PurePosixPath(p).parent) for p in paths if PurePosixPath(p).name == 'Cargo.toml'},
+                       key=lambda d: (0 if d == '.' else d.count('/') + 1, d))
+        tops: list[str] = []
+        for d in roots:
+            if not any(t == '.' or d == t or d.startswith(t + '/') for t in tops):
+                tops.append(d)
+        if not tops:
+            return {}
+        if self.reuse is not None and self.reuse_packages and not any(
+                p.endswith('.rs') or PurePosixPath(p).name in ('Cargo.toml', 'Cargo.lock') for p in self.changed):
+            o = self.reuse
+            self.cargo_models, self.rust_crates, self.rust_tests = o.cargo_models, o.rust_crates, o.rust_tests
+            self._rust_reach, self._rust_files = o._rust_reach, o._rust_files
+            return dict(o._rust_files)
+        import cargo_project
+        fixture: set[str] = set()
+        # the (crate, target, kind) whose module tree holds each file, from the shared reader's target_files: each
+        # .rs file is scanned once, by cargo_project.read_cargo
+        own: dict[str, list[tuple[str, str, str]]] = {}
+        model_of: dict[str, tuple[dict, str]] = {}
+        for top in tops:
+            m = cargo_project.read_cargo(self.root / top, self.cargo_metadata if top == '.' else None)
+            pre = '' if top == '.' else top + '/'
+            for key, tfiles in cargo_project.target_files(m).items():
+                crate, kind, name = key.split(':', 2)
+                for f in tfiles:
+                    own.setdefault(pre + f, []).append((crate, name, kind))
+            for c in m['crates']:
+                # the graph's copy, with repository-relative paths; the shared model keeps its own (targets_reaching)
+                pc = {**c, 'dir': top if c['dir'] == '.' else pre + c['dir'], 'manifest': pre + c['manifest'],
+                      'targets': [{**t, **({'path': pre + t['path']} if t.get('path') else {})} for t in c['targets']],
+                      'fixture_bins': [{**x, 'file': pre + x['file']} for x in c['fixture_bins']],
+                      'tests': [{**x, 'file': pre + x['file']} for x in c['tests']],
+                      'unreached_files': [pre + f for f in c['unreached_files']], 'root': top}
+                self.rust_crates[pc['name']] = pc
+                fixture |= {x['file'] for x in pc['fixture_bins']}
+                model_of[pc['name']] = (m, pre)
+                self._add_rust_tests(pc)
+            self.cargo_models.append({'root': top, 'workspace': m['workspace'], 'notes': m['notes']})
+        by_depth = sorted(self.rust_crates.values(), key=lambda c: -len(c['dir']))
+        reach_of: dict[tuple, list[tuple[str, str, str]]] = {}   # targets_reaching once per set of holding targets
+        out: dict[str, dict] = {}
+        for path in paths:
+            if not path.endswith('.rs'):
+                continue
+            crate = next((c for c in by_depth if c['dir'] == '.' or path.startswith(c['dir'] + '/')), None)
+            if crate is None:
+                continue
+            mine = [x for x in own.get(path, []) if x[0] == crate['name']]
+            kinds = {k for _c, _t, k in mine}
+            role = ('lib' if 'lib' in kinds else 'build' if 'build' in kinds else 'bin' if 'bin' in kinds else
+                    'test_target' if 'test' in kinds else 'bench' if 'bench' in kinds else 'example' if 'example' in kinds
+                    else 'fixture_bin' if path in fixture else 'unreached')
+            key = (crate['name'], tuple(sorted(mine)))
+            if key not in reach_of:
+                m, pre = model_of[crate['name']]
+                if role == 'build':
+                    # the build script runs before every target of its crate: what its lib and bins reach
+                    starts = [t['path'] for t in crate['targets'] if t['kind'] in ('lib', 'bin') and t.get('path')]
+                else:
+                    starts = [path] if mine else []
+                hit: list[tuple[str, str, str]] = []
+                for s in starts:
+                    for r in cargo_project.targets_reaching(m, s[len(pre):]):
+                        x = (r['crate'], r['target'], r['kind'])
+                        if r['kind'] in ('lib', 'bin', 'test') and x not in hit:
+                            hit.append(x)
+                reach_of[key] = hit
+            self._rust_reach[path] = reach_of[key]
+            tests = self.rust_tests.get(path, [])
+            level = None
+            if tests:
+                level = 'unit' if all(t['target_kind'] in ('lib', 'bin') for t in tests) else 'integration'
+            out[path] = {'test_level': level, 'rust_role': role, 'crate': crate['name'],
+                         **({'inline_tests': True} if level == 'unit' else {})}
+        self._rust_files = out
+        return out
+
+    def _add_rust_tests(self, pc: dict) -> None:
+        """Record the crate's tests per file. A test's gating features come from the shared reader (features and
+        features_any: its own cfg, its inline modules' and the `mod x;` declarations on the way to its file in its
+        own target's module tree); those the crate enables by default (transitively: default = ["std"] with
+        std = ["alloc"] enables alloc) do not gate it."""
+        import cargo_project
+        feats = pc['features']
+        enabled = (set(feats.get('all') or []) - set(feats.get('optional') or [])) | set(feats.get('default') or [])
+        for t in pc['tests']:
+            if not t.get('id'):
+                continue
+            if 'features' in t:
+                need, groups = t['features'], t.get('features_any') or []
+            else:
+                need, groups = cargo_project.cfg_features(t.get('cfg') or [])
+            gated = {f for f in need if f not in enabled}
+            for g in groups:
+                if not set(g) & enabled:
+                    gated |= set(g)
+            self.rust_tests.setdefault(t['file'], []).append({
+                'crate': pc['name'], 'package': pc['dir'], 'root': pc['root'], 'target': t['target'],
+                'target_kind': t['target_kind'], 'id': t['id'], 'name': t['name'], 'ignored': t['ignored'],
+                'features': sorted(gated), 'parameterised': self._parameterised(t['file'], t['line'])})
+
+    def _parameterised(self, path: str, line: int) -> bool:
+        """True when the test function at `line` carries an attribute that generates child tests (#[rstest],
+        #[test_case], #[test_matrix]): libtest names them `fn::case_1...`, so `--exact fn` runs none of them."""
+        lines = (self.text(path) or '').splitlines()
+        i = line - 2
+        while 0 <= i < len(lines):
+            s = lines[i].strip()
+            if not s or s.startswith('//'):
+                i -= 1
+                continue
+            if PARAM_ATTR.match(s):
+                return True
+            if s.startswith('#[') or s.endswith((']', ')', ',')):
+                i -= 1               # another attribute, or the tail of one spread over several lines
+                continue
+            break
+        return False
+
+    def rust_edges(self) -> None:
+        """Each test file of a target whose build includes a .rs file gets an edge to it (`via` names the target)."""
+        if not self.rust_crates:
+            return
+        files_of: dict[tuple[str, str], list[str]] = {}
+        for f, ts in sorted(self.rust_tests.items()):
+            for t in ts:
+                key = (t['crate'], t['target'])
+                if f not in files_of.setdefault(key, []):
+                    files_of[key].append(f)
+        for path, reach in self._rust_reach.items():
+            seen: set[str] = set()
+            for crate, target, kind in reach:
+                for tf in files_of.get((crate, target), []):
+                    if tf != path and tf not in seen and tf in self.files:
+                        seen.add(tf)
+                        self.files[tf]['imports'].append({'path': path, 'via': f'cargo {kind} target {crate}/{target}',
+                                                          'line': 0})
 
     def is_template(self, path: str) -> bool:
         return any(part in TEMPLATE_DIRS for part in PurePosixPath(path).parts[:-1])
@@ -306,9 +638,8 @@ class Graph:
     def template(self, path: str, entry: dict) -> None:
         """A Jinja or Django template's edges: the templates it extends, includes or imports, and the static files
         it links."""
-        try:
-            text = (self.root / path).read_text(encoding='utf-8', errors='replace')
-        except OSError:
+        text = self.text(path)
+        if text is None:
             return
         line_of = lambda pos: text.count('\n', 0, pos) + 1  # noqa: E731
 
@@ -323,9 +654,64 @@ class Graph:
             add(self.resolve_named(name, path, self.static_index), 'static', m.start())
 
     def module_of(self, path: str) -> str | None:
-        for mod, files in self.py_index.items():
-            if path in files:
-                return mod
+        return self.py_module.get(path)
+
+    def syspath_dirs(self, path: str) -> tuple[list[str], list[int]]:
+        """(repo-relative folders a Python file puts on sys.path, lines of the sys.path changes that could not be
+        worked out), the file's own and those of every conftest.py above it (pytest imports them first)."""
+        if path in self._syspath:
+            return self._syspath[path]
+        dirs: list[str] = []
+        unknown: list[int] = []
+        text = self.text(path) or ''
+        tree = self.tree(path) if ('sys.path' in text or 'addsitedir' in text) else None
+        if isinstance(tree, ast.Module):
+            names: dict[str, ast.AST] = {}
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                    names.setdefault(node.targets[0].id, node.value)
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                    continue
+                f = node.func
+                arg = None
+                if f.attr in ('insert', 'append') and isinstance(f.value, ast.Attribute) and f.value.attr == 'path' and \
+                        isinstance(f.value.value, ast.Name) and f.value.value.id == 'sys':
+                    arg = node.args[-1] if node.args else None
+                elif f.attr == 'addsitedir' and node.args:
+                    arg = node.args[0]
+                else:
+                    continue
+                d = eval_path(arg, path, names)
+                if d is not None and d != path:
+                    if d not in dirs:
+                        dirs.append(d)
+                else:
+                    unknown.append(node.lineno)
+        if PurePosixPath(path).name != 'conftest.py':
+            d = PurePosixPath(path).parent
+            while True:
+                c = 'conftest.py' if str(d) in ('.', '') else (d / 'conftest.py').as_posix()
+                if c in self.all_paths:
+                    cd, cu = self.syspath_dirs(c)
+                    dirs += [x for x in cd if x not in dirs]
+                    unknown += cu
+                if str(d) in ('.', ''):
+                    break
+                d = d.parent
+        self._syspath[path] = (dirs, unknown)
+        return dirs, unknown
+
+    def resolve_in_dirs(self, spec: str, dirs: list[str]) -> str | None:
+        """The file a module name resolves to inside one of the folders put on sys.path (longest name first)."""
+        parts = spec.split('.')
+        for n in range(len(parts), 0, -1):
+            rel = '/'.join(parts[:n])
+            for d in dirs:
+                pre = '' if d == '.' else d + '/'
+                for cand in (f'{pre}{rel}.py', f'{pre}{rel}/__init__.py'):
+                    if cand in self.all_paths:
+                        return cand
         return None
 
     def resolve_py(self, mod: str, near: str) -> str | None:
@@ -337,21 +723,37 @@ class Graph:
         return (same or files)[0]
 
     def python(self, path: str, entry: dict) -> None:
-        try:
-            tree = ast.parse((self.root / path).read_text(encoding='utf-8', errors='replace'))
-        except (SyntaxError, ValueError) as exc:
-            entry['parse_error'] = str(exc).splitlines()[0][:120]
+        tree = self.tree(path)
+        if not isinstance(tree, ast.Module):
+            if tree is not None:
+                entry['parse_error'] = str(tree).splitlines()[0][:120]
             return
         me = self.module_of(path) or ''
         is_pkg = path.endswith('__init__.py')
         here_pkg = me if is_pkg else me.rpartition('.')[0]
 
         def add(target: str | None, via: str, line: int, spec: str):
+            if not target and spec:
+                dirs, unknown = self.syspath_dirs(path)
+                found = self.resolve_in_dirs(spec, dirs) if dirs else None
+                if found and found != path:
+                    target, via = found, 'import (sys.path)'
             if target and target != path:
                 if not any(i['path'] == target for i in entry['imports']):
                     entry['imports'].append({'path': target, 'via': via, 'line': line})
             elif not target and spec.split('.')[0] in self.top_level_modules():
                 entry['unresolved'].append({'spec': spec, 'line': line})
+            elif not target and spec and spec.split('.')[0] not in STDLIB:
+                # a bare import of a module that exists in the repository under another folder: put on sys.path at
+                # run time (or by PYTHONPATH / runner configuration). Recorded, never dropped.
+                cands = [f for f in self.py_names.get(spec.split('.')[0], []) if f != path]
+                if cands:
+                    _dirs, unknown = self.syspath_dirs(path)
+                    entry['unresolved'].append({
+                        'spec': spec, 'line': line, 'candidates': cands[:5],
+                        'reason': (f'sys.path is changed at line {unknown[0]} to a folder this graph cannot work out'
+                                   if unknown else 'not on an import root this graph knows (a sys.path or PYTHONPATH '
+                                   'set elsewhere?)')})
 
         def renders(name: str, line: int, via: str) -> None:
             if PurePosixPath(name).suffix.lower() not in TEMPLATE_EXT:
@@ -415,8 +817,7 @@ class Graph:
                         if prefix and prefix.startswith('.'):
                             prefix = here_pkg + prefix
                         entry['dynamic'].append({'line': node.lineno, 'call': name, 'lang': 'python', 'prefix': prefix,
-                                                 'text': ast.get_source_segment((self.root / path).read_text(encoding='utf-8',
-                                                                                errors='replace'), node) or name})
+                                                 'text': ast.get_source_segment(self.text(path) or '', node) or name})
                 elif name in DYNAMIC_ANY:
                     entry['dynamic'].append({'line': node.lineno, 'call': name, 'lang': 'python', 'prefix': None, 'text': name + '(...)'})
 
@@ -432,9 +833,8 @@ class Graph:
         """Go: a file depends on every non-test file of each package it imports (a package is a directory, found
         from go.mod's module path); a _test.go file also on its own package's files; //go:embed on what it embeds.
         Standard-library and third-party imports are not files here."""
-        try:
-            raw = (self.root / path).read_text(encoding='utf-8', errors='replace')
-        except OSError:
+        raw = self.text(path)
+        if raw is None:
             return
         text = strip_js_comments(raw)
         here = str(PurePosixPath(path).parent)
@@ -477,11 +877,8 @@ class Graph:
         """(fixture names, has an autouse fixture) defined in a conftest.py."""
         if path not in self._fixtures:
             names, autouse = set(), False
-            try:
-                tree = ast.parse((self.root / path).read_text(encoding='utf-8', errors='replace'))
-            except (SyntaxError, ValueError, OSError):
-                tree = None
-            for node in ast.walk(tree) if tree else []:
+            tree = self.tree(path)
+            for node in ast.walk(tree) if isinstance(tree, ast.Module) else []:
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     for dec in node.decorator_list:
                         call = dec if isinstance(dec, ast.Call) else None
@@ -499,9 +896,8 @@ class Graph:
         return self._fixtures[path]
 
     def requested_fixtures(self, path: str) -> set[str]:
-        try:
-            tree = ast.parse((self.root / path).read_text(encoding='utf-8', errors='replace'))
-        except (SyntaxError, ValueError, OSError):
+        tree = self.tree(path)
+        if not isinstance(tree, ast.Module):
             return set()
         out = set()
         for node in ast.walk(tree):
@@ -575,10 +971,10 @@ class Graph:
         return None
 
     def javascript(self, path: str, entry: dict) -> None:
-        try:
-            text = strip_js_comments((self.root / path).read_text(encoding='utf-8', errors='replace'))
-        except OSError:
+        raw = self.text(path)
+        if raw is None:
             return
+        text = strip_js_comments(raw)
         line_of = lambda pos: text.count('\n', 0, pos) + 1  # noqa: E731
 
         def add(spec: str, via: str, pos: int):
@@ -635,13 +1031,15 @@ class Graph:
         return sorted(set(out))
 
     # ------------------------------------------------------------ queries
-    def tests_reaching(self, target: str, max_depth: int = 50) -> dict[str, list[str]]:
-        """{test file: [test file, ..., target]} by the shortest import chain, for every test that reaches target."""
+    def tests_reaching(self, target: str, max_depth: int | None = None) -> dict[str, list[str]]:
+        """{test file: [test file, ..., target]} by the shortest import chain, for every test that reaches target
+        (however long the chain: a depth limit silently dropped tests at the end of long chains). A Rust file with
+        its own #[cfg(test)] tests reaches itself: {file: [file]}."""
         parents = {target: None}
         q = deque([(target, 0)])
         while q:
             cur, depth = q.popleft()
-            if depth >= max_depth:
+            if max_depth is not None and depth >= max_depth:
                 continue
             for src, _via in self.reverse.get(cur, []):
                 if src not in parents:
@@ -655,6 +1053,8 @@ class Graph:
                     chain.append(cur)
                     cur = parents[cur]
                 out[f] = chain
+        if self.files.get(target, {}).get('inline_tests'):
+            out[target] = [target]
         return out
 
     def tests(self, package: str | None = None) -> list[str]:
@@ -667,6 +1067,13 @@ class Graph:
                 'summary': {'files': len(self.files), 'tests': len(self.tests()), 'edges': edges,
                             'dynamic_sites': sum(len(e['dynamic']) for e in self.files.values())},
                 'files': {p: e for p, e in sorted(self.files.items()) if e['lang'] or e['imports'] or e['test_level']},
+                **({'cargo': [{'root': m['root'], 'workspace': m['workspace'],
+                               'crates': [{'name': c['name'], 'dir': c['dir'], 'root': c['root'],
+                                           'targets': [{k: t.get(k) for k in ('kind', 'name', 'path')} for t in c['targets']],
+                                           'fixture_bins': [x['file'] for x in c['fixture_bins']],
+                                           'unreached_files': c['unreached_files']}
+                                          for c in self.rust_crates.values() if c['root'] == m['root']],
+                               'notes': m['notes']} for m in self.cargo_models]} if self.cargo_models else {}),
                 'notes': self.notes}
 
 
@@ -715,7 +1122,8 @@ def main(argv=None) -> int:
             return 1
         return 0
     import lang_census
-    cov = lang_census.language_coverage(lang_census.census(g.root), {'Python', 'JavaScript', 'TypeScript', 'Go'},
+    supported = {'Python', 'JavaScript', 'TypeScript', 'Go'} | ({'Rust'} if g.rust_crates else set())
+    cov = lang_census.language_coverage(lang_census.census(g.root), supported,
                                         tool='import_graph.py', what='import graph')
     if cov.get('warning'):
         print('WARNING: ' + cov['warning'], file=sys.stderr)

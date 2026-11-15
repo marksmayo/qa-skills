@@ -307,12 +307,76 @@ def name_items(errs: list[str], d: dict) -> list[str]:
     return out
 
 
+def version_tuple(v) -> tuple:
+    try:
+        return tuple(int(x) for x in str(v).split('.'))
+    except ValueError:
+        return (0,)
+
+
+TOOLING_WORDS = re.compile(r'tooling|helper script|not the product', re.I)
+
+
+def language_errors(d: dict, mutants_file: dict | None, repo: Path | None) -> list[str]:
+    """metadata.language_coverage (schema 1.3.0): present, equal to the normalised results and (with --repo) to a
+    fresh census; a product language left unmutated and a tooling-only scope are each named in a limitation."""
+    errs = []
+    lc = d['metadata'].get('language_coverage')
+    if lc is None:
+        if version_tuple(d['schema_version']) >= (1, 3, 0):
+            errs.append('metadata.language_coverage is required from schema 1.3.0: copy it from mutants.json '
+                        '(normalize_results.py records which language the product is in and what was mutated)')
+        return errs
+    if mutants_file is not None and mutants_file.get('language_coverage') is not None and \
+            mutants_file['language_coverage'] != lc:
+        errs.append('metadata.language_coverage differs from the normalised results\' language_coverage')
+    if repo is not None:
+        import detect_tools
+        want = detect_tools.report_language_coverage(repo, {m['file'] for m in d['mutants']},
+                                                     [f['path'] for f in d['metadata']['scope']['files']])
+        for k in ('dominant', 'mutated_languages', 'status', 'unmutated_dominant', 'tooling_scope_files'):
+            if lc.get(k) != want[k]:
+                errs.append(f'metadata.language_coverage.{k} is {lc.get(k)!r}, but the repository and the mutants '
+                            f'give {want[k]!r}')
+    lims = d['limitations']
+    lang = lc.get('unmutated_dominant')
+    if lang and not any(re.search(rf'(?<![\w#+]){re.escape(lang)}(?![\w#+])', l, re.I) for l in lims):
+        errs.append(f'{lang} has the most product code ({(lc.get("product_lines") or {}).get(lang, "?")} lines) and no '
+                    f'mutant is in it: a limitation must say {lang} was not mutated, so no one reads the scores as the '
+                    'product\'s')
+    if lc.get('tooling_scope_files') and not any(TOOLING_WORDS.search(l) for l in lims):
+        errs.append('the mutated files are tooling, not the product (' + ', '.join(lc['tooling_scope_files'][:3]) +
+                    '): a limitation must say so (name them as tooling or helper scripts)')
+    return errs
+
+
+def headline_errors(d: dict) -> list[str]:
+    """The headline is written by the agent, not left as a placeholder: it names every P0 finding by id (before
+    schema 1.3.0, saying "P0" is enough)."""
+    head = d['summary']['headline']
+    errs = []
+    if re.search(r'\bplaceholder\b|\bTODO\b|\bTBD\b|lorem ipsum', head, re.I):
+        errs.append('summary.headline is a placeholder: write it yourself, naming the findings that matter')
+    p0 = [f['id'] for f in d['findings'] if f.get('priority') == 'P0']
+    missing = [i for i in p0 if not re.search(rf'\b{re.escape(i)}\b', head)]
+    if missing and not (version_tuple(d['schema_version']) < (1, 3, 0) and re.search(r'\bP0\b', head)):
+        errs.append(f'summary.headline: name the P0 finding{"s" if len(missing) > 1 else ""} {", ".join(missing)} '
+                    '(each by id), so the headline leads with what matters')
+    return errs
+
+
 def check(d: dict, mutants_file: dict | None, runs: dict | None, proofs: dict | None, repo: Path | None) -> tuple[list[str], list[str]]:
     schema = json.loads(SCHEMA.read_text(encoding='utf-8'))
     errs = name_items(schema_errors(d, schema, schema), d)
+    versions = schema['properties']['schema_version']['enum']
+    errs = [f'$.schema_version: {d.get("schema_version")!r} is not a schema version: write "{versions[-1]}" (the '
+            f'current version; {", ".join(versions[:-1])} are still accepted)' if e.startswith('$.schema_version:') else e
+            for e in errs]
     warns: list[str] = []
     if errs:
         return errs, warns
+    errs += headline_errors(d)
+    errs += language_errors(d, mutants_file, repo)
     md = d['metadata']
     mutants = {m['id']: m for m in d['mutants']}
     engines = {e['name']: e for e in md['engines']}

@@ -15,6 +15,9 @@ fails; skipped results are left out.
 | `not_observed_flaky` | Passed in every run. Report the count and the upper bound: 0/20 is 0–16.1% |
 | `not_run` | No runs on this code |
 
+The summary counts `--isolate` runs (one test each) as `single_test_runs` within `total_runs`
+(schema 1.3.0), so a run total that mixes suite runs and single-test runs says so **(checked)**.
+
 ## Rates
 
 Every rate is `fails/runs` with a 95% Wilson score interval (`scripts/stats.py`).
@@ -123,8 +126,15 @@ Examples:
 
 ## Evidence completeness
 
-`evidence_completeness` = variations ran ÷ variations ran or not run. Not applicable variations
-(no e2e tests, so no latency variation) are left out. A variation that used a tool must have
+`evidence_completeness` = variations ran ÷ variations ran or not run, × the share of the
+repository's tests whose suite ran. Not applicable variations (no e2e tests, so no latency
+variation) are left out. The share comes from `metadata.suites` (one entry per language with tests,
+from `scan_pitfalls.py`'s `suites`): tests in suites that ran ÷ all suites' tests, or suites that
+ran ÷ suites when a count is unknown, and 1 when the report lists no suites. A Rust and Python
+repository whose 30 Rust tests were not run and whose 60 Python tests were scores at most 67%,
+never the same as a report that ran both **(checked)**. With `--smells`, every language the scan
+found tests in must be listed when there are two or more, a suite marked `ran` needs counted runs
+with test results from one of its `presets`, and one marked `not_run` must have none **(checked)**. A variation that used a tool must have
 that tool recorded as ran **(checked)**. A `clock` variation that ran must name runs that moved
 the clock (`TDA_CLOCK_SHIFT`, `TDA_CLOCK_DATE` or `FAKETIME` in the run's environment)
 **(checked)**; record clock runs under `clock`, never `tz`.
@@ -133,6 +143,9 @@ A smell links to a flake on the same test, whichever parametrised case the flake
 file, and the smell's test name equal to the flake's name or its trailing part (a Vitest/Jest
 smell names `Describe > title`; a bare title matches the last segment) **(checked)**. A smell
 with no test (a setup file, product code) may link to the flake it explains.
+
+A smell whose test has no counted run is `not_run`, never `not_observed`: nothing was observed. A
+smell whose test ran (same file and name, as above) is not `not_run` **(checked, with `--runs`)**.
 
 ## Wording (checked)
 
@@ -144,6 +157,7 @@ deterministic". Say "not observed flaky in N runs (upper bound X%)".
 - [ ] Every run recorded by `run_tests.py`, on one code hash.
 - [ ] Consistently failing tests separated from flakes.
 - [ ] Each flake: cause, confidence, the off/on experiment or why there isn't one, a fix to test code.
-- [ ] Every static smell accounted for.
+- [ ] Every static smell accounted for; smells whose tests never ran are `not_run`.
+- [ ] Every language with tests listed in `metadata.suites`, run or not run with the reason.
 - [ ] Every variation and tool recorded, with reasons for what didn't run.
 - [ ] No retries proposed; no product code changed; nothing committed.

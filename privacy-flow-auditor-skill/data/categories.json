@@ -48,5 +48,9 @@
   "generic_property_names": {
     "note": "Collected field names that are also everyday property names in code (path.name, el.title, event.type, store.state). scan_privacy.py does not count obj.<name> as naming the field for these; it still counts the bare identifier, a key ('name': or ['name']) and an interpolation of the identifier.",
     "names": ["name", "title", "type", "state", "region", "country", "city", "timezone", "address", "card", "condition", "reason", "health", "ip", "cid", "dl", "dr", "mail", "tel", "mobile", "zip", "race", "faith", "union_member", "lat", "lng", "gps", "medical", "dna"]
+  },
+  "name_lookalikes": {
+    "note": "Everyday words that contain a category pattern inside them (title in subtitles). scan_privacy.py drops these words before matching a field name, label or placeholder, so a 'Subtitles' filter is not identity data.",
+    "words": ["subtitle", "subtitles", "untitled", "titled", "entitled", "entitlement", "entitlements"]
   }
 }

@@ -97,7 +97,8 @@ def triage_from(run: dict, cands: list[dict]) -> dict:
         cls = c['classification']
         t = {'id': f['id'], 'job': f['job'], 'step': f['step'], 'kind': f['kind'], 'test_id': f['test_id'], 'message': f['message'],
              'classification': cls, 'confidence': c['confidence'], 'rule': c['rule'],
-             'signals': {k: c['signals'][k] for k in ('signatures', 'date_markers', 'rerun', 'step_kind', 'consequence_of', 'history_same_commit')},
+             'signals': {k: c['signals'][k] for k in ('signatures', 'date_markers', 'rerun', 'step_kind', 'consequence_of', 'history_same_commit', 'queued_for_s')
+                         if k in c['signals']},
              'log_excerpt': f['log_excerpt'], 'owning_change': {'status': 'not_identified', 'basis': 'no repository in this test'},
              'priority': 'P1' if cls == 'real' else None, 'next_action': 'see the rule'}
         if cls == 'real':
@@ -105,7 +106,7 @@ def triage_from(run: dict, cands: list[dict]) -> dict:
         fails.append(t)
     r = run['run']
     status, why = expected_run_status(run)
-    return {'schema_version': '1.2.0', 'skill': {'name': 'ci-failure-triager', 'version': '1.2.0'}, 'generated_at': '2026-03-02T12:00:00Z',
+    return {'schema_version': '1.3.0', 'skill': {'name': 'ci-failure-triager', 'version': '1.4.0'}, 'generated_at': '2026-03-02T12:00:00Z',
             'run_status': status, **({'run_status_reason': why} if why else {}),
             'run': {'system': 'github', 'repo': run['repo'], 'id': r['id'], 'attempt': r['attempt'], 'commit': r['commit'], 'branch': r['branch'],
                     'started_at': r['started_at'], 'last_green': {'id': run['last_green']['id'], 'commit': run['last_green']['commit']} if run.get('last_green') else None, 'source': 'recorded'},
@@ -156,6 +157,70 @@ def go_signature_checks(fails: list) -> None:
             fails.append(f'go signatures: {text[:60]!r} matched {ids}, expected {sid}')
 
 
+def rust_run_checks(fails: list) -> None:
+    """A synthetic GitHub Actions recording of a Rust workspace's CI (cargo test, nextest, a compile error, clippy -D
+    warnings, cargo fmt --check, coverage gates), normalised by fetch_run.py: every failing test is its own failure with
+    the class its evidence gives, the step failures carry their kind, a re-run that fails the same test again is read
+    from the re-run's log, and the triage validates."""
+    global RUN
+    import io, contextlib
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        raw, RUN = td / 'raw', td / 'run'
+        s = fetch_run.save
+        s(raw / 'run.json', {'id': 950, 'head_sha': SHA, 'head_branch': 'main', 'event': 'push', 'run_attempt': 2, 'workflow_id': 12,
+                             'path': '.github/workflows/checks.yml', 'created_at': '2026-03-02T10:00:00Z', 'run_started_at': '2026-03-02T10:00:00Z',
+                             'conclusion': 'failure', 'html_url': 'https://ci.example.test/run/950',
+                             'repository': {'full_name': 'acme/tides', 'default_branch': 'main'}})
+        a1, a2 = [], []
+        for i, (name, (script, step, body)) in enumerate(extract_failures.RUST_LOGS.items(), 1):
+            jid = 9500 + i
+            j = {'id': jid, 'name': name, 'conclusion': 'failure', 'started_at': '2026-03-02T10:01:00Z', 'completed_at': '2026-03-02T10:05:00Z',
+                 'runner_name': 'hosted 1', 'html_url': f'https://ci.example.test/job/{jid}',
+                 'steps': [{'number': 1, 'name': 'Set up job', 'conclusion': 'success'}, {'number': 2, 'name': step, 'conclusion': 'failure'}]}
+            a1.append(j)
+            s(raw / 'logs' / f'{jid}.txt', extract_failures._gh_log([(script, [script], body)]))
+            if name == 'rust-test':       # re-run: the same job ran again and the unit test failed again
+                a2.append(dict(j, id=jid + 100, started_at='2026-03-02T11:01:00Z'))
+                s(raw / 'logs' / f'{jid + 100}.txt', extract_failures._gh_log([(script, [script], body)]))
+            else:
+                a2.append(j)
+        s(raw / 'attempts' / '1' / 'jobs.json', {'jobs': a1})
+        s(raw / 'attempts' / '2' / 'jobs.json', {'jobs': a2})
+        s(raw / 'attempts' / '2' / 'run.json', {'triggering_actor': {'login': 'maintainer-a'}})
+        s(raw / 'history.json', {'workflow_runs': []})
+        with contextlib.redirect_stderr(io.StringIO()):
+            run = fetch_run.normalise_github(raw, RUN, 'acme/tides')
+        run['source'] = 'recorded'
+        s(RUN / 'run.json', run)
+        r = subprocess.run([sys.executable, str(HERE / 'rerun.py'), '--run', str(RUN), '--observed'], capture_output=True, text=True, encoding='utf-8')
+        if r.returncode:
+            fails.append(f'rust run: rerun.py --observed failed: {r.stderr}')
+            return
+        cands = candidates(run, RUN)
+        got = {(c['failure']['job'], c['failure']['test_id']): (c['classification'], c['confidence'], c['failure']['failure_type'],
+                                                               [h['id'] for h in c['signals']['signatures'] if h['class'] == 'real'][:1], c['signals']['rerun'])
+               for c in cands}
+        want = {('rust-test', 'tides_core::tables::tests::rounds_half_metre'): ('real', 'indicated', 'assertion', [], 'failed'),
+                ('rust-test', 'cli::rejects_unknown_port'): ('real', 'indicated', 'error', [], 'failed'),
+                ('rust-nextest', 'tides_core::tables::tests::rounds_half_metre'): ('real', 'indicated', 'assertion', [], 'job_not_rerun'),
+                ('rust-nextest', 'cli::waits_for_feed'): ('unclassified', 'low', 'timeout', [], 'job_not_rerun'),
+                ('rust-compile', None): ('real', 'indicated', 'compile', ['REAL-COMPILE'], 'job_not_rerun'),
+                ('rust-clippy', None): ('real', 'indicated', 'lint', ['REAL-LINT'], 'job_not_rerun'),
+                ('rust-fmt', None): ('real', 'indicated', 'format', ['REAL-FORMAT'], 'job_not_rerun'),
+                ('rust-coverage', None): ('real', 'indicated', 'coverage_gate', ['REAL-COVERAGE'], 'job_not_rerun'),
+                ('rust-tarpaulin', None): ('real', 'indicated', 'coverage_gate', ['REAL-COVERAGE'], 'job_not_rerun')}
+        for k in sorted(set(want) | set(got), key=str):
+            if got.get(k) != want.get(k):
+                fails.append(f'rust run: {k} gave {got.get(k)}, expected {want.get(k)}')
+        t = triage_from(run, cands)
+        t['summary']['headline'] = 'Nine failures in the Rust checks: two failing tests, a compile error, a lint, formatting and two coverage gates.'
+        t['limitations'] = ['No repository was given, so no owning change is identified.']
+        rc, out = finish(t, td)
+        if rc:
+            fails.append(f'rust run: the triage should validate:\n{out}')
+
+
 def mini_run(d: Path, jobs: list[tuple[str, str, list[str]]], history=None) -> dict:
     """A normalised one-attempt run in d: jobs are (name, step name, log output lines)."""
     rjobs = []
@@ -204,12 +269,23 @@ def no_jobs_checks(fails: list) -> None:
         rc, out = finish(t, Path(td))
         if rc or json.loads((Path(td) / 'triage.json').read_text(encoding='utf-8'))['summary'].get('evidence_completeness') != 0.0:
             fails.append(f'no jobs: a not_run triage with completeness 0.0 should validate:\n{out}')
-        bad = json.loads((Path(td) / 'triage.json').read_text(encoding='utf-8'))
+        good = json.loads((Path(td) / 'triage.json').read_text(encoding='utf-8'))
+        bad = copy.deepcopy(good)
         bad['run_status'] = 'complete'
         rc, out = validate(bad, Path(td))
         if rc == 0 or 'run_status' not in out:
             fails.append(f'no jobs: run_status complete for a run with no jobs not caught:\n{out}')
-        bad = json.loads((Path(td) / 'triage.json').read_text(encoding='utf-8'))
+        bad = copy.deepcopy(good)
+        bad['files_written'] = ['notes/never-written.md']
+        rc, out = validate(bad, Path(td))
+        if rc == 0 or 'files_written' not in out:
+            fails.append(f'files_written: a listed file that does not exist not caught:\n{out}')
+        (Path(td) / 'drafts.md').write_text('# Drafted defects\n', encoding='utf-8')
+        bad['files_written'] = ['drafts.md']
+        rc, out = validate(bad, Path(td))
+        if rc == 0 or 'no draft' not in out:
+            fails.append(f'files_written: a drafts file listed for a triage with no draft (render_report.py writes none) not caught:\n{out}')
+        bad = copy.deepcopy(good)
         bad['summary']['evidence_completeness'] = 0.4
         rc, out = validate(bad, Path(td))
         if rc == 0 or 'evidence_completeness' not in out:
@@ -233,8 +309,9 @@ def never_started_checks(fails: list) -> None:
         s(raw / 'run.json', {'id': 900, 'head_sha': SHA, 'head_branch': 'main', 'event': 'schedule', 'run_attempt': 1, 'workflow_id': 9,
                              'path': '.github/workflows/weekly.yml', 'created_at': '2026-03-02T10:00:00Z', 'run_started_at': '2026-03-02T10:00:00Z',
                              'conclusion': 'failure', 'html_url': 'https://ci.example.test/run/900', 'repository': {'full_name': 'acme/fares'}})
-        s(raw / 'attempts' / '1' / 'jobs.json', {'jobs': [{'id': 91, 'name': 'refresh', 'conclusion': 'failure', 'started_at': '2026-03-02T10:00:01Z',
-                                                          'completed_at': '2026-03-02T10:00:03Z', 'steps': [], 'runner_name': '', 'runner_id': 0,
+        s(raw / 'attempts' / '1' / 'jobs.json', {'jobs': [{'id': 91, 'name': 'refresh', 'conclusion': 'failure', 'created_at': '2026-03-02T10:00:01Z',
+                                                          'started_at': '2026-03-02T10:00:01Z',
+                                                          'completed_at': '2026-03-02T10:16:17Z', 'steps': [], 'runner_name': '', 'runner_id': 0,
                                                           'html_url': 'https://ci.example.test/job/91'}]})
         s(raw / 'logs' / '91.error.json', {'status': 'unavailable', 'http_status': 404, 'error': 'HTTP 404: not found'})
         s(raw / 'annotations' / '91.json', [{'path': '.github', 'start_line': 1, 'annotation_level': 'failure', 'title': '', 'message': NOT_STARTED}])
@@ -256,9 +333,37 @@ def never_started_checks(fails: list) -> None:
         if status != 'not_run' or NOT_STARTED[:40] not in (why or ''):
             fails.append(f'never started: run_status should be not_run with the annotation as the reason (got {status}, {why!r})')
         cands = candidates(run, RUN)
+        # its 16m16s "duration" is time spent waiting for a runner, never time running: say so
+        if job.get('queued_for_s') != 976 or cands[0]['signals'].get('queued_for_s') != 976 \
+                or not all(w in cands[0]['failure']['message'] for w in ('16m16s', 'waiting for a runner')):
+            fails.append(f'never started: the 16m16s between start and completion is queue time and must be named as such '
+                         f'(job queued_for_s {job.get("queued_for_s")}, signals {cands[0]["signals"].get("queued_for_s")}, '
+                         f'message {cands[0]["failure"]["message"]!r})')
         got = [(c['classification'], c['confidence'], [h['id'] for h in c['signals']['signatures']]) for c in cands]
-        if got != [('environment', 'indicated', ['ENV-NOT-STARTED'])]:
-            fails.append(f'never started: the failure is environment, indicated, by ENV-NOT-STARTED (got {got})')
+        if got != [('environment', 'indicated', ['ENV-BILLING', 'ENV-NOT-STARTED'])] or 'ENV-BILLING' not in cands[0]['rule']:
+            fails.append(f'never started: a spending-limit annotation is an environment failure caused by the CI account\'s billing '
+                         f'(ENV-BILLING first, then ENV-NOT-STARTED; got {got}, rule {cands[0]["rule"]!r})')
+        for text, want in (('The job was not started because recent account payments have failed or your spending limit needs to be '
+                            'increased. Please check the Billing & plans section of your settings.', ['ENV-BILLING', 'ENV-NOT-STARTED']),
+                           ('No runner matching the specified labels was found: self-hosted, gpu', ['ENV-NOT-STARTED'])):
+            ids = [h['id'] for h in signals({'message': 'job concluded failure', 'annotations': [text], 'log_excerpt': {'lines': []},
+                                             'job': 'refresh', 'kind': 'step', 'step_kind': 'other'}, run, RUN)['signatures']]
+            if ids != want:
+                fails.append(f'never started: annotation {text[:50]!r} matched {ids}, expected {want}')
+        # the same job passing in a later run of the workflow on the same commit (once the account was fixed) confirms the stop was
+        # the environment's, as a passing re-run does
+        later = copy.deepcopy(run)
+        later['history'] = [{'id': 905, 'commit': SHA, 'conclusion': 'success', 'started_at': '2026-03-02T12:00:00Z', 'event': 'schedule',
+                             'workflow_id': 9, 'branch': 'main', 'after_run': True, 'jobs': [{'name': 'refresh', 'conclusion': 'success'}]}]
+        got = [decide(signals(c['failure'], later, RUN), None)[:2] for c in cands]
+        if got != [('environment', 'confirmed')]:
+            fails.append(f'never started: a later pass of the same job on the same commit should confirm the environment cause, got {got}')
+        from validate_triage import completeness
+        bare = copy.deepcopy(run)
+        bare['attempts'][0]['jobs'][0].pop('annotations')
+        if completeness(run, RUN, None) != 0.2 or completeness(bare, RUN, None) != 0.0:
+            fails.append(f'never started: the CI\'s annotation stands in for the log of a job that never started (logs check 1 of 5: 0.2; '
+                         f'without the annotation 0.0); got {completeness(run, RUN, None)} and {completeness(bare, RUN, None)}')
         t = triage_from(run, cands)
         t['run_status'], t['run_status_reason'] = 'not_run', f'No job started on a runner: "{NOT_STARTED}"'
         t['summary']['headline'] = 'Nothing to triage: no job started on a runner (the account hit its spending limit).'
@@ -267,14 +372,19 @@ def never_started_checks(fails: list) -> None:
             f['next_action'] = 'Check the billing settings and spending limit of the CI account, then re-run the workflow.'
         rc, out = finish(t, td)
         done = json.loads((td / 'triage.json').read_text(encoding='utf-8'))
-        if rc or done['summary'].get('evidence_completeness') != 0.0:
-            fails.append(f'never started: a not_run triage quoting the annotation, with completeness 0.0 (no check over '
-                         f'nothing scores), should validate (completeness {done["summary"].get("evidence_completeness")}):\n{out}')
+        if rc or done['summary'].get('evidence_completeness') != 0.2:
+            fails.append(f'never started: a not_run triage quoting the annotation, with completeness 0.2 (the annotation, the CI\'s '
+                         f'only record of the job, stands in for its log), should validate (completeness {done["summary"].get("evidence_completeness")}):\n{out}')
         bad = copy.deepcopy(done)
         bad['run_status'] = 'partial'
         rc, out = validate(bad, td)
         if rc == 0 or 'run_status' not in out:
             fails.append(f'never started: run_status partial for a run whose jobs never started not caught:\n{out}')
+        bad = copy.deepcopy(done)
+        bad['failures'][0]['signals']['queued_for_s'] = 7010
+        rc, out = validate(bad, td)
+        if rc == 0 or 'queued_for_s' not in out:
+            fails.append(f'never started: a queue time that differs from the run not caught:\n{out}')
         bad = copy.deepcopy(done)
         bad['run_status_reason'] = 'The jobs failed early for some reason.'
         rc, out = validate(bad, td)
@@ -362,9 +472,10 @@ def owning_change_checks(fails: list) -> None:
         f1 = {'id': 'X01', 'job': 'unit', 'kind': 'test', 'test_id': 'example.test/fares/pkg/quote > TestQuoteRounding',
               'test_file': 'example.test/fares/pkg/quote/quote_test.go', 'frames': []}
 
-        def oc(last_green, failures, *extra):
-            fetch_run.save(rd / 'run.json', {'run': {'id': 1, 'commit': shas[-1], 'event': 'push'},
-                                              'last_green': {'id': 0, 'commit': last_green} if last_green else None})
+        def oc(last_green, failures, *extra, head=None):
+            fetch_run.save(rd / 'run.json', {'run': {'id': 1, 'commit': head or shas[-1], 'event': 'push'},
+                                              'last_green': (last_green if isinstance(last_green, dict) else {'id': 0, 'commit': last_green})
+                                              if last_green else None})
             fetch_run.save(rd / 'failures.json', {'failures': failures})
             r = subprocess.run([sys.executable, str(HERE / 'owning_change.py'), '--run', str(rd), '--repo', str(repo), '--out', str(rd / 'changes.json'), *extra],
                                capture_output=True, text=True, encoding='utf-8')
@@ -388,6 +499,20 @@ def owning_change_checks(fails: list) -> None:
         x = (c.get('per_failure') or {}).get('X01') or {}
         if x.get('commit') != shas[-1] or [s['file'] for s in x.get('files_shared', [])] != ['pkg/quote/quote.go']:
             fails.append(f'owning change: a Go test exercises the source files of its own package, got {x}')
+        # a pull request branch with no green run of its own: the range starts at the default branch's last green run, and says so
+        main_green = shas[-1]
+        g('checkout', '-q', '-b', 'feature/half-fares')
+        (repo / 'pkg/quote/quote.go').write_text('package quote\n\nconst half = 0.51\n', encoding='utf-8')
+        g('commit', '-q', '-am', 'tune half fares')
+        feature = g('rev-parse', 'HEAD')
+        g('checkout', '-q', 'main')
+        (repo / 'pkg/quote/quote.go').write_text('package quote\n\nconst half = 0.49\n', encoding='utf-8')
+        g('commit', '-q', '-am', 'a later change on main, not in the branch')
+        c = oc({'id': 0, 'commit': main_green, 'branch': 'main', 'basis': 'the branch feature/half-fares has no successful run of the workflow '
+                'before this one, so this is the newest on the default branch main started before it'}, [f1], head=feature)
+        x = (c.get('per_failure') or {}).get('X01') or {}
+        if x.get('commit') != feature or (c.get('range') or {}).get('last_green_branch') != 'main' or 'default branch' not in (c.get('range') or {}).get('basis', ''):
+            fails.append(f'owning change from the default branch last green run: owner {x.get("commit")} (want the branch commit), range {c.get("range")}')
         c = oc(shas[0], [])
         if c.get('per_failure') != {} or c.get('commits') is not None or 'no failure' not in (c.get('problem') or ''):
             fails.append(f'owning change with no failures should return at once, got {c}')
@@ -399,6 +524,7 @@ def main() -> int:
     go_signature_checks(fails)
     no_jobs_checks(fails)
     never_started_checks(fails)
+    rust_run_checks(fails)
     agent_test_and_local_runs_checks(fails)
     owning_change_checks(fails)
     for mod in (fetch_run, extract_failures):
@@ -459,6 +585,14 @@ def main() -> int:
             check(rc != 0 and expect in out, f'seeded "{name}" not caught (expected {expect!r}):\n{out}')
 
         by = lambda t, job: next(f for f in t['failures'] if f['job'] == job)  # noqa: E731
+        # the drafts file the renderer writes may be listed; one that lacks a draft is not the triage's
+        (td / 'triage.json').write_text(json.dumps(base, indent=1, ensure_ascii=False), encoding='utf-8')
+        subprocess.run([sys.executable, str(HERE / 'render_report.py'), str(td / 'triage.json'), '--defects-md', str(td / 'drafts.md')], capture_output=True)
+        rc, out = validate(dict(base, files_written=['triage.json', 'drafts.md']), td)
+        check(rc == 0, f'files_written naming the triage and its rendered drafts should validate:\n{out}')
+        md = (td / 'drafts.md').read_text(encoding='utf-8')
+        (td / 'drafts.md').write_text(md.replace(f'## {by(base, "unit")["draft_defect"]["title"]}', '## (removed)'), encoding='utf-8')
+        seeded('drafts file without one of the drafts', lambda t: t.update(files_written=['drafts.md']), 'files_written')
         seeded('limitation omits the failed log', lambda t: t.update(limitations=['Nothing else to say.']), 'job lint was not downloaded')
         seeded('triage re-runs differ from reruns.json', lambda t: t['reruns'][0].update(triggered_by='someone-else'), 'reruns differ')
         rr = RUN / 'reruns.json'
