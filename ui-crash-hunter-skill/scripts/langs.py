@@ -27,9 +27,32 @@ import lang_census  # noqa: E402  (shared copy; edit shared/scripts/lang_census.
 ANALYSED = {'JavaScript', 'TypeScript', 'Vue', 'Svelte', 'Kotlin', 'Java', 'Swift', 'Dart'}
 
 
+# dependency trees are excluded by name; counting their files means walking every installed package (thousands of
+# files beside a 30-file app), so they are listed without being walked (source_files_counted: false)
+DEPENDENCY_TREES = {'node_modules', 'bower_components', 'jspm_packages'}
+
+
+def census(root: Path) -> dict:
+    """lang_census.census, without descending into dependency trees only to count their files."""
+    real = lang_census.count_sources
+
+    def count(d, cap: int = 200000) -> int:
+        return 0 if Path(d).name in DEPENDENCY_TREES else real(d, cap)
+    lang_census.count_sources = count
+    try:
+        c = lang_census.census(root)
+    finally:
+        lang_census.count_sources = real
+    for e in c.get('excluded') or []:
+        if Path(e['path']).name in DEPENDENCY_TREES:
+            e['source_files'] = 0
+            e['source_files_counted'] = False
+    return c
+
+
 def vendored_roots(root: Path, files=None) -> list[str]:
     """Repo-relative directories lang_census leaves out (vendored, third-party, built or dependency trees)."""
-    return [e['path'] for e in with_build_dirs(root, lang_census.census(root))['excluded']]
+    return [e['path'] for e in with_build_dirs(root, census(root))['excluded']]
 
 
 def under(rel: str, prefixes: list[str]) -> bool:
@@ -40,7 +63,7 @@ def language_census(root: Path, files=None, vendored=None, is_test=None, tool: s
     """lang_census's census and coverage for the crash hunter's languages, as one `language_coverage` record:
     status ok | partial | unsupported_dominant (with warning) | no_source, the counts per language and the
     excluded trees (paths in `excluded`, with reasons in `excluded_trees`)."""
-    c = with_build_dirs(root, lang_census.census(root))
+    c = with_build_dirs(root, census(root))
     cov = lang_census.language_coverage(c, ANALYSED, tool=tool, what='crash analysis')
     cov['languages'] = c['languages']
     cov['excluded'] = [e['path'] for e in c['excluded']]

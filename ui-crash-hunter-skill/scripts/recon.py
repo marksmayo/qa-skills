@@ -25,7 +25,13 @@ route handlers with their HTTP methods. Route handlers are API code and never UI
 documents; OpenAPI documents built in code (including a FastAPI app, with the command that exports
 it) and Prisma schemas are listed as contracts. Boundary definitions that nothing renders are marked
 used: false. The Next.js file conventions apply only in a project whose package.json depends on next,
-to app/ and pages/ at its root or under src/.
+to app/ and pages/ at its root or under src/. Through the shared next_app.py, "nextjs" also records
+global_error (null, with a note, when the app has none), root_special, metadata_routes (server code),
+third_party_scripts (next/script and <script> loaders) and service_workers, and each dynamic route its
+params and static_params (generateStaticParams / dynamicParams). A boundary rendered in the root layout
+or the app's root component has scope "app", with the children it wraps and the siblings outside it.
+Cache Storage (caches.open, cache.put) is persisted state, and the data layer is read from code with
+string contents blanked and from import specifiers, so a URL in a string is not a library.
 
 Router boundaries count: a route's errorElement / ErrorBoundary (React Router 6.4+ and 7, Remix), a
 route module's exported ErrorBoundary, TanStack Router's errorComponent and react-error-boundary's
@@ -100,18 +106,30 @@ def module_scope_throws(code: str) -> list[int]:
 PLATFORM_DEPS = {'react': 'react', 'next': 'nextjs', 'vue': 'vue', 'nuxt': 'nuxt', '@angular/core': 'angular',
                  'svelte': 'svelte', '@sveltejs/kit': 'sveltekit', '@remix-run/react': 'remix', 'react-native': 'react-native',
                  'expo': 'expo', 'preact': 'preact', 'solid-js': 'solid'}
+# The data layer, read from code with string and comment contents blanked (a URL such as https://axios.example.com/...
+# inside a string is not the axios client) and from import specifiers (@tanstack/react-query is only ever a string).
 DATA_LAYER = {
-    'fetch': r'\bfetch\(', 'axios': r'\baxios\b', 'react-query': r'@tanstack/react-query|\buseQuery\(', 'swr': r'\buseSWR\(',
-    'apollo': r'@apollo/client', 'urql': r'\burql\b', 'retrofit': r'\bretrofit2?\b|@GET\(|@POST\(', 'okhttp': r'\bOkHttpClient\b',
+    'fetch': r'\bfetch\(', 'axios': r'\baxios\b', 'react-query': r'\buseQuery\(', 'swr': r'\buseSWR\(',
+    'urql': r'\burql\b', 'retrofit': r'\bretrofit2?\b|@GET\(|@POST\(', 'okhttp': r'\bOkHttpClient\b',
     'ktor-client': r'\bHttpClient\(', 'urlsession': r'\bURLSession\b', 'alamofire': r'\bAlamofire\b|\bAF\.request\(',
-    'dio': r'\bDio\(', 'dart-http': r'package:http/http\.dart',
+    'dio': r'\bDio\(',
 }
+DATA_LAYER_IMPORTS = {
+    'axios': r'^axios(/|$)', 'react-query': r'^@tanstack/(react|vue|svelte|solid)-query(/|$)|^react-query(/|$)',
+    'swr': r'^swr(/|$)', 'apollo': r'^@apollo/client(/|$)', 'urql': r'^(urql|@urql/\w+)(/|$)',
+    'dart-http': r'^package:http/http\.dart$', 'dio': r'^package:dio/',
+}
+DART_IMPORT = re.compile(r'''^\s*import\s+['"]([^'"]+)['"]''', re.M)
+MASKED_EXT = {'.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.vue', '.svelte', '.kt', '.java', '.swift', '.dart'}
 PERSISTED = {
     'localStorage': r'\blocalStorage\b', 'sessionStorage': r'\bsessionStorage\b', 'indexedDB': r'\bindexedDB\b|\bidb-keyval\b|\bDexie\b',
     'AsyncStorage': r'\bAsyncStorage\b', 'MMKV': r'\bMMKV\b', 'SharedPreferences': r'\bSharedPreferences\b|getSharedPreferences\(',
     'DataStore': r'\bDataStore<|preferencesDataStore', 'Room': r'@Database\(|@Entity\b', 'UserDefaults': r'\bUserDefaults\b|@AppStorage\(',
     'CoreData': r'\bNSPersistentContainer\b|\bNSManagedObject\b', 'SwiftData': r'@Model\b', 'Keychain': r'\bSecItem(Add|CopyMatching)\b',
     'shared_preferences': r'\bSharedPreferences\.getInstance\(', 'Hive': r'\bHive\.(openBox|box)\(', 'sqflite': r'\bopenDatabase\(',
+    # Cache Storage (a service worker's caches, or the page's own): a bad response cached once is replayed on every
+    # later visit, the classic "works only after clearing site data" failure
+    'CacheStorage': r'\bcaches\s*\.\s*(?:open|match|keys|delete|has)\s*\(|\bcache\s*\.\s*(?:put|add|addAll)\s*\(',
 }
 BOUNDARY_RX = [
     ('react', 'definition', re.compile(r'\b(componentDidCatch|getDerivedStateFromError)\b')),
@@ -723,6 +741,170 @@ def nextjs_model(root: Path, code: list[Path], projs: dict[str, dict]) -> dict:
                     'Server components run during SSR: their triggers are server data (seed the database), not '
                     'browser mocks. next/dynamic with ssr:false runs only in the browser, after hydration.'}
 
+GLOBAL_ERROR_MISSING = ("No global-error file: a throw in the root layout, or in a client component it renders outside "
+                        "every error boundary, shows Next.js's built-in fallback (in production the bare 'Application "
+                        "error: a client-side exception has occurred' page) in place of the whole document, with no "
+                        'way back but a reload. Rate such a throw B1 (app_fallback).')
+GLOBAL_ERROR_PRESENT = ('global-error replaces the whole document (it renders its own <html> and <body>) when the root '
+                        'layout or anything outside every error.tsx throws: B1 effect app_fallback, recoverable by its '
+                        'reset button only if it offers one.')
+
+
+def static_params_info(cfg: dict, inherited: dict) -> dict | None:
+    """What decides an unknown dynamic-segment value: generateStaticParams and dynamicParams (own or inherited)."""
+    gsp = cfg.get('generate_static_params') or inherited.get('generate_static_params')
+    dp = cfg.get('dynamic_params') or inherited.get('dynamic_params')
+    if not gsp and not dp:
+        return None
+    value = dp.get('value') if dp else None
+    out = {'generate_static_params_line': gsp.get('line') if gsp else None,
+           'dynamic_params': value if isinstance(value, bool) else (None if dp is None else value),
+           'dynamic_params_line': dp.get('line') if dp else None}
+    if dp and dp.get('file'):
+        out['dynamic_params_file'] = dp['file']
+    if gsp and value is False:
+        out['note'] = ('Only the values generateStaticParams returns are pages: any other value is answered with the '
+                       'not-found page (HTTP 404) before the page code runs, so a lookup in the page cannot miss for an '
+                       'unknown value. Probe an unknown value as a not-found baseline (assert document_status 404).')
+    elif gsp:
+        out['note'] = ('Values generateStaticParams does not return are rendered on demand: the page code runs for an '
+                       'unknown value, so check that its lookup handles a miss (notFound()).')
+    elif value is False:
+        out['note'] = 'dynamicParams = false without generateStaticParams: every value is a 404.'
+    return out
+
+
+def next_app_model(root: Path, nextjs: dict, routes: list[dict]) -> None:
+    """Add what the shared Next.js reader (next_app.py) knows: global-error and the other root special files,
+    generateStaticParams / dynamicParams per dynamic route, metadata routes (server code), next/script and other
+    third-party script loaders, and service workers."""
+    try:
+        from next_app import read_next_app  # noqa: E402  (shared copy)
+        model = read_next_app(root)
+    except Exception as exc:  # a reader failure must not lose the rest of recon
+        nextjs['next_app_error'] = f'{type(exc).__name__}: {exc}'[:300]
+        return
+    projs = model.get('projects') or []
+    by_file = {r['file']: r for r in routes}
+    special, metadata, scripts, workers = [], [], [], []
+    global_error, has_app = None, False
+    for p in projs:
+        rs = p.get('root_special')
+        if rs:
+            has_app = True
+            special.append({'project': p.get('root', ''), **rs})
+            seg = next((s for s in p.get('segments') or [] if s.get('dir') == rs.get('dir')), {})
+            ge = (seg.get('files') or {}).get('global-error')
+            if ge and global_error is None:
+                global_error = {'file': ge['file'], 'line': ge.get('line', 1)}
+        for r in p.get('routes') or []:
+            if r.get('kind') == 'metadata':
+                metadata.append({'url': r.get('url'), 'file': r.get('file'), 'line': r.get('line', 1),
+                                 'metadata': r.get('metadata'), 'form': r.get('form')})
+            elif r.get('kind') == 'page' and r.get('file') in by_file:
+                info = static_params_info(r.get('segment_config') or {}, r.get('inherited_config') or {})
+                if r.get('params'):
+                    by_file[r['file']]['params'] = r['params']
+                if info:
+                    by_file[r['file']]['static_params'] = info
+        for s in p.get('scripts') or []:
+            if s.get('first_party') or not s.get('host') or s.get('kind') in ('preconnect', 'dns-prefetch', 'preload',
+                                                                              'prefetch', 'modulepreload'):
+                continue
+            scripts.append({k: s.get(k) for k in ('kind', 'host', 'src', 'strategy', 'crossorigin', 'file', 'line')
+                            if s.get(k) is not None})
+        for w in p.get('service_workers') or []:
+            workers.append({k: w.get(k) for k in ('url', 'worker_file', 'exists', 'registrations', 'generated_by',
+                                                  'events', 'cache_names', 'fetch_strategies', 'note') if k in w})
+    if has_app:
+        nextjs['global_error'] = global_error
+        nextjs['global_error_note'] = GLOBAL_ERROR_PRESENT if global_error else GLOBAL_ERROR_MISSING
+        nextjs['root_special'] = special
+    nextjs['metadata_routes'] = sorted(metadata, key=lambda m: m['file'])
+    nextjs['metadata_routes_note'] = ('Metadata routes (robots, sitemap, manifest, generated icons and Open Graph '
+                                      'images) are server code that answers its own URL, like a route handler: a throw '
+                                      'is an HTTP 500 for that URL, never a UI crash. They are out of UI scope.')
+    nextjs['third_party_scripts'] = scripts
+    if scripts:
+        nextjs['third_party_scripts_note'] = (
+            f"{len(scripts)} third-party script loader(s) ({', '.join(sorted({s['host'] for s in scripts})[:5])}): a probe "
+            'blocks them (blocked_requests), so their failures are the harness\'s, and an app path that waits on them '
+            '(a consent or analytics callback) is untested unless a scenario allows the host. Name them in the limitations.')
+    nextjs['service_workers'] = workers
+    if workers:
+        nextjs['service_workers_note'] = ('A service worker outlives the page: what it caches (Cache Storage) is replayed '
+                                          'on later visits, and a broken worker can serve stale or failed responses to '
+                                          'every page. Its file is UI scope (ui_graph follows the registration); probe '
+                                          'with service workers allowed and assert service_worker / cache_entries.')
+
+
+def boundary_extent(text: str, pos: int, name: str) -> dict | None:
+    """For a JSX usage <Name ...> at pos: the direct children it wraps and the siblings in the same parent element
+    that it does not wrap. Heuristic, from the nearest `return` before the usage."""
+    tag = re.compile(r'<(/?)([A-Za-z][\w.]*)?((?:[^<>{}]|\{(?:[^{}]|\{[^{}]*\})*\})*?)(/?)>')
+    start = text.rfind('return', 0, pos)
+    start = start if start >= 0 else 0
+    stack: list[dict] = []  # open elements: {name, children}
+    root = {'name': None, 'children': []}
+    stack.append(root)
+    target, parent, wraps = None, None, None
+
+    def result() -> dict:
+        outside = list(parent['children'])
+        outside.remove(name)
+        return {'wraps': wraps, 'outside': outside}
+    for m in tag.finditer(text, start):
+        closing, tname, _, selfclose = m.group(1), m.group(2) or '', m.group(3), m.group(4)
+        if closing:
+            if len(stack) > 1:
+                done = stack.pop()
+                if done is target:
+                    parent, wraps = stack[-1], done['children']
+                    if parent is root:
+                        return result()
+                elif parent is not None and done is parent:
+                    return result()
+            continue
+        stack[-1]['children'].append(tname or 'Fragment')
+        if m.start() == pos and target is None:
+            target = {'name': tname, 'children': []}
+            if selfclose:
+                return None
+            stack.append(target)
+        elif not selfclose:
+            stack.append({'name': tname, 'children': []})
+        if m.start() > pos and target is None:
+            return None
+    return None
+
+
+ROOT_LAYOUT = re.compile(r'^(src/)?app/(\([^)/]+\)/)*layout\.(tsx|jsx|js|ts)$')
+NEXT_ROUTE_FILE = re.compile(r'^(src/)?app/(.*/)?(page|layout|template)\.(tsx|jsx|js|ts)$|^(src/)?pages/')
+APP_ROOT_FILE = re.compile(r'(^|/)(main|index|App|app|_app|root)\.(tsx|jsx|js|ts|vue)$')
+
+
+def usage_scope(rel: str, sub: str | None, text: str, pos: int, name: str) -> dict:
+    """Where a rendered boundary sits (app: the root layout or the app's root component; route: a page or nested
+    layout; component: anywhere else) and what it wraps: the direct children inside it and the siblings beside it
+    that it leaves out (only global-error, or nothing, catches those)."""
+    if sub is not None and ROOT_LAYOUT.match(sub) or APP_ROOT_FILE.search(rel) and (sub is None or not NEXT_ROUTE_FILE.match(sub)):
+        scope = 'app'
+    elif sub is not None and NEXT_ROUTE_FILE.match(sub):
+        scope = 'route'
+    else:
+        scope = 'component'
+    out: dict = {'scope': scope}
+    ext = boundary_extent(text, pos, name)
+    if ext is not None:
+        out['wraps'] = ext['wraps']
+        out['outside'] = ext['outside']
+        out['covers'] = [f"render errors in {', '.join(ext['wraps']) or 'its children'} and what they render"
+                         + (f"; not {', '.join(dict.fromkeys(ext['outside']))}, rendered beside it"
+                            + (' in the root layout (only global-error catches a throw there)' if scope == 'app' and
+                               sub is not None and ROOT_LAYOUT.match(sub) else '') if ext['outside'] else '')]
+    return out
+
+
 def main() -> int:
     if hasattr(sys.stdout, 'reconfigure'):  # JSON on stdout may hold any character; a cp1252 console can't print it
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -761,6 +943,7 @@ def main() -> int:
     g = ui_graph(root, files)  # which modules a UI entry point imports, for module_scope_config
     reach = set(g['reachable']) if g['reachable'] is not None else None
     data_rx = {k: re.compile(v) for k, v in DATA_LAYER.items()}
+    data_imp = {k: re.compile(v) for k, v in DATA_LAYER_IMPORTS.items()}
     pers_rx = {k: re.compile(v) for k, v in PERSISTED.items()}
     for f in code:
         rel = f.relative_to(root).as_posix()
@@ -800,7 +983,10 @@ def main() -> int:
                     name = before[-1] if before else f.stem
                     if any(b['kind'] == 'definition' and b['file'] == rel and b['name'] == name for b in boundaries):
                         continue
-                boundaries.append({'framework': fw, 'kind': kind, 'name': name, 'file': rel, 'line': ln})
+                entry = {'framework': fw, 'kind': kind, 'name': name, 'file': rel, 'line': ln}
+                if kind == 'usage' and fw == 'react':
+                    entry.update(usage_scope(rel, sub, text, m.start(), name))
+                boundaries.append(entry)
         for fw, kind, rx, needs_router in ROUTE_BOUNDARY_RX:
             if needs_router and not router_file:
                 continue
@@ -825,8 +1011,12 @@ def main() -> int:
                                            ('reads environment configuration and throws at module scope, but no UI entry point '
                                             'imports it: it cannot blank the app unless it is loaded in a way the import graph '
                                             'does not follow (a computed import)')})
-        for k, rx in data_rx.items():
-            n = len(rx.findall(text))
+        masked = mask_code(text) if f.suffix in MASKED_EXT else text
+        specs = [m.group(1) for m in IMPORT.finditer(text)] + DART_IMPORT.findall(text)
+        for k in sorted(set(data_rx) | set(data_imp)):
+            n = len(data_rx[k].findall(masked)) if k in data_rx else 0
+            if k in data_imp and any(data_imp[k].search(sp) for sp in specs):
+                n = max(n, 1)
             if n:
                 d = data_layer.setdefault(k, {'uses': 0, 'files': []})
                 d['uses'] += n
@@ -925,6 +1115,7 @@ def main() -> int:
         nextjs = nextjs_model(root, code, projs)
         handler_files = {h['file'] for h in nextjs['route_handlers']}
         uniq_routes = [r for r in uniq_routes if r['file'] not in handler_files]
+        next_app_model(root, nextjs, uniq_routes)
         for lay in nextjs['layouts']:
             if lay['root']:  # the app shell: renders around every page, outside every error.tsx
                 uniq_routes.append({'kind': 'shell', 'path': f"(root layout {lay['path']})".replace(' /)', ')'),
@@ -1024,6 +1215,16 @@ def main() -> int:
                      'whose list is rendered by the server but whose detail is rendered by its script is per_script: a '
                      'throw before the script renders the detail leaves that panel empty (B3 for the panel, the '
                      'server-rendered list stays).')
+    if nextjs:
+        if 'global_error' in nextjs and nextjs['global_error'] is None:
+            notes.append(nextjs['global_error_note'])
+        for b in boundaries:
+            if b.get('kind') == 'usage' and b.get('scope') == 'app' and b.get('outside'):
+                notes.append(f"{b['name']} in {b['file']}:{b['line']} wraps {', '.join(b.get('wraps') or []) or 'nothing'} "
+                             f"but not {', '.join(dict.fromkeys(b['outside']))}: a throw in those is outside it.")
+        for k in ('third_party_scripts_note', 'service_workers_note'):
+            if nextjs.get(k):
+                notes.append(nextjs[k])
     for e in env_config:
         if e.get('reachable_from_ui') is False:
             continue

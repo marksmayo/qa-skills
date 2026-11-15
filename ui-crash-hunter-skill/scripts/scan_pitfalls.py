@@ -410,7 +410,7 @@ def merge(cands: list[dict]) -> list[dict]:
             for s in c['sources']:
                 if s not in have['sources']:
                     have['sources'].append(s)
-            for k in ('field', 'schema_ref', 'nullable_reason', 'guard_nearby'):
+            for k in ('field', 'schema_ref', 'nullable_reason', 'guard_nearby', 'also_lines'):
                 if c.get(k) is not None and have.get(k) is None:
                     have[k] = c[k]
         else:
@@ -899,6 +899,158 @@ def self_test_static_dist() -> list[str]:
     return fails
 
 
+# A Next.js App Router bike shop: a root dynamic segment with generateStaticParams and dynamicParams = false, metadata
+# routes, no global-error, a custom class error boundary in the root layout that wraps <main> and the footer but not
+# its sibling client components, next/script third-party loaders, a service worker in public/ registered by a client
+# component (it caches responses in Cache Storage and has a floating promise chain), a URL in a string that names a
+# data library, and a node_modules tree that must not be walked just to be counted.
+SELF_TEST_NEXT_TREE = {
+    'package.json': '{"name": "spokes", "dependencies": {"next": "15.1.0", "react": "19.0.0", "react-dom": "19.0.0"}}',
+    'next.config.ts': 'const config = {};\nexport default config;\n',
+    'tsconfig.json': '{"compilerOptions": {"paths": {"@/*": ["./src/*"]}}}',
+    'src/app/layout.tsx': (
+        "import Script from 'next/script';\n"
+        "import ErrorBoundary from '@/components/ErrorBoundary';\n"
+        "import Footer from '@/components/Footer';\n"
+        "import SwRegister from '@/components/SwRegister';\n"
+        "import FocusKeeper from '@/components/FocusKeeper';\n\n"
+        'export default function RootLayout({ children }: { children: React.ReactNode }) {\n'
+        '  return (\n'
+        '    <html lang="en">\n'
+        '      <body>\n'
+        '        <FocusKeeper />\n'
+        '        <ErrorBoundary>\n'
+        '          <main>{children}</main>\n'
+        '          <Footer />\n'
+        '        </ErrorBoundary>\n'
+        '        <SwRegister />\n'
+        '        <Script src="https://stats.example.com/tag.js" strategy="afterInteractive" />\n'
+        '        <Script src="https://ads.example.net/load.js" strategy="lazyOnload" crossOrigin="anonymous" />\n'
+        '      </body>\n'
+        '    </html>\n'
+        '  );\n'
+        '}\n'),
+    'src/app/page.tsx': "import { bikes } from '@/data/bikes';\n\nexport default function Home() {\n"
+                        '  return <ul>{bikes.map((b) => <li key={b.slug}>{b.name}</li>)}</ul>;\n}\n',
+    'src/app/error.tsx': "'use client';\nexport default function Error() {\n  return <p>Something went wrong.</p>;\n}\n",
+    'src/app/not-found.tsx': 'export default function NotFound() {\n  return <p>No such bike.</p>;\n}\n',
+    'src/app/[slug]/page.tsx': (
+        "import { notFound } from 'next/navigation';\nimport { bikes } from '@/data/bikes';\n\n"
+        'export const dynamicParams = false;\n\n'
+        'export function generateStaticParams() {\n  return bikes.map((b) => ({ slug: b.slug }));\n}\n\n'
+        'export default async function Bike({ params }: { params: Promise<{ slug: string }> }) {\n'
+        '  const { slug } = await params;\n'
+        '  const i = bikes.findIndex((b) => b.slug === slug);\n'
+        '  if (i < 0) notFound();\n'
+        '  return <h1>{bikes[i].name}</h1>;\n}\n'),
+    'src/app/[slug]/opengraph-image.tsx': ("import { ImageResponse } from 'next/og';\n\n"
+                                           'export default function Image() {\n'
+                                           '  return new ImageResponse(<div>Bike</div>);\n}\n'),
+    'src/app/robots.ts': "export default function robots() {\n  return { rules: { userAgent: '*' } };\n}\n",
+    'src/app/sitemap.ts': "export default function sitemap() {\n  return [{ url: 'https://spokes.example.com/' }];\n}\n",
+    'src/components/ErrorBoundary.tsx': (
+        "'use client';\nimport { Component } from 'react';\n\n"
+        'export default class ErrorBoundary extends Component<{ children: React.ReactNode }, { failed: boolean }> {\n'
+        '  state = { failed: false };\n'
+        '  static getDerivedStateFromError() {\n    return { failed: true };\n  }\n'
+        '  render() {\n    return this.state.failed ? <p>Sorry.</p> : this.props.children;\n  }\n}\n'),
+    'src/components/Footer.tsx': 'export default function Footer() {\n  return <footer>Spokes</footer>;\n}\n',
+    'src/components/FocusKeeper.tsx': "'use client';\nexport default function FocusKeeper() {\n  return null;\n}\n",
+    'src/components/SwRegister.tsx': (
+        "'use client';\nimport { useEffect } from 'react';\n\n"
+        'export default function SwRegister() {\n'
+        '  useEffect(() => {\n'
+        "    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');\n"
+        '  }, []);\n  return null;\n}\n'),
+    'src/data/bikes.ts': ("export const bikes = [\n"
+                          "  { slug: 'gravel-one', name: 'Gravel One', review: 'https://www.axios.example.com/reviews/gravel-one' },\n"
+                          '];\n'),
+    'public/sw.js': ("const CACHE = 'spokes-v1';\n\n"
+                     "self.addEventListener('install', () => {\n"
+                     "  caches.open(CACHE).then((cache) => cache.addAll(['/']));\n"
+                     '});\n\n'
+                     "self.addEventListener('fetch', (event) => {\n"
+                     '  event.respondWith(fetch(event.request).then((res) => {\n'
+                     '    const copy = res.clone();\n'
+                     '    caches.open(CACHE).then((cache) => cache.put(event.request, copy));\n'
+                     '    return res;\n'
+                     '  }));\n'
+                     '});\n'),
+}
+
+
+def self_test_next_app() -> list[str]:
+    """Next.js App Router idioms on SELF_TEST_NEXT_TREE; returns the failures."""
+    import subprocess, tempfile
+    fails = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / 'spokes'
+        for rel, text in SELF_TEST_NEXT_TREE.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        for i in range(30):   # a dependency tree: excluded, and not walked only to count its files
+            (root / 'node_modules' / f'pkg{i}' / 'index.js').parent.mkdir(parents=True, exist_ok=True)
+            (root / 'node_modules' / f'pkg{i}' / 'index.js').write_text('module.exports = 1;\n', encoding='utf-8')
+        g = ui_graph(root)
+        if 'public/sw.js' not in (g['reachable'] or []) or 'public/sw.js' not in g.get('injected_scripts', []):
+            fails.append("ui_graph: the worker that navigator.serviceWorker.register('/sw.js') loads from public/ is not "
+                         'reachable (nor listed in injected_scripts)')
+        if [w.get('file') for w in g.get('service_workers') or []] != ['public/sw.js']:
+            fails.append(f"ui_graph: service_workers does not list public/sw.js with its registration: {g.get('service_workers')}")
+        scan = subprocess.run([sys.executable, '-B', str(HERE / 'scan_pitfalls.py'), str(root)], capture_output=True,
+                              text=True, encoding='utf-8')
+        try:
+            s = json.loads(scan.stdout)
+        except ValueError:
+            return fails + [f'scan_pitfalls.py failed: {scan.stderr[-300:]}']
+        excl = s['scope']['excluded']
+        if not any(c['file'] == 'public/sw.js' for c in s['candidates']):
+            fails.append('scan_pitfalls: the registered service worker public/sw.js was not scanned in UI scope')
+        unreachable = set((excl.get('unreachable') or {}).get('examples') or [])
+        meta = {'src/app/robots.ts', 'src/app/sitemap.ts', 'src/app/[slug]/opengraph-image.tsx'}
+        if unreachable & meta or not meta <= set((excl.get('metadata_routes') or {}).get('examples') or []):
+            fails.append(f'scan_pitfalls: metadata routes are not excluded as metadata_routes (server code): unreachable '
+                         f'{sorted(unreachable & meta)}, metadata_routes {excl.get("metadata_routes")}')
+        recon = subprocess.run([sys.executable, '-B', str(HERE / 'recon.py'), str(root)], capture_output=True, text=True,
+                               encoding='utf-8')
+        try:
+            r = json.loads(recon.stdout)
+        except ValueError:
+            return fails + [f'recon.py failed: {recon.stderr[-300:]}']
+        nx = r.get('nextjs') or {}
+        ge = nx.get('global_error', 'absent')
+        if ge is not None or 'global-error' not in str(nx.get('global_error_note', '')):
+            fails.append(f"recon: a missing global-error is not recorded (nextjs.global_error {ge!r}, note "
+                         f"{nx.get('global_error_note')!r})")
+        use = next((b for b in r['boundaries'] if b.get('kind') == 'usage' and b.get('name') == 'ErrorBoundary'), {})
+        if use.get('scope') != 'app' or set(use.get('wraps') or []) != {'main', 'Footer'} or \
+                set(use.get('outside') or []) != {'FocusKeeper', 'SwRegister', 'Script'}:
+            fails.append(f"recon: the root layout's ErrorBoundary has no scope/wraps/outside: scope {use.get('scope')}, "
+                         f"wraps {use.get('wraps')}, outside {use.get('outside')}")
+        slug = next((x for x in r['routes_screens'] if x.get('file') == 'src/app/[slug]/page.tsx'), {})
+        sp = slug.get('static_params') or {}
+        if sp.get('dynamic_params') is not False or not sp.get('generate_static_params_line'):
+            fails.append(f'recon: generateStaticParams / dynamicParams = false not recorded on the dynamic route: {slug}')
+        metas = sorted(m.get('file') for m in nx.get('metadata_routes') or [])
+        if metas != sorted(meta):
+            fails.append(f'recon: metadata routes not listed with the server code: {metas}')
+        hosts = sorted(x.get('host') for x in nx.get('third_party_scripts') or [])
+        if hosts != ['ads.example.net', 'stats.example.com']:
+            fails.append(f'recon: next/script third-party loaders not inventoried: {hosts}')
+        if [w.get('worker_file') for w in nx.get('service_workers') or []] != ['public/sw.js']:
+            fails.append(f"recon: the service worker is not modelled: {nx.get('service_workers')}")
+        stores = {(p['store'], p['file']) for p in r['persisted_state']}
+        if ('CacheStorage', 'public/sw.js') not in stores:
+            fails.append(f'recon: Cache Storage in the service worker is not persisted state: {sorted(stores)}')
+        libs = {d['library'] for d in r['data_layer']}
+        if 'axios' in libs:
+            fails.append('recon: data_layer reports axios for a URL inside a string literal')
+        nm = next((e for e in r['language_coverage'].get('excluded_trees') or [] if e.get('path') == 'node_modules'), None)
+        if not nm or nm.get('source_files_counted') is not False:
+            fails.append(f'recon: node_modules was walked only to count its files ({nm})')
+    return fails
+
+
 def self_test() -> int:
     p = next(q for q in load_catalogue()['pitfalls'] if q.get('matcher') == 'promise_chain')
     got = [h['line'] for h in promise_chain_hits(SELF_TEST_JS, 'app.js', p)]
@@ -916,7 +1068,10 @@ def self_test() -> int:
     static_fails = self_test_static_dist()
     print(f"self-test {'passed' if not static_fails else 'FAILED'}: a Python server mounting a committed dist/ front end "
           'with a script-injection loader, generated glue and a build-output dist/' + ''.join(f'\n  - {f}' for f in static_fails))
-    return 0 if ok and not fails and not go_fails and not flask_fails and not static_fails else 1
+    next_fails = self_test_next_app()
+    print(f"self-test {'passed' if not next_fails else 'FAILED'}: a Next.js App Router site with a service worker, "
+          'metadata routes, next/script loaders and a root-layout error boundary' + ''.join(f'\n  - {f}' for f in next_fails))
+    return 0 if ok and not fails and not go_fails and not flask_fails and not static_fails and not next_fails else 1
 
 def main() -> int:
     if hasattr(sys.stdout, 'reconfigure'):  # JSON on stdout may hold any character; a cp1252 console can't print it
@@ -1009,6 +1164,8 @@ def main() -> int:
             return None
         if kind == 'route_handler':
             return 'route_handlers'
+        if kind == 'metadata_route':  # robots.ts, sitemap.ts, opengraph-image.tsx: reachable server routes, not UI
+            return 'metadata_routes'
         if reach is not None and rel.endswith(SRC_EXT) and rel not in reach:
             return 'unreachable'
         return None
