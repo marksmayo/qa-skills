@@ -104,8 +104,15 @@ nothing to confirm is not evidence that experiments ran.
 
 With nothing inventoried (a repository with no tests, or no test data), completeness is 0: the
 tools that ran do not make up for having nothing to assess, and the renderer says "no test data
-found". When the repository has no tests (`tests_found: 0` in the candidates, or no test file in
-the inventory), the headline or a limitation must say so.
+found". When the repository has no tests (`tests_found: 0` in the candidates, `metadata.tests_found`
+0 in the report, or no test file in the inventory), the headline or a limitation must say so as a
+statement about the repository ("has no tests", "there are no tests", "no tests were found");
+"no test data", "no tests failed" or "without tests" do not count. A schema 1.1 report records
+`metadata.tests_found`, which must equal the candidates' `tests_found`. With no tests, no file is
+`unused`: the unused-file rule does not run.
+
+A `run_tests.py` tool that `ran` needs `metadata.runs_file`, the runs file passed with `--runs`,
+and at least one run in it.
 
 ## Honesty rules
 

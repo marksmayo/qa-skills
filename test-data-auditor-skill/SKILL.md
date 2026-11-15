@@ -1,7 +1,7 @@
 ---
 name: test-data-auditor
 description: Audit the data tests depend on (fixtures, factories, seeds, snapshots, HTTP recordings and inline literals, in Python, JavaScript/TypeScript and Go suites) for time bombs, real-looking personal data, magic ids, environment coupling, shared mutable fixtures, unseeded randomness, schema drift, snapshot rot, unused or duplicate files, locale assumptions and files tests leave behind. Every rule runs statically; time bombs, shared state and locale assumptions are then confirmed with real runs under a moved clock, reversed order or another locale. Personal data is never echoed (only file, line, field and data type), secrets are handed to code-security-auditor, and the report never calls test data "clean".
-version: 1.6.0
+version: 1.7.0
 ---
 
 # Test data auditor
@@ -104,9 +104,25 @@ evenly spaced sample of N files per directory is scanned, the rest stay listed a
 ("not sampled"), `sampled_dirs` records it, and the report must say personal data in the rest is
 not ruled out (they lower `files_scanned` and the evidence completeness). Never leave such a tree
 out of the report: inventory it, sample it, or name it in `limitations` as not scanned. Every
-file under a `--data-dir` tree is listed: a format the inventory does not know (a save file, a
-custom binary) is `not_assessed` ("unknown format"), never dropped. Both
-scripts print progress to stderr every few seconds. Templated data files are near-duplicates by
+data file under a `--data-dir` tree is listed: a format the inventory does not know (a save file,
+a custom binary) is `not_assessed` ("unknown format"), never dropped. Two kinds of file there are
+handled apart, and neither is dropped silently:
+
+- **Source code.** A data module written as code (a JavaScript, TypeScript or Python module that
+  is mostly a records array: `export const birds = [{...}, {...}]`, three or more records with
+  the same keys on at least 40% of its lines) is listed as a fixture with the note "a data module
+  written as code" and scanned like a data file. Other code is not test data: it is counted under
+  `data_dir_code` (per tree, with its paths), a WARNING names it, the scan notes repeat it, and it
+  stays product code, read for clock and locale calls only. Say so in `limitations` when it
+  matters.
+- **Served folders.** A `--data-dir` that is a folder the app serves as is (`public/`, `static/`,
+  `wwwroot/`, `www/`, `htdocs/`, outside a test area) holds site assets, not test fixtures
+  (`ads.txt`, a web manifest, robots.txt). Only the files a test loads are inventoried; the rest
+  are counted under `served_dirs` with a WARNING, and none is called unused. Personal data in
+  served files is privacy-flow-auditor's.
+
+With no tests at all, the unused-file rule does not run (no file can be loaded by a test), and the
+scan notes say so. Both scripts print progress to stderr every few seconds. Templated data files are near-duplicates by
 design: a directory with more than 200 files of one format is checked for exact copies only, and
 the notes say the pairwise check did not run there.
 
@@ -167,6 +183,12 @@ data migration that seeds rows (`versions/007_seed_rooms.py`) is a seed, and is 
 python scripts/scan_data.py <repo> --inventory <run>/inventory.json --today <date> --out <run>/candidates.json
 python scripts/schema_drift.py <repo> --inventory <run>/inventory.json --out <run>/drift.json   # also folded into candidates
 ```
+
+`schema_drift.py` with no scanned fixture, seed or recording has nothing to compare: it writes
+`status: nothing_to_check` at once, reads no models, warns about no language and exits 0. With
+records to compare in a repository mostly written in a language whose models it does not read
+(Go, TypeScript), it warns and exits 3 (the output is still written): record schema drift as not
+assessed for that language.
 
 | Category | Rules |
 |---|---|
@@ -448,7 +470,14 @@ than counting it as complete.
 A repository with no tests at all is not an audit with no findings. `inventory.py` sets
 `no_tests` and prints a WARNING, `scan_data.py` records `tests_found: 0` and repeats it in its
 notes, evidence completeness is 0 when nothing was inventoried, and the validator requires the
-headline or a limitation to say the repository has no tests.
+headline or a limitation to say the repository has no tests, in words such as "the repository has
+no tests", "there are no tests" or "no tests were found" ("no test data", "no tests failed" or
+"without tests" do not count). Copy `tests_found` from the candidates into `metadata.tests_found`
+(schema 1.1; the validator checks it against the candidates), and the renderer prints "No tests"
+under the title when it is 0.
+
+If `run_tests.py` is listed as a tool that ran, `metadata.runs_file` names the runs file and the
+validator must be given it with `--runs`; a runs file with no runs fails.
 
 Show the user:
 1. the headline and the earliest time-bomb date;
@@ -461,7 +490,8 @@ Show the user:
 
 | Field | Content |
 |---|---|
-| `metadata` | Repo, date the audit counts from, clock shift, `apply_fixes`, candidates and runs files, critical tests, platform |
+| `schema_version` | `"1.1"` (absent means 1.0, still accepted) |
+| `metadata` | Repo, date the audit counts from, clock shift, `apply_fixes`, candidates and runs files, critical tests, platform, `tests_found` (required from 1.1: the candidates' `tests_found`) |
 | `inventory[]` | Every data source: kind, format, the tests that load it, scanned or not assessed, any `anonymised_by` |
 | `tools[]` | Each tool ran, not run, errored or not applicable, and what that leaves unchecked |
 | `findings[]` | Category, candidates (or `source: agent` with a `basis`), location, data type, why flagged, `real_looking`, confidence, experiment, fails-on date, `host` and `live_endpoint` (a review finding whose basis names the live host tests reach), affected tests, fix, verification step; severity, reach, score and priority are computed |
