@@ -1375,6 +1375,10 @@ def cargo_ids(tests: list[str], cwd: Path, packages: list[str] | None = None) ->
         raise ValueError('cargo: a mix of test ids and plain name filters in one run; run them separately or use '
                          '--isolate')
     model = cargo_model(cwd)
+    docs = [t for t in ids if t.startswith('doctest:')]
+    if docs and len(docs) != len(ids):
+        raise ValueError('cargo: doc-test ids and other ids in one invocation; cargo rejects --doc with --lib, --bin '
+                         'or --test. Run them separately (run_tests does, with cargo_batches), or use --isolate')
     crates, sel, names = [], [], []
     for t in ids:
         target, _, path = t.partition('::')
@@ -1414,6 +1418,19 @@ def cargo_ids(tests: list[str], cwd: Path, packages: list[str] | None = None) ->
         raise ValueError(f'cargo: test ids from {len(crates)} crates ({", ".join(crates)}) in one run; libtest filters '
                          'apply to every selected binary. Run each crate separately, or use --isolate')
     return ([] if crates[0] in (packages or []) else ['-p', crates[0]]) + [x for f in sel for x in f], names, True
+
+
+def cargo_batches(tests: list[str], cwd: Path) -> tuple[list[list[str]], str | None]:
+    """The invocations one cargo selection needs, and a note when it needs more than one: doc-test ids
+    (`doctest:...`, run with --doc, which cargo accepts with no other target) apart from the rest."""
+    groups: dict[str, list[str]] = {}
+    for t in tests:
+        groups.setdefault('doc' if t.startswith('doctest:') else 'exact', []).append(t)
+    batches = [groups[k] for k in ('exact', 'doc') if k in groups]
+    if len(batches) < 2:
+        return [list(tests)], None
+    return batches, (f'cargo: the {len(tests)} selected ids ran as {len(batches)} separate invocations (doc tests '
+                     'apart: cargo rejects --doc with --lib, --bin or --test)')
 
 
 def nextest_filter(tests: list[str], cwd: Path | None = None) -> list[str]:
@@ -1939,6 +1956,50 @@ def cargo_self_checks() -> list:
             shutil.rmtree(out_dir, ignore_errors=True)
     else:
         print('SKIP cargo real-run cases: cargo is not on PATH')
+    shutil.rmtree(d, ignore_errors=True)
+    return checks + cargo_split_checks()
+
+
+def cargo_split_checks() -> list:
+    """Selections cargo cannot run in one invocation: doc-test ids with other ids (cargo rejects --doc with --lib),
+    and parameterised tests (#[rstest], #[test_case]) whose function path --exact never matches. No build."""
+    import types
+    checks = []
+    d = Path(tempfile.mkdtemp(prefix='qa-cargo-split-'))
+    (d / 'src').mkdir()
+    (d / 'Cargo.toml').write_text('[package]\nname = "scaler"\nversion = "0.1.0"\nedition = "2021"\n', encoding='utf-8')
+    (d / 'src' / 'lib.rs').write_text(
+        '/// ```\n/// assert_eq!(scaler::half(4), 2);\n/// ```\npub fn half(x: u32) -> u32 { x / 2 }\n\n'
+        '#[cfg(test)]\nmod tests {\n    use rstest::rstest;\n\n    #[rstest]\n    #[case(4, 2)]\n'
+        '    fn halves(#[case] a: u32, #[case] b: u32) { assert_eq!(super::half(a), b); }\n\n'
+        '    #[test]\n    fn plain() {}\n}\n', encoding='utf-8')
+    a = types.SimpleNamespace(cmd=None, preset='cargo', workers=None, order='given', runner_args=None, script_args=[],
+                              cwd=d)
+
+    def try_build(tests):
+        try:
+            return build(a, PRESETS['cargo'], Path('j.xml'), tests, None)[0]
+        except Exception as e:   # noqa: BLE001
+            return repr(e)
+    base = ['cargo', 'test', '--no-fail-fast', '-p', 'scaler', '--lib', '--']
+    doc = 'doctest:scaler::src/lib.rs - half (line 1)'
+    cmd = try_build([doc, 'scaler::tests::plain'])
+    checks.append(('cargo: doc-test ids and lib ids in one invocation are refused (cargo rejects --doc with --lib)',
+                   isinstance(cmd, str) and '--doc' in cmd, cmd))
+    cmd = try_build(['scaler::tests::halves'])
+    checks.append(('cargo: a parameterised test (#[rstest]) re-runs its generated cases: a name filter `path::`, no '
+                   '--exact', cmd == base + ['tests::halves::'], cmd))
+    cmd = try_build(['scaler::tests::halves', 'scaler::tests::plain'])
+    checks.append(('cargo: parameterised and exact ids in one invocation are refused (--exact would apply to both)',
+                   isinstance(cmd, str) and 'parameterised' in cmd, cmd))
+    fn = globals().get('cargo_batches')
+    got = fn(['scaler::tests::plain', doc], d) if fn else 'cargo_batches is missing'
+    checks.append(('cargo_batches runs doc-test ids as a separate invocation, with a note', isinstance(got, tuple)
+                   and got[0] == [['scaler::tests::plain'], [doc]] and 'separate' in got[1], got))
+    got = fn(['scaler::tests::halves', 'scaler::tests::plain'], d) if fn else 'cargo_batches is missing'
+    checks.append(('cargo_batches runs parameterised ids as a separate invocation, with a note', isinstance(got, tuple)
+                   and got[0] == [['scaler::tests::plain'], ['scaler::tests::halves']] and 'parameterised' in got[1],
+                   got))
     shutil.rmtree(d, ignore_errors=True)
     return checks
 
@@ -2529,6 +2590,11 @@ def main(argv=None) -> int:
     before = tree_snapshot(cwd, {junit_dir, args.out.resolve().parent}) if args.check_tree else None
     deadline = time.monotonic() + args.minutes * 60
     batches = [[t] for t in tests] if args.isolate else [tests]
+    if preset.get('tests') == 'cargo' and not args.cmd and not args.isolate and tests:
+        batches, split_note = cargo_batches(tests, cwd)
+        if split_note:
+            notes.append(split_note)
+            print(f'NOTE: {split_note}')
     done, planned, stopped = 0, args.repeat * len(batches), False
     if collect_error:   # record the failed collection as an errored run, so a scripted campaign never loses it
         run_id = f'{args.run_prefix}-{n0 + 1}'
