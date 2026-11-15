@@ -59,7 +59,7 @@ sys.path.insert(0, str(HERE))
 import parse_results  # noqa: E402
 import run_tests  # noqa: E402
 
-VERSION = '1.2.0'
+VERSION = '1.3.0'
 
 PLUGIN = r'''
 import json, os, sys, threading
@@ -174,6 +174,45 @@ def fstring_parts(tree: ast.AST) -> set[int]:
     return out
 
 
+KEY_METHODS = {'get', 'pop', 'setdefault', 'getenv', 'getlist', 'get_all'}
+ATTR_FUNCS = {'getattr', 'hasattr', 'setattr', 'delattr'}
+
+
+def _strs(node) -> set[int]:
+    """Ids of the string constants in a literal collection (or the constant itself)."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return {id(node)}
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        return {id(e) for e in node.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)}
+    if isinstance(node, ast.Dict):
+        return {id(e) for e in [*node.keys, *node.values] if isinstance(e, ast.Constant) and isinstance(e.value, str)}
+    return set()
+
+
+def data_strings(tree: ast.AST) -> set[int]:
+    """Ids of string constants used as data rather than text: a key (a subscript, the first argument of
+    .get/.pop/.setdefault, a name given to getattr/hasattr, a dict literal's key), a default (the default of
+    .get, a parameter default, including the elements of a default tuple, list or set)."""
+    out: set[int] = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Subscript):
+            out |= _strs(n.slice) if isinstance(n.slice, ast.Constant) else set()
+        elif isinstance(n, ast.Call):
+            f = n.func
+            if isinstance(f, ast.Attribute) and f.attr in KEY_METHODS and n.args:
+                out |= _strs(n.args[0]) if isinstance(n.args[0], ast.Constant) else set()
+                if len(n.args) > 1:
+                    out |= _strs(n.args[1])
+            elif isinstance(f, ast.Name) and f.id in ATTR_FUNCS and len(n.args) > 1:
+                out |= _strs(n.args[1]) if isinstance(n.args[1], ast.Constant) else set()
+        elif isinstance(n, ast.Dict):
+            out |= {id(k) for k in n.keys if isinstance(k, ast.Constant) and isinstance(k.value, str)}
+        elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            for dflt in [*n.args.defaults, *[d for d in n.args.kw_defaults if d is not None]]:
+                out |= _strs(dflt)
+    return out
+
+
 def string_contexts(tree: ast.AST) -> tuple[set[int], set[int], set[int]]:
     """Ids of string constants that are compared (an operand of ==, !=, in, ..., or an element of a
     literal tuple, list or set compared with in), assigned to an UPPER_CASE name at module or class
@@ -203,6 +242,7 @@ def candidates(tree: ast.AST):
     """Yield (node, replacement source text, operator) for every mutation the engine knows."""
     skip = docstring_nodes(tree) | annotation_nodes(tree) | fstring_parts(tree)
     compared, named, _ = string_contexts(tree)
+    data = data_strings(tree)
     for node in ast.walk(tree):
         if id(node) in skip:
             continue
@@ -237,7 +277,8 @@ def candidates(tree: ast.AST):
                 yield node, repr(v + 1.0), 'constant_number'
             elif isinstance(v, str):
                 op = ('constant_string_compared' if id(node) in compared else
-                      'constant_string_named' if id(node) in named else 'constant_string')
+                      'constant_string_named' if id(node) in named else
+                      'constant_string_data' if id(node) in data else 'constant_string')
                 yield node, repr('X' if v == '' else ''), op
         elif isinstance(node, ast.Return) and node.value is not None and not (
                 isinstance(node.value, ast.Constant) and node.value.value is None):
@@ -311,20 +352,144 @@ def make_mutants(repo: Path, scope: dict) -> tuple[list[dict], list[dict]]:
     return mutants, files
 
 
+class Runner:
+    """How the Python tests are run: pytest (the default) or unittest (`python -m unittest discover`, for a
+    suite CI runs with unittest; pytest would also collect plain functions named test_*, such as helpers)."""
+
+    def __init__(self, kind: str, repo: Path, run_dir: Path, tests: list[str], pytest_args: list[str], ut: dict):
+        self.kind, self.repo, self.run_dir, self.tests, self.extra, self.ut = kind, repo, run_dir, tests, pytest_args, ut
+        self.n = 0
+        if kind == 'unittest':
+            self.ut_dir = run_dir / '_ut'
+            self.ut_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(HERE / 'unittest_runner.py', self.ut_dir / 'unittest_runner.py')
+
+    def ut_cmd(self, **cfg) -> list[str]:
+        files = [t for t in self.tests if '::' not in t]
+        ids = [t for t in self.tests if '::' in t] or None
+        conf = {**self.ut, 'files': files, 'ids': ids, **cfg}
+        self.n += 1
+        path = self.ut_dir / f'cfg-{self.n}.json'
+        path.write_text(json.dumps(conf), encoding='utf-8')
+        return [sys.executable, str(self.ut_dir / 'unittest_runner.py'), str(path)]
+
+    def shown(self) -> str:
+        if self.kind == 'unittest':
+            u = self.ut
+            return ('python -m unittest discover' + (f' -s {u["start"]}' if u.get('start') not in (None, '.') else '') +
+                    (f' -p {shlex.quote(u["pattern"])}' if u.get('pattern') not in (None, 'test*.py') else '') +
+                    (f' -t {u["top"]}' if u.get('top') else '') + ''.join(f' {shlex.quote(t)}' for t in self.tests))
+        return ' '.join(['python -m pytest -q -p no:cacheprovider', *map(shlex.quote, [*self.extra, *self.tests])])
+
+    def coverage_cmd(self, scoped: list[str], out: Path, env: dict) -> tuple[list[str], dict, str]:
+        if self.kind == 'unittest':
+            return (self.ut_cmd(trace=[str(self.repo / p) for p in scoped], cov_out=str(out)), env,
+                    self.shown() + ' (traced per test by unittest_runner.py)')
+        plug_dir = self.run_dir / '_plugin'
+        plug_dir.mkdir(parents=True, exist_ok=True)
+        (plug_dir / 'mt_cov_plugin.py').write_text(PLUGIN, encoding='utf-8')
+        cenv = {**env, 'MT_FILES': json.dumps([str(self.repo / p) for p in scoped]), 'MT_COV_OUT': str(out),
+                'PYTHONPATH': os.pathsep.join([str(plug_dir), env.get('PYTHONPATH', '')]).rstrip(os.pathsep)}
+        sel = [*self.extra, *self.tests]
+        return ([sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', '-p', 'mt_cov_plugin', *sel], cenv,
+                ' '.join(['python -m pytest -q -p no:cacheprovider -p mt_cov_plugin', *map(shlex.quote, sel)]))
+
+    def plain_cmd(self) -> list[str]:
+        if self.kind == 'unittest':
+            return self.ut_cmd()
+        return [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', *self.extra, *self.tests]
+
+    def startup_cmd(self) -> list[str]:
+        """A run that starts the runner and loads the tests but runs none: the fixed cost of every mutant run."""
+        if self.kind == 'unittest':
+            return self.ut_cmd(ids=[])
+        return [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-p', 'no:cacheprovider', *self.extra,
+                *self.tests]
+
+    def mutant_cmd(self, m: dict, out: Path) -> list[str]:
+        if self.kind == 'unittest':
+            return self.ut_cmd(ids=m['covering_tests'], files=[], failfast=True, result_out=str(out))
+        return [sys.executable, '-m', 'pytest', '-x', '-q', '-p', 'no:cacheprovider', f'--junitxml={out}', *self.extra,
+                *m['covering_tests']]
+
+    def results(self, out: Path, mid: str) -> tuple[list[dict], bool]:
+        """(cases [{id, status}], whether a test module failed to import) from a mutant run's output file."""
+        if not out.exists():
+            return [], False
+        if self.kind == 'unittest':
+            cases = json.loads(out.read_text(encoding='utf-8')).get('tests', [])
+            imp = [c for c in cases if c['id'].endswith('::(import)') and c['status'] in ('failed', 'error')]
+            return [c for c in cases if not c['id'].endswith('::(import)')], bool(imp)
+        return parse_results.parse_junit(out, mid)[0], False
+
+
+def auto_runner(repo: Path, env: dict) -> str:
+    """pytest when it can be imported in the repository, else unittest."""
+    try:
+        res = subprocess.run([sys.executable, '-c', 'import pytest'], cwd=repo, env=env, capture_output=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return 'unittest'
+    return 'pytest' if res.returncode == 0 else 'unittest'
+
+
+def parse_unittest_args(text: str) -> dict:
+    """-s START -p PATTERN -t TOP (as `python -m unittest discover`), with or without the word discover."""
+    ap = argparse.ArgumentParser(prog='--unittest-args', add_help=False)
+    ap.add_argument('-s', '--start-directory', default='.')
+    ap.add_argument('-p', '--pattern', default='test*.py')
+    ap.add_argument('-t', '--top-level-directory', default=None)
+    ap.add_argument('-v', '--verbose', action='store_true')
+    ap.add_argument('-q', '--quiet', action='store_true')
+    a, rest = ap.parse_known_args([w for w in shlex.split(text or '') if w != 'discover'])
+    if rest:
+        raise SystemExit(f'--unittest-args: not understood: {" ".join(rest)} (give -s, -p and -t as for '
+                         'python -m unittest discover; name tests with --tests)')
+    return {'start': a.start_directory, 'pattern': a.pattern, 'top': a.top_level_directory}
+
+
+LAUNCH = re.compile(r'subprocess|Popen|check_output|sys\.executable|os\.system|runpy|run_path')
+TEST_PATH = re.compile(r'(^|/)(tests?|testing)/|(^|/)test_[^/]*\.py$|_test\.py$')
+WALK_SKIP = {'.git', 'node_modules', '__pycache__', '.venv', 'venv', '.tox', '.nox', 'site-packages', 'build', 'dist',
+             'target', '.mypy_cache', '.pytest_cache'}
+
+
+def launched_as_child(repo: Path, scoped: list[str], skip: set[Path]) -> dict[str, list[str]]:
+    """{scoped file: ['tests/test_x.py:12', ...]}: lines of test files that start child processes and name the
+    scoped file (its file name in a string or path, or `-m <module>`). Lines run only in such a child are never
+    traced in-process, so their mutants are no_coverage although a test may exercise them."""
+    names = {f: (Path(f).name, Path(f).with_suffix('').as_posix().replace('/', '.')) for f in scoped}
+    out: dict[str, list[str]] = {}
+    for dirpath, dirnames, filenames in os.walk(repo):
+        dirnames[:] = sorted(d for d in dirnames if d not in WALK_SKIP and Path(dirpath, d).resolve() not in skip)
+        for fn in sorted(filenames):
+            rel_p = Path(dirpath, fn).relative_to(repo).as_posix()
+            if not fn.endswith('.py') or not TEST_PATH.search(rel_p):
+                continue
+            try:
+                text = Path(dirpath, fn).read_text(encoding='utf-8', errors='replace')
+            except OSError:
+                continue
+            if not LAUNCH.search(text):
+                continue
+            for f, (base, dotted) in names.items():
+                file_rx = re.compile(r'''["'/\\]''' + re.escape(base) + r'''["']''')
+                mod_rx = re.compile(r'''["']-m["']\s*,\s*["'](?:[\w.]*\.)?''' + re.escape(dotted.rsplit('.', 1)[-1]) + r'''["']''')
+                for i, line in enumerate(text.splitlines(), 1):
+                    if file_rx.search(line) or mod_rx.search(line):
+                        out.setdefault(f, []).append(f'{rel_p}:{i}')
+    return out
+
+
 def run_coverage(repo: Path, run_dir: Path, scoped: list[str], env: dict, timeout: int,
-                 selection: list[str]) -> tuple[dict, float]:
-    plug_dir = run_dir / '_plugin'
-    plug_dir.mkdir(parents=True, exist_ok=True)
-    (plug_dir / 'mt_cov_plugin.py').write_text(PLUGIN, encoding='utf-8')
+                 runner: Runner) -> tuple[dict, float]:
     out = run_dir / 'coverage.raw.json'
-    cenv = {**env, 'MT_FILES': json.dumps([str(repo / p) for p in scoped]), 'MT_COV_OUT': str(out),
-            'PYTHONPATH': os.pathsep.join([str(plug_dir), env.get('PYTHONPATH', '')]).rstrip(os.pathsep)}
-    cmd = [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', '-p', 'mt_cov_plugin', *selection]
+    cmd, cenv, shown = runner.coverage_cmd(scoped, out, env)
     t0 = time.monotonic()
     res = subprocess.run(cmd, cwd=repo, env=cenv, capture_output=True, timeout=timeout)
     took = time.monotonic() - t0
     if not out.exists():
-        raise SystemExit('coverage run wrote no data:\n' + res.stdout.decode('utf-8', 'replace')[-1500:])
+        raise SystemExit('coverage run wrote no data:\n' + res.stdout.decode('utf-8', 'replace')[-1500:] +
+                         res.stderr.decode('utf-8', 'replace')[-800:])
     raw = json.loads(out.read_text(encoding='utf-8'))
     by_line: dict[str, dict[str, list[str]]] = {}
     for test, files in raw['hits'].items():
@@ -340,13 +505,14 @@ def run_coverage(repo: Path, run_dir: Path, scoped: list[str], env: dict, timeou
         r = Path(f).resolve().relative_to(repo).as_posix()
         imports[r] = {'loaded': info['loaded'],
                       'other_copies': [run_tests.redact_home(c) for c in info['other_copies']]}
-    cov = {'command': ' '.join(['python -m pytest -q -p no:cacheprovider -p mt_cov_plugin', *map(shlex.quote, selection)]),
-           'exit_code': res.returncode,
+    cov = {'command': shown, 'runner': runner.kind, 'exit_code': res.returncode,
            'pytest_exit': raw['exitstatus'], 'duration_s': round(took, 3), 'files': scoped, 'lines': by_line,
            'imports': imports,
-           'method': 'sys.settrace in a pytest plugin, per test (lines run at import are under "<import>")'}
+           'method': ('sys.settrace in a pytest plugin, per test (lines run at import are under "<import>")'
+                      if runner.kind == 'pytest' else
+                      'sys.settrace in a unittest runner, per TestCase method (lines run at import are under "<import>")')}
     out.unlink()
-    shutil.rmtree(plug_dir, ignore_errors=True)
+    shutil.rmtree(run_dir / '_plugin', ignore_errors=True)
     return cov, took
 
 
@@ -409,7 +575,7 @@ LANG_OF = {'.py': 'python', '.go': 'go', '.rs': 'rust', '.js': 'javascript', '.j
            '.java': 'java', '.kt': 'kotlin', '.cs': 'csharp', '.swift': 'swift', '.dart': 'dart', '.rb': 'ruby',
            '.php': 'php', '.scala': 'scala', '.m': 'objective-c', '.c': 'c', '.cpp': 'c++', '.h': 'c'}
 INSTEAD = {'javascript': 'run_engine.py stryker (StrykerJS)', 'typescript': 'run_engine.py stryker (StrykerJS)',
-           'rust': 'cargo-mutants (SKILL.md, Rust)', 'java': 'PIT', 'kotlin': 'PIT', 'csharp': 'Stryker.NET',
+           'rust': 'run_engine.py cargo-mutants (cargo-mutants)', 'java': 'PIT', 'kotlin': 'PIT', 'csharp': 'Stryker.NET',
            'swift': 'Muter', 'dart': 'mutation_test'}
 
 
@@ -465,6 +631,11 @@ def main(argv=None) -> int:
     ap.add_argument('--tests', action='append', default=[],
                     help='test file, directory or node id (relative to --repo) every run is limited to (repeatable)')
     ap.add_argument('--pytest-args', default='', help='extra pytest arguments for every run, as one quoted string')
+    ap.add_argument('--runner', choices=['auto', 'pytest', 'unittest'], default='auto',
+                    help='Python test runner (default: pytest when it imports in the repo, else unittest); use unittest '
+                         'when CI runs python -m unittest')
+    ap.add_argument('--unittest-args', default='',
+                    help='unittest discovery as for python -m unittest discover: "-s tests -p \'test*.py\' -t ."')
     ap.add_argument('--seed', type=int, default=1, help='sampling seed')
     ap.add_argument('--coverage-only', action='store_true')
     ap.add_argument('--restore', action='store_true', help='put backed-up originals back and exit')
@@ -498,10 +669,19 @@ def main(argv=None) -> int:
         if not (repo / t.split('::')[0]).exists():
             raise SystemExit(f'--tests {t}: not found under {repo}')
     extra = shlex.split(args.pytest_args) if args.pytest_args else []
-    selection = [*extra, *args.tests]
-    cov, cov_s = run_coverage(repo, run_dir, scoped, env, timeout=max(600, int(args.minutes * 60)), selection=selection)
+    kind = args.runner if args.runner != 'auto' else auto_runner(repo, env)
+    if kind == 'unittest' and extra:
+        raise SystemExit('--pytest-args with --runner unittest: give discovery options with --unittest-args')
+    if args.runner == 'auto':
+        print(f'runner: {kind} (' + ('pytest imports here' if kind == 'pytest' else 'pytest cannot be imported here') +
+              '; pass --runner unittest when CI runs python -m unittest)', file=sys.stderr)
+    runner = Runner(kind, repo, run_dir, args.tests, extra, parse_unittest_args(args.unittest_args))
+    cov, cov_s = run_coverage(repo, run_dir, scoped, env, timeout=max(600, int(args.minutes * 60)), runner=runner)
+    child = launched_as_child(repo, scoped, {run_dir})
+    if child:
+        cov['launched_as_child'] = child
     (run_dir / 'coverage.json').write_text(json.dumps(cov, indent=1) + '\n', encoding='utf-8')
-    print(f'coverage: {len(scoped)} file(s), {cov_s:.1f}s, pytest exit {cov["exit_code"]}', flush=True)
+    print(f'coverage: {len(scoped)} file(s), {cov_s:.1f}s, {kind} exit {cov["exit_code"]}', flush=True)
     shadowed = {f: i['other_copies'] for f, i in cov['imports'].items() if not i['loaded'] and i['other_copies']}
     if shadowed:
         raise SystemExit('the tests imported another copy of the scoped code, so no mutant here could be seen: ' +
@@ -517,11 +697,14 @@ def main(argv=None) -> int:
         raise SystemExit('the suite does not pass unmutated; fix or exclude failing tests first (no mutants run)'
                          + ('' if args.tests else '; --tests limits the runs to the tests that exercise the scope'))
     t0 = time.monotonic()
-    plain = subprocess.run([sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', *selection], cwd=repo,
-                           env=env, capture_output=True)
+    plain = subprocess.run(runner.plain_cmd(), cwd=repo, env=env, capture_output=True)
     plain_s = time.monotonic() - t0
     if plain.returncode != 0:
         raise SystemExit('the suite does not pass unmutated without tracing; no mutants run')
+    # the fixed cost of every mutant run: start the runner, import conftest and the test modules, run nothing
+    t0 = time.monotonic()
+    subprocess.run(runner.startup_cmd(), cwd=repo, env=env, capture_output=True)
+    startup_s = min(plain_s, time.monotonic() - t0)
     timeout = max(args.min_timeout, args.timeout_factor * plain_s)
     funcs = {f: function_lines((repo / f).read_text(encoding='utf-8')) for f in scoped}
     for m in mutants:
@@ -530,19 +713,28 @@ def main(argv=None) -> int:
         m['module_level'] = module_level
         if at_import and m['covering_tests']:
             m['note'] = IMPORT_NOTE
+        if not m['covering_tests'] and child.get(m['file']):
+            m['note'] = (f'no test ran this line in-process; {", ".join(child[m["file"]][:3])} runs this file as a child '
+                         'process, which the tracer cannot see: read that test before calling this a coverage gap')
     runnable = [m for m in mutants if m['covering_tests']]
     # run order: round-robin over operators and files, so stopping at the deadline still leaves an even sample
     order = sample(runnable, len(runnable), args.seed)
     if args.max_mutants is not None:
         order = order[:args.max_mutants]
     order_ids = {m['id'] for m in order}
-    # estimate: a mutant runs only its covering tests (with -x), so its cost is roughly the share of the suite's
-    # tests it runs, plus a start-up cost; the budget is spent by the clock, not by this estimate
+    # estimate: a mutant runs only its covering tests (with -x): the measured start-up (runner, conftest and test
+    # imports) plus the share of the suite's test time its tests take. The budget is spent by the clock, not by
+    # this estimate; after the first few mutants the measured mean is printed as a second estimate.
     all_tests = {t for f in cov['lines'].values() for ts in f.values() for t in ts} - {'<import>'}
-    est = sum(min(plain_s, 1.0 + plain_s * len(m['covering_tests']) / max(1, len(all_tests))) for m in order)
+    body_s = max(0.0, plain_s - startup_s)
+    per = {m['id']: startup_s + body_s * len(m['covering_tests']) / max(1, len(all_tests)) for m in order}
+    est = sum(per.values())
     print(f'plan: {len(order)} of {len(runnable)} runnable mutants ({len(mutants)} generated), est. '
-          f'{est / 60:.1f} min of a {args.minutes:g} min budget; whole-suite run {plain_s:.1f}s, '
-          f'timeout {timeout:.0f}s per mutant', flush=True)
+          f'{est / 60:.1f} min ({est / max(1, len(order)):.1f}s per mutant) of a {args.minutes:g} min budget; '
+          f'start-up {startup_s:.1f}s, whole-suite run {plain_s:.1f}s, timeout {timeout:.0f}s per mutant', flush=True)
+    estimate = {'startup_s': round(startup_s, 3), 'planned_s': round(est, 1),
+                'per_mutant_planned_s': round(est / max(1, len(order)), 2), 'measured_mean_s': None, 'measured_over': 0}
+    check_at = min(10, max(3, len(order) // 10))
     backup = run_dir / 'backup'
     deadline = time.monotonic() + args.minutes * 60
     junit_dir = run_dir / '_junit_builtin'
@@ -579,9 +771,8 @@ def main(argv=None) -> int:
                 add_note(m, str(exc))
                 continue
             target = repo / m['file']
-            junit = junit_dir / f'{m["id"]}.xml'
-            cmd = [sys.executable, '-m', 'pytest', '-x', '-q', '-p', 'no:cacheprovider', f'--junitxml={junit}',
-                   *extra, *m['covering_tests']]
+            junit = junit_dir / (f'{m["id"]}.xml' if kind == 'pytest' else f'{m["id"]}.json')
+            cmd = runner.mutant_cmd(m, junit)
             t0 = time.monotonic()
             try:
                 target.write_bytes(text.encode('utf-8'))
@@ -597,21 +788,31 @@ def main(argv=None) -> int:
                 target.write_bytes(originals[m['file']])
             m['duration_s'] = round(time.monotonic() - t0, 3)
             m['exit_code'] = proc.returncode
-            cases, _ = parse_results.parse_junit(junit, m['id']) if junit.exists() else ([], [])
+            cases, import_failed = runner.results(junit, m['id'])
             failed = [c['id'] for c in cases if c['status'] in ('failed', 'error')]
             if timed_out:
                 m['status'] = 'timeout'
             elif proc.returncode == 0 and cases:
                 m['status'] = 'survived'
-            elif proc.returncode == 1 and failed:
+            elif proc.returncode == 1 and failed and not import_failed:
                 m['status'] = 'killed'
                 m['killed_by'] = failed[0]
             else:
                 m['status'] = 'runtime_error'
-                add_note(m, run_tests.redact_home(out.decode('utf-8', 'replace')[-400:]))
+                add_note(m, 'a test module failed to import' if import_failed else
+                         run_tests.redact_home(out.decode('utf-8', 'replace')[-400:]))
             if junit.exists():
                 junit.unlink()
             print(f'{m["id"]:>5} {m["file"]}:{m["line"]} {m["operator"]:<22} {m["status"]}', flush=True)
+            done = [x['duration_s'] for x in order if 'duration_s' in x]
+            if len(done) == check_at:
+                mean = sum(done) / len(done)
+                left = [x for x in order if 'status' not in x]
+                estimate.update(measured_mean_s=round(mean, 2), measured_over=len(done))
+                print(f'measured: {mean:.1f}s per mutant over the first {len(done)} (planned '
+                      f'{estimate["per_mutant_planned_s"]:.1f}s); the {len(left)} left would take about '
+                      f'{mean * len(left) / 60:.1f} min, {max(0.0, deadline - time.monotonic()) / 60:.1f} min of budget '
+                      'remain', flush=True)
     finally:
         for f, data in originals.items():
             if (repo / f).read_bytes() != data:
@@ -621,6 +822,7 @@ def main(argv=None) -> int:
     shutil.rmtree(backup, ignore_errors=True)
     shutil.rmtree(pycache, ignore_errors=True)
     shutil.rmtree(junit_dir, ignore_errors=True)
+    shutil.rmtree(run_dir / '_ut', ignore_errors=True)
     counts: dict[str, int] = {}
     for m in mutants:
         counts[m['status']] = counts.get(m['status'], 0) + 1
@@ -628,10 +830,16 @@ def main(argv=None) -> int:
     command += ''.join(f' --tests {shlex.quote(t)}' for t in args.tests)
     if args.pytest_args:
         command += f' --pytest-args {shlex.quote(args.pytest_args)}'
+    if kind == 'unittest':
+        command += ' --runner unittest' + (f' --unittest-args {shlex.quote(args.unittest_args)}' if args.unittest_args else '')
+    if estimate['measured_mean_s'] is None and any('duration_s' in m for m in order):
+        done = [m['duration_s'] for m in order if 'duration_s' in m]
+        estimate.update(measured_mean_s=round(sum(done) / len(done), 2), measured_over=len(done))
     out = {'engine': {'name': 'builtin', 'version': VERSION, 'python': sys.version.split()[0], 'command': command},
-           'ids': 'position', 'tests': args.tests, 'pytest_args': extra,
+           'ids': 'position', 'runner': kind, 'tests': args.tests, 'pytest_args': extra,
            'started_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'files': files,
            'timeout_s': round(timeout, 1), 'suite_duration_s': round(plain_s, 3), 'coverage_duration_s': round(cov_s, 3),
+           'estimate': estimate,
            'sampled': {'generated': len(mutants), 'runnable': len(runnable), 'chosen': attempted,
                        'skipped': len(runnable) - attempted, 'seed': args.seed},
            'tree': {'before': hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(),
