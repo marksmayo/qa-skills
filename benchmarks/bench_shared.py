@@ -198,3 +198,10 @@ def test_parse_results_junit(benchmark):
     def run():
         return [parse_results.parse_junit(p, f'R{i}') for i, p in enumerate(JUNIT)]
     assert any(cases for cases, _ in benchmark(run))
+
+
+def test_next_app_read(benchmark):
+    """The static Next.js reader on the security auditor's Next.js, Prisma and NextAuth fixture."""
+    import next_app
+    model = benchmark(next_app.read_next_app, ROOT / 'code-security-auditor-skill' / 'examples' / 'kite-notes')
+    assert model['is_next'] and model['projects'][0]['counts']['route_handlers'] > 0
