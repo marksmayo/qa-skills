@@ -52,13 +52,25 @@ Scripts, in the order the skill runs them:
 python scripts/journey_md.py lint journeys/                                  # journeys parse
 python scripts/plan_coverage.py journeys/ --repo . --out report.json         # one entry per Expect
 python scripts/detect_conventions.py . --target e2e/checkout                 # framework, layout, exemplars
-python scripts/lint_tests.py e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts # hard waits, assertions, tags
-python scripts/parse_results.py runs.json --junit junit.xml --run-id R1 \
+python scripts/lint_tests.py e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts e2e/fixtures.ts playwright.config.ts \
+    [--json]                                                                 # waits, assertions, tags, network guard
+python scripts/parse_results.py runs.json --junit junit.xml --run-id R1 --files-root . \
     --command "npx playwright test e2e/checkout" --exit-code 1 --hash e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts
 python scripts/update_journeys.py report.json --repo .                       # optional
 python scripts/validate_report.py report.json --repo . --write-summary       # honesty checks
 python scripts/render_report.py report.json                                  # --color always|never
+python scripts/validate_report.py --self-test                                # negative cases on the example
+python scripts/lint_tests.py --self-test
 ```
+
+A repository with no end-to-end framework gets one only after agreement (in the session, or in
+advance in the brief that started the run): SKILL.md "Bootstrapping a framework" covers the pinned
+install, the config (loopback `baseURL` from an environment variable, `serviceWorkers: 'block'`),
+testing a production build, and recording `metadata.bootstrap`. Written tests abort requests to
+hosts other than the target and block service workers; `lint_tests.py` warns
+(`network_not_guarded`, `service_workers_not_blocked`) when the files linted together do neither.
+`lint_tests.py --json` prints the report's `lint` object (`ran`, `errors`, `warnings`, `findings`,
+plus per-file `files`).
 
 ## Output
 
@@ -94,9 +106,17 @@ python scripts/validate_report.py examples/journey_tests_report.example.json --r
 - `pass` needs `repeat` passing runs of the exact file now on disk, proven by the SHA-256 hashes
   recorded at run time.
 - If a journey's Expects were edited during the run, the report is rejected.
-- Dependency manifests can't change without the user's approval.
+- Dependency manifests can't change without approval, and the report says who gave it
+  (`approved_by`: `user` in the session, `delegated` in advance with a note naming the brief, never
+  `unattended`); `approved_by_user` is refused when no person approved the run in the session. A
+  bootstrapped framework's config must be listed and approved.
+- An Expect the journey lists as not automatable may be `asserted` only with a reason naming the
+  part left unverified.
 - The summary counts are recomputed, and headlines such as "bug-free" or "complete coverage" are
-  rejected.
+  rejected. The headline must give the Expects verified out of the total and name suspected bugs,
+  flaky, blocked and failing tests when there are any, so a placeholder never validates.
+- Warnings: case files that don't join to the mapped test path (use `parse_results.py
+  --files-root`), and written tests that don't block third parties or service workers.
 
 ## Files
 

@@ -1,5 +1,5 @@
 {
-  "$comment": "Impact surfaces found by pattern in an area's source files. `patterns` and `exclude` are case-insensitive regexes run per line on the code with comments and string literals blanked, so a provider named in a CSP header, marketing copy, an API description or a comment doesn't count; `raw_patterns` run on the line as written, so SQL inside a string (op.execute(\"ALTER TABLE x DROP COLUMN y\"), an f-string TRUNCATE) and directives count; the bare TRUNCATE and DROP forms are upper-case only, so prose doesn't match. `path_patterns` match the file's path (a page or screen module of a UI). Decorated Python handlers (Flask, FastAPI, Azure Functions triggers) are entry points; calls through an API client wrapper (apiClient.postJson) are external integrations. (?-i:...) makes part of a pattern case-sensitive, which is how a camelCase verb (captureMessage) is told from capture( or capture_payment(. A line that matches one of the class's exclude patterns doesn't count. An optional `langs` restricts a class to files with those suffixes (the systems/CLI pack is Rust-only), and an optional `lang_exclude` maps a suffix to extra excludes that apply only to files of that language (so a Rust `drop(` or `matcher: &M` does not fire the web-tuned classes without weakening JS/TS detection). Type declaration files (.d.ts) are skipped. The highest-scoring class an area matches sets its surface factor; a person may judge it differently, with a reason. Patterns are about doing (charging, deleting, authenticating, enforcing access), not mentioning or reading: a catalogue that shows a price does not move money, and useSession() reads who is signed in without enforcing anything. NOTE: the money/access/personal-data classes are tuned for web and app stacks; outside them (systems and CLI code) a surface factor that rests only on these patterns is low-trust and should be flagged, not presented as confidently assessed. Call-aware patterns don't match a TypeScript member signature with no body (`settle(): Promise<void>;` in an interface or abstract class): it declares, it doesn't do. Bare capture/settle/transfer need a money noun (capturePayment, settle_invoice) or a money argument on the line, because in UI-automation code they mean 'take a screenshot' or 'wait until stable'; truncate needs a table or data noun, since truncating a string destroys nothing; Node stream and socket .destroy() and optional-chained map deletes (seen?.delete(k)) are not data destruction. The `secrets` class is credential handling (redaction, an Authorization header set, basic auth, storing or rotating a secret). The `public_api` class (`manifest_entries`) also scores the files a package manifest names as its public entry points: package.json main, module, exports and bin (a dist/, lib/ or build/ target is mapped back to its src/ file) and pyproject [project.scripts]; for a library or CLI that is what every user calls.",
+  "$comment": "Impact surfaces found by pattern in an area's source files. `patterns` and `exclude` are case-insensitive regexes run per line on the code with comments and string literals blanked, so a provider named in a CSP header, marketing copy, an API description or a comment doesn't count; `raw_patterns` run on the line as written, so SQL inside a string (op.execute(\"ALTER TABLE x DROP COLUMN y\"), an f-string TRUNCATE) and directives count; the bare TRUNCATE and DROP forms are upper-case only, so prose doesn't match. `path_patterns` match the file's path (a page or screen module of a UI). Decorated Python handlers (Flask, FastAPI, Azure Functions triggers) are entry points; calls through an API client wrapper (apiClient.postJson) are external integrations. (?-i:...) makes part of a pattern case-sensitive, which is how a camelCase verb (captureMessage) is told from capture( or capture_payment(. A line that matches one of the class's exclude patterns doesn't count, nor one whose line as written matches a `raw_exclude` pattern (a same-origin fetch: a relative URL or a service worker passing event.request through is not an external integration). In .tsx, .jsx and .js files JSX text (copy between tags) is blanked too, so a page mentioning the GDPR is not compliance. A class with `next_app` also takes hits from the shared Next.js reader (next_app.py): `scripts` for third-party script loaders whose src is a constant (JSON-LD and other data blocks excluded), `config` for the headers, CSP, redirects and rewrites of next.config.* and platform files. An optional `langs` restricts a class to files with those suffixes (the systems/CLI pack is Rust-only), and an optional `lang_exclude` maps a suffix to extra excludes that apply only to files of that language (so a Rust `drop(` or `matcher: &M` does not fire the web-tuned classes without weakening JS/TS detection). Type declaration files (.d.ts) are skipped. The highest-scoring class an area matches sets its surface factor; a person may judge it differently, with a reason. Patterns are about doing (charging, deleting, authenticating, enforcing access), not mentioning or reading: a catalogue that shows a price does not move money, and useSession() reads who is signed in without enforcing anything. NOTE: the money/access/personal-data classes are tuned for web and app stacks; outside them (systems and CLI code) a surface factor that rests only on these patterns is low-trust and should be flagged, not presented as confidently assessed. Call-aware patterns don't match a TypeScript member signature with no body (`settle(): Promise<void>;` in an interface or abstract class): it declares, it doesn't do. Bare capture/settle/transfer need a money noun (capturePayment, settle_invoice) or a money argument on the line, because in UI-automation code they mean 'take a screenshot' or 'wait until stable'; truncate needs a table or data noun, since truncating a string destroys nothing; Node stream and socket .destroy() and optional-chained map deletes (seen?.delete(k)) are not data destruction. The `secrets` class is credential handling (redaction, an Authorization header set, basic auth, storing or rotating a secret). The `public_api` class (`manifest_entries`) also scores the files a package manifest names as its public entry points: package.json main, module, exports and bin (a dist/, lib/ or build/ target is mapped back to its src/ file) and pyproject [project.scripts]; for a library or CLI that is what every user calls.",
   "classes": {
     "money": {
       "score": 5,
@@ -246,7 +246,7 @@
     },
     "entry": {
       "score": 3,
-      "label": "public entry point (route handler or server action)",
+      "label": "public entry point (route handler, server action or metadata route)",
       "patterns": [
         "\\bexport\\s+(async\\s+)?function\\s+(GET|POST|PUT|PATCH|DELETE)\\s*\\(",
         "\\bexport\\s+const\\s+(GET|POST|PUT|PATCH|DELETE)\\s*=",
@@ -259,6 +259,9 @@
       "raw_patterns": [
         "^\\s*['\"]use server['\"]",
         "\\$_SERVER\\s*\\[\\s*['\\\"](REQUEST_URI|PATH_INFO|REQUEST_METHOD|QUERY_STRING)['\\\"]"
+      ],
+      "path_patterns": [
+        "(^|/)app/(.+/)?(robots|sitemap|manifest|opengraph-image|twitter-image|icon|apple-icon)\\.(tsx|jsx|ts|js|mjs)$"
       ]
     },
     "ui_route": {
@@ -271,6 +274,7 @@
       "path_patterns": [
         "(^|/)(pages|views|screens|routes)/.+\\.(tsx|jsx|vue|svelte)$",
         "(^|/)app/(.+/)?page\\.(tsx|jsx|js|mdx)$",
+        "(^|/)app/(.+/)?(not-found|error|global-error|forbidden|unauthorized)\\.(tsx|jsx|js)$",
         "(^|/)(?-i:[A-Z])\\w*(Page|Screen)\\.(tsx|jsx|vue|svelte)$"
       ]
     },
@@ -287,7 +291,35 @@
       ],
       "raw_patterns": [
         "\\b(file_get_contents|fopen)\\s*\\(\\s*['\\\"]https?://"
+      ],
+      "raw_exclude": [
+        "\\bfetch\\s*\\(\\s*(['\"`]\\.{0,2}/(?!/)|(event\\.|evt\\.|e\\.)?(request|req)\\b)"
       ]
+    },
+    "third_party_script": {
+      "score": 4,
+      "label": "loads third-party scripts (analytics, ads, tag managers) for visitors",
+      "next_app": "scripts",
+      "raw_patterns": [
+        "<(Script|script)\\b[^>]*\\bsrc\\s*=\\s*\\{?\\s*['\"`](https?:)?//",
+        "<(GoogleAnalytics|GoogleTagManager|GoogleMapsEmbed|YouTubeEmbed)\\b",
+        "\\bgtag\\s*\\(|\\badsbygoogle\\b|\\bfbq\\s*\\(|\\b_paq\\.push\\s*\\(|\\bdataLayer\\.push\\s*\\("
+      ]
+    },
+    "service_worker": {
+      "score": 3,
+      "label": "intercepts the site's requests (service worker fetch handler)",
+      "patterns": [
+        "\\.respondWith\\s*\\("
+      ],
+      "raw_patterns": [
+        "\\baddEventListener\\s*\\(\\s*['\"`]fetch['\"`]"
+      ]
+    },
+    "response_policy": {
+      "score": 4,
+      "label": "sets response headers, CSP, redirects or rewrites for every request",
+      "next_app": "config"
     }
   },
   "none_score": 1

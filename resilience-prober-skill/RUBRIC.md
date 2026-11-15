@@ -12,15 +12,23 @@
 | `persisted_failure` | After recovery the page is reloaded with the fault gone and the flow run to the step again: no request to the endpoint after the reload, and no good (2xx) answer from the server in the whole run, so the app replayed a failure it stored (Cache Storage, IndexedDB, localStorage). The reload's Cache Storage entries (URL, status, size) are recorded |
 | `endless_loading` | A spinner (`role=progressbar`, `aria-busy`, known classes, the app's `spinner_selectors` or `loading_words`) still showing after 30 s, with no error |
 | `silent_failure` | A failing fault (not a static asset: a kept screen is its expected outcome), no error element or new error words within 10 s, and either the step didn't complete, controls the baseline showed are gone (`controls_gone`), or it is a write; on a write it is rated Misleading |
-| `misleading_state` | Empty-state wording that wasn't in the baseline and no error ("You have no parcels yet" after a 500), or a failing fault shown as done: the step's `done` (and none of its `done_not`) showed with no error, on a write, or on a read unless the step lists the endpoint in `optional_endpoints` |
+| `misleading_state` | Empty-state wording that wasn't in the baseline and no error ("You have no parcels yet" after a 500), or a failing fault shown as done: the step's `done` (and none of its `done_not`) showed with no error, on a write, or on a read unless the endpoint is optional (the step's `optional_endpoints`, or a fault that only hit images, fonts or media), the failed request was followed by a 2xx full page load of the same path (`full_page_fallback`), or the page's service worker answered it offline (`served_by_service_worker`) |
 | `lost_input` | A field's length or SHA-256 after the fault differs from what was typed (taken after the last fill, before the action that sends it; recorded as length and hash only) |
 | `no_recovery` | After the fault is removed, the app's retry control or the step's actions (no reload) don't complete the step. A step whose only action is a navigation has recovery `reload`: not tried, a `recovery_not_tried` note, never recovered. A step that only types input (type-ahead) is recovered by re-sending the field's value (`refill_input`); a run that repeated such a step with nothing left to do is a `recovery_not_tried` note, never no_recovery |
 | `retry_storm` | More than 10 requests to one URL (path and query, cache-busting parameters such as `_`, `t`, `cb` or a long number dropped) in the window, or requests to it sooner than `Retry-After` without growing gaps. A wildcard endpoint matching many different files once each, or type-ahead queries for different terms, is not a storm; requests the page aborted itself (a superseded query) don't count |
 | `console_only` | New console errors and nothing visible: a note, never a finding |
 | `document_fault` | The fault answered the page's own HTML document (a navigation request, or `resource_type: document`): no app code ran and the page shows the fault catalogue's injected body, so the run is a note, never an effect (the edge's or server's real error page is not tested) |
+| `browser_error_page` | The step ended on the browser's own error page (`chrome-error://`, `about:neterror`): a full page load failed (offline on a link, a framework's fallback to a document load). A note with the URL and screenshots, never an effect: no app code ran. With service workers allowed it says whether a worker controlled the page |
+| `full_page_fallback` | A request the fault failed was followed by a 2xx load of the page's document for the same path, which the fault didn't touch: the page came from the server. A note; no shown-as-done misleading state |
+| `served_by_service_worker` | Offline, the page's service worker answered a targeted request from its cache. A note: check the screenshot for stale content shown as current |
+| `broken_images` | More visible images that loaded with nothing to show than in the baseline. A note |
+| `observation_unavailable`, `reload_not_checked` | The page could not be read within its deadline, or the reload after recovery never loaded: notes, never effects (no blank screen and no persisted failure is inferred from a read that didn't happen) |
+| `prefetch_changed_app` | `prefetch: block` made the app log fallbacks to full page loads in the baselines: a note that client-navigation loading states were not tested |
 
 Only runs whose fault matched at least one request (`fault_triggered`) are classified. A scenario with
-no such run is `not_triggered`: no effects, not counted as run, listed under faults not run.
+no such run is `not_triggered`: no effects, not counted as run, listed under faults not run. Offline
+counts a request only when the scenario targets it (pattern, method, headers, resource type) and it failed
+or the page's service worker answered it. A scenario whose run the watchdog stopped is `errored`.
 
 The watch window: failing faults are watched until an error shows or the budget runs out (10 s, extended
 to 30 s while a spinner or loading text shows); latency faults may end once the step is done with
@@ -67,7 +75,7 @@ in the summary. Overall confidence:
 - `low`: fewer than half the planned scenarios ran, a critical-path flow's baseline didn't pass, or
   scenarios ran once (`--runs 1`);
 - `medium`: otherwise, if any scenario didn't run (untested, errored, not triggered), any baseline didn't
-  pass, a finding isn't reproduced, or something needs review;
+  pass or passed only on a retry, a finding isn't reproduced, or something needs review;
 - `high`: otherwise.
 
 `confidence_caps` (`{cap: medium | low, reason}`, a reason of 20 characters or more) lower the computed

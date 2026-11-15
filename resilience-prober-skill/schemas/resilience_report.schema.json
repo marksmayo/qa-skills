@@ -20,12 +20,14 @@
                                 "har": {"type": ["string", "null"]}, "blocked_requests": {"type": "integer"},
                                 "requests_sent": {"type": "integer", "description": "Requests the browser let through to the site in the whole run (injected and blocked ones excluded)."},
                                 "request_budget": {"type": ["integer", "null"]}, "allow_form_submission": {"type": "boolean"},
-                                "runs_per_scenario": {"type": "integer", "minimum": 1}}},
+                                "runs_per_scenario": {"type": "integer", "minimum": 1},
+                                "service_workers": {"enum": ["block", "allow"], "description": "Whether pages could run the app's service worker (run.json safety)."}}},
     "baseline": {"type": "object", "additionalProperties": {
       "type": "object", "additionalProperties": false, "required": ["status", "critical_path", "runs"],
       "properties": {"status": {"enum": ["passed", "failed", "unstable", "not_run"]}, "critical_path": {"type": "boolean"}, "runs": {"type": "integer"},
                      "failed_step": {"type": ["string", "null"]}, "error": {"type": ["string", "null"]}, "shown": {"type": "object"},
-                     "page_errors": {"type": "array"}, "screenshots": {"type": "array", "items": {"type": "string"}}}}},
+                     "page_errors": {"type": "array"}, "screenshots": {"type": "array", "items": {"type": "string"}},
+                     "retried": {"type": "integer", "minimum": 1, "description": "Baseline runs that failed and passed when tried again."}}}},
     "scenarios": {"type": "array", "items": {
       "type": "object", "additionalProperties": false,
       "required": ["id", "flow", "step", "endpoint", "fault", "expected", "status", "effects", "runs", "screenshots"],

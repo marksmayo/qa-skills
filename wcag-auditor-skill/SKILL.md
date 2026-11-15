@@ -1,7 +1,7 @@
 ---
 name: wcag-auditor
 description: Audit live web pages against WCAG (2.2 AA by default) without needing the source code. Runs three open-source engines inside a real browser (axe-core, IBM Equal Access, HTML_CodeSniffer), adds keyboard, focus, reflow, text-spacing, zoom, target-size, hover, motion, language and media probes, merges and de-duplicates the results by component, maps every issue to a success criterion, rates severity with a published rubric, and gives every SC at the target level an EARL outcome. Untested criteria become a manual test plan. The report never says the site conforms.
-version: 1.5.0
+version: 1.6.0
 ---
 
 # WCAG Auditor
@@ -69,7 +69,7 @@ What sets this apart from running one checker:
 
 | Input | Default | Notes |
 |---|---|---|
-| `targets` | required | URLs, a sitemap URL, or a start URL plus a crawl limit |
+| `targets` | required | URLs, a sitemap URL, or a start URL plus a crawl limit. A target may be `{"url": ..., "expect_status": 404}`: an error template users really reach (the not-found page) is then audited like any page, with its status recorded in the sample; any other 4xx/5xx answer makes a page `unreachable` |
 | `wcag_version` | `2.2` | Also `2.1` and `2.0`. In 2.2, 4.1.1 Parsing is obsolete and recorded as `inapplicable` |
 | `level` | `AA` | `A`, `AA` or `AAA`. Requirements above the target are advisories |
 | `critical_paths` | optional | Named flows as steps (`url`, optional `state`, `label`), or journey files from journey-mapper |
@@ -78,7 +78,8 @@ What sets this apart from running one checker:
 | `mobile_viewports` | none | Viewports (also in `viewports`) audited as a touch phone: `is_mobile`, `has_touch`, coarse pointer |
 | `max_pages` | 25 | Sampling cap for crawled and sitemap pages; listed targets are always audited |
 | `crawl.max_loads` | 4 x `max_pages` | Most pages the crawl loads; it stops sooner once `max_pages` templates are found or `max_pages` loads in a row add no new template |
-| `crawl.per_pattern` | 2 | Pages of one URL shape (`/region/*`, numbers and query values as placeholders) the crawl loads while links of an unseen shape wait, so a menu of hundreds of links of one shape on every page doesn't take every load before the footer's pages; `run.json` `crawl.patterns` counts the loads per shape |
+| `crawl.per_pattern` | 2 | Pages of one URL shape (`/region/*`, numbers and query values as placeholders) the crawl loads while links of an unseen shape wait, so a menu of hundreds of links of one shape on every page doesn't take every load before the footer's pages; `run.json` `crawl.patterns` counts the loads per shape and `crawl.shapes_from` says where the shapes came from |
+| `crawl.routes` / `crawl.next_app` | none | The app's route patterns (`["/", "/about", "/{slug}"]`, `[id]` and `:id` also read), or a Next.js project folder whose page routes `next_app.py` reads: a URL takes the static route it equals, else the dynamic route it matches, so pages under a root-level dynamic segment (`app/[slug]/page`) share one shape while `/about` keeps its own. Without them a path rule can't tell `/about` from `/heron-lake`: once more than `crawl.fold_root_after` (8) root-level siblings are seen they all fold into `/*`, so list the root pages that are separate templates as targets |
 | `keyboard.max_presses` | 2000 | Hard cap on Tab presses per keyboard traversal. The budget starts at 3 per visible focusable element (+20, at most 400) and grows by 20 each time a press reaches a new element, so a menu that focus reveals (hundreds of links) doesn't end the traversal early |
 | `settle_seconds` | 10 | Most time spent waiting for each load to settle (network quiet for 500 ms, then a quiet DOM). Event streams, websockets, long-poll and hot-reload requests, and any request open longer than `long_lived_seconds` (4), don't hold it open; `events` names them |
 | `random_sample` | 0.1 | Share of the remaining crawled pages added at random (seeded); `0` adds none |
@@ -127,10 +128,13 @@ regions, labelled sections, forms and dialogs, and repeat counts, are left out, 
 four code-block regions shares a template with one that has none), and samples every critical-path page and every listed target (never dropped for
 sharing a template), one page per template not yet covered, and about 10% more of the rest at
 random (seeded). Each page records how it entered the sample (`critical_path`, `listed`,
-`structured`, `random`, or `unreachable`). Check the sample makes sense before the full run; add
+`structured`, `random`, or `unreachable`) and the HTTP status it answered. Check the sample makes sense before the full run; add
 targets for templates the crawl missed. A plan-only run records every engine as `not_run` with the
 reason "plan only": that is expected, not a failure. The crawl loads at most `crawl.per_pattern` pages of one URL shape
-while links of an unseen shape wait (listed targets always come first). Responses that aren't HTML (a linked `.txt`,
+while links of an unseen shape wait (listed targets always come first). The shape folds only the last segment of a
+nested path (`/region/*`); give `crawl.routes` or `crawl.next_app` for root-level dynamic routes. List the not-found
+page (any unknown URL) as a target with `expect_status: 404` so its template is audited; an unreachable page is never
+audited, and the report must name it in `limitations`. Responses that aren't HTML (a linked `.txt`,
 XML or JSON file) are skipped, not sampled; `run.json` lists them under `crawl.skipped_non_html`
 with why the crawl stopped.
 
@@ -150,26 +154,33 @@ so the audited page is never reloaded under later probes.
 
 | Probe | SCs | What it measures |
 |---|---|---|
-| `keyboard` | 2.1.1, 2.1.2, 2.4.3 | Tab order from the top of the document (an invisible starting point focused at the start of the body; nothing is clicked, so the first Tab reaches a skip link even under a fixed header); traps (no new element for 15 presses, then Shift+Tab and Escape tried); clickable elements that aren't focusable, with their click listeners; menu links that only `:hover` reveals and no key opens (focus, ArrowDown, and Enter and Space unless the control follows a link or submits a form). Clickable heading text whose heading holds a focusable `#` anchor link is not reported; a clickable element with a focusable sibling link or button is needs review, not failed. In a named state with a modal open and focus inside it, Tab starts from the focused element and only the modal's controls are expected (`start: active_element`). A traversal that hits its press limit (`keyboard.max_presses`) before a full pass is `partial`, with a reason: its stops are evidence, what it never reached is not reported as unreachable, and the keyboard and focus checks count as not run |
-| `focus_visible` | 2.4.7, 2.4.11, 2.4.12 | Pixels changed around each element when focused; whether fixed or sticky content covers it (a fixed header that contains the focused control doesn't count); focus guards (`data-*focus-guard`, 0 x 0 `aria-hidden` sentinels) are not measured |
+| `keyboard` | 2.1.1, 2.1.2, 2.4.3 | Tab order from the top of the document (an invisible starting point focused at the start of the body; nothing is clicked, so the first Tab reaches a skip link even under a fixed header); traps (no new element for 15 presses, then Shift+Tab and Escape tried); clickable elements that aren't focusable, with their click listeners; menu links that only `:hover` reveals and no key opens (focus, ArrowDown, and Enter and Space unless the control follows a link or submits a form). Clickable heading text whose heading holds a focusable `#` anchor link is not reported; a clickable element with a focusable sibling link or button is needs review, not failed. In a named state with a modal open and focus inside it, Tab starts from the focused element and only the modal's controls are expected (`start: active_element`); a state with `"keyboard_start": "active_element"` starts from wherever its actions left focus (after a client-side navigation: does the next Tab reach the new page's content?), and from the top, with a `start_note`, when nothing was focused (a start element focused by script with `tabindex="-1"` is not a Tab stop, so its indicator is not measured). A traversal that hits its press limit (`keyboard.max_presses`) before a full pass is `partial`, with a reason: its stops are evidence, what it never reached is not reported as unreachable, and the keyboard and focus checks count as not run |
+| `focus_visible` | 2.4.7, 2.4.11, 2.4.12 | Pixels changed around each element when focused, against its perimeter (an inline link that wraps is measured per line box, `line_boxes`); whether fixed or sticky content covers it (a fixed header that contains the focused control doesn't count); focus guards (`data-*focus-guard`, 0 x 0 `aria-hidden` sentinels) are not measured. Stops with no or a weak indicator keep their focused and unfocused crops (`indicator.screenshot`, `screenshot_unfocused`, up to 30 per traversal): look at them before rating |
 | `reflow` | 1.4.10 | Horizontal scrolling at 320 px and the element causing it (tables, video and other two-dimensional content flagged as possibly exempt); content past the viewport on a page that can't scroll sideways (cut off: `reflow.clipped`, failed), or cut off by an ancestor with overflow hidden (needs review) |
 | `text_spacing` | 1.4.12 | Text clipped once the WCAG spacing overrides are applied (visually hidden `.sr-only` text excluded); the overrides are read back, and a refused stylesheet makes the probe `errored` |
 | `resize_text` | 1.4.4 | Text clipped at 200% zoom (half the viewport at device scale 2; visually hidden text excluded); viewport meta that blocks zoom |
 | `target_size` | 2.5.8 | Pointer targets (links, buttons, controls, ARIA widgets; never a `tabindex` container or a visually hidden link) under 24 x 24 px whose 24 px circle overlaps another target, measured at the top of the page; fixed or sticky targets are compared only with each other; inline links exempt |
-| `hover_focus` | 1.4.13 | Content shown on hover: dismissible with Escape, hoverable, persistent. Anything that appears inside the hovered element's own box (an icon, a tint) is not additional content and is only counted (`own_box_changes`) |
+| `hover_focus` | 1.4.13 | Content shown on hover: dismissible with Escape, hoverable, persistent. Anything that appears inside the hovered element's own box (an icon, a tint) is not additional content and is only counted (`own_box_changes`). Visually hidden elements (an `.sr-only` skip link) are not candidates; an element the pointer can't reach (covered by another) is named in `skipped` and makes the probe `partial` |
 | `motion` | 2.2.2 | Content still changing 5 to 7.5 s after load with no pause control; again with reduced motion |
 | `a11y_tree` | 1.3.1, 2.4.6, 4.1.2 | Accessibility-tree snapshot, headings and landmarks for the assisted review |
 | `language` | 3.1.1 | `lang` present, valid, and matching the language of the text |
 | `media` | 1.2.x, 1.4.2 | Video and audio elements, tracks, autoplay; embedded players |
 
-States from the config run the engines again, plus any probes listed for them. CAPTCHAs stop the
-page (`blocked`); cross-origin frames the engines can't reach are `untested`.
+States from the config run the engines again, plus any probes listed for them. Each state records where focus
+was once its actions finished (`focus_after_actions` in its raw file: selector, snippet and a crop; `null` when
+nothing but the body was focused) and the URL it ended on (`final_url`); a `{"press": "Tab"}` state shows there
+which element it really focused. A state that navigates client-side to another sampled page (a framework
+`<Link>`) has its results filed under that page, with `via` naming the page and state it started from; one that
+ends on an unsampled URL keeps its page and says where it ended (`ended_on`). CAPTCHAs stop the
+page (`blocked`); cross-origin frames the engines can't reach are `untested`. The runner prints one progress line
+per probe (`[p01__1280x800] keyboard: ran in 27s`).
 
 Full-page screenshots show only the first box of a panel that scrolls its own content (an app shell
 of height `100vh` with a scrolling list and detail panel). The runner records such panels per page
 (`inner_scroll`) and writes the limitation into `run.json` `limitations` (also printed as a warning):
 copy it into the report's `limitations`, scroll the panels and check what they hide by hand, and
-don't cite a full-page screenshot as showing content below a panel's first box.
+don't cite a full-page screenshot as showing content below a panel's first box. When third-party requests were
+blocked, `run.json` `limitations` also names the hosts and counts: copy that too.
 
 Pages without page-level landmarks are grouped into templates by file name and DOM shape, not by
 folder, so one generated page copied into many folders (a `report.html` per CI run) is one template.
@@ -186,11 +197,15 @@ python scripts/merge_findings.py <run-dir>/items.json --run <run-dir> --out <run
 it as `wcag`, `best_practice`, `above_level`, `outside_version`, `obsolete` or `experimental`.
 The map is generated from the engines' own metadata; its `overrides` table corrects the few
 entries that metadata gets wrong (IBM `img_alt_redundant` is best practice, like axe's
-`image-redundant-alt`, not a 1.1.1 failure).
+`image-redundant-alt`, not a 1.1.1 failure) and names the failure pattern a rule implies where its SC has
+several (axe `link-in-text-block` is a colour-only link). IBM's citation of ACT `7d6734` is kept only for an svg
+with an explicit graphics or `img` role, the rule's applicability.
 `merge_findings.py` merges results about the same element (or an image and its link) across
 tools, viewports and states, then groups them by component signature across pages. Each
-candidate carries its sources, outcome, a suggested confidence and the rubric's default failure
-pattern. `sc_draft` gives each SC a draft outcome; it never drafts `passed`.
+candidate carries its sources, outcome, a suggested confidence and the default failure pattern: the one its rule
+implies, or the only pattern of its SCs. When the rule implies none and the SC has several, `pattern` is null and
+`pattern_choices` lists them with their default severities: choose the one that matches what you see (never the
+most severe by default). `sc_draft` gives each SC a draft outcome; it never drafts `passed`.
 
 Contrast "needs review" results (axe `incomplete`, HTMLCS `.Alpha`/`.BgImage`/`.Abs`, IBM
 potentials) can bury the real failures when a page has a faint background gradient. The runner
@@ -281,18 +296,21 @@ Follow `RUBRIC.md`:
 Every SC at the target version and level gets one `sc_results` row. `failed` lists its findings;
 `cantTell` lists its needs-review items; `inapplicable` says why (no media, no authentication);
 `passed` says what evidence covers the whole criterion; everything else is `untested` and goes in
-the `manual_test_plan` with concrete steps and pages.
+the `manual_test_plan` with concrete steps and pages. A pass whose evidence is a probe's output (the keyboard
+probe, reflow, text spacing) has `probe` in its basis, so the validator can check the probe ran on every planned
+check: an `agent_review` pass whose evidence note cites probe results is rejected.
 
 ### 10. Report, validate and render
 
-Write `audit.json` (described by `schemas/audit.schema.json`; its `schema_version` is `"1.4"`; `"1.0"` to `"1.3"` reports still validate; 1.3 adds the check status `partial`; 1.4 adds check rows for named states (`state`), `critical_path.affects_step`, `metadata.untestable_surfaces` and `metadata.mobile_viewports`). Copy
-`metadata.blocked_requests` from `run.json` as it is recorded there (a list of URLs) or as its count;
-`--run` checks it either way next
-to the run directory, then:
+Write `audit.json` (described by `schemas/audit.schema.json`; its `schema_version` is `"1.5"`; `"1.0"` to `"1.4"` reports still validate; 1.3 adds the check status `partial`; 1.4 adds check rows for named states (`state`), `critical_path.affects_step`, `metadata.untestable_surfaces` and `metadata.mobile_viewports`; 1.5 adds an instance's `via` and `ended_on` and a sample page's `status` and `expected_status`). Copy
+`metadata.blocked_requests` and `metadata.events` from `run.json` as they are recorded there (lists of
+`{method, url, reason, at}` and `{url, event, at}` objects; plain strings are accepted too), or
+`blocked_requests` as its count; `--run` checks the count either way. Copy each instance's `via` or `ended_on`
+from its candidate. Save the report next to the run directory, then:
 
 ```bash
 python scripts/validate_audit.py audit.json --run <run-dir> --candidates <run-dir>/candidates.json --write-summary [--repo <site source>]
-python scripts/render_report.py audit.json [--brief]
+python scripts/render_report.py audit.json [--brief] [--markdown audit.md]
 ```
 
 `--write-summary` fills or recomputes the headline numbers before anything is checked, so the draft
@@ -316,7 +334,11 @@ reason, the P0 and P1 findings, blocked critical paths, what was untested and th
   confidence and blocked critical paths recomputed.
 - With `--run`: tool statuses, versions, the check matrix, the sample and the browser version
   match `run.json`, so nothing claims to have run that didn't; an SC passed on probe evidence had
-  its probes run on every planned check.
+  its probes run on every planned check of the pages that were reached (a page that was never reached
+  is a missing page, named in `limitations`, not a probe that failed).
+- Every `unreachable` or `blocked` sample page is named in `limitations`; a page listed with
+  `expect_status` answered that status.
+- An `agent_review` pass doesn't rest on probe results (see step 9).
 - With `--candidates`: no contrast candidate below the threshold, over an image or video, or
   grouped without an estimate is dismissed.
 
@@ -330,6 +352,12 @@ reason, the P0 and P1 findings, blocked critical paths, what was untested and th
   probes to be `errored` on pages whose CSP refuses injected scripts or styles.
 - **CAPTCHAs:** stop, record the page as blocked, report affected SCs as `untested`.
 - **SPAs:** the runner waits for network idle and a quiet DOM; add `wait_for` actions for slow views.
+  For focus management after a client-side navigation, add a state that clicks the link, with
+  `"keyboard_start": "active_element"` and the keyboard probe: `focus_after_actions` shows where focus
+  landed and the traversal shows what the next Tab reaches. A focus manager may move focus on the first
+  load too, so a `{"press": "Tab"}` state can land past the skip link: check `focus_after_actions`.
+- **Error templates:** list a URL that does not exist as a target with `"expect_status": 404` to audit
+  the not-found page (and 410 or another code where users see that template).
 - **Dev servers** (hot reload, socket.io long-poll, event streams) never go network-idle: those
   connections are ignored and each load's settle is capped (`settle_seconds`); `events` records it.
 - **Infinite scroll:** capped by `max_pages`; don't scroll endlessly.

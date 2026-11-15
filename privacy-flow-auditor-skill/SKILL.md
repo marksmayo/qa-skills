@@ -1,7 +1,7 @@
 ---
 name: privacy-flow-auditor
 description: Map where personal data goes in a web app - what it collects, where it stores it, what it logs, and which third parties receive it, and whether that happens before the user consents or after they reject. Combines a static scan of the code (collection points, logging, analytics, session replay, storage, SDKs, mobile permissions) with a live browser capture in three consent states (before a choice, after "Reject all", after "Accept all"), typing synthetic canary values and searching every request, cookie and storage entry for them raw, URL-encoded, Base64 and hashed. Produces a data inventory, recipients, a consent matrix and ranked findings with GDPR, UK GDPR and Australian Privacy Principles references for a privacy professional. Never types or stores real personal data, and never says an app is compliant.
-version: 1.6.0
+version: 1.7.0
 ---
 
 # Privacy flow auditor
@@ -73,7 +73,7 @@ breach; this is not legal advice.
 | `bypass_csp` | `false` | The capture keeps the site's Content-Security-Policy in force, so a vendor call the CSP forbids is stopped as it would be for a visitor and recorded as a CSP-blocked attempt; `true` bypasses it, and a limitation must say so |
 | `declared_processors` | optional | The organisation's own vendor list (privacy policy section, records of processing): `{"source", "processors": [{"vendor", "domains"?}]}`. A declared name covers a domain when it is the domain's vendor, one of the vendor's aliases or its parent company (`data/vendors.json` `vendors`: "Google Analytics" covers the gtag.js loader on googletagmanager.com, "Google Ads" covers AdSense), or when the entry lists the domain; each recipient records the declared name and how it matched |
 | `lists` | `fetch_lists.py` output | EasyPrivacy (tracker domains), Open Cookie Database (cookie names), `data/vendors.json` (vendor names); `--extra` adds regions or corrections |
-| `privacy_policy_url` | optional | Read it and compare vendors and categories with what was observed: agent judgment, at most `pattern` |
+| `privacy_policy` | optional | A URL, or a policy page kept in the repository (HTML, Markdown, MDX or a page component). Compare what it promises (a consent message, the vendors it names, purposes) with what the code and the capture show; a gap is a `policy_mismatch` finding with a `policy` basis (below). `--declared` also takes such a page: its processors are the vendors and hosts its text names (`data/vendors.json` names and aliases, and the list's vendors; bare company names don't count), each with the line that names it |
 
 ## Workflow
 
@@ -96,6 +96,17 @@ When the capture can't run (no browser, no authorised target, a site that blocks
 deliver: merge the static scan alone (`run_status: not_run`), trace and triage its candidates, add
 findings found by reading the code (below), and say plainly in the statement and limitations that no
 consent state, request or canary was tested.
+
+**Policy against code.** When the privacy policy (a URL, or a page in the repository) promises something the
+code doesn't do (a consent message for EEA and UK visitors while the loaders run unconditionally; a vendor
+list that leaves out a loaded vendor), report a `policy_mismatch` finding with `"policy": {"file", "line",
+"excerpt", "promise"}` (an in-repo page, re-read with `--repo`) or `{"url", "excerpt", "promise"}`, and the
+code side as candidates, a code basis or a code path. `promise` is `consent_step`, `no_third_parties`,
+`vendor_list`, `purpose`, `retention` or `other`; a `consent_step` promise against code with no consent
+step may rate `before_consent`, also with no banner and in a static-only audit.
+
+**Categories** set the rating, so state why when they go beyond what the candidates, the fields and (for
+tracking findings) the vendor category's data give (`categories_basis`); see `RUBRIC.md`.
 
 **Findings found by review.** Code reading finds flows no pattern catches. Such a finding sets
 `"source": "agent"`, may have no candidates, and carries `"basis"`: `{file, line, excerpt}` items (the
@@ -120,10 +131,30 @@ vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), ev
      `.twig`) like HTML, so an analytics partial or an ad tag included on every page is seen;
    - raises a `tracking_before_consent` candidate (subtype `loader_before_consent`, one per vendor, other
      pages under `also_at`) for an analytics, advertising, tag-manager or replay loader (a `<script src>`,
-     an injected script, or a `gtag('config')` call) with no consent check nearby, when the code sets no
-     consent-mode default (`gtag('consent', 'default', ...)`) and the tag isn't held back by a consent
-     manager (`type="text/plain"` with a category attribute); a static-only audit can rate before consent
-     from it, and the live capture decides;
+     a next/script `<Script src>` with any `strategy`, a JSX `<script src>` in a component, an
+     `@next/third-parties` component, an injected script, or a `gtag('config')` call) with no consent check
+     nearby, when the code sets no consent-mode default (`gtag('consent', 'default', ...)`) and the tag isn't
+     held back by a consent manager (`type="text/plain"` with a category attribute); a static-only audit can
+     rate before consent from it, and the live capture decides. Next.js projects are read with the shared
+     `next_app.py` (loaders, their strategy, resource hints, next.config headers). A script from a host
+     `data/vendors.json` doesn't list is still in the SDK inventory (`vendor: null`, printed as "vendor
+     unknown") and, loaded with no consent check, an `unknown_third_party_loader` candidate: find out what it
+     is (dismiss a library CDN or a widget that sets no identifier as `functional_no_identifier`). The
+     vendor list covers common analytics services (Plausible, Fathom, Simple Analytics, Umami, Matomo Cloud,
+     Ahrefs Web Analytics, Microsoft Clarity, Hotjar) and library CDNs (category `cdn`);
+   - records every mention of a host under `host_mentions` with its kind: `loader`, a resource hint
+     (`preconnect`, `dns-prefetch`, `preload`, ...), a CSP allowance (`csp`) or another `reference`. An SDK
+     entry sits at the loader line (else the first reference) and lists the file's other mentions; a host a
+     file only hints at or allows in its CSP is not an SDK there (nothing loads from it);
+   - reads the Content Security Policies (next.config `headers()`, `vercel.json`, `netlify.toml`,
+     `public/_headers`, `<meta http-equiv>`) into `csp` and compares them with the code: each loader host,
+     and each host `data/vendors.json` says a loader goes on to use (`companions`: AdSense's consent message
+     on `fundingchoicesmessages.google.com`, gtag's collection hosts), is checked against every enforced
+     policy (`csp.checks`, `csp.blocked`), and host allowances nothing in the code names are listed
+     (`csp.unused_allowances`, a heuristic). A consent-message host the CSP blocks is a
+     `consent_message_blocked_by_csp` candidate at the CSP line: the message never shows, and the capture
+     can't see it (it blocks third parties before the CSP applies). Each loader candidate's `facts.csp` says
+     whether the policy allows it;
    - raises a `personal_data_to_third_party` candidate (subtype `url_to_analytics`) when an analytics or
      identify call reads the page URL with its query (`location.search`, `location.href`, `document.URL`):
      search terms and whatever a GET form puts in the address reach the vendor. Its facts list the GET
@@ -325,7 +356,7 @@ tested, covered, not_covered),
 `metadata` (browser, canary set id, lists, declared processors source, tools), `inventory[]`,
 `recipients[]` (with `declared_as` and blocked request counts), `consent_matrix[]`, `findings[]` (type, title, candidates, categories, fields, vendor,
 recipient kind, consent states, flow basis, reach, sensitivity, flow, score, priority, floor, cap,
-confidence, evidence, references, fix, verification; `source: agent` and `basis` for a finding found by review; `default_on` for a telemetry or beacon send with no choice made), `triage[]`, `headline` (counts, third parties
+confidence, evidence, references, fix, verification; `source: agent` and `basis` for a finding found by review; `default_on` for a telemetry or beacon send with no choice made; `policy` for a `policy_mismatch`; `categories_basis` when the categories aren't derived), `triage[]`, `headline` (counts, third parties
 before consent and after rejection - `null` for a state that wasn't tested - `states_not_tested`, special-category
 flows, `recipients_in_findings` (domains the findings name, from code or runtime evidence outside the browser too), statement, disclaimer; `consent_banner: false` and `states_not_applicable` for an app with no banner),
 `metadata.session` (whose signed-in session the capture used), `limitations[]`.
@@ -352,6 +383,6 @@ the evidence fails. File upload points from the scan must be followed up in the 
 limitations: the text must speak of uploads (or attachments, spreadsheets, a dropzone or file input; a bare
 "files" does not count) and, when several files hold upload points, name each of them. A finding with
 `flow_basis: declared_unexpected` needs declared processors (`--declared` at merge, or
-`metadata.declared_processors`) that name its recipient (vendor, alias or parent company, or domain); one that names no recipient is at most `pattern`. `before_consent` from review needs `default_on: true` on a `telemetry` or `first_party_beacon` finding. An inventory recipient needs a live candidate, or a traced or observed finding naming the domain and the field. When the static scan reports that most of the code is in a language it does not analyse (`language_coverage`), a limitation must name that language. With no consent banner, the statement says so. `--write-summary` fills missing ratings and the
+`metadata.declared_processors`) that name its recipient (vendor, alias or parent company, or domain); one that names no recipient is at most `pattern`. `before_consent` from review needs `default_on: true` on a `telemetry` or `first_party_beacon` finding, or a `policy_mismatch` whose policy basis (re-read with `--repo`) promises a consent step; an unsupported `before_consent` names what would support it. Categories beyond the candidates', the fields' and (tracking findings) the vendor category's data, or leaving the vendor category's out, need a `categories_basis`. An inventory recipient needs a live candidate, or a traced or observed finding naming the domain and the field. When the static scan reports that most of the code is in a language it does not analyse (`language_coverage`), a limitation must name that language. With no consent banner, the statement says so. `--write-summary` fills missing ratings and the
 headline instead of failing on them; `--fix-ratings` rewrites computed rating fields that are wrong and
 lists each change (the rating error shows the arithmetic).

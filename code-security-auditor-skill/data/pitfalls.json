@@ -1,5 +1,5 @@
 {
- "version": "1.5.0",
+ "version": "1.6.0",
  "about": "Security pitfall catalogue for scan_pitfalls.py, organised by CWE. Each entry is a pattern-level lead: a match is a candidate until a source-to-sink path is traced. cvss_hint is a typical CVSS v4.0 base vector for the weakness, to adjust per finding. tools maps rules from other scanners (tool:rule) to the entry. OWASP categories are the 2025 Top 10.",
  "owasp_2025": {
   "A01": "A01:2025 Broken Access Control",
@@ -138,6 +138,21 @@
    ],
    "require_content": "^(trigger|pr|schedules|stages|jobs|steps|pool|extends|resources|variables|parameters)\\s*:",
    "exclude_content": "^\\s*runs-on\\s*:|^on\\s*:|^(apiVersion|kind|services)\\s*:"
+  },
+  "security_headers": {
+   "extensions": [
+    ".js",
+    ".mjs",
+    ".cjs",
+    ".ts",
+    ".mts",
+    ".json",
+    ".toml"
+   ],
+   "filenames": [
+    "_headers"
+   ],
+   "path_regex": "(^|/)(next\\.config\\.(js|mjs|cjs|ts|mts)|vercel\\.json|netlify\\.toml|_headers|staticwebapp\\.config\\.json|firebase\\.json)$"
   }
  },
  "pitfalls": [
@@ -696,13 +711,30 @@
    "category": "web",
    "title": "HTML sink that bypasses escaping",
    "regex": "\\.(innerHTML|outerHTML)\\s*=|\\bdocument\\.write(ln)?\\s*\\(|insertAdjacentHTML\\s*\\(|dangerouslySetInnerHTML|\\bv-html\\s*=|\\{@html\\s|bypassSecurityTrust\\w+\\s*\\(",
-   "suppress_line": "DOMPurify\\.sanitize|sanitizeHtml\\(|sanitize\\(|__html\\s*:\\s*[\\\"'][^\\\"'$]*[\\\"']\\s*\\}|\\.(innerHTML|outerHTML)\\s*=\\s*(\"[^\"]*\"|'[^']*'|`[^`$]*`)\\s*;?\\s*(//.*)?$",
+   "suppress_line": "DOMPurify\\.sanitize|sanitizeHtml\\(|sanitize\\(|__html\\s*:\\s*[\\\"'][^\\\"'$]*[\\\"']\\s*\\}|\\.(innerHTML|outerHTML)\\s*=\\s*(\"[^\"]*\"|'[^']*'|`[^`$]*`)\\s*;?\\s*(//.*)?$|__html\\s*:\\s*JSON\\.stringify\\s*\\(",
    "fix": "Render text with textContent / framework binding; sanitise unavoidable HTML with DOMPurify.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
    "tools": [
     "semgrep:insecure-document-method",
     "semgrep:react-dangerouslysetinnerhtml",
     "eslint:react/no-danger"
+   ],
+   "suppress_near": "^\\s*__html\\s*:\\s*JSON\\.stringify\\s*\\(",
+   "window": 1
+  },
+  {
+   "id": "JS-JSONLD-STRINGIFY",
+   "pack": "javascript",
+   "cwe": "CWE-79",
+   "owasp": "A05:2025 Injection",
+   "category": "web",
+   "title": "Inline JSON (JSON-LD) built with JSON.stringify in dangerouslySetInnerHTML",
+   "regex": "__html\\s*:\\s*JSON\\.stringify\\s*\\(",
+   "suppress_line": "\\.replace\\(\\s*/<|\\\\u003c|serialize-javascript|\\bserialize\\(|htmlSafe|escapeJson|safeJson",
+   "fix": "JSON.stringify does not escape '</script>', so a string value containing it closes the script element and the rest is parsed as HTML. When any value comes from outside the repository (a CMS, the request, user content), escape '<' as \\u003c before injecting; a value that is a constant in the repository is an observation, not a vulnerability.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "semgrep:react-dangerouslysetinnerhtml"
    ]
   },
   {
@@ -2268,6 +2300,69 @@
    "scope_suppress": "deployment\\s*:",
    "fix": "Run the step in a deployment job that targets an environment with approvals and checks (branch control).",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:L/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N",
+   "tools": []
+  },
+  {
+   "id": "HDR-CSP-UNSAFE-INLINE",
+   "pack": "security_headers",
+   "cwe": "CWE-693",
+   "owasp": "A02:2025 Security Misconfiguration",
+   "category": "web",
+   "title": "CSP allows inline script ('unsafe-inline' in script-src or default-src)",
+   "regex": "(?i)\\b(?:script-src(?:-elem)?|default-src)\\b[^;\\n]*?'unsafe-inline'",
+   "suppress_line": "'nonce-|'sha(256|384|512)-|'strict-dynamic'",
+   "fix": "Drop 'unsafe-inline' from script-src: move inline scripts to files, or use nonces (Next.js middleware) or hashes with 'strict-dynamic'. With 'unsafe-inline' the CSP does not stop an injected <script> or event handler.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": []
+  },
+  {
+   "id": "HDR-CSP-UNSAFE-EVAL",
+   "pack": "security_headers",
+   "cwe": "CWE-693",
+   "owasp": "A02:2025 Security Misconfiguration",
+   "category": "web",
+   "title": "CSP allows eval ('unsafe-eval' in script-src or default-src)",
+   "regex": "(?i)\\b(?:script-src(?:-elem)?|default-src)\\b[^;\\n]*?'unsafe-eval'",
+   "fix": "Remove 'unsafe-eval' (often only needed in development: add it only when NODE_ENV is development); find the library that needs eval or new Function.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": []
+  },
+  {
+   "id": "HDR-CSP-WILDCARD-SOURCE",
+   "pack": "security_headers",
+   "cwe": "CWE-693",
+   "owasp": "A02:2025 Security Misconfiguration",
+   "category": "web",
+   "title": "CSP script source is a wildcard or a bare scheme (*, https:, http:, data:, blob:)",
+   "regex": "(?i)\\b(?:script-src(?:-elem)?|default-src|object-src)\\b[^;\\n]*?(?<=\\s)(?:\\*|https?:|data:|blob:)(?=[\\s;\\\"'`,]|$)",
+   "fix": "Name the hosts scripts may load from (or use nonces with strict-dynamic); a bare https: or * lets an injected tag load script from any site.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": []
+  },
+  {
+   "id": "HDR-CSP-TAG-MANAGER",
+   "pack": "security_headers",
+   "cwe": "CWE-829",
+   "owasp": "A08:2025 Software or Data Integrity Failures",
+   "category": "supply_chain_ci",
+   "title": "CSP allows a tag manager as a script source (whoever edits the container can run any script)",
+   "regex": "(?i)\\b(?:script-src(?:-elem)?|default-src)\\b[^;\\n]*?(?:googletagmanager\\.com|tagmanager\\.google\\.com|tags\\.tiqcdn\\.com|tealiumiq\\.com|assets\\.adobedtm\\.com|cdn\\.segment\\.com)",
+   "fix": "Treat tag-manager access as code deployment: limit who can publish the container, or load only the analytics script the site needs (a nonce rather than the tag-manager host). Allowing the host also allows every custom HTML tag the container serves, so the CSP no longer limits script.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:H/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": []
+  },
+  {
+   "id": "HDR-CACHE-CATCH-ALL",
+   "pack": "security_headers",
+   "cwe": "CWE-524",
+   "owasp": "A02:2025 Security Misconfiguration",
+   "category": "data_exposure",
+   "title": "Shared-cache Cache-Control (public, s-maxage) on a catch-all path",
+   "regex": "(?i)\\bs-maxage\\s*=\\s*[1-9]|\\bpublic\\s*,[^\"\\'\\n]*\\bmax-age\\s*=\\s*[1-9]",
+   "require_above": "(?i)\\bsource\\b[\"']?\\s*[:=]\\s*[\"'`]/(?::\\w+\\*|:\\w+\\(\\.\\*\\)|\\(\\.\\*\\)|\\*)[\"'`]|^\\s*for\\s*=\\s*[\"']/\\*[\"']|^/\\*\\s*$",
+   "window": 8,
+   "fix": "Scope shared caching to the paths that are the same for everyone (static assets, public pages) and send Cache-Control: private, no-store from anything that reads cookies or the session: a catch-all rule also applies to routes added later, including signed-in or per-user ones, which a CDN would then serve to other visitors.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:L/VI:N/VA:N/SC:N/SI:N/SA:N",
    "tools": []
   }
  ]

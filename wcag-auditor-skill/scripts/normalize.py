@@ -8,10 +8,15 @@ SCs, EARL outcome (`failed` or `cantTell`), kind (`wcag`, `best_practice`, `abov
 `outside_version`, `obsolete`, `experimental`), page, template, viewport, state, element and
 screenshot. Tool "needs review" results stay `cantTell`; nothing is dropped silently. HTML_CodeSniffer
 notices (manual-check prompts) and rule passes are counted per SC in `sc_evidence`, never turned into passes.
+
+A named state that ends on another URL (a client-side navigation) files its results under the sampled page with
+that URL, with `via` naming the page and state it started from; when no sampled page has that URL the results
+stay on the start page with `ended_on` naming where the state ended.
 """
 from __future__ import annotations
 import argparse, json, re, sys
 from pathlib import Path
+from urllib.parse import urldefrag
 
 DATA = Path(__file__).resolve().parent.parent / 'data'
 VERSION_ORDER = {'2.0': 0, '2.1': 1, '2.2': 2}
@@ -64,6 +69,17 @@ def inside_box(inner: dict | None, outer: dict | None, slack: int = 2) -> bool:
             inner['x'] + inner['w'] <= outer['x'] + outer['w'] + slack and inner['y'] + inner['h'] <= outer['y'] + outer['h'] + slack)
 
 
+# ACT rules whose applicability an engine result can fall outside of: IBM cites 7d6734 (svg element with an explicit
+# role has a non-empty accessible name) for any unnamed svg, but the ACT rule applies only to svg elements with an
+# explicit graphics role; without one, citing it would make one engine's heuristic look like an ACT implementation.
+ACT_APPLIES = {'7d6734': re.compile(r'\brole\s*=\s*["\']?graphics-(?:document|symbol)|\brole\s*=\s*["\']?img\b', re.I)}
+
+
+def act_applies(act_id: str, html: str) -> bool:
+    rx = ACT_APPLIES.get(act_id)
+    return True if rx is None else bool(rx.search(html or ''))
+
+
 class Norm:
     def __init__(self, run: dict):
         self.run = run
@@ -73,6 +89,13 @@ class Norm:
         self.map = load('rule-map.json')
         self.versions = {e['name']: e['version'] for e in run['engines']}
         self.templates = {s['id']: s.get('template') for s in run['sample']}
+        self.by_url: dict[str, str] = {}
+        for s in run['sample']:
+            if s.get('reason') not in ('unreachable', 'blocked'):
+                for u in (s.get('url'), s.get('final_url')):
+                    if u:
+                        self.by_url.setdefault(urldefrag(u)[0], s['id'])
+        self.urls = {s['id']: s['url'] for s in run['sample']}
         self.items: list[dict] = []
         self.evidence: dict[str, dict] = {}
         self.unmapped: dict[str, int] = {}
@@ -104,6 +127,20 @@ class Norm:
     def ev(self, sc: str) -> dict:
         return self.evidence.setdefault(sc, {'tool_rule_passes': {}, 'htmlcs_notices': 0, 'probe_checks': 0, 'probe_failures': 0, 'probe_cant_tell': 0})
 
+    def where(self, rec: dict) -> tuple[str, str, dict]:
+        """The page a record's results belong to: a named state that navigated client-side to another sampled page
+        belongs to that page (via: where it started); one that ended on an unsampled URL keeps its page (ended_on)."""
+        final = urldefrag(rec.get('final_url') or '')[0]
+        if rec.get('state', 'initial') in ('initial', 'consent_open', 'consent_dismissed') or not final or \
+                final == urldefrag(rec['url'])[0]:
+            return rec['page'], rec['url'], {}
+        target = self.by_url.get(final)
+        if target and target != rec['page']:
+            return target, self.urls[target], {'via': {'page': rec['page'], 'state': rec['state']}}
+        if target == rec['page']:
+            return rec['page'], rec['url'], {}
+        return rec['page'], rec['url'], {'ended_on': rec.get('final_url')}
+
     def add(self, rec: dict, **kw):
         el = kw.pop('el', None) or {}
         if is_viewport_meta(kw, el) and kw.get('kind', 'wcag') == 'wcag':
@@ -114,12 +151,13 @@ class Norm:
             el = {**el, 'xpath': VIEWPORT_META['xpath'], 'sig': VIEWPORT_META['sig'],
                   'selector': el.get('selector') or VIEWPORT_META['selector']}
         scs, kind, related = self.classify(kw.pop('sc'), kw.pop('kind', 'wcag'))
+        page, url, moved = self.where(rec)
         item = {
             'id': f'N-{len(self.items) + 1:04d}', 'tool': kw['tool'], 'tool_version': self.versions.get(kw['tool']),
             'rule_id': kw['rule_id'], 'act_rules': kw.get('act_rules', []), 'sc': scs, 'related_sc': related,
             'outcome': kw['outcome'], 'kind': kind, 'evidence_type': 'probe' if kw['tool'] == 'probe' else 'tool',
             'pattern': kw.get('pattern'), 'impact': kw.get('impact'), 'message': (kw.get('message') or '')[:400],
-            'page': rec['page'], 'url': rec['url'], 'template': self.templates.get(rec['page']),
+            'page': page, 'url': url, 'template': self.templates.get(page), **moved,
             'viewport': rec['viewport'], 'state': rec['state'], 'screenshot': kw.get('screenshot') or rec.get('screenshot'),
             'xpath': el.get('xpath'), 'selector': el.get('selector') or kw.get('selector'), 'sig': el.get('sig') or kw.get('sig') or 'document',
             'html': el.get('html') or kw.get('html'), 'data': kw.get('data'),
@@ -139,7 +177,7 @@ class Norm:
                     self.unmapped[f"axe:{v['id']}"] = self.unmapped.get(f"axe:{v['id']}", 0) + 1
                     m = {'sc': [], 'act': [], 'kind': 'best_practice'}
                 for n in v['nodes']:
-                    self.add(rec, tool='axe-core', rule_id=v['id'], act_rules=m['act'], sc=m['sc'], kind=m['kind'],
+                    self.add(rec, tool='axe-core', rule_id=v['id'], act_rules=m['act'], sc=m['sc'], kind=m['kind'], pattern=m.get('pattern'),
                              outcome=outcome, impact=n.get('impact') or v.get('impact'), message=n.get('summary') or v['help'],
                              el=n.get('el'), selector=' >>> '.join(map(str, n['target'])), html=n.get('html'),
                              data=contrast_data(n.get('contrast'), n.get('check')))
@@ -159,7 +197,8 @@ class Norm:
             policy, result = x['value']
             kind = m['kind'] if policy == 'VIOLATION' else 'best_practice'
             outcome = 'failed' if result == 'FAIL' else 'cantTell'
-            self.add(rec, tool='ibm-equal-access', rule_id=x['ruleId'], act_rules=m['act'], sc=m['sc'], kind=kind,
+            act = [a for a in m['act'] if act_applies(a, x.get('snippet') or '')]
+            self.add(rec, tool='ibm-equal-access', rule_id=x['ruleId'], act_rules=act, sc=m['sc'], kind=kind, pattern=m.get('pattern'),
                      outcome=outcome, impact=f'{policy}/{result}', message=x.get('message'), el=x.get('el'),
                      html=x.get('snippet'), data={'reason': x.get('reasonId'), **(contrast_data(x.get('contrast')) or {})})
         for rule, n in (r.get('passes') or {}).items():
@@ -277,10 +316,13 @@ class Norm:
                     continue  # not measurable; an obscured element is reported under 2.4.11, not 2.4.7
                 self.checked(['2.4.7'])
                 n, per = ind['changed_px'], ind['perimeter'] or 1
+                lines = f", {ind['line_boxes']} line boxes" if ind.get('line_boxes') else ''
                 if n < 10:
-                    self.probe(rec, 'focus.not_visible', 'failed', el=s, message=f'No visible change when focused ({n} pixels changed)', data=ind)
+                    self.probe(rec, 'focus.not_visible', 'failed', el=s, message=f'No visible change when focused ({n} pixels changed)', data=ind,
+                               screenshot=ind.get('screenshot'))
                 elif n < per / 2:
-                    self.probe(rec, 'focus.not_visible', 'cantTell', el=s, message=f'Weak focus indicator ({n} pixels changed, perimeter {per})', data=ind)
+                    self.probe(rec, 'focus.not_visible', 'cantTell', el=s, message=f'Weak focus indicator ({n} pixels changed, perimeter {per}{lines})',
+                               data=ind, screenshot=ind.get('screenshot'))
         r = p.get('reflow')
         if r and r.get('status') == 'ran':
             self.checked(['1.4.10'])
@@ -337,7 +379,8 @@ class Norm:
                            message=f"{u['width']}x{u['height']} px target; a 24 px circle on it overlaps another target",
                            data={'width': u['width'], 'height': u['height'], 'conflicts_with': (u.get('conflicts_with') or {}).get('xpath')})
         h = p.get('hover_focus')
-        if h and h.get('status') == 'ran':
+        # partial: some candidates could not be hovered (named in skipped); what was checked is still evidence
+        if h and h.get('status') in ('ran', 'partial'):
             self.checked(['1.4.13'], h['checked'])
             for pop in h['popups']:
                 if inside_box(pop['content'].get('rect'), pop['trigger'].get('rect')):

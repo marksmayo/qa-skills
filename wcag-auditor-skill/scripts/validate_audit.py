@@ -16,9 +16,13 @@ Checks the report against schemas/audit.schema.json, then the rules a schema can
 - priority, ranking, severity counts, SC coverage, evidence completeness and overall confidence
   are recomputed.
 
+- every unreachable or blocked sample page is named in the limitations, and an agent_review pass does
+  not rest on probe results (its evidence note citing a probe means the basis needs "probe").
+
 --run re-checks tool statuses, the check matrix, the sample and screenshots against run.json, and
-that an SC passed on probe evidence had its probes run on every planned check (a probe whose
-injection failed measured nothing). --candidates checks every candidate was triaged exactly once,
+that an SC passed on probe evidence had its probes run on every planned check of a reached page (a
+probe whose injection failed measured nothing; a page never reached is a missing page, named in the
+limitations, and its blocked rows count against completeness only). --candidates checks every candidate was triaged exactly once,
 that finding sources come from the candidates they cite, and that no contrast candidate whose
 estimate is below the threshold, whose background is an image or video, or that is a group with no
 estimate, is dismissed. --write-summary fills or recomputes the headline numbers in place (not
@@ -39,6 +43,8 @@ LEVEL_ORDER = {'A': 0, 'AA': 1, 'AAA': 2}
 VERSION_ORDER = {'2.0': 0, '2.1': 1, '2.2': 2}
 REQUIRED_ENGINES = ['axe-core', 'ibm-equal-access', 'htmlcs']
 BANNED_VERDICT = re.compile(r'(?i)(?<!not )(?<!n\'t )\b(conforms|compliant|conformant|fully accessible|is accessible|meets wcag|passes wcag)\b')
+# an evidence note that rests on what a probe measured (the keyboard probe, reflow at 320 px, the text-spacing run)
+PROBE_WORDS = re.compile(r'(?i)\bprobes?\b|\b(?:keyboard|reflow|text[ _-]spacing|resize[ _-]text|target[ _-]size|hover[ _-]focus|motion)\s+(?:probe|run|check|traversal)')
 VAGUE_REASON = re.compile(r'(?i)^\W*(false positive|fp|not an issue|not a problem|n/?a|ok|fine|ignore|noise)\W*$')
 
 
@@ -276,6 +282,13 @@ def check(d: dict, run_dir: Path | None, cands: dict | None, repo: Path | None =
         if c['viewport'] not in meta['viewports']:
             e.append(f'metadata.checks: unknown viewport {c["viewport"]}')
     n_pages = sum(1 for p in meta['sample'] if p['reason'] not in ('unreachable', 'blocked'))
+    # a sampled page that was never audited (unreachable, blocked) is a hole in the evidence: the report says so
+    for p in meta['sample']:
+        if p['reason'] in ('unreachable', 'blocked') and not any(p['id'] in l or p['url'] in l for l in d['limitations']):
+            e.append(f'limitations: sample page {p["id"]} ({p["url"]}) was {p["reason"]} and not audited; name it in the limitations')
+    for p in meta['sample']:
+        if p.get('expected_status') is not None and p.get('status') not in (None, p['expected_status']):
+            e.append(f'metadata.sample[{p["id"]}]: expected HTTP {p["expected_status"]} but it answered {p["status"]}')
 
     # sc_results -------------------------------------------------------------
     got = [r['sc'] for r in d['sc_results']]
@@ -323,6 +336,11 @@ def check(d: dict, run_dir: Path | None, cands: dict | None, repo: Path | None =
             for i in ids:
                 if i not in nrs or r['sc'] not in nrs[i]['sc']:
                     e.append(f'{where}: needs-review item {i} missing or does not list {r["sc"]}')
+        if r['outcome'] == 'passed' and 'probe' not in r['basis'] and PROBE_WORDS.search(r['evidence_note']):
+            # a pass whose evidence is a probe's output is a probe-based pass: with "probe" in its basis, --run checks
+            # that the probe ran on every planned check; calling it agent_review would sidestep that check
+            e.append(f'{where}: passed on {"/".join(r["basis"])} but the evidence note cites probe results; add "probe" to '
+                     'the basis (so --run checks the probe ran everywhere) or say what was reviewed instead')
         if r['outcome'] in ('passed', 'failed') and 'agent_review' in r['basis'] and r['sc'] not in d['assisted_review']['scs_reviewed']:
             e.append(f'{where}: basis agent_review, but assisted_review.scs_reviewed does not list {r["sc"]}')
         if r['outcome'] == 'failed' and cited:
@@ -412,6 +430,8 @@ def check(d: dict, run_dir: Path | None, cands: dict | None, repo: Path | None =
                 e.append(f'{w}.instances[{i}]: unknown viewport {inst["viewport"]}')
             if inst['page'] not in f['pages']:
                 e.append(f'{w}.instances[{i}]: page {inst["page"]} not in pages')
+            if inst.get('via') and inst['via']['page'] not in pages:
+                e.append(f'{w}.instances[{i}]: via page {inst["via"]["page"]} is not a sample page')
             if run_dir and inst['screenshot'] and not (run_dir / 'screenshots' / inst['screenshot']).exists():
                 e.append(f'{w}.instances[{i}]: screenshot {inst["screenshot"]} not in the run directory')
         if scope['standards_map'] == 'en301549':
@@ -544,12 +564,20 @@ def check(d: dict, run_dir: Path | None, cands: dict | None, repo: Path | None =
         if n_meta != n_run:
             e.append(f'metadata.blocked_requests: {n_meta} but run.json blocked {n_run} request(s); copy the list or its count')
         run_pages = {s['id']: s['url'] for s in run['sample']}
+        for p in meta['sample']:
+            rp = next((x for x in run['sample'] if x['id'] == p['id']), {})
+            if 'status' in p and rp.get('status') != p['status']:
+                e.append(f'metadata.sample[{p["id"]}]: status {p["status"]} but run.json recorded {rp.get("status")}')
         if {p['id']: p['url'] for p in meta['sample']} != run_pages:
             e.append('metadata.sample: ids and URLs must match run.json')
         if meta['browser']['version'] != run['browser']['version']:
             e.append('metadata.browser.version differs from run.json')
         # a pass resting on probe evidence needs that probe to have run everywhere it was planned: a probe whose
-        # injection failed (a CSP refusing its style) measured nothing, so it can't support "passed"
+        # injection failed (a CSP refusing its style) measured nothing, so it can't support "passed". Rows of a page
+        # that was never reached (sample reason unreachable or blocked) are a missing page, which the limitations
+        # must name (checked above), not a probe that failed on a page it audited; they still count against
+        # completeness and confidence.
+        not_reached = {x['id'] for x in run['sample'] if x.get('reason') in ('unreachable', 'blocked')}
         probe_sc: dict[str, set] = {}
         for code, m in json.loads((DATA / 'rule-map.json').read_text(encoding='utf-8'))['probe'].items():
             for s in m['sc']:
@@ -558,7 +586,8 @@ def check(d: dict, run_dir: Path | None, cands: dict | None, repo: Path | None =
             if r['outcome'] != 'passed' or 'probe' not in r['basis']:
                 continue
             for probe in sorted(probe_sc.get(r['sc'], ())):
-                rows = [c for c in run['checks'] if c['kind'] == 'probe' and c['name'] == probe]
+                rows = [c for c in run['checks'] if c['kind'] == 'probe' and c['name'] == probe
+                        and not (c['page'] in not_reached and c['status'] == 'blocked')]
                 bad = [c for c in rows if c['status'] != 'ran']
                 if rows and bad:
                     e.append(f'sc_results[{r["sc"]}]: passed on probe evidence, but the {probe} probe did not run on '

@@ -67,10 +67,13 @@ def derive_baselines(run: dict) -> dict:
                                 'error_words': ob.get('error_words', []), 'visible_chars': ob.get('body_len')},
                       'page_errors': r['page_errors'][:3],
                       'screenshots': sorted({x['screenshot'] for rr in bad for x in rr['steps'] if x.get('screenshot')})})
+        if b.get('retried'):
+            e['retried'] = b['retried']     # failed runs that passed when tried again (retried_runs in run.json)
         out[name] = e
     return out
 
 
+FALLBACK_MSG = re.compile(r'(?i)falling back to browser navigation')
 CACHE_BUSTERS = {'_', 't', 'ts', 'cb', 'nocache', 'cachebust', 'cache_bust', 'rand', 'r', '_t', 'timestamp', 'v'}
 LONG_NUMBER = re.compile(r'^\d{8,}$')
 
@@ -90,9 +93,11 @@ def recovery_actions(step: dict) -> list[dict]:
 
 def recovery_kind(step: dict) -> str:
     """How recovery can repeat a step: `reload` when every action left to repeat is a page navigation (repeating a goto
-    reloads the page, and a reload is not recovery), otherwise `repeat_step`."""
+    or a reload reloads the page, and a reload is not recovery; repeating back or forward would move further through
+    the history), otherwise `repeat_step`."""
     acts = recovery_actions(step)
-    if acts and all('goto' in a and not str(a['goto']).startswith('#') for a in acts):
+    if acts and all(('goto' in a and not str(a['goto']).startswith('#')) or any(a.get(k) for k in ('back', 'forward', 'reload'))
+                    for a in acts):
         return 'reload'
     return 'repeat_step'
 
@@ -101,12 +106,37 @@ def glob_match(pattern: str, endpoint: str) -> bool:
     return pattern == endpoint or bool(re.match('^' + re.escape(pattern).replace(r'\*\*', '.*').replace(r'\*', '[^/]*') + '$', endpoint))
 
 
-def optional_endpoint(scen: dict, step_def: dict | None) -> bool:
-    """The agent marked the endpoint optional for this step (a background widget the step does not need): the step's
-    `optional_endpoints` in flows.json, or `optional: true` on the scenario."""
+DECORATIVE = {'image', 'font', 'media'}
+
+
+def optional_endpoint(scen: dict, step_def: dict | None, run: dict | None = None) -> bool:
+    """The endpoint is optional for this step (a background widget the step does not need): the step's
+    `optional_endpoints` in flows.json, `optional: true` on the scenario, or, by default, a fault that only hit images,
+    fonts or media (thumbnails, icons, a web font: the step's data did not depend on them)."""
     if scen.get('optional'):
         return True
-    return any(glob_match(p, scen['endpoint']) for p in (step_def or {}).get('optional_endpoints') or [])
+    if any(glob_match(p, scen['endpoint']) for p in (step_def or {}).get('optional_endpoints') or []):
+        return True
+    if scen.get('resource_type') in DECORATIVE:
+        return True
+    hit = [q for q in (run or {}).get('requests') or [] if q.get('injected') or q.get('offline')]
+    return bool(hit) and all(q.get('resource_type') in DECORATIVE for q in hit)
+
+
+def full_page_fallback(run: dict) -> dict | None:
+    """The page's own document was loaded again, for the path of a request the fault failed, after that failure, and
+    answered 2xx: the framework gave up on the failed payload and loaded the page from the server (Next.js falls back
+    to a full page load when a route payload fails), so what the user saw did not come from the fault."""
+    hit = [q for q in run.get('requests') or [] if (q.get('injected') or q.get('offline')) and not q.get('navigation')]
+    if not hit:
+        return None
+    t = min(q.get('t_ms', 0) for q in hit)
+    paths = {urlsplit(q['url']).path for q in hit}
+    for d in run.get('documents') or []:
+        if (d.get('t_ms', 0) >= t and d.get('phase') == 'fault' and urlsplit(d['url']).path in paths
+                and isinstance(d.get('status'), int) and 200 <= d['status'] < 300):
+            return {'failed_request': hit[0]['url'], 'document': d['url'], 'document_status': d['status'], 'after_ms': d.get('t_ms', 0) - t}
+    return None
 
 
 def persisted(scen: dict, st: dict, run: dict) -> dict | None:
@@ -114,8 +144,8 @@ def persisted(scen: dict, st: dict, run: dict) -> dict | None:
     the endpoint, and the server never gave the endpoint a good answer in this run (a fresh browser context), so what
     the app used came from the failure it stored (Cache Storage, IndexedDB, localStorage)."""
     rl = st.get('reload')
-    if not rl or scen['group'] not in FAILING | {'static_asset'}:
-        return None
+    if not rl or rl.get('error') or scen['group'] not in FAILING | {'static_asset'}:
+        return None     # a reload that never loaded made no request because it never ran, not because the app stored a failure
     good = [q for q in run['requests'] if not q.get('injected') and isinstance(q.get('status'), int) and 200 <= q['status'] < 300]
     if rl.get('endpoint_requests', 0) == 0 and not good and not rl.get('ok_responses'):
         return {'reload_completed': bool(rl.get('completed')), 'endpoint_requests_after_reload': 0, 'good_responses_in_run': 0,
@@ -149,6 +179,21 @@ def effects(scen: dict, run: dict, base_step: dict, ind: dict, budgets: dict, st
     st = run['steps'][-1]
     ob = st['observed']
     out, notes = [], []
+    shots = st.get('screenshots') or []
+    if ob.get('unavailable'):
+        notes.append({'kind': 'observation_unavailable', 'detail': [f'{ob["unavailable"]} (page {ob.get("page_url") or "unknown"}); '
+                                                                     'compare the screenshots: ' + (', '.join(shots) or 'none taken')]})
+        return out, notes
+    if ob.get('browser_error_page'):
+        sw = run.get('service_worker') or {}
+        notes.append({'kind': 'browser_error_page', 'screenshots': shots,
+                      'detail': [f'the step ended on the browser\'s own error page ({ob.get("page_url")}) under the {scen["fault"]} fault: the '
+                                 'navigation became a full page load that failed, so the user saw the browser\'s page instead of the site '
+                                 '(no app code ran there, so nothing is rated on the app)'
+                                 + ('; a service worker controlled the page and did not answer the navigation (no offline fallback)'
+                                    if sw.get('controlled') else '; no service worker controlled the page' if sw.get('mode') == 'allow' else '')
+                                 + (f'; screenshots: {", ".join(shots)}' if shots else '')]})
+        return out, notes
     docs = [q for q in run['requests'] if q.get('injected') and (q.get('navigation') or q.get('resource_type') == 'document')]
     if docs or scen.get('resource_type') == 'document':
         where = docs[0]['url'] if docs else scen['endpoint']
@@ -167,6 +212,22 @@ def effects(scen: dict, run: dict, base_step: dict, ind: dict, budgets: dict, st
     root_gone = ob['root_len'] == 0 and bob.get('root_len', 1) > 0     # an app root that was empty in the baseline says nothing
     boundary = bool(ob.get('boundary_element')) and not bob.get('boundary_element')
     crash = bool(ob['fallback_words']) or boundary or (bool(new_errors) and root_gone)
+    fallback = full_page_fallback(run)
+    by_worker = [q for q in run.get('requests') or [] if q.get('offline') and q.get('from_service_worker')
+                 and isinstance(q.get('status'), int) and 200 <= q['status'] < 300]
+    if by_worker:
+        notes.append({'kind': 'served_by_service_worker', 'screenshots': shots,
+                      'detail': [f'offline, the page\'s service worker answered {len(by_worker)} targeted request(s) ({by_worker[0]["url"]}, HTTP '
+                                 f'{by_worker[0]["status"]}) from its cache, so the step ' + ('completed' if st['completed_under_fault'] else
+                                 'did not complete') + ' without the network: check the screenshot for stale content shown as current']})
+    if fallback:
+        notes.append({'kind': 'full_page_fallback', 'measure': fallback,
+                      'detail': [f'the failed request ({fallback["failed_request"]}) was followed by a full page load of the same path '
+                                 f'({fallback["document"]}, HTTP {fallback["document_status"]}) that the fault did not touch: the page shown came '
+                                 'from the server, not from the failure']})
+    if ob.get('broken_images', 0) > bob.get('broken_images', 0):
+        notes.append({'kind': 'broken_images', 'detail': [f'{ob["broken_images"]} visible image(s) failed to load and show as broken '
+                                                          f'(baseline {bob.get("broken_images", 0)})']})
     if base_blank and ob['body_len'] < 20 and not crash:
         notes.append({'kind': 'baseline_blank',
                       'detail': [f'the baseline of this step already showed {bob.get("body_len")} visible characters, so a blank screen '
@@ -192,7 +253,9 @@ def effects(scen: dict, run: dict, base_step: dict, ind: dict, budgets: dict, st
         if new_empty:
             out.append({'effect': 'misleading_state', 'measure': {'empty_state_words': new_empty, 'baseline_excerpt': base_text[:120],
                                                                  'shown_excerpt': ob['text'][:120]}})
-        elif st['completed_under_fault'] and (scen['write'] or not optional_endpoint(scen, step_def)):
+        elif (fallback or by_worker) and not scen['write']:
+            pass        # the page came from a full load the fault did not touch, or from the worker's offline cache: not a failure shown as done
+        elif st['completed_under_fault'] and (scen['write'] or not optional_endpoint(scen, step_def, run)):
             # the request failed, nothing said so, and the step's `done` showed: the failure was presented as success.
             # On a read too, unless flows.json marks the endpoint optional for the step (a background widget)
             out.append({'effect': 'misleading_state', 'measure': {'shown_as_done': True, 'on_read': not scen['write'],
@@ -207,6 +270,9 @@ def effects(scen: dict, run: dict, base_step: dict, ind: dict, budgets: dict, st
         after = (st['inputs'].get('after_fault') or {}).get(field) or {}
         if before.get('length') and (after.get('length') == 0 or after.get('sha256') != before.get('sha256')):
             out.append({'effect': 'lost_input', 'measure': {'field': field, 'before': before, 'after': after}})
+    if (st.get('reload') or {}).get('error'):
+        notes.append({'kind': 'reload_not_checked', 'detail': [f'the reload after recovery did not load ({st["reload"]["error"]}), so whether the '
+                                                                'failure outlived the fault (persisted_failure) is unknown']})
     pm = persisted(scen, st, run)
     if pm:
         out.append({'effect': 'persisted_failure', 'measure': pm})
@@ -285,6 +351,14 @@ def main() -> int:
             g['likelihood'] = max(g['likelihood'], s['likelihood'])
             g['evidence'].append({'scenario': s['id'], **e['runs'][0]})
             g['confidence'].append(e['confidence'])
+    if (run.get('safety') or {}).get('prefetch') == 'block':
+        fb = sorted({m for b in run['baselines'].values() for r in b['runs'] for m in r['console_errors'] if FALLBACK_MSG.search(m)})
+        if fb:
+            notes.append({'kind': 'prefetch_changed_app', 'scenario': None,
+                          'detail': [f'with prefetch blocked, the app logged {len(fb)} payload failure(s) that fell back to full page loads in the '
+                                     'baselines: its client-side navigations became document loads, so loading states that only a client '
+                                     'navigation shows (a loading.tsx skeleton) were not tested. Rerun the payload scenarios with prefetch '
+                                     'allowed and "from": "load" plus "headers": {"Next-Router-Prefetch": "1"} (or {"RSC": "1"})', fb[0][:160]]})
     for name, b in run['baselines'].items():
         for msg in sorted({m for r in b['runs'] for m in r['console_errors']}):
             notes.append({'kind': 'console_only', 'detail': [msg], 'scenario': None, 'flow': name, 'in_baseline': True})

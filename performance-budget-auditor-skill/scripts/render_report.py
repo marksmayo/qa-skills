@@ -13,7 +13,10 @@ RED = "\033[31m"; GREEN = "\033[32m"; YELLOW = "\033[33m"; CYAN = "\033[36m"
 SEV = {'Critical': RED + BOLD, 'High': RED, 'Medium': YELLOW, 'Low': CYAN}
 STATUS = {'over': RED, 'within': GREEN, 'unstable': YELLOW, 'measured': '', 'untested': DIM, 'not_supported': DIM}
 COLS = ['LCP', 'CLS', 'INP', 'TBT', 'FCP', 'TTFB', 'transfer_total', 'transfer_script']
-HEAD = {'transfer_total': 'total', 'transfer_script': 'JS'}
+# shown only when the report has them: a budgeted resource-type weight, what an interaction or a service worker fetched
+EXTRA_COLS = ['transfer_image', 'transfer_font', 'transfer_stylesheet', 'transfer_document', 'transfer_interaction', 'transfer_sw']
+HEAD = {'transfer_total': 'total', 'transfer_script': 'JS', 'transfer_image': 'images', 'transfer_font': 'fonts',
+        'transfer_stylesheet': 'CSS', 'transfer_document': 'HTML', 'transfer_interaction': 'interaction', 'transfer_sw': 'SW fetched'}
 
 
 def path_of(url: str) -> str:
@@ -119,7 +122,8 @@ def main() -> int:
            third_party_line(sc.get('third_party'))] + ([first_party_line(sc.get('blocked_first_party'))] if sc.get('blocked_first_party') else []) + [
            *([harness_line(md['harness'])] if md.get('harness') else []),
            f'Machine: {md["machine"]["cpu"]}, {md["machine"]["cores"]} cores, {md["machine"]["os"]}; calibration '
-           f'{md["calibration"]["median_ms"]} ms (CV {md["calibration"]["cv"]}){" BUSY" if md["calibration"]["busy"] else ""}; '
+           f'{md["calibration"]["median_ms"]} ms (CV {md["calibration"]["cv"]}){" BUSY" if md["calibration"]["busy"] else ""}'
+           f'{" LOADED" if md["calibration"].get("state") == "loaded" else ""}; '
            # older measurements have no note: they compared nothing with an idle reference
            f'{md["calibration"].get("note") or "no idle reference was compared, so a steady load would not show"}.']
     if a.brief:
@@ -137,11 +141,13 @@ def main() -> int:
     rows: dict[tuple, dict] = {}
     for m in d['measurements']:
         rows.setdefault((m['url'], m['profile'], m['cache'], m['browser'], m.get('variant')), {})[m['metric']] = m
-    out += ['', P('## Medians', BOLD), '', '| Page | Profile | ' + ' | '.join(HEAD.get(c, c) for c in COLS) + ' |',
-            '|---|---|' + '---|' * len(COLS)]
+    have = {m['metric'] for m in d['measurements']}
+    cols = COLS + [c for c in EXTRA_COLS if c in have]
+    out += ['', P('## Medians', BOLD), '', '| Page | Profile | ' + ' | '.join(HEAD.get(c, c) for c in cols) + ' |',
+            '|---|---|' + '---|' * len(cols)]
     for (url, prof, cache, browser, variant), ms in rows.items():
         label = (f'{variant} ' if variant else '') + f'{prof}' + (f' {cache}' if len(sc['cache']) > 1 else '') + (f' ({browser})' if browser != 'chromium' else '')
-        out.append(f'| {path_of(url)} | {label} | ' + ' | '.join(cell(ms[c], P) if c in ms else '-' for c in COLS) + ' |')
+        out.append(f'| {path_of(url)} | {label} | ' + ' | '.join(cell(ms[c], P) if c in ms else '-' for c in cols) + ' |')
     out += ['', 'OVER: median over budget. ~: unstable (CV above 0.25 with a spread that matters for the budget), can\'t pass or fail on its own. Untested: INP needs an '
                 'interaction. Not supported: a Chromium-only metric in another browser. Outliers: stable by the robust rule, the '
                 'listed runs set aside.']
@@ -204,11 +210,26 @@ def main() -> int:
     if d.get('warm_cache'):
         out += ['', P('## Warm cache', BOLD), ''] + [
             f'- {path_of(w["url"])} {w["profile"]}: ' + ('the warm loads used the HTTP cache' if w['effective'] else
-                                                          P(f'NOT WARM: {w["reason"]}', RED)) for w in d['warm_cache']]
+                                                          P(f'NOT WARM: {w["reason"]}', RED)) +
+            (f'; {w["runs_served_by_service_worker"]} of {w["runs"]} run(s) answered by a service worker'
+             if w.get('runs_served_by_service_worker') else '') for w in d['warm_cache']]
+    if d.get('service_workers'):
+        out += ['', P('## Service workers', BOLD), ''] + [
+            f'- {path_of(w["url"])} {w["profile"]} {w["cache"]}: a worker controlled {w["runs_controlled"]} of {w["runs"]} run(s), '
+            f'answering {w["responses_median"]} response(s) per load; ' +
+            (f'it fetched {w["network_requests_median"]} request(s), {fmt(w["network_bytes_median"], "bytes")}, from the network '
+             f'({w["network_from_cache_median"]} from the HTTP cache)' if w['network_measured'] else
+             P("what it fetched itself was not measured", YELLOW)) +
+            ('; its requests were not intercepted by the harness guard' if w.get('requests_guarded') is False else '')
+            for w in d['service_workers']]
     if d.get('delivery'):
         out += ['', P('## Compression and cache lifetime', BOLD), ''] + [
             f'- {path_of(x["url"])} {x["profile"]} {x["cache"]}: {len(x["uncompressed"])} text resource(s) sent uncompressed '
-            f'({fmt(x["uncompressed_bytes"], "bytes")}), {len(x["no_cache_lifetime"])} of {x["checked"]} with no cache lifetime'
+            f'({fmt(x["uncompressed_bytes"], "bytes")}), {len(x["no_cache_lifetime"])} of {x["checked"]} with no browser cache lifetime' +
+            (('; oversized images: ' + ', '.join(f'{path_of(i["url"])} {i["natural"][0]}px wide for a {i["rendered"][0]}px slot at DPR '
+                                                 f'{i["dpr"]} ({i["ratio"]}x' + (f', about {fmt(i["waste_bytes_estimate"], "bytes")} '
+                                                                                  'more than needed' if i.get('waste_bytes_estimate') else '') + ')'
+                                                 for i in x['oversized_images'][:5])) if x.get('oversized_images') else '')
             for x in d['delivery']]
     if d['regressions']:
         out += ['', P('## Against the baseline', BOLD), '']

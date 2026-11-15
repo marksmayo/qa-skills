@@ -59,13 +59,19 @@ map-level open question repeats a journey's; `--strict` makes those warnings err
 items share a file (every Flask view in `app.py`), the check is per item: the journey must cite a
 line between the item's line and the next item's. `python scripts/validate_journey_map.py
 --self-test` runs negative cases (a `not_automatable` entry written as a string is reported, not
-a crash).
+a crash; an observation whose run file is missing or absolute is refused). A step's
+`observed.run` is relative to the map's directory and must exist. `write_journeys.py --self-test`
+and `render_report.py --self-test` check that observed step results reach the journey files (as the
+step's `**Observed:**` line after its Expect, never in the Expect or the Evidence) and the report.
 
 `python scripts/extract_surface.py --self-test` runs the extractor on a small built-in
 multi-service repository (FastAPI routers with prefixes, a docstring with decorators, an Azure
 Functions app, an argparse CLI and a React Router SPA) and a server-rendered Flask site (views
 that render Jinja templates, a JSON API under `/api/`, a directory of 250 data files that must
-not be walked, and Python Playwright, Selenium and test-client tests), and checks what it finds.
+not be walked, and Python Playwright, Selenium and test-client tests) and a Next.js App Router
+content site (a root dynamic segment with `generateStaticParams` and `dynamicParams = false`,
+metadata routes, not-found/error/loading files, `next/script` loaders and a service worker), and
+checks what it finds.
 `--exclude <dir>` (repeatable) skips a directory; directories of hundreds of data files are
 skipped without it and listed in `stats.skipped_data_dirs`.
 
@@ -118,7 +124,7 @@ The extractor detects:
 
 | Area | Stacks |
 |---|---|
-| Web | Next.js (app and pages routers; one endpoint per exported HTTP method; server actions; intercepting routes; `middleware.ts`/`proxy.ts` matchers and path guards; layouts with guard hints; `tsconfig` path aliases), Nuxt, SvelteKit, Remix, React Router (`createBrowserRouter` objects, `<Route>` elements, index and lazy routes, nested `<Routes>` joined to the splat route that mounts them, paths from constant objects), Vue Router, Angular, Django URLs |
+| Web | Next.js (app and pages routers; one endpoint per exported HTTP method; server actions; intercepting routes; `middleware.ts`/`proxy.ts` matchers and path guards; layouts with guard hints; `tsconfig` path aliases; metadata routes such as `robots.ts`, `sitemap.ts` and `opengraph-image` as `site-files` endpoints; segment config such as `generateStaticParams`/`dynamicParams`; `not-found`/`error`/`loading` files; `next/script` loaders; service workers and `public/` files), Nuxt, SvelteKit, Remix, React Router (`createBrowserRouter` objects, `<Route>` elements, index and lazy routes, nested `<Routes>` joined to the splat route that mounts them, paths from constant objects), Vue Router, Angular, Django URLs |
 | Mobile | Expo Router, React Navigation, Flutter (GoRouter, route maps), Android (navigation graphs, Compose navigation, manifest activities and deep links), iOS (SwiftUI views, UIKit view controllers, storyboards, URL schemes) |
 | API | Express (including `router.route(path).get().post()` chains), Fastify, Koa, NestJS, Flask (blueprint prefixes), FastAPI (`APIRouter` and subclass prefixes, `include_router` prefixes; decorators in docstrings ignored), Azure Functions (HTTP routes and triggers, Python v1/v2 and Node v4 models), Rails, Spring, Go `net/http`/Gin/Echo/chi, ASP.NET, OpenAPI documents; endpoints from several services in one repository are labelled by service |
 | Static front ends | plain `.html` pages (routes), their buttons, inputs, forms, links, scripts and `fetch()` calls (`context.static_pages`), URL parameters read with `URLSearchParams` (entry points), `localStorage.setItem` (weak goals); FastAPI `StaticFiles` mounts and handlers returning HTML; a committed `dist/` nothing builds is read, a built one is listed in `stats.skipped_build_dirs` (`--include DIR`) |

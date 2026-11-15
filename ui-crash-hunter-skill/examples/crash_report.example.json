@@ -2,7 +2,7 @@
   "metadata": {
     "repository": "pantry-web",
     "generated_at": "2026-11-10T09:30:00Z",
-    "skill_version": "1.2.0",
+    "skill_version": "1.8.0",
     "platforms": [
       "web"
     ],
@@ -1061,7 +1061,6 @@
     "evidence/C-3/screenshot.png",
     "evidence/C-4/screenshot.png",
     "evidence/D-1/screenshot.png",
-    "repro/repro_baseline.py",
     "repro/repro_C-1.py",
     "repro/repro_C-2.py",
     "repro/repro_C-3.py",

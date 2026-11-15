@@ -17,11 +17,24 @@
       "engine": "webkit",
       "platforms": ["win32"],
       "subkinds": ["font_family_differs"],
-      "match": "serif|times|ms shell dlg",
+      "match": "draw in font family \"[^\"]*?(?<![\\w-])(?:serif|times|ms shell dlg)",
       "what": "Playwright's WebKit build for Windows draws text whose font family is the engine default (form controls that don't inherit the page font, placeholders) in a Windows default face: a serif (Times New Roman) or MS Shell Dlg, depending on the machine.",
       "real_browser": "Safari draws form controls in the system font (-apple-system). The page still relies on each engine's default for those controls, so set font: inherit on them whatever the build does.",
       "source": "Observed by this skill on a generated HTML report with Playwright WebKit on Windows 11 (2026-11): filter buttons and a search input in a serif face, Chromium and Firefox in the page's sans-serif.",
-      "confirm": "Open the page in Safari on macOS or iOS (or Playwright WebKit on macOS) and compare the controls' font with the page text."
+      "confirm": "Open the page in Safari on macOS or iOS (or Playwright WebKit on macOS) and compare the controls' font with the page text.",
+      "not_if": "stylesheet failed to load",
+      "not_if_why": "The match looks only at the face the engine drew (a \"sans-serif\" or \"ui-sans-serif\" in the reference is not a serif). A default face that follows from a stylesheet the engine failed to load (compare_engines.py says so in the detail) is the failed request, not the build."
+    },
+    {
+      "id": "webkit-windows-system-ui",
+      "engine": "webkit",
+      "platforms": ["win32"],
+      "subkinds": ["font_family_differs"],
+      "match": "font family \"[^\"]*(?:system-ui|ui-sans-serif|ui-serif|ui-monospace|-apple-system|blinkmacsystemfont)[^\"]*\" draw in another face",
+      "what": "Playwright's WebKit build for Windows resolves the system font keywords (system-ui, ui-sans-serif and the -apple-system aliases, as in Tailwind's default font stack) to another face than Chromium and Firefox do (an Arial-like face rather than Segoe UI), so text with the same computed font family is drawn wider or narrower and wraps at other words.",
+      "real_browser": "Safari on macOS and iOS resolves these keywords to San Francisco, the platform font; Chromium and Firefox on macOS do too. The difference is the Windows build's font matching, not the page.",
+      "source": "Observed by this skill on a site using Tailwind's default sans stack, Playwright WebKit on Windows 11 (2026-11): every text box with ui-sans-serif, system-ui drawn in another face than in Chromium and Firefox.",
+      "confirm": "Open the page in Safari on macOS or iOS (or Playwright WebKit on macOS) and compare the text face and wraps."
     },
     {
       "id": "windows-flag-emoji",

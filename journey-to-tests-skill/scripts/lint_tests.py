@@ -2,6 +2,10 @@
 """Lint generated journey tests for the rules the Journey to Tests skill must not break.
 
     python lint_tests.py e2e/checkout/guest-checkout.spec.ts e2e/pages/CheckoutPage.ts [--json]
+    python lint_tests.py --self-test
+
+--json prints the report's lint object: {ran, errors, warnings, findings: [{file, rule, level, line, test,
+message}], files: [per-file detail]}.
 
 Rules (level):
   hard_wait            (error)   sleep / waitForTimeout / Thread.sleep / cy.wait(<ms>) and similar
@@ -10,6 +14,9 @@ Rules (level):
   focused_test         (error)   .only / fit / fdescribe left in the file
   brittle_selector     (warning) XPath, nth-child, positional or class-based CSS selectors
   conditional_test     (warning) if/else on page state inside a test (tests should be deterministic)
+  network_not_guarded  (warning) Playwright tests, and no file linted with them aborts requests (route + abort)
+  service_workers_not_blocked (warning) Playwright tests, and no file linted with them sets serviceWorkers: 'block'
+The two network rules look across every file given together (specs, guard fixture, config).
 
 Supports JavaScript/TypeScript (Playwright, Cypress, WebdriverIO, Detox, Jest/Vitest), Python
 (pytest, Playwright, Selenium, Appium), Java/Kotlin (JUnit, Espresso, Compose), Swift (XCUITest),
@@ -310,11 +317,116 @@ def lint_paths(paths: list[str]) -> dict:
         else:
             files.append(pp)
     results = [lint_file(f) for f in files]
+    network_findings(files, results)
     errors = sum(1 for r in results for f in r['findings'] if f['level'] == 'error')
     warnings = sum(1 for r in results for f in r['findings'] if f['level'] == 'warning')
-    return {'files': results, 'errors': errors, 'warnings': warnings}
+    findings = [{'file': r['file'], **f} for r in results for f in r['findings']]
+    # `ran`, `errors`, `warnings` and `findings` are the report's lint object; `files` keeps the per-file detail
+    return {'ran': True, 'errors': errors, 'warnings': warnings, 'findings': findings, 'files': results}
+
+PLAYWRIGHT_TEST = re.compile(r'''from\s+['"]@playwright/test['"]|require\(\s*['"]@playwright/test['"]\s*\)|'''
+                             r'''\bfrom\s+playwright\.(?:sync_api|async_api)\s+import\b|\bpytest_playwright\b''')
+ROUTE_ABORT = re.compile(r'\.route\s*\([\s\S]{0,600}?\babort\s*\(|\brouteFromHAR\s*\(|\broute_from_har\s*\(')
+SW_BLOCK = re.compile(r'''\bservice_?[wW]orkers\s*[:=]\s*['"]block['"]''')
+
+def network_findings(files: list[Path], results: list[dict]) -> None:
+    """Across the files linted together (tests, fixtures, config): Playwright tests should abort requests to hosts
+    other than the target (analytics, ads and other third parties would otherwise be contacted by every run and make
+    the tests depend on them), and block service workers (a worker fetches outside page routing, so routes and the
+    block never see its requests). Warnings on the first Playwright test file."""
+    texts = {}
+    for f in files:
+        lang = lang_of(f)
+        if lang not in ('js', 'py'):
+            continue
+        try:
+            texts[f] = strip_comments(f.read_text(encoding='utf-8', errors='replace'), lang)
+        except OSError:
+            continue
+    tests = [(f, r) for f, r in zip(files, results) if r['tests'] and PLAYWRIGHT_TEST.search(texts.get(f, ''))]
+    if not tests:
+        return
+    every = '\n'.join(texts.values())
+    first = tests[0][1]
+    if not ROUTE_ABORT.search(every):
+        first['findings'].append({
+            'rule': 'network_not_guarded', 'level': 'warning', 'line': None, 'test': None,
+            'message': 'no request to another host is blocked: add a fixture (or beforeEach) that routes every request '
+                       'and aborts those not to the target origin, attach the blocked URLs to the test as evidence, and '
+                       'lint that fixture together with the tests'})
+    if not SW_BLOCK.search(every):
+        first['findings'].append({
+            'rule': 'service_workers_not_blocked', 'level': 'warning', 'line': None, 'test': None,
+            'message': "service workers are not blocked: set serviceWorkers: 'block' in the Playwright config (or the "
+                       "context), so a worker cannot fetch outside page routing; lint the config with the tests"})
+
+SELF_TEST_SPEC = """import { test, expect } from '@playwright/test';
+
+test.describe('JRN-REC-001 Reader opens a recipe', () => {
+  test('JRN-REC-001 main path', async ({ page }) => {
+    await page.goto('/recipes/lentil-soup');
+    await expect(page.getByRole('heading', { name: 'Lentil soup' })).toBeVisible();
+  });
+});
+"""
+SELF_TEST_GUARD = """import { test as base } from '@playwright/test';
+
+export const test = base.extend({
+  page: async ({ page, baseURL }, use) => {
+    const origin = new URL(baseURL!).origin;
+    await page.route('**/*', (route) =>
+      new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+    await use(page);
+  },
+});
+"""
+SELF_TEST_CONFIG = """import { defineConfig } from '@playwright/test';
+export default defineConfig({ use: { baseURL: 'http://127.0.0.1:3000', serviceWorkers: 'block' } });
+"""
+
+
+def self_test() -> int:
+    """--json gives the report's lint object; Playwright tests with no third-party block or no service-worker block
+    are warned about across the files linted together."""
+    import contextlib, io, tempfile
+    problems = []
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / 'e2e').mkdir()
+        spec, guard, cfg = root / 'e2e' / 'recipe.spec.ts', root / 'e2e' / 'fixtures.ts', root / 'playwright.config.ts'
+        spec.write_text(SELF_TEST_SPEC, encoding='utf-8')
+        guard.write_text(SELF_TEST_GUARD, encoding='utf-8')
+        cfg.write_text(SELF_TEST_CONFIG, encoding='utf-8')
+
+        def lint_json(*paths):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                main(['--json', *map(str, paths)])
+            return json.loads(buf.getvalue())
+
+        alone = lint_json(spec)
+        if not (alone.get('ran') is True and isinstance(alone.get('findings'), list)
+                and all('file' in f for f in alone['findings']) and alone.get('errors') == 0):
+            problems.append(f"--json has the report's lint shape (ran, errors, warnings, findings with file), got "
+                            f"{ {k: alone.get(k) for k in ('ran', 'errors', 'warnings')} }")
+        rules = {f['rule'] for f in alone.get('findings') or []}
+        if not {'network_not_guarded', 'service_workers_not_blocked'} <= rules:
+            problems.append(f'a Playwright spec linted with no request blocking and no serviceWorkers: block is warned '
+                            f'about, got rules {sorted(rules)}')
+        together = lint_json(spec, guard, cfg)
+        rules = {f['rule'] for f in together.get('findings') or []}
+        if rules & {'network_not_guarded', 'service_workers_not_blocked'}:
+            problems.append(f'a fixture that aborts other origins and a config that blocks service workers satisfy '
+                            f'the network rules, got {sorted(rules)}')
+    for p in problems:
+        print('FAIL', p)
+    print('SELF-TEST FAILED' if problems else 'self-test passed')
+    return 1 if problems else 0
+
 
 def main(argv=None) -> int:
+    if '--self-test' in (argv if argv is not None else sys.argv[1:]):
+        return self_test()
     ap = argparse.ArgumentParser(description='Lint journey tests: hard waits, missing assertions, missing journey tags.')
     ap.add_argument('paths', nargs='+')
     ap.add_argument('--json', action='store_true')

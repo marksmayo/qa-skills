@@ -7,8 +7,11 @@ Merge rules (see JOURNEY_FORMAT.md):
   as <name>.proposed.md.
 - The human-owned ## Notes section is preserved; `tests` lists are merged, not replaced.
 - Journey files are never deleted. IDs in scope that the map no longer contains are reported as stale.
+- A step's `observed` result (what a run showed) is written as the step's own indented line after its Expect,
+  `**Observed:** <result> (run `<run>`, <at>)` (Journey Markdown 1.1), never into the Expect.
 
     python write_journeys.py journeys/journey_map.json --out journeys
+    python write_journeys.py --self-test
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -42,7 +45,10 @@ def to_doc(jm: dict) -> dict:
     return {
         'meta': meta,
         'preconditions': jm.get('preconditions', []),
-        'steps': [{'action': s['action'], 'expect': s['expect']} for s in jm['steps']],
+        # what a run showed stays apart from the inferred Expect: the step's own **Observed:** line
+        'steps': [{'action': s['action'], 'expect': s['expect'],
+                   **({'observed': {k: s['observed'].get(k) for k in ('result', 'run', 'at')}} if s.get('observed') else {})}
+                  for s in jm['steps']],
         'variants': [{'id': v['id'], 'name': v['name'], 'from_step': v['from_step'],
                       'action': v.get('action', ''), 'expect': v['expect']} for v in jm.get('variants', [])],
         'test_data': jm.get('test_data', []),
@@ -198,7 +204,41 @@ def write_coverage(d: dict) -> str:
         lines += ['## Open questions', ''] + [f'- **{qid}:** {q}' for qid, q in questions] + ['']
     return '\n'.join(lines).rstrip() + '\n'
 
+def self_test() -> int:
+    """A step's observed result reaches the written journey (apart from the inferred Expect, which it must not alter),
+    and the file still lints clean in strict mode."""
+    from journey_md import lint, parse_journey
+    example = Path(__file__).resolve().parent.parent / 'examples' / 'journeys' / 'journey_map.json'
+    d = json.loads(example.read_text(encoding='utf-8'))
+    jm = d['journeys'][0]
+    jm['steps'][0]['observed'] = {'result': 'the page answered 200 and showed the form', 'run': 'run/probe/home.txt',
+                                  'at': '2026-11-15'}
+    text = render(to_doc(jm))
+    parsed = parse_journey(text)
+    problems = []
+    if 'the page answered 200 and showed the form' not in text or 'run/probe/home.txt' not in text or \
+            'Observed' not in text:
+        problems.append('the observed result, its run and the word Observed are in the journey file')
+    if parsed['steps'][0]['expect'] != ' '.join(jm['steps'][0]['expect'].split()):
+        problems.append(f"the observation leaves the Expect unchanged, got {parsed['steps'][0]['expect']!r}")
+    if parsed['steps'][0].get('observed') != jm['steps'][0]['observed']:
+        problems.append(f"the observation is the step's own **Observed:** line (Journey Markdown 1.1), parsed back as "
+                        f"steps[0].observed, got {parsed['steps'][0].get('observed')!r}")
+    if any('Observed' in e['text'] for e in parsed['evidence']):
+        problems.append('the observation is no longer repeated as an Evidence entry')
+    if 'observed' in parsed['steps'][1]:
+        problems.append('a step with no observation has no **Observed:** line')
+    errs = [m for lvl, m in lint(parsed) if lvl in ('error', 'strict')]
+    if errs:
+        problems.append(f'the written journey lints clean in strict mode, got {errs}')
+    for p in problems:
+        print('FAIL', p)
+    print('SELF-TEST FAILED' if problems else 'self-test passed')
+    return 1 if problems else 0
+
 def main() -> int:
+    if '--self-test' in sys.argv[1:]:
+        return self_test()
     ap = argparse.ArgumentParser(description='Write journey files from a journey_map.json.')
     ap.add_argument('journey_map', type=Path)
     ap.add_argument('--out', type=Path, default=Path('journeys'))

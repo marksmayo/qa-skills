@@ -1,6 +1,6 @@
 # Design: `code-security-auditor-skill`
 
-Status: Built (v1.4.0), see the "As built" sections at the end. Build order: 5.
+Status: Built (v1.6.0), see the "As built" sections at the end. Build order: 5.
 
 ## Mission
 
@@ -486,3 +486,57 @@ web framework and the language census thrown off by vendored code.
   not make advisories `partial`; credential references through `Path.home()` are not listed; the
   renderer's `<file>` replacement in dismissal reasons and the `/<token>.txt` auth-flow lead are
   unchanged.
+
+## As built (v1.6.0): fixes from a run on a static Next.js App Router content site
+
+- **Next.js surface from the shared reader.** recon calls `next_app.read_next_app()` (canonical in
+  `shared/scripts/`) when the repository has a Next.js project, and `scripts/next_surface.py` turns
+  the model into entry points: `page` (App Router and `pages/` router; auth read from the page and
+  its layouts or a covering middleware), `metadata_route` (generated robots, sitemap, Open Graph
+  and icon routes), the image optimiser (`http_route` GET `/_next/image` at the `images` config
+  line, left out for a static export, a custom loader or `unoptimized`), `service_worker` (the
+  worker file in `public/`, with its registration, scope and fetch strategies) and middleware in
+  nested projects. Route handlers, server actions and root middleware still come from
+  `nextjs_auth.py`, annotated with the segment config. `static` (`dynamic = 'force-static'` or
+  `'error'`, `output: 'export'`) and `params_bounded` (`generateStaticParams` with
+  `dynamicParams = false`) bound the surface: no IDOR lead for a bounded segment, and no
+  uncapped-collection or rate-limit lead for a static route or a handler that caps its result with
+  a literal. Schema 1.5 adds the three entry-point kinds.
+- **Security headers.** recon's `security_headers` reads `next.config` `headers()`, `vercel.json`,
+  `netlify.toml` and `public/_headers`: rules with their sources, each CSP's weaknesses
+  (`'unsafe-inline'`/`'unsafe-eval'` for script, `*` or a bare scheme as a script source, a
+  tag-manager host, no `frame-ancestors`, Report-Only), headers missing everywhere unless code sets
+  them (`set_in_code`), shared-cache `Cache-Control` on catch-all sources, the images config and
+  third-party scripts, each a review lead. A new `security_headers` pack flags the same at their
+  lines (`HDR-CSP-UNSAFE-INLINE`, `HDR-CSP-UNSAFE-EVAL`, `HDR-CSP-WILDCARD-SOURCE`,
+  `HDR-CSP-TAG-MANAGER`, `HDR-CACHE-CATCH-ALL`); the catalogue is 1.6.0 (149 patterns, 18 packs).
+  Headers a host or CDN adds are not in the repository, so a missing header is a lead to check on
+  a response, not a finding.
+- **False positives.** Outbound calls are matched on code only (`recon.code_only()` blanks string
+  literals, including multi-line template literals, and comments), `got` counts only when the file
+  imports it, and scripts under `public/` are not server-side calls. `JS-XSS-SINK` no longer fires
+  on JSON-LD built with `JSON.stringify` (on the same or the next line); `JS-JSONLD-STRINGIFY` reports
+  it with the `</script>`-breakout rule (an observation when every value is a repository constant).
+- **Static and content sites.** SKILL.md has guidance for headers and CSP, caching, the image
+  optimiser, third-party scripts, service workers, JSON-LD, data provenance and committed agent or
+  editor configuration; recon lists `agent_config` (`.claude/settings*.json`, `.mcp.json`,
+  `.vscode/settings.json`, `tasks.json`, `launch.json`, ...) with a supply-chain lead.
+- **Guard checks and the report.** A PoC with `"purpose": "guard_check"` is recorded by run_poc.py
+  as `guard_held` or `guard_not_held`, never `confirmed`. Observations may carry `evidence`; the
+  validator checks it exists and that a run_poc record is for that observation, records the
+  permission and shows `guard_held`. The seeded report has a `run_poc` tool row (`dynamic`,
+  `not_run`), and the validator requires it to be `ran` when any PoC or guard check ran (a warning
+  when the row is missing) and only with permitted verification. render_report.py says "No
+  findings" instead of printing an empty findings table.
+- **Fixture.** `examples/wren-field-guide/` (a synthetic static App Router site about birds: pages
+  with a bounded `[id]`, metadata routes, a static capped feed and an uncapped search route, a
+  contact server action, a CSP with `'unsafe-inline'`, an `https:` default source and a tag-manager
+  host, a catch-all `s-maxage` rule, `remotePatterns` for any host, JSON-LD in three forms, a
+  cache-first service worker, prose in data strings, committed `.claude/settings.json` and
+  `.vscode/settings.json`) is checked by `self_test.py` against its `expected.json`.
+  `examples/kite-notes/expected.json` gains its two pages and `/_next/image`.
+- **Not done:** headers set only in middleware are recorded by name (`set_in_code`), not parsed;
+  static sites outside Next.js (plain HTML with `netlify.toml` or `_headers`) get no
+  `security_headers`; whether a generated metadata image route is bounded by its segment's
+  `generateStaticParams` is not inferred; constants versus external data in JSON-LD is left to the
+  reviewer.

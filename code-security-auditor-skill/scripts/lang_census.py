@@ -82,6 +82,8 @@ LANG_BY_EXT = {
     '.r': 'R', '.R': 'R', '.jl': 'Julia', '.zig': 'Zig', '.nim': 'Nim', '.cr': 'Crystal', '.elm': 'Elm',
 }
 
+# installed package trees: excluded by name and listed without walking them (source_files_counted: false)
+DEPENDENCY_TREES = {'node_modules', 'bower_components', 'jspm_packages'}
 PRUNE_DIRS = {'.git', '.hg', '.svn', 'node_modules', 'vendor', 'vendored', 'third_party', 'third-party', 'thirdparty',
               'bower_components', 'jspm_packages', 'Pods', 'Carthage', '.venv', 'venv', '.tox', '.nox',
               '__pycache__', '.mypy_cache', '.pytest_cache', '.ruff_cache', 'site-packages',
@@ -597,7 +599,10 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
                 why, kind = (reason, 'build_output') if is_b else (None, None)
             if why:
                 if d not in ('.git', '.hg', '.svn', '__pycache__'):   # noise nobody needs listed
-                    entry = {'path': sub, 'reason': why, 'source_files': count_sources(Path(dp) / d)}
+                    if d in DEPENDENCY_TREES:   # thousands of installed files: listed, never walked to count them
+                        entry = {'path': sub, 'reason': why, 'source_files': 0, 'source_files_counted': False}
+                    else:
+                        entry = {'path': sub, 'reason': why, 'source_files': count_sources(Path(dp) / d)}
                     if kind:
                         entry['kind'] = kind
                         entry['languages'] = count_sources_by_language(Path(dp) / d)
@@ -947,6 +952,9 @@ def self_test() -> int:
     checks.append(('a built .app bundle, vendor/ and node_modules/ are excluded',
                    all(p in reasons for p in ('drivers/ios/prebuilt/Runner.app', 'vendor', 'npm/wrapper/node_modules')),
                    sorted(reasons)))
+    nm = next((e for e in c['excluded'] if e['path'] == 'npm/wrapper/node_modules'), {})
+    checks.append(('a dependency tree (node_modules/) is listed without being walked to count it',
+                   nm.get('source_files_counted') is False and nm.get('source_files') == 0, nm))
     checks.append(('a header-only tree under drivers/ is excluded', 'header-only' in reasons.get('drivers/ios/headers-only', ''),
                    reasons))
     checks.append(('excluded_path finds a file inside an excluded tree',

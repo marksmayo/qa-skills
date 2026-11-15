@@ -52,7 +52,12 @@ Local command PoCs (a CLI, a library or an MCP stdio server with no network list
   exit_code {step, code}, file_created {path} (a canary file the payload creates inside the copy).
   A failing regression test is a command PoC too: run the test runner on the copy and prove the
   failure with exit_code and a marker from the assertion message.
-Exit codes: 0 confirmed, 1 not confirmed, 2 refused or invalid.
+Guard checks: a PoC with "purpose": "guard_check" tests that a guard holds instead of that a weakness is
+exploitable (an id outside generateStaticParams gets a 404, the response carries the CSP the config sets, a
+cross-origin request is refused). Its proof describes the secure behaviour, and the evidence records
+result guard_held (the proof passed) or guard_not_held, never "confirmed": a held guard is evidence for an
+observation (observations[].evidence), and one that did not hold is a candidate finding to write up.
+Exit codes: 0 proof passed (confirmed, or guard_held), 1 it did not, 2 refused or invalid.
 """
 from __future__ import annotations
 import argparse, http.cookiejar, ipaddress, json, os, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
@@ -63,7 +68,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import scan_secrets  # noqa: E402
 
-VERSION = '1.0.0'
+VERSION = '1.1.0'
 MAX_STEPS = 30
 BANNED = [
     ('destructive SQL', r'(?i)\b(DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\s+(TABLE|DATABASE|SCHEMA|USER|INDEX|VIEW|ROLE)\b|\bDELETE\s+FROM\b|\bUPDATE\s+\w+\s+SET\b|\bINSERT\s+INTO\b|\bxp_cmdshell\b|;\s*SHUTDOWN\b'),
@@ -396,8 +401,20 @@ def run_command_poc(poc: dict, workdir: Path, permission: str, poc_file: Path) -
         'files_written': sorted(poc.get('files') or {}),
         'steps': records,
         'proof': {**proof, 'passed': passed, 'observed': observed},
-        'result': 'confirmed' if passed else 'not_confirmed',
+        **purpose_of(poc),
+        'result': result_of(poc, passed),
     }
+
+def purpose_of(poc: dict) -> dict:
+    return {'purpose': 'guard_check'} if poc.get('purpose') == 'guard_check' else {}
+
+def result_of(poc: dict, passed: bool) -> str:
+    """confirmed / not_confirmed for a PoC of a vulnerability; guard_held / guard_not_held for a guard check, whose proof
+    describes the secure behaviour (a 404 for an id outside generateStaticParams, a CSP header on the response). A guard
+    that held is evidence for an observation, never a confirmed vulnerability."""
+    if poc.get('purpose') == 'guard_check':
+        return 'guard_held' if passed else 'guard_not_held'
+    return 'confirmed' if passed else 'not_confirmed'
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -439,7 +456,7 @@ def main() -> int:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(evidence, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
         print(f"{evidence['result']}: {evidence['proof']['observed']} -> {args.out}")
-        return 0 if evidence['result'] == 'confirmed' else 1
+        return 0 if evidence['proof']['passed'] else 1
     if not args.target or not args.permission or not args.out:
         print('--target, --permission and --out are required to send requests', file=sys.stderr)
         return 2
@@ -469,7 +486,8 @@ def main() -> int:
         'safety': {'checked': True, 'issues': []},
         'steps': records,
         'proof': {**poc['proof'], 'passed': passed, 'observed': observed},
-        'result': 'confirmed' if passed else 'not_confirmed',
+        **purpose_of(poc),
+        'result': result_of(poc, passed),
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(evidence, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')

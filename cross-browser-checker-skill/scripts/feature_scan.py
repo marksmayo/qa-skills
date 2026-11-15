@@ -69,6 +69,7 @@ SKILL = HERE.parent
 sys.path.insert(0, str(HERE))
 import browserslist_lite as bl  # noqa: E402
 import lang_census  # noqa: E402  (shared copy; edit shared/scripts/lang_census.py)
+import next_app  # noqa: E402  (shared copy; edit shared/scripts/next_app.py)
 
 WF_BROWSER = {'chrome': 'chrome', 'and_chr': 'chrome_android', 'edge': 'edge', 'firefox': 'firefox', 'and_ff': 'firefox_android',
               'safari': 'safari', 'ios_saf': 'safari_ios'}
@@ -110,6 +111,12 @@ SERVER_LANGUAGES = {'Python', 'Ruby', 'PHP'}
 TEMPLATE_DIRS = {'templates', 'views', 'layouts', 'partials', 'includes'}
 TEMPLATE_SYNTAX = re.compile(r'\{%-?\s*\w+|\{\{[^}]*\}\}|<%[=-]?\s|@(?:extends|section|yield)\b')
 STATIC_DIRS = {'static', 'public', 'assets', 'www', 'wwwroot'}
+# tool configuration read by Node at build time (next.config.ts, eslint.config.mjs, postcss.config.mjs, vite.config.ts,
+# tailwind.config.js, .eslintrc.cjs, ...) and type declarations: never shipped to a browser
+CONFIG_FILE = re.compile(r'^(?:[\w-]+\.)*config\.[cm]?[jt]s$|^\.[\w-]+rc\.[cm]?[jt]s$|\.d\.[cm]?ts$')
+# a module that declares itself server-only (import 'server-only') or a server-actions file ('use server' first)
+SERVER_ONLY_IMPORT = re.compile(r'''^\s*import\s+['"]server-only['"]''', re.M)
+USE_SERVER_FILE = re.compile(r'''\A(?:\s|//[^\n]*\n|/\*.*?\*/)*['"]use server['"]''', re.S)
 
 
 def embedded_html(text: str) -> bool:
@@ -173,6 +180,49 @@ def is_test_dir(d: Path) -> bool:
     return d.name.lower() in TEST_DIR_NAMES and not any((d / m).is_file() for m in MANIFESTS)
 
 
+def next_server_files(repo: Path) -> dict[str, str]:
+    """Files of a Next.js project that never ship to a browser, from the shared static reader (next_app.py): App Router
+    route handlers (route.ts), generated metadata routes (robots.ts, sitemap.ts, manifest.ts, opengraph-image.tsx,
+    icon.tsx: rendered on the server or at build time), Pages Router API routes, middleware and the instrumentation
+    hook. {repo-relative path: reason}. Pages, layouts and components are kept: their markup and class names reach the
+    browser even when they render on the server."""
+    out: dict[str, str] = {}
+    try:
+        model = next_app.read_next_app(repo, max_files=20000)
+    except Exception:  # noqa: BLE001 - the reader is best effort here; without it nothing is left out
+        return out
+    for proj in model.get('projects') or []:
+        for r in proj.get('routes') or []:
+            if r.get('kind') == 'route_handler':
+                out[r['file']] = 'Next.js route handler: runs on the server'
+            elif r.get('kind') == 'metadata' and r.get('form') == 'generated':
+                out[r['file']] = f'Next.js generated metadata route ({r.get("metadata")}): rendered on the server or at build time'
+            elif r.get('kind') == 'pages_api':
+                out[r['file']] = 'Next.js API route: runs on the server'
+        mw = proj.get('middleware') or {}
+        if mw.get('file'):
+            out[mw['file']] = 'Next.js middleware: runs on the server (edge)'
+        base = f'{proj["root"]}/' if proj.get('root') else ''
+        for name in ('instrumentation.ts', 'instrumentation.js', 'src/instrumentation.ts', 'src/instrumentation.js'):
+            if (repo / (base + name)).is_file():
+                out[base + name] = 'Next.js instrumentation hook: runs on the server'
+    return out
+
+
+def server_only_reason(name: str, rel: str, text: str | None, next_server: dict[str, str]) -> str | None:
+    """Why a script never ships to a browser (a server-only file of a framework, tool configuration, a type
+    declaration, a module that imports 'server-only' or starts with 'use server'), or None."""
+    if rel in next_server:
+        return next_server[rel]
+    if CONFIG_FILE.search(name):
+        return 'type declarations' if re.search(r'\.d\.[cm]?ts$', name) else 'tool configuration read at build time'
+    if text is not None and SERVER_ONLY_IMPORT.search(text[:20000]):
+        return "imports 'server-only'"
+    if text is not None and USE_SERVER_FILE.match(text):
+        return "a 'use server' module (server actions)"
+    return None
+
+
 def node_only(text: str) -> bool:
     """A script that runs under Node, never in a browser: a node shebang, or an import of a node: module or of a Node
     built-in that has no browser counterpart (fs, child_process, worker_threads, ...). A script written for both (an
@@ -214,14 +264,15 @@ def record_prune(skipped: dict | None, rel: str, reason: str, cap: int = 200) ->
 
 
 def files(repo: Path, skipped: dict | None = None, excluded: list | None = None, user_excluded: list[str] | None = None,
-          included: list[str] | None = None):
+          included: list[str] | None = None, server_only: dict[str, str] | None = None):
     """Source files, walking with excluded directories pruned before descending (a node_modules tree is never listed).
     Test directories (is_test_dir), test and story files, and Node-only scripts (CLIs, build scripts, servers) don't ship
     to browsers and are left out; with `skipped`, the test directories and Node-only files are listed there. Data trees
     (data_dir_files) and the directories given with --exclude (user_excluded) are pruned and listed too, and so is
     every dependency or cache folder (SKIP_DIRS) and every tree the shared census excludes (`excluded`: paths, or
     census entries with their reason), under skipped.pruned. A directory given with --include (`included`) is walked
-    whatever those rules say."""
+    whatever those rules say. Scripts that never ship to a browser (server_only_reason: a framework's server files from
+    `server_only`, tool configuration, type declarations, 'server-only' modules) are listed in skipped.server_only."""
     user = {e.replace('\\', '/').strip('/') for e in user_excluded or []}
     inc = {e.replace('\\', '/').strip('/') for e in included or []}
     census_ex = {'excluded': [{'path': e['path'] if isinstance(e, dict) else e,
@@ -276,12 +327,17 @@ def files(repo: Path, skipped: dict | None = None, excluded: list | None = None,
                 continue
             if p.suffix not in SUFFIXES or TEST_FILE.search(n):
                 continue
-            if p.suffix in SCRIPT_SUFFIXES:
+            if p.suffix in SCRIPT_SUFFIXES + ('.tsx', '.jsx'):
                 try:
                     text = p.read_text(encoding='utf-8', errors='replace')
                 except OSError:
                     text = ''
-                if node_only(text):
+                why = server_only_reason(n, rel_name(p, repo), text, server_only or {})
+                if why:
+                    if skipped is not None:
+                        skipped.setdefault('server_only', []).append({'path': rel_name(p, repo), 'reason': why})
+                    continue
+                if p.suffix in SCRIPT_SUFFIXES and node_only(text):
                     # its own code runs in Node; pages it renders from template literals ship their inline blocks
                     html = bool(INLINE_BLOCK.search(text))
                     if skipped is not None:
@@ -355,12 +411,13 @@ def rel_name(f: Path, repo: Path) -> str:
 def scan(repo: Path, patterns: list[dict], utility: bool = False, built: list[Path] | None = None,
          css_in_js: bool = False, tailwind_major: int | None = None, skipped: dict | None = None,
          excluded: list | None = None, user_excluded: list[str] | None = None,
-         scanned: list[str] | None = None, included: list[str] | None = None) -> list[dict]:
+         scanned: list[str] | None = None, included: list[str] | None = None,
+         server_only: dict[str, str] | None = None) -> list[dict]:
     """Uses of every pattern in the repo's sources; utility-class patterns only when `utility` (Tailwind found); CSS
     written in scripts when `css_in_js` (a CSS-in-JS library found); the built CSS files with the CSS patterns. With
     `scanned`, every file read is appended to it."""
     uses = []
-    for f, markup in files(repo, skipped, excluded, user_excluded, included):
+    for f, markup in files(repo, skipped, excluded, user_excluded, included, server_only):
         if scanned is not None:
             scanned.append(rel_name(f, repo))
         uses += scan_file(f, rel_name(f, repo), patterns, utility, css_in_js, markup=markup)
@@ -430,6 +487,13 @@ def kebab(key: str) -> str:
     return k if not k.startswith(('-webkit', '-moz', '-ms')) or key[0].isupper() else k.lstrip('-')
 
 
+def value_hit(p: dict, val: str) -> bool:
+    """A css-declaration pattern's value test: `value` is a substring, `value_regex` a regular expression (searched)."""
+    if p.get('value') and p['value'] not in val:
+        return False
+    return not p.get('value_regex') or bool(re.search(p['value_regex'], val))
+
+
 def object_style_uses(js: str, rel: str, patterns: list[dict], fb_of) -> list[dict]:
     """CSS features in object styles (sx props, styled({...}), theme styleOverrides): a camelCase property with a
     string value, or a selector / at-rule key."""
@@ -452,7 +516,7 @@ def object_style_uses(js: str, rel: str, patterns: list[dict], fb_of) -> list[di
                     hit = True
             elif val is not None and k == 'css-declaration' and re.fullmatch(r'[A-Za-z]+', key):
                 prop = kebab(key)
-                hit = bool(re.fullmatch(p['property'], prop)) and (not p.get('value') or p['value'] in val.lower())
+                hit = bool(re.fullmatch(p['property'], prop)) and value_hit(p, val.lower())
             if hit:
                 uses.append({'feature': p['feature'], 'file': rel, 'line': ln, 'snippet': snippet,
                              'selector': key if nested else None, 'fallback': fb_of(p), 'via': 'css-in-js'})
@@ -488,7 +552,10 @@ def scan_file(f: Path, rel: str, patterns: list[dict], utility: bool, css_in_js:
     tw4_props = bool(tailwind_major and tailwind_major >= 4 and re.search(r'@layer\s+properties\s*\{\s*@supports', text)
                      and '--tw-' in text)
     for p in patterns:
-        fb = fb_of(p) or (tw4_props and p['feature'] == 'registered-custom-properties')
+        # in minified built CSS every rule shares one file (and one line): a guard elsewhere in it says nothing about this
+        # use, so only the @supports block around the use (or a fallback the framework always emits) counts
+        fb = (bool(p.get('emits_fallback')) if minified and p['kind'].startswith('css') else fb_of(p)) or \
+            (tw4_props and p['feature'] == 'registered-custom-properties')
         k = p['kind']
         if k.startswith('css'):
             for css, offset in css_parts:
@@ -502,7 +569,7 @@ def scan_file(f: Path, rel: str, patterns: list[dict], utility: bool, css_in_js:
                         hit = sel
                     elif k == 'css-declaration':
                         for prop, val in decls(block):
-                            if re.fullmatch(p['property'], prop) and (not p.get('value') or p['value'] in val):
+                            if re.fullmatch(p['property'], prop) and value_hit(p, val):
                                 hit = f'{sel} {{ {prop}: {val} }}'
                     elif k == 'css-flex-gap':
                         ds = dict(decls(block))
@@ -537,16 +604,22 @@ def scan_file(f: Path, rel: str, patterns: list[dict], utility: bool, css_in_js:
                 ln = clean[:m.start()].count('\n') + 1
                 uses.append({'feature': p['feature'], 'file': rel, 'line': ln, 'snippet': text.splitlines()[ln - 1].strip()[:160],
                              'selector': None, 'fallback': fb})
-    if minified:  # one entry per feature and line, with how many uses it stands for and the first one's column
+    if minified:
+        # one entry per feature, line and guard: the guarded uses (inside an @supports or with a fallback) and the
+        # unguarded ones stay apart, each with how many uses it stands for and its first use's column and snippet, so a
+        # reader sees the use that has no fallback; `guarded` counts the guarded uses of the line on its unguarded entry
         merged: dict[tuple, dict] = {}
         for u in uses:
-            m = merged.get((u['feature'], u['line']))
+            k = (u['feature'], u['line'], bool(u['fallback']))
+            m = merged.get(k)
             if m is None:
-                merged[(u['feature'], u['line'])] = dict(u, occurrences=1)
+                merged[k] = dict(u, occurrences=1)
             else:
                 m['occurrences'] += 1
-                m['fallback'] = m['fallback'] and u['fallback']
-        uses = list(merged.values())
+        for (feat, line, fb), m in merged.items():
+            if not fb and (feat, line, True) in merged:
+                m['guarded'] = merged[(feat, line, True)]['occurrences']
+        uses = sorted(merged.values(), key=lambda u: (u['line'], bool(u['fallback']), u.get('column', 0)))   # unguarded first
     return uses
 
 
@@ -724,7 +797,8 @@ def main() -> int:
     excluded = [e['path'] for e in census['excluded']]
     scanned: list[str] = []
     uses = scan(a.repo, pats, utility=bool(fw), built=built, css_in_js=bool(cij), tailwind_major=tw_major, skipped=skipped,
-                excluded=census['excluded'], user_excluded=a.exclude, scanned=scanned, included=a.include)
+                excluded=census['excluded'], user_excluded=a.exclude, scanned=scanned, included=a.include,
+                server_only=next_server_files(a.repo))
     if a.include:
         skipped['included'] = [i.replace('\\', '/').strip('/') for i in a.include]
     embedded = skipped.pop('embedded_html', [])
@@ -739,9 +813,27 @@ def main() -> int:
     tops = {f.split('/')[0] for f in scanned if '/' in f}
     serving = served_dirs(a.repo, sorted(tops | {e['path'] for e in held}))
     served = served or static_served(cov, scanned, serving)
+    # a framework's build output whose CSS was read with --built-css (.next/static/css): say so, and that its built
+    # JavaScript was not read (APIs are checked in the source; polyfills the build adds are not seen)
+    built_dirs: dict[str, Path] = {}
+    build_note: dict[str, str] = {}
+    for b in built:
+        parts = Path(rel_name(b, a.repo)).parts
+        if '.next' in parts:
+            nxt = Path(*parts[:parts.index('.next') + 1]).as_posix()
+            built_dirs[nxt] = a.repo / nxt
+    for nxt, d in sorted(built_dirs.items()):
+        build_note[nxt] = 'next build output: its CSS was scanned (--built-css); its JavaScript was not'
+        js = sum(1 for _ in (d / 'static' / 'chunks').rglob('*.js')) if (d / 'static' / 'chunks').is_dir() else 0
+        limitations.append(f'The built JavaScript in {nxt}/static/chunks ({js} file(s)) was not scanned: JavaScript '
+                           'APIs were checked in the source, so polyfills the build adds (or leaves out) are not seen; '
+                           f'only the built CSS in {nxt}/static/css was read')
     if held:
         skipped['excluded_with_code'] = [{'path': e['path'], 'reason': e['reason'], 'source_files': e['source_files'],
-                                          'served_by': serving.get(e['path'])} for e in held[:30]]
+                                          'served_by': serving.get(e['path']) or build_note.get(e['path'])}
+                                         for e in held[:30]]
+    # the build output whose CSS was read is said in its own limitation, not offered for --include
+    held = [e for e in held if e['path'] not in built_dirs]
     hint = ''
     if held:
         names = [e['path'] for e in held]
@@ -833,10 +925,11 @@ def main() -> int:
                                     'first': {k: us[0][k] for k in ('file', 'line') if k in us[0]}})
             continue
         findings.append({'feature': feat, 'name': pat['name'], 'baseline_status': baseline,
-                         'files': [{k: u[k] for k in ('file', 'line', 'column', 'occurrences', 'snippet', 'selector',
+                         'files': [{k: u[k] for k in ('file', 'line', 'column', 'occurrences', 'guarded', 'snippet', 'selector',
                                                        'fallback', 'via') if k in u} for u in us],
                          'unsupported_in': unsupported, 'unsupported_usage': round(sum(x['usage'] for x in unsupported), 3),
                          'not_assessed': sorted(not_assessed), 'fallback': all(u['fallback'] for u in us),
+                         **({'degrades': pat['degrades']} if pat.get('degrades') else {}),
                          'status': 'possible', 'linked_differences': []})
     out = {'repo': a.repo.as_posix(), 'browserslist': {'query': query, 'source': source, 'resolved_count': len(targets['resolved']),
                                                        'coverage': targets['coverage'], 'unresolved': targets['unresolved']},

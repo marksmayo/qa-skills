@@ -29,8 +29,11 @@ Also fails when:
   * a target is not on loopback and no limitation says the cold runs had a warm CDN (the warm-up warms it);
   * an unstable measurement reached the run cap and its note doesn't say so; a finding is site_wide with
     one template;
-  * warm_cache or delivery don't follow from the runs, or warm runs did not use the HTTP cache (a cold load
-    measured twice) and no limitation says so.
+  * warm_cache, delivery or service_workers don't follow from the runs, or warm runs did not use the HTTP
+    cache (a cold load measured twice) and no limitation says so;
+  * INP is untested on every page, the calibration found the machine loaded (1.2x to 1.5x its idle
+    reference), a service worker was active, or a mobile profile ran at device pixel ratio 1, and no
+    limitation says so (limitation_rules lists every rule; build_report.py writes a default wording).
 
 --write-summary fills the computed headline fields (over_budget_counts, unstable_metrics, evidence_completeness,
 overall_confidence), so a draft may leave them out: placeholders are set before the schema check and overwritten.
@@ -60,6 +63,11 @@ FIRST_PARTY = re.compile(r'first[- ]party', re.I)
 BLOCKED = re.compile(r'\bblock', re.I)
 WARM = re.compile(r'\bwarm\b', re.I)
 CACHE_WORD = re.compile(r'\bcache', re.I)
+INP_WORD = re.compile(r'\bINP\b')
+UNTESTED = re.compile(r'\buntested\b|\bnot (been )?(measured|tested)\b|\bno (scripted )?interaction', re.I)
+LOADED = re.compile(r'\bload(ed)?\b[^.]*\b(machine|CPU|calibration)|\b(machine|CPU|calibration)\b[^.]*\bload(ed)?\b', re.I)
+SERVICE_WORKER = re.compile(r'service[- ]?worker', re.I)
+DPR = re.compile(r'pixel ratio|\bDPR\b|device[- ]scale', re.I)
 # --write-summary computes these; a draft may leave them out (verdict and summary are the agent's to write)
 HEADLINE_PLACEHOLDERS = {'over_budget_counts': {}, 'unstable_metrics': 0, 'evidence_completeness': 'partial',
                          'overall_confidence': 'low'}
@@ -74,6 +82,76 @@ def is_loopback(url: str) -> bool:
 
 def load(p: Path):
     return json.loads(p.read_text(encoding='utf-8'))
+
+
+def limitation_rules(rep: dict, doc: dict, meas: list[dict]) -> list[dict]:
+    """The limitations these runs require. Each rule: key, needed (the runs show the condition), satisfied (a limitation
+    says it), message (the validator's error) and text (a default wording build_report.py writes when none does)."""
+    lims = rep.get('limitations') or []
+    has = lambda *pats: any(all(p.search(x) for p in pats) for x in lims)  # noqa: E731
+    harness = doc.get('harness') or {}
+    rules = []
+
+    def rule(key, needed, satisfied, message, text):
+        rules.append({'key': key, 'needed': bool(needed), 'satisfied': bool(satisfied), 'message': message, 'text': text})
+    remote = [t['url'] for t in (rep.get('scope') or {}).get('targets') or [] if not is_loopback(t['url'])]
+    rule('remote_cdn', remote, has(CDN),
+         'limitations: a remote target is measured; say that "cold" is a cold browser cache, not a cold CDN '
+         '(the warm-up warms any CDN or edge cache), and point to cdn_cache',
+         'The targets are remote: "cold" means a cold browser cache, not a cold CDN, because the warm-up run warms any '
+         'CDN or edge cache in front of them (see cdn_cache).')
+    rule('bypass_csp', harness.get('bypass_csp'), has(CSP),
+         "limitations: the run bypassed the page's Content-Security-Policy; say the CSP was not enforced",
+         "The page's Content-Security-Policy (CSP) was bypassed for the measurements, so it was not enforced.")
+    rule('budget_exhausted', harness.get('requests', {}).get('budget_exhausted'), has(BUDGET_SPENT),
+         'limitations: the request budget ran out; say requests were cut off and the run is incomplete',
+         'The harness request budget ran out, so later requests were cut off and the run is incomplete.')
+    tp = at.third_party(doc)
+    n_tp = sum(b['requests'] for b in (tp or {}).get('blocked') or [])
+    rule('third_party', n_tp, has(THIRD_PARTY, NOT_MEASURED),
+         f'limitations: {n_tp} third-party request(s) were blocked; say that third-party cost and behaviour were not measured',
+         f'{n_tp} third-party request(s) were blocked by the harness (scope.third_party): third-party cost and behaviour were '
+         'not measured.')
+    bfp = at.blocked_first_party(doc)
+    n_fp = sum(b['requests'] for b in bfp)
+    rule('first_party_blocked', n_fp, has(FIRST_PARTY, BLOCKED),
+         f'limitations: {n_fp} first-party request(s) were blocked (beacons, reports, telemetry); say so and that their '
+         'cost and the handling of the failures are not measured',
+         f'{n_fp} first-party request(s) were blocked (non-GET beacons, reports or telemetry; scope.blocked_first_party): '
+         'their upload cost and how the page handles the failures are not measured.')
+    cold_twice = [w for w in at.warm_cache(doc) if not w['effective']]
+    rule('warm_not_cached', cold_twice, has(WARM, CACHE_WORD),
+         f'limitations: the warm runs of {", ".join(sorted({w["url"] for w in cold_twice}))} did not use the HTTP cache '
+         f'({cold_twice[0]["reason"] if cold_twice else ""}); say the warm numbers are a cold load measured again',
+         'Some warm runs did not use the HTTP cache (see warm_cache): their numbers are a cold load measured again.')
+    inp = [m for m in meas if m['metric'] == 'INP' and m['browser'] == 'chromium']
+    rule('inp_untested', inp and all(m['status'] == 'untested' for m in inp), has(INP_WORD, UNTESTED),
+         'limitations: INP is untested on every page (no scripted interaction); say so, and that TBT is only its lab proxy',
+         'INP is untested on every page: no target had a scripted interaction, and TBT is only a lab proxy for it.')
+    cal = doc.get('calibration') or {}
+    rule('machine_loaded', at.calibration_state(cal) == 'loaded', has(LOADED),
+         f'limitations: the calibration found the machine loaded ({at.calibration_slowdown(cal)}x its idle reference, under '
+         'the busy threshold); say CPU-bound metrics (LCP, TBT, INP) may be inflated by up to that factor',
+         f'The machine was loaded during the run: its CPU calibration was {at.calibration_slowdown(cal)}x its idle '
+         'reference (under the busy threshold), so CPU-bound metrics (LCP, TBT, INP) may be inflated by up to that factor.')
+    sws = at.service_workers(doc)
+    rule('service_worker', sws, has(SERVICE_WORKER),
+         f'limitations: a service worker was active on {", ".join(sorted({w["url"] for w in sws}))} '
+         f'({", ".join(sorted({w["cache"] for w in sws}))} runs); say what it answered and fetched and how far that was measured',
+         'A service worker was active on some runs (see service_workers): it answered requests the page made, and its own '
+         'network requests are counted in transfer_sw' + ('' if all(w['network_measured'] for w in sws) else
+                                                         ' only where network_measured is true (Chromium); elsewhere they were not measured') +
+         ('' if all(w.get('requests_guarded') is not False for w in sws) else
+          "; the harness's guard did not intercept the worker's own requests (http_cache keep)") + '.')
+    mobile = {p for p, v in ((doc.get('config') or {}).get('profiles') or {}).items() if isinstance(v, dict) and v.get('mobile')}
+    dpr1 = sorted({r['profile'] for r in at.counted(doc['runs']) if r['profile'] in mobile and
+                   not (((r.get('throttling') or {}).get('applied') or {}).get('device_scale_factor') or 1) > 1})
+    rule('device_pixel_ratio', dpr1, has(DPR),
+         f'limitations: the {", ".join(dpr1)} runs used a device pixel ratio of 1; say responsive images were picked for a '
+         'DPR-1 screen, so image weight on a real phone is understated',
+         f'The {", ".join(dpr1)} runs used a device pixel ratio of 1 (no device_scale_factor applied): responsive images '
+         '(srcset) were picked for a DPR-1 screen, so image weight on a real phone (DPR 2 to 3) is understated.')
+    return rules
 
 
 def expected_headline(rep: dict, meas: list[dict], doc: dict) -> dict:
@@ -140,17 +218,9 @@ def main() -> int:
             errs.append(f'scope.targets: {t["url"]} variants should be {want}')
         if (t.get('setup') or None) != (s.get('setup') or None):
             errs.append(f'scope.targets: {t["url"]} setup should be {json.dumps(s.get("setup"))}')
-    remote = [t['url'] for t in rep['scope']['targets'] if not is_loopback(t['url'])]
-    if remote and not any(CDN.search(x) for x in rep['limitations']):
-        errs.append('limitations: a remote target is measured; say that "cold" is a cold browser cache, not a cold CDN '
-                    '(the warm-up warms any CDN or edge cache), and point to cdn_cache')
     harness = doc.get('harness')
     if rep['metadata'].get('harness') != harness:
         errs.append('metadata.harness should be the measurements\' harness record (browser_harness metadata and request totals)')
-    if harness and harness.get('bypass_csp') and not any(CSP.search(x) for x in rep['limitations']):
-        errs.append('limitations: the run bypassed the page\'s Content-Security-Policy; say the CSP was not enforced')
-    if harness and harness.get('requests', {}).get('budget_exhausted') and not any(BUDGET_SPENT.search(x) for x in rep['limitations']):
-        errs.append('limitations: the request budget ran out; say requests were cut off and the run is incomplete')
     if rep['metadata']['machine'] != doc['machine'] or rep['metadata']['calibration'] != doc['calibration']:
         errs.append('metadata.machine / calibration do not match the measurements')
     browsers = sorted({r['browser'] for r in doc['runs']})
@@ -200,24 +270,17 @@ def main() -> int:
     if tp is not None or rep['scope'].get('third_party') is not None:
         if rep['scope'].get('third_party') != tp:
             errs.append(f'scope.third_party should be {json.dumps(tp)[:200]} (from the measurements config and blocked requests)')
-    if tp and tp['blocked'] and not any(THIRD_PARTY.search(x) and NOT_MEASURED.search(x) for x in rep['limitations']):
-        errs.append(f'limitations: {sum(b["requests"] for b in tp["blocked"])} third-party request(s) were blocked; say that '
-                    'third-party cost and behaviour were not measured')
     bfp = at.blocked_first_party(doc)
     if rep['scope'].get('blocked_first_party', []) != bfp:
         errs.append(f'scope.blocked_first_party should be {json.dumps(bfp)[:200]} (the blocked non-third-party requests)')
-    if bfp and not any(FIRST_PARTY.search(x) and BLOCKED.search(x) for x in rep['limitations']):
-        errs.append(f'limitations: {sum(b["requests"] for b in bfp)} first-party request(s) were blocked (beacons, reports, '
-                    'telemetry); say so and that their cost and the handling of the failures are not measured')
     for key, fn in (('cdn_cache', at.cdn_cache), ('request_summary', at.request_summary), ('warm_cache', at.warm_cache),
-                    ('delivery', at.delivery)):
+                    ('delivery', at.delivery), ('service_workers', at.service_workers)):
         want = fn(doc)
         if rep.get(key, []) != want:
             errs.append(f'{key} does not follow from the runs (attribute.{key})')
-    cold_twice = [w for w in at.warm_cache(doc) if not w['effective']]
-    if cold_twice and not any(WARM.search(x) and CACHE_WORD.search(x) for x in rep['limitations']):
-        errs.append(f'limitations: the warm runs of {", ".join(sorted({w["url"] for w in cold_twice}))} did not use the HTTP '
-                    f'cache ({cold_twice[0]["reason"]}); say the warm numbers are a cold load measured again')
+    for r in limitation_rules(rep, doc, meas):
+        if r['needed'] and not r['satisfied']:
+            errs.append(r['message'])
     if cands_doc['measurements'] != meas:
         errs.append('candidates.json is stale; rerun attribute.py')
     if rep['server_timing'] != at.server_timing(doc):

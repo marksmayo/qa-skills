@@ -24,7 +24,7 @@ hardest at what is outside all of them.
 | Platform | Boundaries | Not caught by them |
 |---|---|---|
 | React | Class components with `getDerivedStateFromError`/`componentDidCatch`, `react-error-boundary` (`<ErrorBoundary>`, `withErrorBoundary`), `Sentry.ErrorBoundary`; router boundaries: a route's `errorElement` or `ErrorBoundary` (React Router 6.4+ data routers and 7, Remix; also a route module's exported `ErrorBoundary`) and TanStack Router's `errorComponent`, which catch render, loader and action errors and failed `lazy()` imports in their route and its children (scope `route`: a throw there is B2) | Event handlers, async code, `setTimeout`, errors in the boundary itself, anything above the topmost boundary (since React 16, an uncaught render error unmounts the whole root), and anything above the router: providers, the root render and module-scope code |
-| Next.js | `app/**/error.tsx` (its segment's page and nested segments, not the `layout` in its own folder), `app/global-error.tsx` (app: replaces the whole document, effect `app_fallback`), `pages/_error` | The root layout and everything it renders (providers, the shell, `next/dynamic` widgets) is caught only by `global-error`, so a throw there is B1 on every page. Server component errors during SSR become error pages; their trigger is server data (seed a test database), not a browser mock. `middleware.ts`/`proxy.ts` runs before every matched page. Route handlers (`app/**/route.ts`) are API code: a throw is an HTTP 500, not a UI crash, so they are out of scope |
+| Next.js | `app/**/error.tsx` (its segment's page and nested segments, not the `layout` in its own folder), `app/global-error.tsx` (app: replaces the whole document, effect `app_fallback`), `pages/_error` | The root layout and everything it renders (providers, the shell, `next/dynamic` widgets) is caught only by `global-error`, so a throw there is B1 on every page. Server component errors during SSR become error pages; their trigger is server data (seed a test database), not a browser mock. `middleware.ts`/`proxy.ts` runs before every matched page. Route handlers (`app/**/route.ts`) and metadata routes (`robots.ts`, `sitemap.ts`, `opengraph-image.tsx`, `icon.tsx`) are server code: a throw is an HTTP 500 for that URL, not a UI crash, so they are out of scope. Without a `global-error` file (recon `nextjs.global_error: null`) a throw in the root layout shows Next.js's built-in "Application error" page: still B1 `app_fallback`, with no reset button. A custom boundary in the root layout covers only what it `wraps`: its `outside` siblings (a service-worker registrar, a focus manager) are caught only by `global-error`. With `generateStaticParams` and `dynamicParams = false` an unknown dynamic value is a 404 before the page code runs, so a lookup miss in that page is not a trigger |
 | Vue | `errorCaptured` / `onErrorCaptured` (subtree), `app.config.errorHandler` (global, logs only) | A global handler doesn't re-render; the component stays broken |
 | Angular | `ErrorHandler` (global; logs, does not recover the view) | A throw in a template can leave the view half-rendered |
 | React Native | Error boundaries as in React; `ErrorUtils.setGlobalHandler` | Native module exceptions terminate the app regardless |
@@ -121,7 +121,8 @@ candidates: the validator rejects a reason shared by more than three individual 
 **Dismiss in a group** when one checkable rule covers a class of candidates, in
 `triage.dismissed_groups`: a `rule_id`, a `match` (any of `pitfall_id`, `path` glob, `tool`, source
 `rule`, `snippet` regex), the specific reason that holds for every match, and the candidate ids. With
-`--candidates` the validator checks each listed candidate matches. Good groups: tsc
+`--candidates` the validator checks each listed candidate matches. The `path` glob has `**`, `*` and
+`?`; square brackets are literal (`src/app/[slug]/page.tsx` matches that file; `[[]slug]` works too). Good groups: tsc
 `noUncheckedIndexedAccess` hits on `x.split(...)[0]` (`rule: TS2532`, `snippet: "split\\("`; `split`
 always returns at least one element), or `WEB-INVALID-DATE` on Prisma `DateTime` fields (`snippet`
 naming them; the client returns `Date` objects). A group never covers a candidate you didn't read the
@@ -168,6 +169,10 @@ diff or reading. Full entries, triggers and fixes are in `data/pitfalls.json`.
   `.map(decodeURIComponent)`, `.then(JSON.parse)`), `reduce` without an initial value.
 - SSR and browser APIs: `window`/`localStorage` at module scope in SSR code, hydration mismatches,
   APIs missing in the declared targets.
+- Service workers and Cache Storage: a worker's unhandled rejection (a `caches.open().then()` with no
+  catch) fails its install or fetch handling; a response cached once (`cache.put`) is replayed on later
+  visits, so a bad cached response is a `persisted_state` trigger and can be a crash loop until site data
+  is cleared. The worker's file is UI scope when the UI registers it.
 - Configuration at module scope: a Next.js root layout reading configuration, or a Vite module that
   reads `import.meta.env` and throws when a value is missing or invalid (recon's
   `module_scope_config`). It runs on import, before any boundary renders, so it blanks the app (B1);

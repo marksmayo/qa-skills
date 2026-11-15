@@ -1,7 +1,7 @@
 ---
 name: resilience-prober
 description: Check how a running web app behaves when what it depends on goes wrong - slow or failing APIs, rate limits, expired sessions, hung requests, dropped connections, going offline, malformed payloads, one dependency down, flapping endpoints and failed script chunks. Each fault is injected in the browser only (Playwright routing), on a chosen step of a real user flow, after a clean baseline, with the expected outcome written before the run. Records what the user sees and loses - crashes, blank screens, endless spinners, silent failures, misleading empty states, lost input, no way to recover, retry storms - with screenshots, request logs and a standalone repro script. Never calls an app resilient.
-version: 1.3.0
+version: 1.4.0
 ---
 
 # Resilience prober
@@ -57,7 +57,11 @@ Native apps belong to the mobile app auditor.
 | `authorised_by`, `auth`, `allow_form_submission` | writes blocked | `allow_form_submission` defaults to false here; `targets`, `allowed_hosts`, `host_map` and a `harness` block pass through to `browser_harness.py`; `auth: {"storage_state": file}` runs signed in, with a session a person captured by signing in by hand (`python scripts/browser_harness.py capture-session --url <app> --out <file outside the repo>`; cookies, localStorage, IndexedDB and sessionStorage); the run stays read-only and records only that a session was used, never the file or its contents |
 | `request_budget` / `--max-requests` | none | Requests the browser may send to the site in the whole run |
 | `setup`, `init_script` | none | Actions after the first load (dismiss a cookie banner), JavaScript before every page (seed localStorage) |
-| `prefetch` | allow | `block` aborts prefetch requests (`Next-Router-Prefetch`, `Sec-Purpose: prefetch`), so a navigation fetches and a fault can reach it |
+| `prefetch` | allow | `block` aborts prefetch requests (`Next-Router-Prefetch`, `Sec-Purpose: prefetch`), so a navigation fetches and a fault can reach it. It changes a Next.js app: see below |
+| `service_workers` | block | `allow` (in flows.json or on one flow) lets the app's service worker run: the first load waits for it and reloads once so it controls the page, as for a returning visitor; offline then reaches the worker, and a request it answers from its cache counts as reached by the fault. Route faults may miss requests the worker answers |
+| `nav_timeout_ms`, `step_timeout_ms`, `run_timeout_s` | 30000, 10000, from the budgets | Page loads and history steps; a step before the target; the watchdog's limit for one baseline or scenario run (`--run-timeout`) |
+| `baseline_retries`, `baseline_retry_pause_s` | 1, 5 | A failed baseline run is tried again after a pause (a loaded machine can miss a step's budget once); a flow that passed only on a retry is recorded `retried` |
+| `requests_per_load` | 60 | For the planner's request estimate |
 | `unreachable` | none | `[{flow?, step?, what, reason}]`: data the browser cannot reach (fetched by a server component, cached at the edge); copied to the plan and the report |
 | `devices` | desktop Chromium | Add a mobile profile for mobile web |
 | `har` | none | Real traffic, to weight reach by each endpoint's share of requests |
@@ -68,15 +72,26 @@ Native apps belong to the mobile app auditor.
 chromium`; ask first). Everything else is stdlib.
 
 ```bash
-python scripts/plan_scenarios.py flows.json --out <run>/scenarios.json [--plan-only]
-python scripts/run_resilience.py flows.json <run>/scenarios.json --out <run> --runs 2
+python scripts/plan_scenarios.py flows.json --out <run>/scenarios.json [--plan-only] [--runs 2] [--repo <app source>]
+python scripts/run_resilience.py flows.json <run>/scenarios.json --out <run> --runs 2 [--resume]
 python scripts/classify.py <run>/run.json <run>/scenarios.json flows.json --out <run>/candidates.json
 python scripts/build_report.py --run <run>/run.json --scenarios <run>/scenarios.json --candidates <run>/candidates.json \
     --flows flows.json --promote K1,K2 --repros <run>/repros --out <run>/resilience_report.json
 ```
 
-Run `plan_scenarios.py --plan-only` first and check the count against the request budget, and look at
-the baselines before spending the scenarios: a flow whose baseline fails makes its scenarios untested.
+Run `plan_scenarios.py --plan-only` first: it prints the scenarios and an `estimate` (runs, page loads,
+requests at `requests_per_load`) against `request_budget`, with `over_budget` when the plan won't fit. Look
+at the baselines before spending the scenarios: a flow whose baseline fails makes its scenarios untested.
+With `--repo` the planner reads a Next.js app's source (`next_app.py`) and lists the service workers it
+ships with their fetch strategies (`service_workers` in the plan); it warns when the run would block them.
+
+The runner never blocks: every read of the page has a deadline (Playwright's `page.evaluate` has none, and
+a page whose navigation timed out never answers it), and a watchdog runs the work in a child process with a
+time limit per baseline or scenario run. A run past its limit is stopped with its browser, listed in
+`<run>/hung.json`, recorded `errored` (a baseline run `failed`) with the watchdog's reason, and the run goes
+on after it. `run.json` is written after every flow's baselines and every scenario (`run_status: partial`
+until the end); `--resume` continues a stopped run, and `build_report.py` and the validator refuse a partial
+one.
 
 1. **Recon** (optional, with source): the data layer, retry and timeout settings, error boundaries
    (the UI crash hunter's `recon.py`).
@@ -87,10 +102,13 @@ the baselines before spending the scenarios: a flow whose baseline fails makes i
    accessible name matching retry, try again, reload) or the step's actions again, never a reload; a
    step that only types (type-ahead) is recovered by re-sending the field's value (`refill_input`). A
    step whose only action is a navigation cannot be repeated without reloading, so its recovery is
-   `reload` (not tried) and a `recovery_not_tried` note, never `recovered`. Then the page is reloaded
+   `reload` (not tried) and a `recovery_not_tried` note, never `recovered` (so is a `back`, `forward` or
+   `reload` step: steps may use browser history, `{"back": true}`). Then the page is reloaded
    with the fault gone and the flow run to the step again: a step that makes no request to the endpoint
    after the reload, when the server never answered it well in the run, replays a failure the app stored
-   (`persisted_failure`: Cache Storage, IndexedDB, localStorage).
+   (`persisted_failure`: Cache Storage, IndexedDB, localStorage). A reload that never loaded is recorded
+   with its error and a `reload_not_checked` note, never read as a stored failure. A failed baseline run is
+   tried once more after a pause; a flow that passed only then is `retried` (confidence medium at most).
 4. **Classify.** Effects per run, merged by root cause (one effect at one step and endpoint across
    faults; no recovery across a step's endpoints; retry storms per endpoint), rated by `RUBRIC.md`.
 5. **Triage.** `build_report.py` fills everything the run decides (scope, metadata, baseline, scenarios,
@@ -124,7 +142,18 @@ error counts toward a crash only when it is new against the baseline and the app
 baseline's root had text. A static-asset fault that leaves the step incomplete is a `chunk_failure` even
 when the static HTML stays.
 
-Edge cases: service workers are blocked in scenarios (they would answer before routing); GraphQL needs
+Offline (and any fault) on a step that becomes a full page load can end on the browser's own error page
+(`chrome-error://`): the run records `browser_error_page` with the URL and screenshots, and classify makes it
+a `browser_error_page` note (no app code ran there), never `errored`. Offline counts only failed requests
+the scenario targets (its pattern, method, headers and resource type), never every request that failed in
+the context, and a `not_triggered` reason says whether matching requests came before the fault, only after
+it, or never (a client cache). A failure that only hit images, fonts or media is optional for the step by
+default (the step's data didn't depend on it), and visible broken images are counted (`broken_images` note).
+
+Edge cases: service workers are blocked unless `service_workers` is `allow` (they would answer before
+routing); with `allow`, plan offline scenarios on navigations to see what a returning visitor gets (the
+worker's cached page is a `served_by_service_worker` note, the browser's offline page a
+`browser_error_page` note); GraphQL needs
 faults matched on the operation name; WebSockets can be closed but not faked; third-party scripts are
 a natural partial failure; optimistic UI is only misleading if it doesn't roll back or warn. A fault on
 the page's own HTML document (a navigation, a server-rendered page) shows the catalogue's injected body,
@@ -135,9 +164,17 @@ one URL and query, cache-busters dropped).
 Next.js and other server-rendering frameworks:
 
 - **Prefetch.** Links in view are prefetched at page load (`?_rsc=`, `Next-Router-Prefetch: 1`); a fault
-  installed for a later step misses them and the scenario is `not_triggered`. Use `"from": "load"` (with
-  `"headers": {"Next-Router-Prefetch": "1"}` to hit only the prefetch), or `"prefetch": "block"` so the
-  navigation itself fetches, with `"headers": {"RSC": "1"}`.
+  installed for a later step misses them and the scenario is `not_triggered`. The faithful choice is
+  `"from": "load"` with `"headers": {"Next-Router-Prefetch": "1"}` (the fault hits the prefetch, as a real
+  visitor's would fail). `"prefetch": "block"` makes the navigation fetch (`"headers": {"RSC": "1"}`) but
+  changes the app: Next logs "Failed to fetch RSC payload ... Falling back to browser navigation" for every
+  link and turns client navigations into full page loads, so a `loading.tsx` skeleton never shows and a hang
+  looks like "nothing happens". classify notes it (`prefetch_changed_app`) and `build_report.py` puts it in limitations.
+- **Fallback to a full page load.** When a route payload fails (a 500, a truncated or HTML body), Next aborts
+  it and loads the page as a document, which the fault didn't touch: the right page shows. The run records
+  the page's document loads (`documents`), and a failed request followed by a 2xx document load of the same
+  path is a `full_page_fallback` note, not `misleading_state`. A step answered from the router's client cache
+  makes no request, so the fault doesn't trigger (`not_triggered`, with the reason).
 - **Matching.** The document `/features` and its payload `/features?_rsc=x` share a path; tell them
   apart with `headers` or `resource_type` (`document`, `fetch`).
 - **Server components** fetch on the server; browser faults reach only the payload carrying the result.
@@ -154,19 +191,21 @@ Next.js and other server-rendering frameworks:
 ## Output fields
 
 `scope` (faults that ran, `faults_untested`), `metadata` (browser, requests sent, request budget, whether
-writes were allowed, blocked requests, runs per scenario), `baseline` (per flow: status, and for a
-broken flow the failed step, what it showed and screenshots), `scenarios[]` (with expected outcome,
+writes were allowed, blocked requests, runs per scenario, service workers), `baseline` (per flow: status,
+`retried` when a run passed only when tried again, and for a broken flow the failed step, what it showed
+and screenshots), `scenarios[]` (with expected outcome,
 status `ran | untested | errored | not_triggered`, reason, effects, screenshots), `findings[]` (effect,
 impact, likelihood, reach, score, priority, confidence, floors, endpoints, faults, scenarios, expected,
 actual, user impact, evidence, repro, fix, verification), `notes[]` (`console_only`, `document_fault`, `recovery_not_tried`,
-`baseline_blank`), `confidence_caps[]` (optional: `{cap, reason}`), `coverage` (per
+`baseline_blank`, `browser_error_page`, `full_page_fallback`, `served_by_service_worker`, `broken_images`,
+`observation_unavailable`, `reload_not_checked`, `prefetch_changed_app`), `confidence_caps[]` (optional: `{cap, reason}`), `coverage` (per
 fault group: ran, untested, errored, not_triggered), `unreachable[]`, `headline`, `needs_review[]`,
 `triage[]`, `limitations[]`. `run.json` keeps each matching request with its query (sensitive values
 redacted), whether the injector answered or held it, and its response time.
 
 ## What the validator enforces
 
-No `TODO` is left. Scenarios match the plan and the run, their expected outcome predates the run, and
+run.json is complete (not `partial`). No `TODO` is left. Scenarios match the plan and the run, their expected outcome predates the run, and
 nothing ran for a failed baseline; a scenario whose fault never fired is not_triggered. The baseline
 section equals run.json, its screenshots exist, and the headline names every broken flow. `scope.faults`
 holds only faults that ran, `faults_untested` the rest; metadata and `unreachable` equal the run and
@@ -174,5 +213,5 @@ the plan. Findings match their candidates, cite runs that triggered the fault, c
 that ran with screenshots and request logs, and have repro scripts. A P0 is reproduced. Retry storms
 carry counts and timings; lost input carries lengths and hashes only. Console-only items are never
 findings. Coverage, the headline and confidence (low when under half the scenarios ran, a critical
-baseline failed, or scenarios ran once; lowered by any `confidence_caps`) are recomputed, and no summary, limitation or finding claims
+baseline failed, or scenarios ran once; medium at most when a baseline passed only on a retry; lowered by any `confidence_caps`) are recomputed, and no summary, limitation or finding claims
 resilience, production readiness or graceful recovery from every failure.

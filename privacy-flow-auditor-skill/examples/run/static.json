@@ -214,77 +214,154 @@
    "line": 9,
    "host": "cdn.trackly.test",
    "source": "script_tag",
-   "vendor": null
+   "vendor": null,
+   "mentions": [
+    {
+     "line": 9,
+     "kind": "loader",
+     "source": "script_tag"
+    }
+   ]
   },
   {
    "file": "site/index.html",
    "line": 10,
    "host": "widget.chatterbox.test",
    "source": "script_tag",
-   "vendor": null
+   "vendor": null,
+   "mentions": [
+    {
+     "line": 10,
+     "kind": "loader",
+     "source": "script_tag"
+    }
+   ]
   },
   {
    "file": "site/index.html",
    "line": 11,
    "host": "cdn.bugcatch.test",
    "source": "script_tag",
-   "vendor": null
+   "vendor": null,
+   "mentions": [
+    {
+     "line": 11,
+     "kind": "loader",
+     "source": "script_tag"
+    }
+   ]
   },
   {
    "file": "site/signup.html",
    "line": 9,
    "host": "cdn.trackly.test",
    "source": "script_tag",
-   "vendor": null
+   "vendor": null,
+   "mentions": [
+    {
+     "line": 9,
+     "kind": "loader",
+     "source": "script_tag"
+    }
+   ]
   },
   {
    "file": "site/signup.html",
    "line": 10,
    "host": "widget.chatterbox.test",
    "source": "script_tag",
-   "vendor": null
+   "vendor": null,
+   "mentions": [
+    {
+     "line": 10,
+     "kind": "loader",
+     "source": "script_tag"
+    }
+   ]
   },
   {
    "file": "site/signup.html",
    "line": 11,
    "host": "cdn.bugcatch.test",
    "source": "script_tag",
-   "vendor": null
+   "vendor": null,
+   "mentions": [
+    {
+     "line": 11,
+     "kind": "loader",
+     "source": "script_tag"
+    }
+   ]
   },
   {
    "file": "site/static/consent.js",
    "line": 12,
    "host": "cdn.adnetic.test",
    "source": "injected_script",
-   "vendor": null
+   "vendor": null,
+   "mentions": [
+    {
+     "line": 12,
+     "kind": "loader",
+     "source": "injected_script"
+    }
+   ]
   },
   {
    "file": "site/static/consent.js",
    "line": 13,
    "host": "cdn.replayr.test",
    "source": "injected_script",
-   "vendor": null
+   "vendor": null,
+   "mentions": [
+    {
+     "line": 13,
+     "kind": "loader",
+     "source": "injected_script"
+    }
+   ]
   },
   {
    "file": "site/welcome.html",
    "line": 9,
    "host": "cdn.trackly.test",
    "source": "script_tag",
-   "vendor": null
+   "vendor": null,
+   "mentions": [
+    {
+     "line": 9,
+     "kind": "loader",
+     "source": "script_tag"
+    }
+   ]
   },
   {
    "file": "site/welcome.html",
    "line": 10,
    "host": "widget.chatterbox.test",
    "source": "script_tag",
-   "vendor": null
+   "vendor": null,
+   "mentions": [
+    {
+     "line": 10,
+     "kind": "loader",
+     "source": "script_tag"
+    }
+   ]
   },
   {
    "file": "site/welcome.html",
    "line": 11,
    "host": "cdn.bugcatch.test",
    "source": "script_tag",
-   "vendor": null
+   "vendor": null,
+   "mentions": [
+    {
+     "line": 11,
+     "kind": "loader",
+     "source": "script_tag"
+    }
+   ]
   }
  ],
  "permissions": [],
@@ -430,5 +507,102 @@
   "warning": null,
   "needs_limitation": [],
   "needs_limitation_dirs": []
+ },
+ "host_mentions": [
+  {
+   "file": "site/static/consent.js",
+   "line": 12,
+   "host": "cdn.adnetic.test",
+   "kind": "loader",
+   "source": "injected_script",
+   "vendor": null
+  },
+  {
+   "file": "site/index.html",
+   "line": 11,
+   "host": "cdn.bugcatch.test",
+   "kind": "loader",
+   "source": "script_tag",
+   "vendor": null
+  },
+  {
+   "file": "site/signup.html",
+   "line": 11,
+   "host": "cdn.bugcatch.test",
+   "kind": "loader",
+   "source": "script_tag",
+   "vendor": null
+  },
+  {
+   "file": "site/welcome.html",
+   "line": 11,
+   "host": "cdn.bugcatch.test",
+   "kind": "loader",
+   "source": "script_tag",
+   "vendor": null
+  },
+  {
+   "file": "site/static/consent.js",
+   "line": 13,
+   "host": "cdn.replayr.test",
+   "kind": "loader",
+   "source": "injected_script",
+   "vendor": null
+  },
+  {
+   "file": "site/index.html",
+   "line": 9,
+   "host": "cdn.trackly.test",
+   "kind": "loader",
+   "source": "script_tag",
+   "vendor": null
+  },
+  {
+   "file": "site/signup.html",
+   "line": 9,
+   "host": "cdn.trackly.test",
+   "kind": "loader",
+   "source": "script_tag",
+   "vendor": null
+  },
+  {
+   "file": "site/welcome.html",
+   "line": 9,
+   "host": "cdn.trackly.test",
+   "kind": "loader",
+   "source": "script_tag",
+   "vendor": null
+  },
+  {
+   "file": "site/index.html",
+   "line": 10,
+   "host": "widget.chatterbox.test",
+   "kind": "loader",
+   "source": "script_tag",
+   "vendor": null
+  },
+  {
+   "file": "site/signup.html",
+   "line": 10,
+   "host": "widget.chatterbox.test",
+   "kind": "loader",
+   "source": "script_tag",
+   "vendor": null
+  },
+  {
+   "file": "site/welcome.html",
+   "line": 10,
+   "host": "widget.chatterbox.test",
+   "kind": "loader",
+   "source": "script_tag",
+   "vendor": null
+  }
+ ],
+ "csp": {
+  "policies": [],
+  "checks": [],
+  "blocked": [],
+  "unused_allowances": [],
+  "note": "a static reading: each loader host and each host data/vendors.json says its loader goes on to use (companions) is checked against every enforced policy; unused allowances are hosts no code names (a heuristic)"
  }
 }

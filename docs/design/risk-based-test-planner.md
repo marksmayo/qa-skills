@@ -1,6 +1,6 @@
 # Design: `risk-based-test-planner-skill`
 
-Status: Built (v1.6.0), see "As built" at the end. Build order: 13.
+Status: Built (v1.7.0), see "As built" at the end. Build order: 13.
 
 ## Mission
 
@@ -493,3 +493,35 @@ Where the build differs from the design above, and what the example showed.
     (another change); per-area confidence still counts only not-assessed factors (the scope warning
     carries the rest). The sample repository's scores are unchanged; `risk.json` gained the two
     empty lists.
+- **v1.7.0: a Next.js App Router content site with next/script tag loaders, a CSP and redirects in
+  next.config headers(), a service worker in public/, deleted middleware in the scope, no tests and
+  no CI.** Red/green checks in `score_risk.py --self-test` (`next_site_checks`, a synthetic bike
+  shop, and new surface idioms) and a new `validate_test_plan.py --self-test`.
+  - **Deleted files vanished**: the scope's deletions count in the change in scope of the area whose
+    paths cover them (`scope_deleted` lists them all, with a warning); one in no area is in
+    `scope_outside_areas` as "deleted in the scope". A file deleted before HEAD keeps its churn and
+    fix commits in its area, and fix commits that touch no scored area are named in a warning.
+  - **Runtime configuration**: with the shared Next.js reader (`next_app.py`), a `next.config.*` that
+    sets headers, CSP, redirects or rewrites, and `vercel.json`/`netlify.toml`/`public/_headers` that
+    set them, form a `runtime config` area with a new `response_policy` surface (4). An explicit
+    `--areas` entry that names a configuration file by its path is scored, never dropped as tool
+    configuration.
+  - **Service workers**: a script `navigator.serviceWorker.register` names is its own area (any
+    layout), with a `service_worker` surface (3) for its fetch handler; other code in `public/` or
+    `static/` is warned about.
+  - **Surfaces**: `third_party_script` (4) for tag-manager, analytics and ad loaders, read on the
+    raw line (`<Script src="https://`, `gtag(`, `adsbygoogle`) and from the reader's script list
+    (JSON-LD blocks excluded); JSX text is blanked, so "GDPR" in copy is not compliance; a same-origin
+    `fetch` (relative URL, `event.request`) is not external (a new `raw_exclude` key); App Router
+    metadata routes are entry points and not-found/error pages user-facing pages.
+  - **Areas**: the files directly in `app/` split by role: `app (layout)`, `pages/(root)`,
+    `app (metadata routes)`, `app (error and loading pages)`, `app (root)`.
+  - **No tests**: a loud warning (also naming a missing CI configuration), and the validator requires
+    the plan to say there are no tests. **Dead code**: in a Next.js project, `unreferenced` lists
+    source files nothing imports that are not entry points by convention (a hint, never a score;
+    skipped when import resolution looks incomplete).
+  - **Test types**: `resilience` and `privacy`. The "last N merged PRs" recipe says to check direct
+    pushes with `git log --first-parent`.
+  - Not done: `diff_scope.py` classing an ad network's `ads.txt` as docs (shared file); `complexity.py`
+    still walks the filesystem rather than `git ls-files` (harmless: `.d.ts` is skipped). The sample
+    repository's scores are unchanged; `risk.json` gained `scope_deleted` and `unreferenced`.

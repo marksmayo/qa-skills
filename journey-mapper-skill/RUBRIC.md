@@ -14,8 +14,13 @@ A failure would lose money, lock users out, lose or leak data, or break a legal 
 - **Data integrity:** creating, editing or deleting a user's primary records; irreversible
   actions (delete account, cancel order, bulk delete).
 - **Compliance:** consent capture, privacy requests (export, deletion), age gates, accessibility
-  of required flows.
+  of required flows. Reading a legally required notice (privacy notice, cookie notice, terms) is
+  P2, not P1: it captures nothing, so its failure is a missing page, not a broken obligation. It
+  becomes P1 when the notice is where consent is given or withdrawn, or where a privacy request
+  starts, and the site's tracking (an analytics or ad loader) is then part of that journey.
 - **Core value:** the journey ending in the product's primary goal event (the reason users come).
+  On a content site with no accounts or commerce, that is reading the main content pages (an
+  article, a recipe, a listing), including their not-found variant for unknown URLs.
 
 ### P2: important
 

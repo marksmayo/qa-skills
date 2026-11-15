@@ -503,6 +503,7 @@
  },
  "duplicates": [],
  "not_parsed": [],
+ "service_workers": [],
  "skipped_dirs": [],
  "files_seen": 12,
  "include": []

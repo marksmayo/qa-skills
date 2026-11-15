@@ -8,7 +8,9 @@ and compares what they report with examples/kite-notes/expected.json: the patter
 exactly, the listed entry points must be present with the expected auth, client-side sources and
 data stores must not include server or config files, and test-file literals must be set aside.
 Then checks the npm range matching and lockfile facts in merge_findings.py, and the validator's
-headline rule and secret-value matching. Writes nothing; exit code 0 when every check passes.
+headline rule and secret-value matching. The other fixtures (ferry-ops, quill-cli, beacon-cli, tide-tables and
+wren-field-guide, a static Next.js content site) have their own expected.json; run_poc guard checks, observation
+evidence, the seeded run_poc row and the empty-findings rendering are checked too. Writes nothing; exit code 0 when every check passes.
 """
 from __future__ import annotations
 import argparse, json, re, subprocess, sys, tempfile
@@ -612,6 +614,111 @@ def advisory_rules() -> None:
           'not_assessed must be in limitations and the headline must not claim clean dependencies')
     check(any("required" in e for e in validator.advisory_errors(base)), 'schema 1.2 requires dependency_advisories')
 
+def wren(root: Path) -> None:
+    """The static Next.js App Router content site: pages, metadata routes, the image optimiser, a service worker,
+    a CSP and a catch-all Cache-Control in next.config headers(), JSON-LD, prose in data strings, agent config."""
+    want = json.loads((root / 'expected.json').read_text(encoding='utf-8'))
+    print('scan_pitfalls (all packs) on wren-field-guide')
+    got = {(c['file'], c['line'], c['pitfall_id']) for c in scan_pitfalls.scan(root, scan_pitfalls.load_catalogue())['candidates']}
+    exp = {tuple(x) for x in want['patterns']}
+    for x in sorted(exp - got):
+        check(False, f'missed {x[2]} at {x[0]}:{x[1]}')
+    for x in sorted(got - exp):
+        check(False, f'unexpected {x[2]} at {x[0]}:{x[1]}')
+    check(got == exp, f'{len(exp)} planted patterns: CSP unsafe-inline, https: source and tag-manager allowance, a catch-all '
+                      'shared-cache rule, JSON-LD as its own rule (not an HTML sink); nothing for img-src https: or style-src')
+    print('recon on wren-field-guide')
+    d = run_recon(root)
+    eps = d['entry_points']
+    for e in want['entry_points']:
+        hit = [x for x in eps if all(x.get(k) == v for k, v in e.items())]
+        check(bool(hit), f"{e['kind']} {e['method']} {e.get('path', '')} at {e['handler']}"
+                         + ''.join(f', {k} {e[k]}' for k in ('auth', 'static', 'params_bounded') if k in e)
+                         + ('' if hit else f" (got {[(x['kind'], x['path'], x['auth'], x.get('static')) for x in eps if x['handler'] == e['handler']]})"))
+    check(len(eps) == want['entry_point_count'], f"{want['entry_point_count']} entry points ({len(eps)})")
+    files = sorted({o['file'] for o in d['outbound_calls']})
+    check(files == want['outbound_files'], f'outbound calls only from code, not prose in data strings or the service worker ({files})')
+    sh = d.get('security_headers') or {}
+    check(sorted(sh.get('missing') or []) == want['security_headers_missing'],
+          f"security headers read from next.config headers(): missing {sh.get('missing')}")
+    check(sorted(d.get('agent_config') or []) == want['agent_config'], f"committed agent/editor config listed ({d.get('agent_config')})")
+    leads = ' | '.join(l['why'] for l in d['review_leads'])
+    for m in want['lead_mentions']:
+        check(m in leads, f'a review lead mentions {m!r}')
+    for m in want['no_lead_mentions']:
+        check(m not in leads, f'no review lead says {m!r}')
+
+def static_site_rules() -> None:
+    print('header pack rules, outbound code positions')
+    import recon as recon_mod  # noqa: E402
+    cat = {p['id']: scan_pitfalls.compile_pitfall(p) for p in scan_pitfalls.load_catalogue()['pitfalls']}
+    def fires(rule: str, line: str) -> bool:
+        p = cat.get(rule)
+        return bool(p and p['_rx'].search(line) and not (p.get('_suppress_line') and p['_suppress_line'].search(line)))
+    check(fires('HDR-CSP-UNSAFE-EVAL', "  \"script-src 'self' 'unsafe-eval'\","), "'unsafe-eval' in script-src is a candidate")
+    check(fires('HDR-CSP-WILDCARD-SOURCE', "script-src 'self' *;") and fires('HDR-CSP-WILDCARD-SOURCE', '"default-src https:",')
+          and not fires('HDR-CSP-WILDCARD-SOURCE', "img-src 'self' https:") and not fires('HDR-CSP-WILDCARD-SOURCE', "script-src 'self' https://cdn.example.test"),
+          'a * or scheme-only source in script-src/default-src is a candidate; img-src https: and a named host are not')
+    check(not fires('HDR-CSP-UNSAFE-INLINE', "style-src 'self' 'unsafe-inline'"), "'unsafe-inline' in style-src is not a script candidate")
+    check(not fires('JS-XSS-SINK', '<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }} />')
+          and fires('JS-JSONLD-STRINGIFY', 'dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}')
+          and not fires('JS-JSONLD-STRINGIFY', "dangerouslySetInnerHTML={{ __html: JSON.stringify(data).replace(/</g, '\\\\u003c') }}"),
+          'JSON-LD built with JSON.stringify is its own rule (escaping < suppresses it), not an HTML sink')
+    import next_surface  # noqa: E402
+    check(next_surface.capped('const items = ALL.slice(0, 20).map(f);') == '20' and next_surface.capped('return rows.filter(f);') is None,
+          'a literal cap on the result count (slice(0, 20)) is recognised, so a capped route is not an uncapped-collection lead')
+    code = recon_mod.code_only('const a = "you have got. Then fetch(it)";\nconst b = `line one\nrequests.get(x)`;\nawait fetch(url);\n', '.ts')
+    lines = code.splitlines()
+    check(not recon_mod.OUTBOUND.search(lines[0]) and not recon_mod.OUTBOUND.search(lines[2])
+          and bool(recon_mod.OUTBOUND.search(lines[3])) and code.count('\n') == 4,
+          'string literals (including multi-line template literals) are blanked before matching outbound calls; lines are kept')
+
+def poc_guard_and_render_rules() -> None:
+    print('run_poc guard checks, observation evidence, seeded run_poc row, empty findings table')
+    import run_poc  # noqa: E402
+    import seed_report  # noqa: E402
+    check(run_poc.result_of({'purpose': 'guard_check'}, True) == 'guard_held'
+          and run_poc.result_of({'purpose': 'guard_check'}, False) == 'guard_not_held'
+          and run_poc.result_of({}, True) == 'confirmed' and run_poc.result_of({}, False) == 'not_confirmed',
+          'a passing guard check is guard_held, never "confirmed" (the word for a confirmed vulnerability)')
+    with tempfile.TemporaryDirectory() as tmp:
+        t = Path(tmp)
+        poc = {'finding': 'O-1', 'kind': 'command', 'purpose': 'guard_check',
+               'steps': [{'name': 'run', 'argv': [sys.executable, '-c', 'print(7*191)']}],
+               'proof': {'type': 'marker_in_output', 'step': 'run', 'marker': '1337'}}
+        check(run_poc.lint(poc, None, []) == [], f'a guard-check command PoC passes the lint ({run_poc.lint(poc, None, [])})')
+        ev = run_poc.run_command_poc(poc, t, 'self-test', t / 'poc.json')
+        check(ev['result'] == 'guard_held' and ev.get('purpose') == 'guard_check', f"command guard check recorded as {ev['result']}")
+        ex = json.loads((HERE.parent / 'examples' / 'security_audit.example.json').read_text(encoding='utf-8'))
+        def obs_errors(evidence: dict | None, rel: str = 'ev/O-1.json') -> list[str]:
+            d = json.loads(json.dumps(ex))
+            d['schema_version'] = '1.5'
+            d['observations'][0]['evidence'] = rel
+            if evidence is not None:
+                (t / 'ev').mkdir(exist_ok=True)
+                (t / 'ev' / 'O-1.json').write_text(json.dumps(evidence), encoding='utf-8')
+            errs, _ = validator.check(d, t, None, None)
+            return [e for e in errs if e.startswith('observations[')]
+        good = {'tool': 'run_poc', 'finding': 'O-1', 'purpose': 'guard_check', 'result': 'guard_held', 'permission': 'self-test',
+                'proof': {'passed': True}}
+        check(obs_errors(good) == [], f'an observation can cite a guard check that held ({obs_errors(good)})')
+        check(any('guard did not hold' in e for e in obs_errors({**good, 'result': 'guard_not_held', 'proof': {'passed': False}})),
+              'an observation citing a guard that did not hold is an error (that is a finding)')
+        check(any('is for' in e for e in obs_errors({**good, 'finding': 'O-9'})), 'observation evidence must be for that observation')
+        (t / 'ev' / 'O-1.json').unlink()
+        check(any('not found' in e for e in obs_errors(None)), 'missing observation evidence is an error')
+        recon = {'repository': 'x', 'entry_points': [], 'languages': {'TypeScript': 1}}
+        rows = seed_report.seed(recon, {'tools': [], 'candidates': []}, None, None)['tools']
+        row = next((r for r in rows if r['name'] == 'run_poc'), None)
+        check(bool(row) and row['area'] == 'dynamic' and row['status'] == 'not_run', f'the seeded report has a run_poc row ({row})')
+        d = json.loads(json.dumps(ex))
+        d['findings'] = []
+        d['summary']['counts'] = validator.compute_summary(d)
+        (t / 'empty.json').write_text(json.dumps(d), encoding='utf-8')
+        out = subprocess.run([sys.executable, str(HERE / 'render_report.py'), str(t / 'empty.json'), '--color', 'never'],
+                             capture_output=True, text=True, encoding='utf-8').stdout
+        check('| # | ID |' not in out and 'No findings' in out, 'a report with no findings says so instead of printing an empty table')
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--fixture', type=Path, default=HERE.parent / 'examples' / 'kite-notes')
@@ -619,6 +726,7 @@ def main() -> int:
     ap.add_argument('--node-fixture', type=Path, default=HERE.parent / 'examples' / 'quill-cli')
     ap.add_argument('--go-fixture', type=Path, default=HERE.parent / 'examples' / 'beacon-cli')
     ap.add_argument('--flask-fixture', type=Path, default=HERE.parent / 'examples' / 'tide-tables')
+    ap.add_argument('--static-fixture', type=Path, default=HERE.parent / 'examples' / 'wren-field-guide')
     args = ap.parse_args()
     root = args.fixture.resolve()
     want = json.loads((root / 'expected.json').read_text(encoding='utf-8'))
@@ -633,6 +741,11 @@ def main() -> int:
         tide(args.flask_fixture.resolve())
     except Exception as exc:  # noqa: BLE001 - a missing helper is a failure, not a crash of the whole self-test
         check(False, f'tide-tables: {type(exc).__name__}: {exc}')
+    for step in (lambda: wren(args.static_fixture.resolve()), static_site_rules, poc_guard_and_render_rules):
+        try:
+            step()
+        except Exception as exc:  # noqa: BLE001 - a missing helper is a failure, not a crash of the whole self-test
+            check(False, f'{type(exc).__name__}: {exc}')
     node_and_ci_rules()
     poc_and_report_rules()
     python_rules()

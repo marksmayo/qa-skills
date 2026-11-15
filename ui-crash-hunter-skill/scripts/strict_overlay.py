@@ -7,7 +7,8 @@ configs to a scratch directory only, and report the errors the strict settings a
 
 tsc: a scratch tsconfig extends the repo's and turns on strictNullChecks and
 noUncheckedIndexedAccess. Errors present only in the strict run are candidates (a value the
-types say can be null or undefined is used as if it can't). The baseline is the repo's own config
+types say can be null or undefined is used as if it can't); repeated "'x' is possibly 'undefined'" hits on
+one variable in one file are one candidate with also_lines. The baseline is the repo's own config
 through a second scratch config, so existing errors aren't reported; the two compiles run side by
 side. Both scratch configs set incremental false and their tsBuildInfoFile in the scratch dir, so
 nothing (not even tsconfig.tsbuildinfo) is written into the repository. The repo's tsconfig and
@@ -261,6 +262,32 @@ def unbuilt_workspace_packages(root: Path) -> list[str]:
     return out
 
 
+NAMED_NULL = re.compile(r"^'(?P<name>[^']+)' is possibly '(?:null|undefined)'")
+
+
+def group_null_hits(errors: list[dict]) -> list[dict]:
+    """One candidate per value: repeated "'x' is possibly 'undefined'" (TS18047/TS18048/TS18049) hits on the same
+    variable in one file become the first hit with also_lines listing the rest, since one guard (or one invariant,
+    such as a notFound() before the uses) answers them all. Other errors are kept as they are."""
+    out, first = [], {}
+    for e in errors:
+        m = NAMED_NULL.match(e.get('message') or '') if e.get('code') in ('TS18047', 'TS18048', 'TS18049') else None
+        key = (e['file'], e['code'], m.group('name')) if m else None
+        if key and key in first:
+            lines = first[key].setdefault('also_lines', [])
+            if e['line'] != first[key]['line'] and e['line'] not in lines:
+                lines.append(e['line'])
+            continue
+        e = dict(e)
+        if key:
+            first[key] = e
+        out.append(e)
+    for e in out:
+        if 'also_lines' in e and not e['also_lines']:
+            del e['also_lines']
+    return out
+
+
 def cmd_tsc(args, root: Path) -> dict:
     extra: dict = {}
     if args.tsconfig:
@@ -402,14 +429,17 @@ def cmd_tsc(args, root: Path) -> dict:
     new = [e for e in strict if (e['file'], e['line'], e['column'], e['code']) not in seen]
     version = run(tsc + ['--version'], root, 60)[1].strip()
     cands = []
-    for e in new:
+    for e in group_null_hits(new):
         try:
             src = (root / e['file']).read_text(encoding='utf-8', errors='replace').splitlines()[e['line'] - 1].strip()
         except (OSError, IndexError):
             src = ''
         cands.append({'pitfall_id': 'WEB-UNGUARDED-OPTIONAL' if e['code'] in NULL_CODES else None,
                       'file': e['file'], 'line': e['line'], 'column': e['column'], 'snippet': src[:200],
-                      'message': f"{e['code']}: {e['message']}",
+                      'message': f"{e['code']}: {e['message']}" + (
+                          f" (also on line(s) {', '.join(map(str, e['also_lines']))}: one value, one candidate)"
+                          if e.get('also_lines') else ''),
+                      **({'also_lines': e['also_lines']} if e.get('also_lines') else {}),
                       'sources': [{'tool': 'tsc-strict', 'version': version, 'rule_id': e['code']}]})
     return result('tsc-strict', 'ran', **extra, version=version, scratch_config=scratch_cfg.as_posix(),
                   baseline_config=base_cfg_path.as_posix(), seconds=elapsed,

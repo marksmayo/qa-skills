@@ -198,6 +198,7 @@
     "health",
     "identity"
    ],
+   "categories_basis": "the replay records the sign-up form as typed (masking off), and that form collects the email, name, date of birth and reason for visit (site/signup.html)",
    "fields": null,
    "vendor": null,
    "domain": null,

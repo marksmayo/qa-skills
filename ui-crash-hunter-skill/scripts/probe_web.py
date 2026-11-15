@@ -5,8 +5,8 @@
                         [--authorised-by "who approved a non-loopback target"]
 
 The scenario mocks API responses (page.route), seeds web storage once, sets locale, time zone and
-viewport, then runs steps (goto, click, fill, type, press, reload, back, offline, unroute, expect,
-wait_for, wait_ms). It records uncaught page errors with stack traces, console errors (with their
+viewport, then runs steps (goto, click, fill, type, press, reload, back, forward, offline, unroute,
+expect, wait_for, wait_ms). It records uncaught page errors with stack traces, console errors (with their
 arguments evaluated: an Error logged by an error boundary is kept as {name, message, stack}), every
 request and its status, failed requests, whether the app root is empty (white screen) and whether a
 fallback text is visible, plus a screenshot. Output is evidence.json in --out-dir. --emit-spec writes a
@@ -51,8 +51,17 @@ the app's own test configuration instead.
 Third parties are blocked: every request to a host that is not loopback, the base URL's host or in
 scenario.allowed_hosts is aborted and listed in blocked_requests (GETs included), so a probe never
 sends analytics hits or ad requests. Console errors and failed requests caused by that blocking are
-kept apart (blocked_console_errors) and never count towards a reproduction. scenario.third_party
-"allow" lets them through; scenario.service_workers "block" stops service workers.
+kept apart (blocked_console_errors) in every engine (Firefox reports a blocked crossorigin script as a
+CORS failure naming the URL) and never count towards a reproduction. scenario.third_party "allow" lets
+them through; scenario.service_workers "block" stops service workers.
+
+Requests are recorded on the browser context, so a service worker's requests count (Chromium marks them
+service_worker); the evidence lists the registered workers and the main-frame documents. A scenario that
+asserts {"document_status": 404} expects that document's "Failed to load resource" console error
+(expected_console_errors), so a not-found page can be a clean baseline. Several scenario files in one
+call share one browser launch per browser type (each in a fresh context) and write
+<out-dir>/<file stem>/evidence.json. Playwright disables the back/forward cache: a back step is never a
+bfcache restore.
 
 Needs the Playwright Python package and a browser (see requirements.txt). The rest of the skill
 does not. Point it only at local or test environments the user has approved. Run it rather than
@@ -218,6 +227,12 @@ def console_entry(m, step: int) -> dict:
     if err and err['message'] not in text:
         text = f"{err['name']}: {err['message']} ({text[:200]})"
     entry = {'after_step': step, 'type': m.type, 'text': text}
+    try:  # where the browser says the message came from: for "Failed to load resource" it is the resource's URL
+        loc = m.location
+        if isinstance(loc, dict) and loc.get('url'):
+            entry['url'] = str(loc['url'])[:500]
+    except Exception:
+        pass
     if err:
         entry['error'] = err
     if args and any(a is not None for a in args):
@@ -286,27 +301,106 @@ def glob_rx(pattern: str):
         out += '.*' if part == '**' else '[^/]*' if part == '*' else re.escape(part)
     return re.compile('^' + out + '$')
 
-def log_requests(page, requests: list) -> None:
-    """Record every request the page makes (URL with its query string, method, status), for request assertions."""
+def log_requests(target, requests: list, documents: list | None = None, page=None) -> None:
+    """Record every request (URL with its query string, method, status), for request assertions. target is the
+    browser context, so a service worker's requests (its own script, what it fetches and caches) are recorded too,
+    marked service_worker (Chromium reports them; Firefox and WebKit do not). Main-frame document responses of
+    `page` also go to `documents` ({url, status}), for document_status assertions and an expected 404."""
     seen: dict = {}
     def on_response(resp):  # an HTTP error status still arrives here, even when the browser then drops the body
         if len(requests) < 2000:
-            seen[id(resp.request)] = entry = {'url': resp.url, 'method': resp.request.method,
-                                              'status': resp.status, 'failed': False}
+            req = resp.request
+            seen[id(req)] = entry = {'url': resp.url, 'method': req.method, 'status': resp.status, 'failed': False}
+            if getattr(req, 'service_worker', None) is not None:
+                entry['service_worker'] = True
             requests.append(entry)
+        if documents is not None:
+            try:
+                nav = resp.request.is_navigation_request() and (page is None or resp.request.frame == page.main_frame)
+            except Exception:  # a service worker's request has no frame
+                nav = False
+            if nav:
+                documents.append({'url': resp.url, 'status': resp.status})
     def on_failed(req):
         if id(req) in seen:
             seen[id(req)]['failed'] = True
         elif len(requests) < 2000:
             requests.append({'url': req.url, 'method': req.method, 'status': None, 'failed': True})
-    page.on('response', on_response)
-    page.on('requestfailed', on_failed)
+    target.on('response', on_response)
+    target.on('requestfailed', on_failed)
+
+
+def blocked_by_probe(text: str, blocked: list) -> bool:
+    """True when a failed request or a console message is the probe's own third-party block, in any engine: Chromium
+    says net::ERR_BLOCKED_BY_CLIENT, but Firefox reports an aborted crossorigin script as 'Cross-Origin Request
+    Blocked ... (Reason: CORS request did not succeed)' or NS_ERROR, and WebKit as a load error, naming the URL. So
+    the message is matched against the URLs the probe blocked (with and without their query string)."""
+    text = text or ''
+    if not text:
+        return False
+    if 'ERR_BLOCKED_BY_CLIENT' in text:
+        return True
+    urls = {u for b in blocked or [] for u in (b, b.split('?')[0].split('#')[0]) if u}
+    return text.split('?')[0].split('#')[0] in urls or any(u in text for u in urls)
+
+
+DOC_LOAD_ERROR = re.compile(r'Failed to load resource: the server responded with a status of (\d{3})')
+
+
+def split_console(console: list, blocked: list, expected_documents: list) -> tuple[list, list, list]:
+    """(the app's own console errors, errors caused by the probe's third-party block, errors the scenario expects).
+    Expected: the "Failed to load resource ... 404" a browser logs for a document whose status the scenario asserts
+    with document_status (a not-found baseline), matched on the document's URL and status."""
+    own, caused, expected = [], [], []
+    docs = {(d['url'], d['status']) for d in expected_documents or []}
+    for c in console:
+        if c.get('type') != 'error':
+            continue
+        m = DOC_LOAD_ERROR.search(c.get('text', ''))
+        if m and (c.get('url'), int(m.group(1))) in docs:
+            expected.append(c)
+        elif blocked_by_probe(c.get('text', ''), blocked) or blocked_by_probe(c.get('url', ''), blocked):
+            caused.append(c)
+        else:
+            own.append(c)
+    return own, caused, expected
+
+
+def expected_statuses(scenario: dict) -> set:
+    """The document statuses a scenario asserts (document_status), in its steps and final expectations."""
+    out = set()
+    asserts = [scenario.get('expect')] + [s.get('expect') for s in scenario.get('steps') or [] if isinstance(s, dict)]
+    for a in asserts:
+        for x in ([a] if isinstance(a, dict) else a or []):
+            if isinstance(x, dict) and isinstance(x.get('document_status'), int):
+                out.add(x['document_status'])
+    return out
+
+
+SW_STATE_JS = """async () => { try {
+    if (!navigator.serviceWorker) return [];
+    const regs = await navigator.serviceWorker.getRegistrations();
+    return regs.map(r => { const w = r.active || r.waiting || r.installing;
+        return {scope: r.scope, url: w ? w.scriptURL : null, state: w ? w.state : null,
+                controlling: !!(navigator.serviceWorker.controller && w && navigator.serviceWorker.controller.scriptURL === w.scriptURL)}; });
+} catch (e) { return [{error: String(e)}]; } }"""
+CACHE_JS = """async (glob) => { try {
+    if (!self.caches) return {total: 0, caches: {}};
+    const rx = new RegExp('^' + glob.split('*').map(s => s.replace(/[.+?^${}()|[\\]\\\\]/g, '\\\\$&')).join('.*') + '$');
+    const out = {}; let total = 0;
+    for (const n of await caches.keys()) { if (!rx.test(n)) continue;
+        const k = await (await caches.open(n)).keys(); out[n] = k.length; total += k.length; }
+    return {total, caches: out};
+} catch (e) { return {total: 0, caches: {}, error: String(e)}; } }"""
 
 def check_expectations(page, assertions, ctx: dict) -> list:
     """Evaluate observable-effect assertions. Each holds when the page shows that effect:
     {"visible": sel} {"hidden": sel} {"text_visible": t} {"text_absent": t}
     {"count": sel, "equals"|"min"|"max": n} {"style": sel, "property": p, "equals"|"contains"|"not_equals"|"not_contains": v}
-    {"request": glob, "made": true|false, "status": n} {"page_error": substring} {"console_error": substring}"""
+    {"request": glob, "made": true|false, "status": n} {"page_error": substring} {"console_error": substring}
+    {"document_status": n} (the latest main-frame document's HTTP status; asserting a 404 also marks that document's
+    "Failed to load resource" console error as expected) {"service_worker": glob, "state": s, "registered": true|false}
+    {"cache_entries": cache-name glob, "equals"|"min"|"max": n} (requests stored in Cache Storage; min 1 by default)"""
     out = []
     for a in ([assertions] if isinstance(assertions, dict) else assertions or []):
         actual, ok = None, False
@@ -339,14 +433,32 @@ def check_expectations(page, assertions, ctx: dict) -> list:
         elif 'console_error' in a:
             actual = [c['text'] for c in ctx.get('console_errors', []) if a['console_error'] in console_haystack(c)]
             ok = bool(actual)
+        elif 'document_status' in a:  # the status of the latest main-frame document (a not-found page is a 404)
+            docs = ctx.get('documents') or []
+            actual = docs[-1]['status'] if docs else None
+            ok = actual == a['document_status']
+        elif 'service_worker' in a:  # a registration whose script URL matches, in a state (installed, activated, ...)
+            regs = page.evaluate(SW_STATE_JS) or []
+            hits = [r for r in regs if r.get('url') and url_matches(a['service_worker'], r['url'])
+                    and ('state' not in a or r.get('state') == a['state'])]
+            actual = [{k: r.get(k) for k in ('url', 'state', 'controlling')} for r in regs if r.get('url')]
+            ok = bool(hits) == bool(a.get('registered', True))
+        elif 'cache_entries' in a:  # requests stored in Cache Storage, in caches whose name matches the glob
+            got = page.evaluate(CACHE_JS, a['cache_entries']) or {}
+            actual = got.get('total', 0)
+            bounds = {k: a[k] for k in ('equals', 'min', 'max') if k in a} or {'min': 1}
+            ok = (('equals' not in bounds or actual == bounds['equals']) and ('min' not in bounds or actual >= bounds['min'])
+                  and ('max' not in bounds or actual <= bounds['max']))
         else:
             raise ValueError(f'unknown expectation: {a}')
         out.append({**a, 'actual': actual, 'passed': bool(ok)})
     return out
 
 STEP_ACTIONS = {'goto': 'str', 'click': 'str', 'fill': 'pair', 'type': 'pair', 'press': 'str', 'reload': 'any',
-                'back': 'any', 'offline': 'any', 'unroute': 'str', 'expect': 'assert', 'wait_for': 'str', 'wait_ms': 'int'}
-EXPECT_KEYS = ('visible', 'hidden', 'text_visible', 'text_absent', 'count', 'style', 'request', 'page_error', 'console_error')
+                'back': 'any', 'forward': 'any', 'offline': 'any', 'unroute': 'str', 'expect': 'assert', 'wait_for': 'str',
+                'wait_ms': 'int'}
+EXPECT_KEYS = ('visible', 'hidden', 'text_visible', 'text_absent', 'count', 'style', 'request', 'page_error', 'console_error',
+               'document_status', 'service_worker', 'cache_entries')
 
 
 def normalise_step(step) -> tuple:
@@ -403,6 +515,10 @@ def validate_assertions(assertions) -> list:
             out.append(f'unknown assertion {json.dumps(a)[:120]}: use one of {", ".join(EXPECT_KEYS)}')
         elif 'style' in a and 'property' not in a:
             out.append(f'style assertion {json.dumps(a)[:120]} needs "property"')
+        elif 'document_status' in a and (isinstance(a['document_status'], bool) or not isinstance(a['document_status'], int)):
+            out.append(f'document_status assertion {json.dumps(a)[:120]} takes an HTTP status number')
+        elif ('service_worker' in a or 'cache_entries' in a) and not isinstance(a.get('service_worker', a.get('cache_entries')), str):
+            out.append(f'assertion {json.dumps(a)[:120]} takes a glob (a worker script URL or a cache name)')
     return out
 
 
@@ -427,8 +543,10 @@ def run_steps(page, context, steps: list, base_url: str, log: list, checks=None)
             page.keyboard.press(arg)
         elif action == 'reload':
             page.reload(wait_until='load')
-        elif action == 'back':
+        elif action == 'back':  # Playwright disables the back/forward cache: this is never a bfcache restore
             page.go_back(wait_until='load')
+        elif action == 'forward':
+            page.go_forward(wait_until='load')
         elif action == 'offline':
             context.set_offline(bool(arg))
         elif action == 'wait_for':
@@ -482,116 +600,182 @@ def page_blank(state: dict) -> bool:
     recorded apart (visible_canvas) because a drawn canvas and a black one look the same to the DOM."""
     return bool(state.get('root_empty')) or (state.get('visible_text_len') == 0 and not state.get('visible_media'))
 
+def browser_key(scenario: dict, headed: bool) -> str:
+    """Scenarios with the same browser and launch options can share one browser (each in its own context)."""
+    return json.dumps([scenario.get('browser', 'chromium'), launch_options(scenario, headed)], sort_keys=True)
+
+
 def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False, storage_state=None) -> dict:
-    from playwright.sync_api import sync_playwright, Error as PwError
+    """One scenario in a browser of its own."""
+    return probe_many([(scenario, base_url, out_dir)], headed, storage_state)[0]
+
+
+def probe_many(items: list, headed: bool = False, storage_state=None) -> list[dict]:
+    """Run (scenario, base_url, out_dir) items, in order. Items whose browser and launch options match share one
+    browser launch (each scenario gets a fresh context, so no state leaks between them): starting and above all
+    shutting down a browser can take longer than a probe's steps, so a batch of probes pays for it once."""
+    from playwright.sync_api import sync_playwright
+    results: list = [None] * len(items)
+    groups: dict[str, list[int]] = {}
+    for n, (scenario, _, _) in enumerate(items):
+        groups.setdefault(browser_key(scenario, headed), []).append(n)
+    with sync_playwright() as pw:
+        for idx in groups.values():
+            first = items[idx[0]][0]
+            t0 = time.monotonic()
+            browser = getattr(pw, first.get('browser', 'chromium')).launch(**launch_options(first, headed))
+            launch_s = round(time.monotonic() - t0, 2)
+            for n in idx:
+                scenario, base_url, out_dir = items[n]
+                ev = run_scenario(browser, scenario, base_url, out_dir, storage_state)
+                ev['timing'] = {'launch_s': launch_s if n == idx[0] else 0.0, **ev['timing']}
+                if len(idx) > 1:
+                    ev['timing']['shared_browser'] = len(idx)
+                write_evidence(out_dir, ev)
+                results[n] = ev
+            t_close = time.monotonic()
+            browser.close()
+            close_s = round(time.monotonic() - t_close, 2)
+            for n in idx:  # the browser's shutdown is shared by the scenarios that used it
+                tm = results[n]['timing']
+                tm['browser_close_s'] = close_s
+                tm['close_s'] = round(tm.get('context_close_s', 0) + close_s / len(idx), 2)
+                tm['total_s'] = round(tm['total_s'] + tm['launch_s'] + close_s / len(idx), 2)
+                tm['other_s'] = round(max(0.0, tm['total_s'] - sum(tm.get(k, 0) for k in
+                                                                   ('launch_s', 'steps_s', 'screenshot_s', 'close_s'))), 2)
+                write_evidence(items[n][2], results[n])
+    return results
+
+
+def write_evidence(out_dir: Path, ev: dict) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / 'evidence.json').write_text(json.dumps(ev, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+
+
+def run_scenario(browser, scenario: dict, base_url: str, out_dir: Path, storage_state=None) -> dict:
+    """One scenario in a fresh context of an open browser; returns its evidence (timing without the launch)."""
+    from playwright.sync_api import Error as PwError
     out_dir.mkdir(parents=True, exist_ok=True)
     errors, console, failed, steps_log = [], [], [], []
     current = lambda: steps_log[-1]['step'] if steps_log else 0
     t0 = time.monotonic()
     timing: dict = {}
-    with sync_playwright() as pw:
-        bt = getattr(pw, scenario.get('browser', 'chromium'))
-        browser = bt.launch(**launch_options(scenario, headed))
-        timing['launch_s'] = round(time.monotonic() - t0, 2)
-        context = browser.new_context(**context_options(scenario, base_url, storage_state))
-        blocked: list = []
-        writes: list = []
-        install_guards(context, base_url, scenario, blocked, writes)
-        for script in init_scripts(scenario, base_url):
-            context.add_init_script(script)
-        page = context.new_page()
-        page.on('pageerror', lambda e: errors.append({'after_step': current(), 'name': e.name, 'message': e.message,
-                                                      'stack': e.stack}))
-        page.on('console', lambda m: console.append(console_entry(m, current())) if m.type in ('error', 'warning') else None)
-        page.on('requestfailed', lambda r: None if r.url in blocked else
-                failed.append({'after_step': current(), 'url': r.url, 'failure': r.failure}))
-        apply_routes(page, scenario.get('routes'))
-        requests: list = []
-        log_requests(page, requests)
-        own_errors = lambda: [c for c in console if c['type'] == 'error' and 'ERR_BLOCKED_BY_CLIENT' not in c['text']]
-        expectations: list = []
-        def checks(step_no, assertions):
-            ctx = {'requests': requests, 'page_errors': split_blocked_errors(errors, blocked, failed)[0],
-                   'console_errors': own_errors()}
-            expectations.extend({**r, 'after_step': step_no} for r in check_expectations(page, assertions, ctx))
-        step_error = None
-        final_checked = False
-        t_steps = time.time()
+    context = browser.new_context(**context_options(scenario, base_url, storage_state))
+    blocked: list = []
+    writes: list = []
+    install_guards(context, base_url, scenario, blocked, writes)
+    for script in init_scripts(scenario, base_url):
+        context.add_init_script(script)
+    page = context.new_page()
+    page.on('pageerror', lambda e: errors.append({'after_step': current(), 'name': e.name, 'message': e.message,
+                                                  'stack': e.stack}))
+    page.on('console', lambda m: console.append(console_entry(m, current())) if m.type in ('error', 'warning') else None)
+    context.on('requestfailed', lambda r: None if blocked_by_probe(r.url, blocked) else
+               failed.append({'after_step': current(), 'url': r.url, 'failure': r.failure}))
+    apply_routes(page, scenario.get('routes'))
+    requests: list = []
+    documents: list = []
+    log_requests(context, requests, documents, page)
+    want_status = expected_statuses(scenario)
+
+    def split_now():
+        return split_console(console, blocked, [d for d in documents if d['status'] in want_status])
+    expectations: list = []
+
+    def checks(step_no, assertions):
+        ctx = {'requests': requests, 'page_errors': split_blocked_errors(errors, blocked, failed)[0],
+               'console_errors': split_now()[0], 'documents': documents}
+        expectations.extend({**r, 'after_step': step_no} for r in check_expectations(page, assertions, ctx))
+    step_error = None
+    final_checked = False
+    t_steps = time.time()
+    try:
+        run_steps(page, context, scenario.get('steps'), base_url, steps_log, checks)
+        t_end = time.time()
+        page.wait_for_timeout(int(scenario.get('settle_ms', 800)))
+        if scenario.get('expect'):
+            checks('final', scenario['expect'])
+            final_checked = True
+    except (PwError, ValueError) as exc:
+        t_end = time.time()
+        step_error = str(exc).splitlines()[0]
+    # how long each step took (to the next step's start, the last to the end of the steps): slow loads show here
+    for i, st in enumerate(steps_log):
+        nxt = steps_log[i + 1]['at'] if i + 1 < len(steps_log) else t_end
+        st['ms'] = int(round((nxt - st['at']) * 1000))
+    timing['steps_s'] = round(t_end - t_steps, 2)
+    state = observe(page, scenario.get('observe') or {})
+    try:
+        workers = page.evaluate(SW_STATE_JS) or []
+    except PwError:
+        workers = []
+    shot = out_dir / 'screenshot.png'
+    t_shot = time.monotonic()
+    page.screenshot(path=str(shot), full_page=True)
+    timing['screenshot_s'] = round(time.monotonic() - t_shot, 2)
+    own, blocked_console, expected_console = split_now()
+    # page errors the probe's own third-party block caused (an unhandled "Failed to fetch") are kept apart
+    all_errors = errors
+    errors, blocked_errors = split_blocked_errors(all_errors, blocked, failed)
+    baseline = scenario.get('kind') == 'baseline'
+    # a probe that ended off the app (the browser's error page, a sign-in redirect), or without the app's root
+    # when the scenario names one, checked nothing about the app: inconclusive, never clean or reproduced
+    away = left_app(page.url, base_url)
+    if not away and (scenario.get('observe') or {}).get('root_selector') and not state['root_found']:
+        away = f"the app root ({scenario['observe']['root_selector']}) was not on the page"
+    crash = not away and bool(errors or own) and (state['root_empty'] or state['page_blank'] or bool(state['fallback_visible']))
+    effect = not away and bool(expectations) and all(e['passed'] for e in expectations) and step_error is None
+    evidence = {
+        'scenario': scenario.get('name'), 'base_url': base_url, 'final_url': page.url,
+        'browser': f"{scenario.get('browser', 'chromium')} {browser.version}",
+        'viewport': scenario.get('viewport') or {'width': 1280, 'height': 800},
+        'locale': scenario.get('locale'), 'timezone': scenario.get('timezone'),
+        'captured_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'steps': [{k: v for k, v in s.items() if k != 'at'} for s in steps_log], 'step_error': step_error,
+        # a step error stops the scenario: its final expectations were never evaluated (not "held" or "failed")
+        'expectations_skipped': bool(scenario.get('expect')) and not final_checked,
+        'page_errors': errors, 'blocked_page_errors': blocked_errors, 'console_errors': own,
+        # the probe's own third-party blocking, in any engine (Firefox reports it as a CORS failure naming the URL)
+        'blocked_console_errors': blocked_console,
+        # "Failed to load resource" for a document whose status the scenario asserts (a not-found baseline's 404)
+        'expected_console_errors': expected_console,
+        'blocked_requests': sorted(set(blocked)), 'failed_requests': failed, **state, 'screenshot': shot.name,
+        'kind': 'baseline' if baseline else 'defect', 'requests': requests, 'documents': documents,
+        'service_workers': [w for w in workers if w.get('url') or w.get('error')],
+        'service_worker_mode': scenario.get('service_workers', 'allow'),
+        'expectations': expectations,
+        'read_only': read_only(scenario, base_url), 'writes_blocked': writes,
+        'bypass_csp': context_options(scenario, base_url)['bypass_csp'],
+        'context': {k: scenario[k] for k in ('storage_blocked', 'launch_args', 'browser_prefs', 'authorised_by')
+                    if scenario.get(k)} | ({'init_scripts': len(scenario['init_scripts'])} if scenario.get('init_scripts') else {})
+                   | ({'signed_in_session': True} if storage_state else {}),
+        'inconclusive': bool(away), 'inconclusive_reason': away,
+        # defect probe: every assertion describes the bad effect and held; baseline: every assertion held
+        'effect_observed': effect,
+        # an error boundary catches the throw and React logs it with console.error, so both count
+        'reproduced': not baseline and (crash or effect),
+        'reproduced_by': [] if baseline else [k for k, v in (('crash', crash), ('effect', effect)) if v],
+    }
+    if baseline:
+        evidence['baseline_ok'] = not away and not errors and not own and step_error is None and \
+            all(e['passed'] for e in expectations)
+    # shutting down can take longer than the probe itself (a page with aborted third-party requests): drop every
+    # route first without waiting for handlers still running (the guards are on the context, the mocks on the
+    # page), close the page, then the context, and record the time so total_s is accounted for
+    t_close = time.monotonic()
+    for target in (page, context):
         try:
-            run_steps(page, context, scenario.get('steps'), base_url, steps_log, checks)
-            t_end = time.time()
-            page.wait_for_timeout(int(scenario.get('settle_ms', 800)))
-            if scenario.get('expect'):
-                checks('final', scenario['expect'])
-                final_checked = True
-        except (PwError, ValueError) as exc:
-            t_end = time.time()
-            step_error = str(exc).splitlines()[0]
-        # how long each step took (to the next step's start, the last to the end of the steps): slow loads show here
-        for i, st in enumerate(steps_log):
-            nxt = steps_log[i + 1]['at'] if i + 1 < len(steps_log) else t_end
-            st['ms'] = int(round((nxt - st['at']) * 1000))
-        timing['steps_s'] = round(t_end - t_steps, 2)
-        state = observe(page, scenario.get('observe') or {})
-        shot = out_dir / 'screenshot.png'
-        t_shot = time.monotonic()
-        page.screenshot(path=str(shot), full_page=True)
-        timing['screenshot_s'] = round(time.monotonic() - t_shot, 2)
-        own = own_errors()
-        # page errors the probe's own third-party block caused (an unhandled "Failed to fetch") are kept apart
-        all_errors = errors
-        errors, blocked_errors = split_blocked_errors(all_errors, blocked, failed)
-        baseline = scenario.get('kind') == 'baseline'
-        # a probe that ended off the app (the browser's error page, a sign-in redirect), or without the app's root
-        # when the scenario names one, checked nothing about the app: inconclusive, never clean or reproduced
-        away = left_app(page.url, base_url)
-        if not away and (scenario.get('observe') or {}).get('root_selector') and not state['root_found']:
-            away = f"the app root ({scenario['observe']['root_selector']}) was not on the page"
-        crash = not away and bool(errors or own) and (state['root_empty'] or state['page_blank'] or bool(state['fallback_visible']))
-        effect = not away and bool(expectations) and all(e['passed'] for e in expectations) and step_error is None
-        evidence = {
-            'scenario': scenario.get('name'), 'base_url': base_url, 'final_url': page.url,
-            'browser': f"{scenario.get('browser', 'chromium')} {browser.version}",
-            'viewport': scenario.get('viewport') or {'width': 1280, 'height': 800},
-            'locale': scenario.get('locale'), 'timezone': scenario.get('timezone'),
-            'captured_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-            'steps': [{k: v for k, v in s.items() if k != 'at'} for s in steps_log], 'step_error': step_error,
-            # a step error stops the scenario: its final expectations were never evaluated (not "held" or "failed")
-            'expectations_skipped': bool(scenario.get('expect')) and not final_checked,
-            'page_errors': errors, 'blocked_page_errors': blocked_errors, 'console_errors': own,
-            'blocked_console_errors': [c for c in console if c['type'] == 'error' and 'ERR_BLOCKED_BY_CLIENT' in c['text']],
-            'blocked_requests': sorted(set(blocked)), 'failed_requests': failed, **state, 'screenshot': shot.name,
-            'kind': 'baseline' if baseline else 'defect', 'requests': requests, 'expectations': expectations,
-            'read_only': read_only(scenario, base_url), 'writes_blocked': writes,
-            'bypass_csp': context_options(scenario, base_url)['bypass_csp'],
-            'context': {k: scenario[k] for k in ('storage_blocked', 'launch_args', 'browser_prefs', 'authorised_by')
-                        if scenario.get(k)} | ({'init_scripts': len(scenario['init_scripts'])} if scenario.get('init_scripts') else {})
-                       | ({'signed_in_session': True} if storage_state else {}),
-            'inconclusive': bool(away), 'inconclusive_reason': away,
-            # defect probe: every assertion describes the bad effect and held; baseline: every assertion held
-            'effect_observed': effect,
-            # an error boundary catches the throw and React logs it with console.error, so both count
-            'reproduced': not baseline and (crash or effect),
-            'reproduced_by': [] if baseline else [k for k, v in (('crash', crash), ('effect', effect)) if v],
-        }
-        if baseline:
-            evidence['baseline_ok'] = not away and not errors and not own and step_error is None and \
-                all(e['passed'] for e in expectations)
-        # shutting down can take longer than the probe itself (a page with aborted third-party requests, several
-        # browsers at once): close the context first, and record the time so total_s is accounted for
-        t_close = time.monotonic()
-        try:
-            page.unroute_all(behavior='ignoreErrors')
+            target.unroute_all(behavior='ignoreErrors')
         except (PwError, AttributeError, TypeError):
             pass
-        context.close()
-        browser.close()
-        timing['close_s'] = round(time.monotonic() - t_close, 2)
+    try:
+        page.close(run_before_unload=False)
+    except PwError:
+        pass
+    context.close()
+    timing['context_close_s'] = round(time.monotonic() - t_close, 2)
     timing['total_s'] = round(time.monotonic() - t0, 2)
-    timing['other_s'] = round(max(0.0, timing['total_s'] - sum(timing.get(k, 0) for k in
-                                                             ('launch_s', 'steps_s', 'screenshot_s', 'close_s'))), 2)
     evidence['timing'] = timing
-    (out_dir / 'evidence.json').write_text(json.dumps(evidence, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     return evidence
 
 SPEC_MAIN = '''
@@ -606,24 +790,29 @@ def main():
     with sync_playwright() as pw:
         browser = getattr(pw, SCENARIO.get('browser', 'chromium')).launch(**launch_options(SCENARIO))
         context = browser.new_context(**context_options(SCENARIO, base_url, storage_state))
-        writes = []
-        install_guards(context, base_url, SCENARIO, [], writes)
+        writes, blocked, documents = [], [], []
+        install_guards(context, base_url, SCENARIO, blocked, writes)
         for script in init_scripts(SCENARIO, base_url):
             context.add_init_script(script)
         page = context.new_page()
         def on_error(e):
             errors.append(e.name + ': ' + e.message)
             page_errors.append({'name': e.name, 'message': e.message})
+        want = expected_statuses(SCENARIO)
         def on_console(m):
-            if m.type == 'error' and 'ERR_BLOCKED_BY_CLIENT' not in m.text:
-                c = console_entry(m, 0)
+            if m.type != 'error':
+                return
+            c = console_entry(m, 0)
+            # the probe's own third-party block (any engine), or a document status the scenario asserts (a 404)
+            own = split_console([c], blocked, [d for d in documents if d['status'] in want])[0]
+            if own:
                 errors.append(c['text'].splitlines()[0][:300])
                 console.append(c)
         page.on('pageerror', on_error)
         page.on('console', on_console)
         apply_routes(page, SCENARIO.get('routes'))
-        log_requests(page, requests)
-        ctx = {'requests': requests, 'page_errors': page_errors, 'console_errors': console}
+        log_requests(context, requests, documents, page)
+        ctx = {'requests': requests, 'page_errors': page_errors, 'console_errors': console, 'documents': documents}
         checks = lambda n, a: results.extend(check_expectations(page, a, ctx))
         run_steps(page, context, SCENARIO.get('steps'), base_url, [], checks)
         page.wait_for_timeout(int(SCENARIO.get('settle_ms', 800)))
@@ -660,79 +849,51 @@ def emit_spec(scenario: dict, base_url: str, path: Path, title: str) -> None:
     funcs = '\n\n'.join(inspect.getsource(f) for f in (
         normalise_step, seed_script, is_loopback, read_only, target_url, step_url, blocked_storage_script, init_scripts, launch_options, context_options,
         install_guards, console_entry, console_haystack, guard_third_party, apply_routes, url_matches, glob_rx, log_requests,
-        check_expectations, run_steps, observe, left_app))
-    funcs = f'CONSOLE_ARG_JS = """{CONSOLE_ARG_JS}"""\n\nSTEP_ACTIONS = {STEP_ACTIONS!r}\n\n{funcs}'
+        blocked_by_probe, split_console, expected_statuses, check_expectations, run_steps, observe, page_blank, left_app))
+    funcs = (f'CONSOLE_ARG_JS = """{CONSOLE_ARG_JS}"""\n\nSW_STATE_JS = """{SW_STATE_JS}"""\n\n'
+             f'CACHE_JS = r"""{CACHE_JS}"""\n\nDOC_LOAD_ERROR = re.compile({DOC_LOAD_ERROR.pattern!r})\n\n'
+             f'STEP_ACTIONS = {STEP_ACTIONS!r}\n\n{funcs}')
     sc = dict(scenario, base_url=scenario.get('base_url') or base_url)
     body = (f'#!/usr/bin/env python3\n"""Repro spec: {title}\n\nReplays the crash trigger with Playwright. Exits 1 while the crash '
             f'reproduces, 0 once it is fixed and 2 when the page left the app (inconclusive).\n'
             f'    python {path.name} [--base-url http://localhost:5173] [--storage-state <signed-in state file>]\n"""\n'
-            f'import json, sys, time\n\nSCENARIO = json.loads(r"""{json.dumps(sc, indent=2, ensure_ascii=False)}""")\n\n'
+            f'import json, re, sys, time\n\nSCENARIO = json.loads(r"""{json.dumps(sc, indent=2, ensure_ascii=False)}""")\n\n'
             f'{funcs}\n{SPEC_MAIN}')
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding='utf-8')
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument('scenario', type=Path)
-    ap.add_argument('--out-dir', type=Path)
-    ap.add_argument('--check', action='store_true', help='validate the scenario (steps and assertions) and exit')
-    ap.add_argument('--base-url', help='overrides scenario.base_url')
-    ap.add_argument('--emit-spec', type=Path, help='write a standalone repro script here')
-    ap.add_argument('--headed', action='store_true')
-    ap.add_argument('--authorised-by', help='who approved probing a non-loopback target (required for one)')
-    ap.add_argument('--storage-state', type=Path,
-                    help='a Playwright storage-state file a person saved after signing in to a test account; loaded '
-                         'into the browser context, never copied into the evidence. Keep it outside the repository')
-    args = ap.parse_args()
-    if args.storage_state and not args.storage_state.is_file():
-        print(f'--storage-state {args.storage_state} not found', file=sys.stderr)
-        return 2
+def load_scenario(path: Path, args) -> tuple[dict | None, str | None, str | None]:
+    """(scenario, base_url, problem): read, validated, base URL resolved and checked, init-script files read in."""
     try:
-        scenario = json.loads(args.scenario.read_text(encoding='utf-8'))
+        scenario = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError) as exc:
-        print(f'Unable to read scenario: {exc}', file=sys.stderr)
-        return 2
-    if not args.check and args.out_dir is None:
-        ap.error('--out-dir is required (except with --check)')
+        return None, None, f'Unable to read scenario {path}: {exc}'
     problems = validate_scenario(scenario)
     if problems:  # before any browser starts: a malformed step would otherwise fail mid-run and skip the assertions
-        print(f'Invalid scenario {args.scenario}:\n  ' + '\n  '.join(problems), file=sys.stderr)
-        return 2
+        return None, None, f'Invalid scenario {path}:\n  ' + '\n  '.join(problems)
     if args.check:
-        print(f'{args.scenario}: valid ({len(scenario.get("steps") or [])} step(s))')
-        return 0
+        return scenario, None, None
     base_url = args.base_url or scenario.get('base_url')
     if not base_url:
-        print('No base URL: set scenario.base_url or pass --base-url', file=sys.stderr)
-        return 2
+        return None, None, f'{path}: no base URL: set scenario.base_url or pass --base-url'
     base_url = target_url(base_url)
     if args.authorised_by:
         scenario['authorised_by'] = args.authorised_by
     if not is_loopback(base_url) and not scenario.get('authorised_by'):
-        print(f'Refusing to probe {base_url}: it is not a loopback address. Probe only environments the user approved: '
-              'pass --authorised-by "<who approved it>" (or set authorised_by in the scenario). The probe then runs '
-              'read-only unless the scenario sets "read_only": false.', file=sys.stderr)
-        return 2
+        return None, None, (f'Refusing to probe {base_url}: it is not a loopback address. Probe only environments the user '
+                            'approved: pass --authorised-by "<who approved it>" (or set authorised_by in the scenario). The '
+                            'probe then runs read-only unless the scenario sets "read_only": false.')
     try:  # init scripts given as files are read in now, so the evidence and the repro spec carry their content
         scenario['init_scripts'] = [
-            {'file': s['file'], 'content': (args.scenario.parent / s['file']).read_text(encoding='utf-8')}
+            {'file': s['file'], 'content': (path.parent / s['file']).read_text(encoding='utf-8')}
             if isinstance(s, dict) and 'file' in s and 'content' not in s else s
             for s in scenario.get('init_scripts') or []]
     except OSError as exc:
-        print(f'Unable to read an init script: {exc}', file=sys.stderr)
-        return 2
-    try:
-        import playwright  # noqa: F401
-    except ImportError:
-        print('Playwright for Python is not installed. Ask the user before installing: '
-              'pip install -r requirements.txt && python -m playwright install chromium', file=sys.stderr)
-        return 3
-    ev = probe(scenario, base_url, args.out_dir, args.headed, args.storage_state)
-    if args.emit_spec and ev['kind'] == 'baseline':
-        print(f'--emit-spec skipped: a baseline probe describes healthy behaviour and never reproduces, so it has no '
-              f'repro spec ({args.emit_spec} not written)')
-    elif args.emit_spec:
-        emit_spec(scenario, base_url, args.emit_spec, scenario.get('name', 'crash repro'))
+        return None, None, f'Unable to read an init script: {exc}'
+    return scenario, base_url, None
+
+
+def print_verdict(ev: dict, out_dir: Path) -> None:
     verdict = f"INCONCLUSIVE ({ev['inconclusive_reason']})" if ev['inconclusive'] else \
         ('baseline ' + ('ok' if ev['baseline_ok'] else 'NOT CLEAN')) if ev['kind'] == 'baseline' else \
         (f"REPRODUCED ({', '.join(ev['reproduced_by'])})" if ev['reproduced'] else 'not reproduced')
@@ -742,18 +903,76 @@ def main() -> int:
     if ev.get('expectations_skipped'):
         print('  the final expectations were not evaluated: a step failed first (see step error)')
     slow = sorted(ev['steps'], key=lambda st: -st.get('ms', 0))[:1]
-    print(f"  timing: launch {ev['timing'].get('launch_s')}s, steps {ev['timing'].get('steps_s')}s, screenshot "
-          f"{ev['timing'].get('screenshot_s')}s, close {ev['timing'].get('close_s')}s, total "
-          f"{ev['timing'].get('total_s')}s" + (f"; slowest step {slow[0]['step']} ({slow[0]['action']}) {slow[0]['ms']} ms"
-                                                if slow and 'ms' in slow[0] else ''))
+    tm = ev['timing']
+    print(f"  timing: launch {tm.get('launch_s')}s, steps {tm.get('steps_s')}s, screenshot {tm.get('screenshot_s')}s, "
+          f"close {tm.get('close_s')}s (context {tm.get('context_close_s')}s, browser {tm.get('browser_close_s')}s"
+          + (f" shared by {tm['shared_browser']} scenarios" if tm.get('shared_browser') else '') + "), total "
+          f"{tm.get('total_s')}s" + (f"; slowest step {slow[0]['step']} ({slow[0]['action']}) {slow[0]['ms']} ms"
+                                     if slow and 'ms' in slow[0] else ''))
     print(f"{verdict}: {len(ev['page_errors'])} page error(s), root empty: {ev['root_empty']}, "
           f"fallback: {', '.join(ev['fallback_visible']) or 'none'}, expectations held: {held}/{len(ev['expectations'])}"
-          f"{', step error: ' + ev['step_error'] if ev['step_error'] else ''} -> {args.out_dir / 'evidence.json'}")
+          f"{', step error: ' + ev['step_error'] if ev['step_error'] else ''} -> {out_dir / 'evidence.json'}")
     for e in ev['expectations']:
         if not e['passed']:
             print('  did not hold: ' + json.dumps({k: v for k, v in e.items() if k != 'passed'}, ensure_ascii=False)[:200])
     for e in ev['page_errors'][:3]:
         print(f"  {e['name']}: {e['message']}")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument('scenario', type=Path, nargs='+',
+                    help='one scenario, or several run in turn: those with the same browser share one launch (each in '
+                         'a fresh context), and each writes <out-dir>/<scenario file stem>/evidence.json')
+    ap.add_argument('--out-dir', type=Path)
+    ap.add_argument('--check', action='store_true', help='validate the scenario (steps and assertions) and exit')
+    ap.add_argument('--base-url', help='overrides scenario.base_url')
+    ap.add_argument('--emit-spec', type=Path, help='write a standalone repro script here (one scenario only)')
+    ap.add_argument('--headed', action='store_true')
+    ap.add_argument('--authorised-by', help='who approved probing a non-loopback target (required for one)')
+    ap.add_argument('--storage-state', type=Path,
+                    help='a Playwright storage-state file a person saved after signing in to a test account; loaded '
+                         'into the browser context, never copied into the evidence. Keep it outside the repository')
+    args = ap.parse_args()
+    if args.storage_state and not args.storage_state.is_file():
+        print(f'--storage-state {args.storage_state} not found', file=sys.stderr)
+        return 2
+    if not args.check and args.out_dir is None:
+        ap.error('--out-dir is required (except with --check)')
+    if args.emit_spec and len(args.scenario) > 1:
+        ap.error('--emit-spec takes one scenario')
+    stems = [p.stem for p in args.scenario]
+    if len(set(stems)) != len(stems):
+        ap.error('several scenarios must have distinct file names (each writes <out-dir>/<file stem>/)')
+    items = []
+    for path in args.scenario:
+        scenario, base_url, problem = load_scenario(path, args)
+        if problem:
+            print(problem, file=sys.stderr)
+            return 2
+        items.append((scenario, base_url, path))
+    if args.check:
+        for scenario, _, path in items:
+            print(f'{path}: valid ({len(scenario.get("steps") or [])} step(s))')
+        return 0
+    try:
+        import playwright  # noqa: F401
+    except ImportError:
+        print('Playwright for Python is not installed. Ask the user before installing: '
+              'pip install -r requirements.txt && python -m playwright install chromium', file=sys.stderr)
+        return 3
+    single = len(items) == 1
+    runs = [(sc, url, args.out_dir if single else args.out_dir / path.stem) for sc, url, path in items]
+    evs = probe_many(runs, args.headed, args.storage_state)
+    for (scenario, base_url, out_dir), ev in zip(runs, evs):
+        if not single:
+            print(f'{scenario.get("name") or out_dir.name}:')
+        if args.emit_spec and ev['kind'] == 'baseline':
+            print(f'--emit-spec skipped: a baseline probe describes healthy behaviour and never reproduces, so it has no '
+                  f'repro spec ({args.emit_spec} not written)')
+        elif args.emit_spec:
+            emit_spec(scenario, base_url, args.emit_spec, scenario.get('name', 'crash repro'))
+        print_verdict(ev, out_dir)
     return 0
 
 if __name__ == '__main__':

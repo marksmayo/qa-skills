@@ -22,7 +22,10 @@ only; a pages/ folder elsewhere in a plain React app is not a router. For other 
 src/index.*, the scripts index.html loads, Remix app/root.*, SvelteKit +page/+layout files, Nuxt
 pages and app.vue, and instrumentation-client.ts. Route handlers (app/**/route.ts, pages/api/**)
 are API code: a throw there is an HTTP 500, not a UI crash. Tool configs outside src/
-(vite.config.ts, eslint.config.js) never run in the UI.
+(vite.config.ts, eslint.config.js) never run in the UI. Next.js metadata routes (robots.ts, sitemap.ts,
+manifest.ts, opengraph-image.tsx, icon.tsx under app/) are server code (class metadata_route). A service
+worker the UI registers (navigator.serviceWorker.register('/sw.js'), new Workbox('/sw.js')) is resolved
+against public/ or static/ and followed like an injected script (service_workers lists it).
 
 Everything is heuristic: imports built from computed strings are not followed, so a module reached
 only that way shows as unreachable. The output says how many files each rule excluded so the
@@ -45,6 +48,10 @@ TEST_PART = re.compile(r'(^|/)(tests?|__tests__|__mocks__|e2e|cypress|playwright
 TEST_NAME = re.compile(r'(\.|_)(test|spec|stories|story)\.\w+$|Tests?\.(swift|kt|java)$|_test\.dart$|'
                        r'^(vitest|jest|playwright|cypress)\.(config|setup)\.\w+$|\.setup\.\w+$', re.I)
 ROUTE_HANDLER = re.compile(r'(^|/)(src/)?app/(.*/)?route\.(ts|js|mts|mjs|tsx|jsx)$|(^|/)(src/)?pages/api/')
+# Next.js metadata routes (robots.ts, sitemap.ts, manifest.ts, opengraph-image.tsx, icon.tsx): reachable server routes
+# that answer their own URL (/robots.txt, /sitemap.xml, an og:image), never imported by the UI and never run in it
+METADATA_ROUTE = re.compile(r'(^|/)(src/)?app/(.*/)?(robots|sitemap|manifest|opengraph-image|twitter-image|icon|'
+                            r'apple-icon)\.(ts|tsx|js|jsx|mts|mjs)$')
 # Next.js file conventions, matched against the path inside a Next.js project (a directory whose package.json
 # depends on "next"): app/ and pages/ only at the project root or under src/. A pages/ folder inside a plain
 # React app (src/modules/x/pages/...) is not a router.
@@ -166,13 +173,16 @@ def node_role(text: str, name: str = '') -> str | None:
 
 
 def classify(rel: str) -> str:
-    """'test', 'route_handler' or 'ui' (anything else that is source)."""
+    """'test', 'config', 'route_handler', 'metadata_route' (a Next.js robots/sitemap/manifest/opengraph-image/icon
+    route) or 'ui' (anything else that is source)."""
     if in_test_dir(rel) or TEST_NAME.search(rel.rsplit('/', 1)[-1]):
         return 'test'
     if is_tool_config(rel):
         return 'config'
     if ROUTE_HANDLER.search(rel):
         return 'route_handler'
+    if METADATA_ROUTE.search(rel):
+        return 'metadata_route'
     return 'ui'
 
 
@@ -583,6 +593,39 @@ SRC_ASSIGN = re.compile(r'''\.src\s*=|setAttribute\(\s*['"]src['"]''')
 SCRIPT_LIT = re.compile(r'''['"`]([\w@./-]+\.(?:m?js|cjs))(?:\?[^'"`\n]*)?['"`]''')
 IMPORT_SCRIPTS = re.compile(r'\bimportScripts\s*\(([^)]*)\)')
 NEW_WORKER = re.compile(r'''new\s+(?:Shared)?Worker\(\s*['"]([^'"]+)['"]''')
+# a service worker: navigator.serviceWorker.register('/sw.js') or workbox-window's new Workbox('/sw.js'). Its URL is
+# served from the web root, which is public/ (Next.js, Vite, CRA) or static/ (SvelteKit) beside the project
+SW_REGISTER = re.compile(r'''\bserviceWorker\s*\.\s*register\(\s*['"`]([^'"`$]+)['"`]|\bnew\s+Workbox\(\s*['"`]([^'"`$]+)['"`]''')
+WEB_ROOTS = ('public', 'static')
+
+
+def _project_dirs(f: Path, root: Path) -> list[Path]:
+    """The directories from the file's folder up to the repository root (nearest first)."""
+    out, d, top = [], f.resolve().parent, root.resolve()
+    while d.is_relative_to(top):
+        out.append(d)
+        if d == top:
+            break
+        d = d.parent
+    return out
+
+
+def service_worker_targets(text: str, f: Path, root: Path, page_dirs: list[Path]) -> list[tuple[Path, int, str]]:
+    """(worker file, line, registered URL) for each service worker the file registers, resolved against the web
+    roots (public/, static/) of the projects above the file, then the HTML pages' directories."""
+    out = []
+    for m in SW_REGISTER.finditer(text):
+        url = (m.group(1) or m.group(2)).split('?')[0].split('#')[0]
+        if re.match(r'^([a-z]+:)?//', url, re.I):
+            continue
+        rel = url.lstrip('/').removeprefix('./')
+        bases = [d / w for d in _project_dirs(f, root) for w in WEB_ROOTS] + page_dirs + [f.parent, root.resolve()]
+        for b in bases:
+            t = (b / rel).resolve()
+            if t.is_file() and t.suffix in SRC_EXT and t.is_relative_to(root.resolve()) and t != f.resolve():
+                out.append((t, text.count('\n', 0, m.start()) + 1, url))
+                break
+    return out
 
 
 def injected_scripts(text: str, f: Path, root: Path, page_dirs: list[Path]) -> list[Path]:
@@ -601,6 +644,7 @@ def injected_scripts(text: str, f: Path, root: Path, page_dirs: list[Path]) -> l
             if t.is_file() and t.suffix in SRC_EXT and t.is_relative_to(root.resolve()) and t != f.resolve():
                 out.append(t)
                 break
+    out += [t for t, _, _ in service_worker_targets(text, f, root, page_dirs) if t not in out]
     return out
 
 
@@ -631,7 +675,8 @@ def graph(root: Path, files: list[Path] | None = None) -> dict:
     ents = entries(root, files)
     if not ents:
         return {'entries': [], 'reachable': None, 'aliases': [a for a, _ in alias], 'unresolved': 0,
-                'unresolved_examples': [], 'warnings': [], 'test_named_packages': sorted(packages)}
+                'unresolved_examples': [], 'warnings': [], 'test_named_packages': sorted(packages),
+                'service_workers': []}
     seen: set[Path] = set()
     todo = [e.resolve() for e in ents]
     edges: dict[str, list[str]] = {}
@@ -640,6 +685,7 @@ def graph(root: Path, files: list[Path] | None = None) -> dict:
     alias_prefixes = [a[:-1] for a, _ in alias if a != '*' and a.endswith('*')]
     page_dirs = sorted({f.parent.resolve() for f in files if f.suffix.lower() in ('.html', '.htm')}, key=lambda p: len(p.parts))
     injected: set[str] = set()
+    workers: dict[str, dict] = {}
     while todo:
         f = todo.pop()
         if f in seen:
@@ -675,6 +721,11 @@ def graph(root: Path, files: list[Path] | None = None) -> dict:
             injected.add(t.relative_to(root).as_posix())
             if t not in seen:
                 todo.append(t)
+        if 'serviceWorker' in text or 'Workbox' in text:
+            for t, line, url in service_worker_targets(text, f, root, page_dirs):
+                w = workers.setdefault(t.relative_to(root).as_posix(), {'file': t.relative_to(root).as_posix(),
+                                                                        'url': url, 'registered_by': []})
+                w['registered_by'].append({'file': rel, 'line': line})
         edges[rel] = sorted(set(outs))
     reach = sorted(p.relative_to(root).as_posix() for p in seen if p.is_relative_to(root))
     ui_files = [f for f in files if f.suffix in SRC_EXT and not f.name.endswith('.d.ts')
@@ -694,7 +745,8 @@ def graph(root: Path, files: list[Path] | None = None) -> dict:
     return {'entries': sorted(e.relative_to(root).as_posix() for e in ents), 'reachable': reach,
             'aliases': [a for a, _ in alias], 'unresolved': unresolved, 'unresolved_examples': unresolved_examples,
             'ui_files': len(ui_files), 'reachable_share': round(share, 2), 'warnings': warnings,
-            'test_named_packages': sorted(packages), 'edges': edges, 'injected_scripts': sorted(injected)}
+            'test_named_packages': sorted(packages), 'edges': edges, 'injected_scripts': sorted(injected),
+            'service_workers': sorted(workers.values(), key=lambda w: w['file'])}
 
 
 def main() -> int:

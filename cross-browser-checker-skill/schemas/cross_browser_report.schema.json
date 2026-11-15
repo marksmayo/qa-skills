@@ -53,7 +53,7 @@
       "required": ["verdict", "summary", "severity_counts", "flaky_count", "checks", "evidence_completeness", "overall_confidence"],
       "properties": {
         "verdict": {"enum": ["differences_found", "no_differences_detected", "inconclusive"],
-                    "description": "inconclusive when no difference was promoted and any planned engine comparison wasn't made (an engine not run or errored, a run errored or skipped)."},
+                    "description": "inconclusive when no difference was promoted and any planned engine comparison wasn't made (an engine not run or errored, a run errored, skipped or screened); with every comparison made and nothing promoted, no_differences_detected or the more cautious inconclusive. The agent writes it; --write-summary never changes it."},
         "summary": {"type": "string", "minLength": 20},
         "severity_counts": {"type": "object"},
         "flaky_count": {"type": "integer"},

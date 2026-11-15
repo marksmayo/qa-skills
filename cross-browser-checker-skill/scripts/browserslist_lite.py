@@ -5,7 +5,7 @@
     python browserslist_lite.py --repo examples/travel-site       # reads package.json or .browserslistrc
 
 Supported: `defaults` (> 0.5%, last 2 versions, Firefox ESR, not dead), `> N%` / `>= N%`, `last N versions`,
-`last N <browser> versions`, `<browser> >= V` (also >, <=, <), `<browser> V`, `not <query>`, `dead`/`not dead`,
+`last N <browser> versions`, `<browser> >= V` (also >, <=, <), `<browser> V`, `<browser> all`, `not <query>`, `dead`/`not dead`,
 and comma-separated unions. `Firefox ESR`, `and` combinations, regional usage (`> 5% in AU`), `cover`,
 `since`, `extends` and Node queries are not resolved: they are listed as unresolved, and features can't be
 assessed for them.
@@ -98,6 +98,10 @@ class Resolver:
         if m and ALIASES.get(m.group(2)) in self.agents:
             b = ALIASES[m.group(2)]
             return {(b, v['version']) for v in self.released(b)[-int(m.group(1)):]}, None
+        m = re.fullmatch(r'(\w+)\s+all', tl)
+        if m and ALIASES.get(m.group(1)) in self.agents:   # every released version: "not op_mini all", "ie all"
+            b = ALIASES[m.group(1)]
+            return {(b, v['version']) for v in self.released(b)}, None
         m = re.fullmatch(r'(\w+)\s*(>=|<=|>|<)\s*([\d.]+)', tl)
         if m and ALIASES.get(m.group(1)) in self.agents:
             b, op, ver = ALIASES[m.group(1)], m.group(2), vnum(m.group(3))

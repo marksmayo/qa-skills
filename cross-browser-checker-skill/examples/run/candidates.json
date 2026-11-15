@@ -458,9 +458,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -493,9 +493,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -528,9 +528,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -563,9 +563,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -598,9 +598,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -633,9 +633,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -668,9 +668,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -703,9 +703,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -738,9 +738,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -773,9 +773,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -808,9 +808,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -843,9 +843,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -878,9 +878,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -913,9 +913,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -948,9 +948,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -983,9 +983,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -1018,9 +1018,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -1053,9 +1053,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -1088,9 +1088,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -1123,9 +1123,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -1158,9 +1158,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -1193,9 +1193,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -1230,9 +1230,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -1267,9 +1267,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -1304,9 +1304,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -1341,9 +1341,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -1378,9 +1378,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -1415,9 +1415,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -1542,9 +1542,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "firefox": [
      true,
@@ -1580,9 +1580,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -1617,9 +1617,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -1744,9 +1744,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -1781,9 +1781,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -1818,9 +1818,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -1855,9 +1855,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -1892,9 +1892,9 @@
    "ref": "chromium",
    "runs": {
     "chromium": [
-     true,
-     true,
-     true
+     false,
+     false,
+     false
     ],
     "webkit": [
      true,
@@ -3038,6 +3038,7 @@
      "samsung"
     ],
     "fallback": false,
+    "degrades": "harmlessly in most uses: engines without them ignore the rule (default scrollbars, search and spin buttons; a framework reset such as Tailwind preflight uses them only to normalise)",
     "status": "confirmed_at_runtime",
     "linked_differences": [
      "K3"

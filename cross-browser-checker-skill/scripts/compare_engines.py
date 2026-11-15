@@ -41,6 +41,15 @@ Only captured runs are compared: a page, viewport and engine with any run errore
 (run_status) is left out, and `comparisons` in the output lists every planned engine-versus-reference
 pair, how many were made and why the others weren't. No comparison made means nothing was compared,
 never "no differences".
+Runs that captured but can't be compared are screened first (screen_runs, `screened_runs` in the output): a run
+whose own requests to the site were upgraded to https and failed (a CSP upgrade-insecure-requests on a plain-http
+target: one `environment` entry, cause https_upgrade, instead of a difference per request), and a blank or incomplete
+rerun (under half its sibling reruns' median element count, or a one-colour screenshot when theirs aren't). Both are
+errored, so their comparisons are not made. A box difference's runs record that the box differed (reference false),
+so it can be promoted. Also dismissed: an SVG shape whose box grew evenly by its stroke width (one engine includes the
+stroke), low ink on an image that decoded and was drawn (photographic content), and aborted image requests (a srcset
+candidate or /_next/image swapped: benign). Text with the same computed family drawn in another face (capture's
+`faces` widths differ: system-ui in Windows WebKit) is a font_family_differs difference.
 A difference counts only when the observation holds in every run of the affected engine and in no run
 of the reference (or the reverse). Anything in between is flaky, listed with its run counts. The same
 observation in several engines, or several states of one page, is one candidate.
@@ -84,6 +93,19 @@ INLINE_TAGS = {'a', 'span', 'em', 'strong', 'b', 'i', 'u', 'code', 'small', 'abb
 # no longer needs), and Firefox's notice that a response was served from its parsed-data cache
 MEDIA_URL = re.compile(r'\.(mp4|m4v|webm|ogv|ogg|oga|mp3|m4a|aac|wav|flac|opus|mov|m3u8|mpd|ts)(\?|#|\s|$)', re.I)
 MEDIA_ABORT = re.compile(r'net::ERR_ABORTED|NS_BINDING_ABORTED|\bcancell?ed\b', re.I)
+# an image request the page cancels: a responsive image swapping its srcset candidate, a framework image endpoint
+# (next/image's /_next/image) replacing a preload with the size it settled on, a lazy image scrolled past
+IMAGE_URL = re.compile(r'\.(png|jpe?g|gif|webp|avif|svg|ico|bmp)(\?|#|\s|$)|/_next/image\?|/_vercel/image\?|/cdn-cgi/image/', re.I)
+# SVG shapes: one engine's getBoundingClientRect includes the stroke (Firefox), another's doesn't
+SVG_SHAPES = {'circle', 'ellipse', 'rect', 'line', 'polyline', 'polygon', 'path'}
+# a stylesheet request (to tell a default face that follows from a stylesheet the engine failed to load)
+CSS_URL = re.compile(r'\.css(\?|#|\s|$)', re.I)
+# a decoded image whose ink stays above this share was drawn: its "low ink" is the ink metric on photographic content
+DECODED_INK_FLOOR = 0.05
+# a run is a failed capture when it has under this share of its sibling reruns' elements (and this many fewer or more)
+OUTLIER_SHARE, OUTLIER_MIN = 0.5, 20
+# a font face (a test string's width measured with the family) differing by more than this share is another face
+FACE_TOLERANCE = 0.005
 ALWAYS_BENIGN = re.compile(r'NS_ERROR_PARSED_DATA_CACHED')
 # Ink is compared only between boxes of comparable shape: a box whose area changed by more than this factor (an inline
 # element that wrapped onto two lines, a list box drawn at another size) spreads the same ink over a different area.
@@ -166,6 +188,7 @@ def observations(run: dict, inks: list | None) -> dict[tuple, dict]:
     if run.get('overflow_x'):
         obs[('layout', 'overflow')] = {'size': run.get('size')}
     n = 0
+    decoded = {i['sig']: bool(i.get('complete')) and list(i.get('natural') or [0, 0]) != [0, 0] for i in run.get('images') or []}
     for e in run.get('elements') or []:
         obs[('present', e['sig'])] = e
         if e['tag'] == 'input':
@@ -175,17 +198,20 @@ def observations(run: dict, inks: list | None) -> dict[tuple, dict]:
             n += 1
             if v is not None:
                 obs[('ink', e['sig'])] = {'ink': round(v, 4), 'box': e['box'], 'tag': e['tag'], 'type': e.get('type'),
-                                          'lines': e.get('lines')}
+                                          'lines': e.get('lines'), **({'decoded': decoded[e['sig']]} if e['sig'] in decoded else {})}
     return obs
 
 
 def benign_failure(entry: str) -> bool:
     """A recorded failed request ("GET <url> (<failure>)") that is the engine's normal behaviour, not a failure: a media
-    request cancelled once the metadata or a range arrived (net::ERR_ABORTED, NS_BINDING_ABORTED), or Firefox's
+    request cancelled once the metadata or a range arrived (net::ERR_ABORTED, NS_BINDING_ABORTED), an image request the
+    page cancelled (a srcset candidate swapped, a framework image endpoint such as /_next/image replaced), or Firefox's
     NS_ERROR_PARSED_DATA_CACHED notice. A codec or network problem shows as another error (a media error event, a
     connection failure), which stays compared."""
     url, _, failure = entry.partition(' (')
-    return bool(ALWAYS_BENIGN.search(failure) or (MEDIA_ABORT.search(failure) and MEDIA_URL.search(url.split(' ', 1)[-1])))
+    target = url.split(' ', 1)[-1]
+    return bool(ALWAYS_BENIGN.search(failure) or (MEDIA_ABORT.search(failure) and (MEDIA_URL.search(target) or
+                                                                                 IMAGE_URL.search(target))))
 
 
 def benign_requests(doc: dict) -> list[dict]:
@@ -210,6 +236,7 @@ def same_everywhere(doc: dict) -> list[dict]:
     the comparison sees no difference, yet the state did not do what the targets asked (a step timing out on a covered
     element, a script error every engine throws). One entry per page or state, kind and step or message, with the
     viewports it held at; the report has to say so (a limitation or needs_review), and the bug goes to a crash hunt."""
+    screen_runs(doc)
     by: dict[tuple, dict[str, list]] = {}
     for r in doc.get('runs') or []:
         if captured(r):
@@ -325,10 +352,97 @@ def captured(run: dict) -> bool:
     return status == 'ran' and 'elements' in run
 
 
+def upgraded_requests(run: dict, site: str | None) -> list[str]:
+    """Failed requests to the site's own host and port rewritten from http to https: on a plain-http target, a
+    Content-Security-Policy with upgrade-insecure-requests makes some engines (Playwright WebKit, Safari) fetch every
+    subresource over https, which the server doesn't speak. An environment artefact, not an engine difference."""
+    if not site:
+        return []
+    s = urlparse(site)
+    if s.scheme != 'http' or not s.hostname:
+        return []
+    port = s.port or 80
+    out = []
+    for f in run.get('failed_requests') or []:
+        u = urlparse(f.partition(' (')[0].split(' ', 1)[-1])
+        try:
+            uport = u.port or 443
+        except ValueError:
+            continue
+        if u.scheme == 'https' and u.hostname == s.hostname and uport == port:
+            out.append(f)
+    return out
+
+
+def screen_runs(doc: dict) -> list[dict]:
+    """Mark the runs that captured but can't be compared as errored, with the reason (in place; the same result however
+    often it is called): a run whose own requests to the site were upgraded to https and failed (an environment cause,
+    see upgraded_requests), and a rerun far below its sibling reruns of the same page, viewport and engine (under
+    OUTLIER_SHARE of their median element count and OUTLIER_MIN or more fewer, or a uniform screenshot when theirs
+    aren't: a blank capture). Comparing such a run turns one bad load into hundreds of differences or flaky entries.
+    Returns one entry per screened run."""
+    site = doc.get('site')
+    groups: dict[tuple, list[dict]] = {}
+    for r in doc.get('runs') or []:
+        if r.get('screened') or captured(r):
+            groups.setdefault((r['page'], r['viewport'], r['engine']), []).append(r)
+    out = []
+    for (page, vp, eng), rs in groups.items():
+        for r in rs:
+            why = r.get('screened')
+            if not why:
+                up = upgraded_requests(r, site)
+                others = [o for o in rs if o is not r]
+                n = len(r.get('elements') or [])
+                if up:
+                    why = (f'environment: {len(up)} request(s) to the site were upgraded to https and failed (e.g. '
+                           f'{up[0][:140]}): a Content-Security-Policy upgrade-insecure-requests on a plain-http target'
+                           + (' (the page sends one)' if r.get('csp_upgrade_insecure_requests') else '') +
+                           '; serve the site over https or without the directive and capture again')
+                elif others:
+                    counts = sorted(len(o.get('elements') or []) for o in others)
+                    med = counts[len(counts) // 2]
+                    uni = (r.get('uniformity') or {}).get('uniform')
+                    if n < OUTLIER_SHARE * med and med - n >= OUTLIER_MIN:
+                        heights = sorted(o['size'][1] for o in others if o.get('size'))
+                        why = (f'blank or incomplete capture: {n} elements against {med} in the other runs of {page} at '
+                               f'{vp} in {eng}' + (f', page height {r["size"][1]} against {heights[len(heights) // 2]}'
+                                                   if r.get('size') and heights else ''))
+                    elif uni and not all((o.get('uniformity') or {}).get('uniform') for o in others):
+                        why = (f'blank capture: the screenshot is one colour ({r["uniformity"].get("dominant_share")} of '
+                               f'its pixels) while the other runs of {page} at {vp} in {eng} are not')
+            if why:
+                if not r.get('screened'):
+                    r.update(screened=why, run_status='errored', ok=False, error=why)
+                out.append({'page': page, 'viewport': vp, 'engine': eng, 'run': r.get('run', r.get('rerun')), 'reason': why})
+    return out
+
+
+def environment(doc: dict) -> list[dict]:
+    """Causes in the test environment that stopped runs from being compared, one entry per cause rather than one
+    difference per failed request: requests to the site upgraded to https that failed (cause https_upgrade). The report
+    must name each in a limitation."""
+    hit = [r for r in doc.get('runs') or [] if upgraded_requests(r, doc.get('site'))]
+    if not hit:
+        return []
+    reqs = sorted({f.partition(' (')[0] for r in hit for f in upgraded_requests(r, doc.get('site'))})
+    engines = sorted({r['engine'] for r in hit})
+    csp = any(r.get('csp_upgrade_insecure_requests') for r in hit)
+    return [{'cause': 'https_upgrade', 'engines': engines, 'runs': len(hit), 'pages': sorted({r['page'] for r in hit}),
+             'requests': len(reqs), 'example': reqs[0][:200], 'csp_upgrade_insecure_requests': csp,
+             'detail': (f'{", ".join(engines)} fetched the site\'s own subresources over https on a plain-http target '
+                        f'({doc.get("site")}) and every such request failed, so the pages rendered without those '
+                        'stylesheets and scripts: a Content-Security-Policy upgrade-insecure-requests directive'
+                        + (' (the page sends one)' if csp else ' (the likely cause)') + '. Playwright\'s bypass_csp does '
+                        'not cover it, and it does nothing on https hosting. Serve the site over https, or without the '
+                        'directive for the capture, and capture again. These runs were not compared.')}]
+
+
 def comparisons(doc: dict, ref: str) -> dict:
     """Every planned (page or state, viewport, engine) pair against the reference, and whether it could be compared: both
     the engine and the reference need every rerun captured (a difference must hold in every run). Errored, skipped or
     missing runs leave it not compared, with the reason."""
+    screen_runs(doc)
     plan = doc.get('planned') or [{'page': p, 'viewport': v} for p, v in sorted({(r['page'], r['viewport']) for r in doc['runs']})]
     engines = [e['name'] for e in doc.get('engines') or []] or sorted({r['engine'] for r in doc['runs']})
     reruns = doc.get('reruns') or 1
@@ -357,6 +471,7 @@ def compare(doc: dict, base: Path, ref: str, jobs: int | None = None,
             stats: dict | None = None) -> tuple[list[dict], list[dict], list[dict]]:
     """Differences, flaky observations and automatic dismissals, from the captured runs only: a run that errored or was
     skipped has no observations, and comparing it would turn the error into differences."""
+    screen_runs(doc)
     inks = all_inks(doc, base, ref, default_jobs() if jobs is None else jobs)
     groups: dict[tuple, dict[str, list]] = {}
     complete = {(r['page'], r['viewport'], r['engine']) for r in doc['runs']}
@@ -417,7 +532,7 @@ def compare(doc: dict, base: Path, ref: str, jobs: int | None = None,
                             if d:
                                 src = img_src(E, k[1])
                                 (diffs if d['report'] else dismissed).append(dict(d['entry'], page=page, viewport=vp, engine=eng, ref=ref,
-                                                                                   runs={ref: [True] * len(R), eng: [True] * len(E)},
+                                                                                   runs={ref: [False] * len(R), eng: [True] * len(E)},
                                                                                    **({'src': src} if src else {})))
                         continue
                     else:
@@ -454,7 +569,7 @@ def compare(doc: dict, base: Path, ref: str, jobs: int | None = None,
                     continue
                 low = [v < 0.4 * min(rv) for v in ev]
                 if any(low):
-                    why = ink_not_comparable(R[0]['obs'][k], E[0]['obs'][k])
+                    why = ink_not_comparable(R[0]['obs'][k], E[0]['obs'][k]) or decoded_photo(E, k, ev)
                     if why:
                         o = E[0]['obs'][k]
                         dismissed.append({'page': page, 'viewport': vp, 'engine': eng, 'ref': ref, 'kind': 'layout',
@@ -548,12 +663,42 @@ def font_families(diffs: list[dict], R: list[dict], E: list[dict], page: str, vp
             pair = (next(iter(rf)), next(iter(ef)))
             groups.setdefault(pair, []).append(k[1])
             tags.setdefault(pair, R[0]['obs'][k]['tag'])
+    # the same computed family resolving to another face (system-ui, a generic family, a local font missing in one
+    # engine): capture measures a test string with each family (faces); a width that differs in every run is a face
+    rfaces, efaces = [r.get('faces') or {} for r in R], [r.get('faces') or {} for r in E]
+    for k in sorted({k for r in R for k in r['obs'] if k[0] == 'present'}, key=str):
+        if not all(k in r['obs'] and r['obs'][k].get('font') for r in R + E):
+            continue
+        fams = {r['obs'][k]['font'] for r in R + E}
+        if len(fams) != 1:
+            continue
+        fam = next(iter(fams))
+        rw = {f.get(fam) for f in rfaces}
+        ew = {f.get(fam) for f in efaces}
+        if len(rw) == 1 and len(ew) == 1 and None not in rw | ew:
+            a, b = next(iter(rw)), next(iter(ew))
+            if a and b and abs(a - b) > FACE_TOLERANCE * max(a, b):
+                pair = (f'{_family(fam)} [face {a:g}px]', f'{_family(fam)} [face {b:g}px]')
+                groups.setdefault(pair, []).append(k[1])
+                tags.setdefault(pair, R[0]['obs'][k]['tag'])
+    css_failed = sorted({f.partition(' (')[0].split(' ', 1)[-1] for f in E[0].get('failed_requests') or []
+                         if CSS_URL.search(f.partition(' (')[0]) and not benign_failure(f)
+                         and all(f in (r.get('failed_requests') or []) for r in E)})
     for (rf, ef), els in sorted(groups.items()):
+        if ' [face ' in ef:
+            fam = rf.split(' [face ')[0]
+            detail = (f'{len(els)} element(s) with font family "{fam}" draw in another face in {eng} than in {ref} '
+                      f'(a test string measures {ef.split(" [face ")[1][:-1]} against {rf.split(" [face ")[1][:-1]}; '
+                      f'e.g. {", ".join(els[:3])}): name the face first in the family list, or load it as a web font')
+        else:
+            detail = (f'{len(els)} element(s) draw in font family "{ef}" in {eng} but "{rf}" in {ref} '
+                      f'(e.g. {", ".join(els[:3])}): set font-family (or font: inherit) on them')
+        if css_failed:
+            detail += (f'; the stylesheet failed to load in every {eng} run ({css_failed[0][:120]}), which explains a '
+                       'default face: fix the request before judging the font')
         diffs.append({'page': page, 'viewport': vp, 'engine': eng, 'ref': ref, 'kind': 'layout', 'subkind': 'font_family_differs',
                       'key': f'{rf} -> {ef}', 'element': els[0], 'elements': els[:50], 'element_tag': tags[(rf, ef)],
-                      'runs': {ref: [False] * len(R), eng: [True] * len(E)},
-                      'detail': f'{len(els)} element(s) draw in font family "{ef}" in {eng} but "{rf}" in {ref} '
-                                f'(e.g. {", ".join(els[:3])}): set font-family (or font: inherit) on them'})
+                      'runs': {ref: [False] * len(R), eng: [True] * len(E)}, 'detail': detail})
 
 
 def covered(diffs: list[dict], first: int, dismissed: list[dict], R: list[dict], E: list[dict]) -> None:
@@ -627,6 +772,20 @@ def drift(diffs: list[dict], first: int, dismissed: list[dict], moves: list[tupl
         else:
             keep.append(d)
     diffs[first:] = keep[first:]
+
+
+def decoded_photo(E: list[dict], k: tuple, ev: list[float]) -> str | None:
+    """Why low ink on an <img> the engine decoded and drew is not content that wasn't rendered, or None. Ink counts pixels
+    far from the box's most common colour, so a dark or busy photo whose most common colour lands elsewhere in one engine
+    (another tone of a gradient) reads as low ink although the image is there. An image is content not rendered only
+    when it didn't decode (image_not_decoded) or its box is nearly blank (ink under DECODED_INK_FLOOR)."""
+    o = E[0]['obs'][k]
+    if o.get('tag') != 'img' or not all(r['obs'][k].get('decoded') for r in E if k in r['obs']):
+        return None
+    if min(ev) < DECODED_INK_FLOOR:
+        return None
+    return (f'decoded image drawn in every run ({round(100 * min(ev), 1)}% ink or more): the ink metric measures pixels '
+            'far from the most common colour, which on a photograph is not a sign the image is missing')
 
 
 def ink_not_comparable(ro: dict, eo: dict) -> str | None:
@@ -765,6 +924,10 @@ def box_diff(R, E, k):
                                                'reason': 'font metrics: under 16 px of movement and within 4 px or 5% in size'}}
         return None
     tag = R[0]['obs'][k]['tag']
+    stroke = svg_stroke(R[0]['obs'][k], E[0]['obs'][k], rb, (dx, dy, dw, dh))
+    if stroke:
+        return {'report': False, 'entry': {'kind': 'layout', 'subkind': 'box_differs', 'key': k[1], 'element': k[1],
+                                           'delta': [dx, dy, dw, dh], 'ref_box': rb, 'reason': stroke}}
     native = tag in NATIVE_TAGS
     if native and not pos:
         return {'report': False, 'entry': {'kind': 'layout', 'subkind': 'box_differs', 'key': k[1], 'element': k[1],
@@ -779,6 +942,23 @@ def box_diff(R, E, k):
         entry['native_size'] = True
         entry['detail'] += f' (the size change is native <{tag}> rendering; the move is what differs)'
     return {'report': True, 'entry': entry}
+
+
+def svg_stroke(ro: dict, eo: dict, rb: list, d: tuple) -> str | None:
+    """Why a box difference of an SVG shape is its stroke, or None: one engine's getBoundingClientRect includes the
+    stroke (Firefox) and another's doesn't, so the box grows by the stroke width on every side (dx = -dw/2, dy = -dh/2,
+    dw = dh), with the shape drawn identically. With the stroke width recorded (capture.py), the growth must be within it;
+    without it, within a quarter of the box."""
+    if ro.get('tag') not in SVG_SHAPES:
+        return None
+    dx, dy, dw, dh = d
+    if abs(dw - dh) > 1 or abs(2 * dx + dw) > 2 or abs(2 * dy + dh) > 2 or not dw:
+        return None
+    stroke = max(float(ro.get('stroke') or 0), float(eo.get('stroke') or 0))
+    if (stroke and abs(abs(dw) - stroke) > 2) or (not stroke and abs(dw) > 0.25 * max(rb[2], rb[3], 1)):
+        return None
+    return (f'SVG stroke: one engine includes the stroke ({stroke:g} px) of this <{ro["tag"]}> in its box and the other '
+            f'does not (it grew by {abs(dw)} px evenly on every side); the shape is drawn alike')
 
 
 def inside(a: list | None, b: list | None) -> bool:
@@ -1065,6 +1245,8 @@ def main() -> int:
     features = json.loads(a.features.read_text(encoding='utf-8')) if a.features else None
     critical = {r['page'] for r in doc['runs'] if r.get('critical_path')}
     stats: dict = {}
+    screened = screen_runs(doc)
+    env = environment(doc)
     diffs, flaky, dismissed = compare(doc, a.runs.parent, a.reference, a.jobs, stats)
     cands = candidates(diffs, dismissed, doc, caniuse, features, critical)
     if features:
@@ -1075,6 +1257,12 @@ def main() -> int:
            'third_party': third_party(doc), 'candidates': cands, 'flaky': flaky, 'dismissed_automatically': dismissed, 'features': features,
            'comparisons': comparisons(doc, a.reference), 'benign_requests': benign_requests(doc),
            'same_everywhere': same_everywhere(doc)}
+    if screened:   # runs captured but not compared (an environment cause, a blank rerun): see screen_runs
+        out['screened_runs'] = screened
+    if env:
+        out['environment'] = env
+        for e in env:
+            print(f'warning: environment: {e["detail"]}', file=sys.stderr)
     for s in out['same_everywhere']:
         print(f'warning: {s["page"]} ({", ".join(s["viewports"])}): ' +
               (f'step {s["step"] + 1} failed in every run of every engine ({(s["messages"] or [""])[0][:120]})'

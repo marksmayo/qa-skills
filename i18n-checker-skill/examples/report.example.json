@@ -1,7 +1,7 @@
 {
  "skill": {
   "name": "i18n-checker",
-  "version": "1.0.0"
+  "version": "1.2.0"
  },
  "scope": {
   "repo": "examples/bookclub",
@@ -103,10 +103,10 @@
  },
  "headline": {
   "verdict": "issues_found",
-  "summary": "13 issues: 12 in the web site (its resources, code and rendered pages in en, de, fr and ar) and one in the Android resources. The worst: German shows raw keys on the events page, \"Sign in\" is hard-coded everywhere, the German tab label is cut off, and French shows a raw {nom}. Hebrew has no resources and was not run. Translation quality was not reviewed.",
+  "summary": "14 issues: 13 in the web site (its resources, code and rendered pages in en, de, fr and ar) and one in the Android resources. The worst: German shows raw keys on the events page, \"Sign in\" is hard-coded everywhere, the German tab label is cut off, and French shows a raw {nom}. Hebrew has no resources and was not run. Translation quality was not reviewed.",
   "severity_counts": {
    "High": 5,
-   "Medium": 6,
+   "Medium": 7,
    "Critical": 1,
    "Low": 1
   },
@@ -588,19 +588,74 @@
   {
    "id": "F9",
    "candidate_id": "K12",
-   "title": "The arrow points the wrong way in Arabic",
-   "kind": "rtl_mirroring",
+   "title": "The arrow after \"Reserve a seat\" on the events page points the wrong way in Arabic",
+   "kind": "rtl_physical",
    "status": "confirmed",
    "locales": [
-    "ar"
+    "ar",
+    "de",
+    "fr"
    ],
    "severity": "Medium",
    "confidence": "high",
-   "priority": "P3",
-   "score": 4,
-   "reach": 1,
-   "leverage": 2,
-   "locations": [],
+   "priority": "P2",
+   "score": 6,
+   "reach": 3,
+   "leverage": 1,
+   "locations": [
+    {
+     "file": "site/events.html",
+     "line": 12
+    }
+   ],
+   "keys": [],
+   "evidence": [
+    {
+     "page": "events",
+     "locale": "ar",
+     "mode": "rtl",
+     "screenshot": "events.rtl.ar.1280x800.png",
+     "element": "span.icon:in(p)",
+     "text": "→",
+     "box": [
+      1182,
+      189,
+      16,
+      17
+     ],
+     "measure": {
+      "glyph": "→",
+      "expected": "a glyph pointing left in RTL"
+     },
+     "critical_path": true
+    }
+   ],
+   "remediation": "The &rarr; glyph at site/events.html:12 is drawn as text, so it still points right in RTL, away from the reading direction. Use a direction-aware icon or flip it with [dir=rtl] .icon { transform: scaleX(-1) }.",
+   "verification_step": "Rerun the ar run: no rtl_mirroring glyph findings on this page."
+  },
+  {
+   "id": "F10",
+   "candidate_id": "K13",
+   "title": "The arrow after \"Reserve a seat\" on the home page points the wrong way in Arabic",
+   "kind": "rtl_physical",
+   "status": "confirmed",
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "severity": "Medium",
+   "confidence": "high",
+   "priority": "P2",
+   "score": 6,
+   "reach": 3,
+   "leverage": 1,
+   "locations": [
+    {
+     "file": "site/index.html",
+     "line": 14
+    }
+   ],
    "keys": [],
    "evidence": [
     {
@@ -609,31 +664,26 @@
      "mode": "rtl",
      "screenshot": "home.rtl.ar.1280x800.png",
      "element": "span.icon:in(p)",
+     "text": "→",
+     "box": [
+      1182,
+      257,
+      16,
+      17
+     ],
      "measure": {
       "glyph": "→",
       "expected": "a glyph pointing left in RTL"
      },
-     "text": "→"
-    },
-    {
-     "page": "events",
-     "locale": "ar",
-     "mode": "rtl",
-     "screenshot": "events.rtl.ar.1280x800.png",
-     "element": "span.icon:in(p)",
-     "measure": {
-      "glyph": "→",
-      "expected": "a glyph pointing left in RTL"
-     },
-     "text": "→"
+     "critical_path": false
     }
    ],
-   "remediation": "The → glyph after \"Reserve a seat\" still points right in RTL, away from the reading direction, on both pages. Use a direction-aware icon or flip it with [dir=rtl] .icon { transform: scaleX(-1) }.",
-   "verification_step": "Rerun the ar run: no rtl_mirroring glyph findings."
+   "remediation": "The &rarr; glyph at site/index.html:14 is drawn as text, so it still points right in RTL, away from the reading direction. Use a direction-aware icon or flip it with [dir=rtl] .icon { transform: scaleX(-1) }.",
+   "verification_step": "Rerun the ar run: no rtl_mirroring glyph findings on this page."
   },
   {
-   "id": "F10",
-   "candidate_id": "K13",
+   "id": "F11",
+   "candidate_id": "K14",
    "title": "Android German books_count uses %s where English uses %d",
    "kind": "placeholder_mismatch",
    "status": "confirmed",
@@ -660,8 +710,8 @@
    "verification_step": "Rerun check_keys.py: no placeholder mismatch for books_count."
   },
   {
-   "id": "F11",
-   "candidate_id": "K14",
+   "id": "F12",
+   "candidate_id": "K15",
    "title": "French renames the {name} placeholder to {nom}",
    "kind": "placeholder_mismatch",
    "status": "confirmed",
@@ -702,8 +752,8 @@
    "verification_step": "Rerun check_keys.py and the fr run: no placeholder findings."
   },
   {
-   "id": "F12",
-   "candidate_id": "K15",
+   "id": "F13",
+   "candidate_id": "K16",
    "title": "The Arabic book count lacks the few and many forms",
    "kind": "plural_categories",
    "status": "confirmed",
@@ -730,8 +780,8 @@
    "verification_step": "Rerun check_keys.py: no plural_categories finding for ar."
   },
   {
-   "id": "F13",
-   "candidate_id": "K17",
+   "id": "F14",
+   "candidate_id": "K18",
    "title": "legacy.banner is not used anywhere",
    "kind": "unused_key",
    "status": "confirmed",
@@ -770,7 +820,7 @@
  },
  "needs_review": [
   {
-   "candidate_id": "K16",
+   "candidate_id": "K17",
    "reason": "\"Newsletter\" is identical in English and German, which is normal German usage; a German reviewer should confirm it (agent judgment: probably correct)."
   }
  ],
@@ -851,30 +901,36 @@
    "candidate_id": "K13",
    "decision": "promoted",
    "finding_id": "F10",
-   "reason": "Verified by the parser."
+   "reason": "Confirmed in the rendered pages with a measurement."
   },
   {
    "candidate_id": "K14",
    "decision": "promoted",
    "finding_id": "F11",
-   "reason": "Confirmed in the rendered pages with a measurement."
+   "reason": "Verified by the parser."
   },
   {
    "candidate_id": "K15",
    "decision": "promoted",
    "finding_id": "F12",
-   "reason": "Verified by the parser."
+   "reason": "Confirmed in the rendered pages with a measurement."
   },
   {
    "candidate_id": "K16",
+   "decision": "promoted",
+   "finding_id": "F13",
+   "reason": "Verified by the parser."
+  },
+  {
+   "candidate_id": "K17",
    "decision": "needs_review",
    "finding_id": null,
    "reason": "Same text in both languages; may be correct."
   },
   {
-   "candidate_id": "K17",
+   "candidate_id": "K18",
    "decision": "promoted",
-   "finding_id": "F13",
+   "finding_id": "F14",
    "reason": "Verified by the parser."
   }
  ],

@@ -11,6 +11,16 @@
 
 Children's services (`children: true`): every category one level higher, up to 4.
 
+**Categories are reproducible.** They set the sensitivity, so the validator derives them: the candidates'
+categories, the categories `data/categories.json` gives the finding's `fields`, and, for a
+`tracking_before_consent` or `tracking_after_reject` finding, what a vendor of that category receives as
+soon as its tag runs (`data/vendors.json` `category_data`: analytics, advertising, tag-manager, marketing
+and session-replay vendors get `online_identifier` and `browsing_behaviour`). The vendor category comes
+from the candidates (`vendor_category`, a static loader's `facts.vendor_category`) or from
+`data/vendors.json` by the finding's domain or vendor. A category beyond these, or leaving the vendor
+category's out, needs a stated `categories_basis`; without one the validator fails, so two reviewers
+reach the same priority.
+
 ## Flow (`flow_basis`)
 
 | Basis | Flow | Meaning |
@@ -32,8 +42,12 @@ on by default with an opt-out as the only choice (a command-line tool's call hom
 `before_consent`, on its basis (the code that sends unless an opt-out is set, or a sink log of a run with
 no opt-out).
 
-The validator checks the basis against the candidates: `before_consent` needs the before state (or
-`default_on` as above), `after_reject` the reject state, `undeclared_third_party` an undeclared recipient
+A `policy_mismatch` finding whose policy basis promises a consent step (`policy.promise: consent_step`, the
+policy page re-read with `--repo`) against code that loads the vendor with none may also be
+`before_consent`.
+
+The validator checks the basis against the candidates: `before_consent` needs the before (or `no_banner`)
+state, a static loader candidate, `default_on` as above, or a `consent_step` policy mismatch, `after_reject` the reject state, `undeclared_third_party` an undeclared recipient
 (a live candidate's, or, for a finding found by review, its own third-party `domain` when the merge was
 given `--declared` and no declared processor names that domain or its vendor), and `declared_unexpected` a declared processor that names the recipient: the finding's vendor (or its
 alias or parent company) or domain must be in the `--declared` file or in the text of
@@ -81,6 +95,7 @@ AU: the APPs), listed for the regions in scope:
 | `cross_border_transfer` | A vendor outside the regions receiving data (needs a region from the list) |
 | `missing_usage_description` | A mobile permission without a purpose string |
 | `first_party_beacon` | A first-party write fired without a form submission (telemetry, experiment exposure, autosave), usually before any choice |
+| `policy_mismatch` | The privacy policy promises what the code doesn't do (a consent message before analytics, a vendor list that leaves one out); `policy` holds the promise (`file`, `line`, `excerpt` of an in-repo policy page, or `url` and `excerpt`) and the finding needs the code side too (a candidate, a code basis or a code path) |
 | `telemetry` | A call home from software on the user's machine (a command-line tool's usage events, a crash report, an update check carrying an identifier), usually on by default with an environment variable or setting as the opt-out |
 
 A domain is a tracker in the list sense only when EasyPrivacy blocks the whole registrable domain
@@ -100,9 +115,11 @@ after a dismissal is tracking before consent.
 
 With `run_status: not_run` (no capture), findings rest on the code: `traced` with a full code path, or
 `pattern`. Nothing is `observed`, no consent state is named, and `before_consent` needs a static
-`tracking_before_consent` candidate (pattern: a replay set up with no consent check, or an analytics, ad or
-tag-manager loader with no consent check and no consent-mode default, `loader_before_consent`), or a
-`default_on` review finding. A finding found by
+`tracking_before_consent` candidate (pattern: a replay set up with no consent check; an analytics, ad or
+tag-manager loader, a `<script src>`, a next/script `<Script>` or a JSX `<script>`, with no consent check and no
+consent-mode default, `loader_before_consent`; a script from a host `data/vendors.json` doesn't list,
+`unknown_third_party_loader`, until it is identified; or a consent-message host the site's CSP blocks,
+`consent_message_blocked_by_csp`), a `default_on` review finding, or a `consent_step` policy mismatch. A finding found by
 reading the code (`source: agent`) carries a `basis` of re-checkable file lines (or runtime evidence) and
 is at most `traced` without runtime evidence. With recorded runtime evidence (a `{"evidence": file}` basis:
 a loopback sink or proxy log a command-line tool sent to) it may be `observed`, in a `not_run` audit too:

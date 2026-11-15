@@ -1,6 +1,6 @@
 # Design: `privacy-flow-auditor-skill`
 
-Status: Built (v1.6.0), see the "As built" sections. Build order: 23.
+Status: Built (v1.7.0), see the "As built" sections. Build order: 23.
 
 ## Mission
 
@@ -536,3 +536,44 @@ embeds.
   URL in the app module, the send in a helper) is not linked; PHP is still only counted as unanalysed.
 - **Example.** The rescan of `clinic-signup` gives the same candidates; `run/static.json` gained the empty
   `build_output_dirs` and `needs_limitation_dirs`.
+
+### v1.7.0: next/script loaders, host mentions, the CSP, and policy against code
+
+- **Found on** a Next.js App Router content site whose root layout loads an analytics tag, an ad loader and
+  an SEO analytics service through next/script `<Script src strategy="afterInteractive">`, with
+  `dns-prefetch` and `preconnect` hints for some of the hosts, a CSP in next.config `headers()` and a privacy
+  page promising a consent message to EEA and UK visitors. `<Script src>` in `.tsx` was not a loader, so the
+  ad loader raised no static candidate (the analytics tag only through its `gtag('config')` call); each host
+  was recorded once per file at its first mention, so SDK lines pointed at the hints, and a host only hinted
+  at was listed as an SDK; a vendor missing from `data/vendors.json` was dropped from the static results
+  and unnamed in the capture; the CSP was never read, so a consent-message host it blocks was invisible to
+  the scan and the capture alike (the capture blocks third parties before the CSP applies); a policy
+  promise the code breaks had no finding type, and a review finding rated `before_consent` on a `no_banner`
+  run was rejected with "no candidate shows the before state"; and a tracking finding's priority depended on
+  which categories its author chose.
+- **Changed:** JSX `<Script src>` (next/script, any strategy), JSX `<script src>` and `@next/third-parties`
+  components are loaders; Next.js projects are read through the shared `next_app.py` (loaders, strategy,
+  resource hints, next.config headers, platform files). Every mention of a host is kept under
+  `host_mentions` with its kind (loader, preconnect, dns-prefetch, preload, csp, reference); an SDK entry is
+  at the loader line, lists the file's other mentions, and a host only hinted at or allowed is no SDK.
+  Vendors are looked up by host before the registrable domain (`fundingchoicesmessages.google.com`); a script
+  from an unlisted host stays in the inventory (`vendor: null`) and, loaded with no consent check, is an
+  `unknown_third_party_loader` candidate. `data/vendors.json` gains Ahrefs Web Analytics, Fathom, Simple
+  Analytics, Umami, Matomo Cloud, Google Funding Choices and library CDNs (category `cdn`), `companions`
+  (hosts a loader goes on to use) and `category_data`; the merge names a vendor from it when the domain list
+  lacks one. The scan reads CSPs (next.config, vercel.json, netlify.toml, `public/_headers`, meta) into
+  `csp`: loader and companion hosts are checked against every enforced policy (`checks`, `blocked`), host
+  allowances nothing names are listed (`unused_allowances`), a blocked consent-message host is a
+  `consent_message_blocked_by_csp` candidate, and loader candidates carry `facts.csp`. A new finding type,
+  `policy_mismatch`, carries a `policy` basis (an in-repo page re-read with `--repo`, or a URL) with a
+  `promise`; `consent_step` lets it rate `before_consent`. `--declared` takes a policy page (its processors
+  are the vendors and hosts its text names). An unsupported `before_consent` now names what would support
+  it. The validator derives categories from candidates, fields and, for tracking findings, the vendor
+  category's data, and requires `categories_basis` otherwise. Schema 1.4.0 (1.1.0 to 1.3.0 still valid).
+- **Not changed:** the unused-allowance check is a heuristic (a host built at run time looks unused);
+  companions are curated for AdSense and gtag only; a CSP assembled from values the reader cannot resolve
+  gives `unknown`, not `blocked`; a policy page's processors come from names, so a vendor the policy
+  describes without naming it is not declared.
+- **Examples.** Re-validated. `run/static.json` was rescanned: its candidates are unchanged and it gains
+  `host_mentions`, `csp` and per-SDK `mentions`; the static-only audit's replay finding gains the
+  `categories_basis` its categories always needed.

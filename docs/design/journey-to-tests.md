@@ -127,3 +127,38 @@ journey-to-tests-skill/
           journey_md.py  detect_conventions.py  parse_results.py   # shared copies
   examples/journey_tests_report.example.json  examples/acme-shop/…
 ```
+
+### v1.1.0: a Next.js content site with no tests
+
+Found on a Next.js App Router content site with no tests and no CI, whose pages load analytics and ad
+scripts and register a service worker. Red/green checks in new `validate_report.py --self-test`
+(negative cases on the example report) and `lint_tests.py --self-test`.
+
+- No path for a repository with no tests: SKILL.md "Bootstrapping a framework (after approval)"
+  (pinned install, config with a loopback `baseURL` from an environment variable and
+  `serviceWorkers: 'block'`, a production build on loopback, reusing an installed browser through
+  `launchOptions.executablePath`), recorded in `metadata.bootstrap`, which the validator checks
+  (config listed, someone approved); `conventions_source` says the conventions were chosen.
+- Nothing kept tests off third parties: a non-negotiable rule and Step 4 text (abort requests to
+  other origins and attach the blocked URLs, block service workers, `--host-resolver-rules` for
+  connection hints, Cypress `blockHosts`), and two lint warnings across the files linted together
+  (`network_not_guarded`, `service_workers_not_blocked`), repeated by `validate_report.py --repo`.
+- A `PLACEHOLDER` headline validated: the headline must give verified/total Expects and name
+  suspected bugs, flaky, blocked and failing tests when there are any.
+- Approval could not express a delegated or unattended run: `approved_by` (`user`, `delegated` with
+  a note, `unattended`) on `metadata.approval` and on manifests; `approved_by_user` is refused when
+  no person approved the run in the session.
+- `lint_tests.py --json` now prints the report's `lint` object (`ran`, `errors`, `warnings`,
+  `findings`, plus per-file `files`).
+- Partly automatable Expects: `asserted` with a `reason` naming the part left unverified; the
+  validator requires that reason when the journey lists the Expect as not automatable.
+- Shared fixes used: `parse_results.py --files-root/--test-dir` (repository-relative case files,
+  forward-slash ids; the validator warns when a case file does not join to the mapped test path)
+  and `detect_conventions.py` (`base_url` with its `env` and `default`, `npx playwright test` from a
+  config no script runs).
+- The example's spec (written before these rules) now gets the two network warnings; its runs are
+  hashed, so it is left as recorded.
+- Journey Markdown 1.1 (shared): a step may carry an indented `**Observed:**` line after its
+  Expect (what a run showed, with the run's evidence file). `journey_md.py` parses it into
+  `steps[].observed`, never into the Expect, so `plan_coverage.py` neither counts it nor lets it
+  change `expect_sha256`; SKILL.md says not to assert it.

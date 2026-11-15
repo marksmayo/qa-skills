@@ -9,6 +9,9 @@ It finds internationalisation and localisation problems in resource files, code 
   but a message lacks.
 - **Code**: hard-coded text, concatenated translations, hand-formatted numbers, currency and dates,
   fixed widths that hide overflow, and physical CSS that won't mirror in right-to-left languages.
+  JSX is read with a small scanner: text in any script beside `{expressions}`, `alt`/`aria-label`/
+  `title`/`placeholder` attributes, Next.js `metadata` exports, sentences assembled from fragments,
+  `{n}%`, locale literals in `toLocale*String`/`Intl.*`, Tailwind physical classes and arrow glyphs.
 - **Running pages**: a pseudo-locale (longer, accented, bracketed text), every shipped locale and RTL
   locales, measuring truncation, overlap, untranslated text, raw placeholders and keys, formats
   against CLDR, and mirroring, with screenshots.
@@ -23,8 +26,12 @@ number and date patterns are pinned, hash-checked subsets.
 
 It is strict about what it can claim:
 
-- Never "fully localised": the verdict is scoped, and translation quality is untested unless a named
-  reviewer checked it.
+- Never "fully localised", "RTL-ready" without an RTL locale checked, or "ready for localisation":
+  the verdict is scoped, and translation quality is untested unless a named reviewer checked it.
+- A product that ships one locale gets `readiness_only`: its findings are readiness for a future
+  locale, and the report says no second locale exists.
+- Dismissals need a checkable reason; summary counts and the limitations (locales not run, files not
+  parsed, a text-walk pseudo-locale, no resources) are checked by the validator.
 - A key that's missing and a key with the source text copied in are different findings; the second is
   only ever possible.
 - Missing keys are proposed as a patch and never applied; no text is sent to an outside service.

@@ -210,8 +210,11 @@
       }
       return n;
     }
-    try { return document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue; }
-    catch (e) { return null; }
+    const find = (x) => { try { return document.evaluate(x, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue; }
+                          catch (e) { return null; } };
+    // In an HTML document a bare name step matches HTML elements only: an svg or MathML element (svg[1], circle[2])
+    // needs a local-name() test, or a result about an svg finds no element and its component becomes "document".
+    return find(xp) || find(xp.replace(/(^|\/)([A-Za-z][\w-]*)\[(\d+)\]/g, (m, s, n, i) => `${s}*[local-name()="${n}"][${i}]`));
   }
 
   function bySelector(target) {
@@ -422,6 +425,11 @@
       d.doc_y = Math.round(a.getBoundingClientRect().top + scrollY);
       d.in_dialog = !!a.closest('dialog,[role=dialog],[aria-modal=true]');
       d.sentinel = sentinel(a);
+      // an inline element that wraps (a link over two lines) has one box per line: the focus indicator is drawn
+      // round each, so it is measured per line box, not round the rectangle that spans both lines
+      const lines = [...a.getClientRects()].filter(r => r.width > 0 && r.height > 0);
+      if (lines.length > 1) d.rects = lines.slice(0, 20).map(r => ({ x: Math.round(r.left), y: Math.round(r.top),
+                                                                     w: Math.round(r.width), h: Math.round(r.height) }));
       return d;
     },
     // The open modal dialog, if any (a <dialog> shown modally, aria-modal=true, or a visible role=dialog), and
@@ -584,8 +592,10 @@
     ownBoxChanges() { return window.__qa_own_box || 0; },
     hoverCandidates(limit = 40) {
       const sel = '[aria-describedby],[data-tooltip],[data-toggle=tooltip],[aria-haspopup],[aria-expanded],nav li,.tooltip-trigger,.has-tooltip';
-      const els = [...document.querySelectorAll(sel)].filter(visible);
-      for (const el of interactive()) if (!els.includes(el)) els.push(el);
+      // visually hidden elements (an .sr-only skip link) show nothing on hover and cannot be hovered: left out
+      const shown = el => visible(el) && !visuallyHidden(el);
+      const els = [...document.querySelectorAll(sel)].filter(shown);
+      for (const el of interactive()) if (!els.includes(el) && shown(el)) els.push(el);
       return els.slice(0, limit).map(describe);
     },
     stillVisible(xp) { const el = byXpath(xp); return !!el && visible(el); },

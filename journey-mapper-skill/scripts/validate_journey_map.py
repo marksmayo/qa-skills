@@ -4,7 +4,8 @@
 the mapper never claims a status other than "inferred", out_of_scope orphans really are outside the
 run scope, and the graph is recorded or explicitly declined). With --repo it also re-reads every cited
 file and line (missing files, lines past the end, blank lines, excerpts that don't match) and checks
-that each journey's tests exist. Prints every problem, not just the first.
+that each journey's tests exist. A step's observed.run (the evidence file of the run that observed it) must
+exist, relative to the map's directory. Prints every problem, not just the first.
 
 Warnings (errors with --strict): a journey covers a surface item whose file none of the journey's
 evidence cites, or whose file it cites only outside the item's own lines when several items share the
@@ -147,7 +148,8 @@ def warnings_for(d: dict) -> list[str]:
     return warns
 
 
-def check(d: dict, repo: Repo | None = None) -> list[str]:
+def check(d: dict, repo: Repo | None = None, map_dir: Path | None = None) -> list[str]:
+    """Problems with map d. map_dir (the map's directory) resolves each step's observed.run, which must exist there."""
     errs: list[str] = []
     e = errs.append
     for key in ('metadata', 'surface', 'coverage', 'journeys'):
@@ -236,6 +238,14 @@ def check(d: dict, repo: Repo | None = None) -> list[str]:
                     e(f'{w} step {n}: observed needs result, run (the evidence file of the run) and at (when it ran)')
                 elif not re.match(r'^\d{4}-\d{2}-\d{2}', str(obs['at'])):
                     e(f'{w} step {n}: observed.at must be an ISO date or time')
+                elif map_dir is not None:
+                    run = str(obs['run']).replace('\\', '/')
+                    if Path(run).is_absolute() or re.match(r'^[A-Za-z]:', run) or run.startswith('/'):
+                        e(f"{w} step {n}: observed.run {run!r} must be relative to the map's directory, so the "
+                          'evidence travels with the map')
+                    elif not (map_dir / run).is_file():
+                        e(f"{w} step {n}: observed.run {run} does not exist (paths are relative to the map's directory, "
+                          f'{map_dir.as_posix()})')
             for ev in s.get('evidence') or []: evidence_ok(ev, f'{w} step {n}')
         vids: set[str] = set()
         for v in j.get('variants') or []:
@@ -381,6 +391,47 @@ def self_test() -> int:
     errs, crash = run(d)
     checks.append(('an observed result without its run and time is refused',
                    crash is None and any('observed' in x for x in errs or []), crash or errs))
+    # the run an observation names is a file next to the map (its path is relative to the map's directory)
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        d = copy.deepcopy(base)
+        d['journeys'][0]['steps'][0]['observed'] = {'result': 'the page answered 200', 'run': 'run/probe/home.txt',
+                                                   'at': '2026-11-15'}
+        try:
+            errs, crash = check(d, None, map_dir=Path(tmp)), None
+        except Exception as exc:  # noqa: BLE001
+            errs, crash = None, f'{type(exc).__name__}: {exc}'
+        checks.append(('an observation whose run file is missing next to the map is refused',
+                       crash is None and any('observed.run' in x and 'run/probe/home.txt' in x for x in errs or []),
+                       crash or errs))
+        (Path(tmp) / 'run' / 'probe').mkdir(parents=True)
+        (Path(tmp) / 'run' / 'probe' / 'home.txt').write_text('HTTP/1.1 200 OK\n', encoding='utf-8')
+        try:
+            errs, crash = check(d, None, map_dir=Path(tmp)), None
+        except Exception as exc:  # noqa: BLE001
+            errs, crash = None, f'{type(exc).__name__}: {exc}'
+        checks.append(('an observation whose run file exists next to the map is valid', crash is None and not errs,
+                       crash or errs))
+        d['journeys'][0]['steps'][0]['observed']['run'] = str(Path(tmp) / 'run' / 'probe' / 'home.txt')
+        try:
+            errs, crash = check(d, None, map_dir=Path(tmp)), None
+        except Exception as exc:  # noqa: BLE001
+            errs, crash = None, f'{type(exc).__name__}: {exc}'
+        checks.append(('an observation naming its run by an absolute path is refused (it must travel with the map)',
+                       crash is None and any('observed.run' in x for x in errs or []), crash or errs))
+    # SKILL.md's bucket table (Step 8) must be one Markdown table naming every reason this validator accepts
+    skill = (Path(__file__).resolve().parent.parent / 'SKILL.md').read_text(encoding='utf-8').splitlines()
+    start = next((i for i, l in enumerate(skill) if l.startswith('| Bucket |')), None)
+    rows = []
+    if start is not None:
+        for l in skill[start:]:
+            if not l.startswith('|'):
+                break
+            rows.append(l)
+    named = {r for r in ORPHAN_REASONS | UNREACHABLE_REASONS if any(f'`{r}`' in row for row in rows)}
+    checks.append(('SKILL.md Step 8 bucket table is one table listing every orphan and unreachable reason',
+                   named == ORPHAN_REASONS | UNREACHABLE_REASONS,
+                   f'missing from the table: {sorted((ORPHAN_REASONS | UNREACHABLE_REASONS) - named)}'))
     failed = 0
     for name, ok, extra in checks:
         failed += not ok
@@ -404,7 +455,7 @@ def main() -> int:
         print(f'INVALID: {exc}', file=sys.stderr); return 1
     if args.repo and not args.repo.is_dir():
         print(f'INVALID: --repo {args.repo} is not a directory', file=sys.stderr); return 1
-    errs = check(d, Repo(args.repo) if args.repo else None)
+    errs = check(d, Repo(args.repo) if args.repo else None, map_dir=args.journey_map.resolve().parent)
     warns = warnings_for(d) if not errs or args.strict else []
     if args.strict:
         errs += warns

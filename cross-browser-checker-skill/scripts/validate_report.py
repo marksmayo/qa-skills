@@ -19,8 +19,11 @@ Also fails when:
   * "Safari" appears as an engine or in a difference title, or out_of_scope omits Safari and real devices;
   * the verdict isn't the one the runs support: differences_found with a promoted difference, else inconclusive
     when any planned engine comparison wasn't made (an engine not run or errored, a run errored or skipped; see
-    compare_engines.comparisons), else no_differences_detected; in particular no_differences_detected with no
-    comparison made;
+    compare_engines.comparisons), else no_differences_detected or the more cautious inconclusive; in particular
+    no_differences_detected with no comparison made;
+  * the capture had an environment cause (compare_engines.environment: the site's own requests upgraded to https on a
+    plain-http target and failed) and no limitation names it, or candidates.json's environment and screened runs don't
+    follow from runs.json (runs screened as blank or incomplete are errored, never compared);
   * an inconclusive summary doesn't say so (errored, skipped, not compared) or claims no differences; comparisons
     weren't made and no limitation says so;
   * any text says "compatible", "works in all browsers" or similar;
@@ -40,7 +43,9 @@ Also fails when:
     needs-review reason names that page or state.
 
 --write-summary fills the computed headline fields (severity_counts, flaky_count, checks, evidence_completeness,
-overall_confidence), so a draft may leave them out: placeholders are set before the schema check and overwritten.
+overall_confidence), so a draft may leave them out: placeholders are set before the schema check and overwritten. It never
+writes the verdict, which is the agent's: differences_found when a difference was promoted; otherwise inconclusive when
+a planned comparison wasn't made, and no_differences_detected or the more cautious inconclusive when every one was.
 The schema is checked first and a schema error stops before any screenshot is decoded; then every check of the report
 itself (wording, triage, scope, headline) runs, and any error there is reported before the candidates are recomputed from
 the screenshots (minutes on a large run), so a wording fix is checked in seconds.
@@ -266,6 +271,18 @@ def main() -> int:
     cmp = ce.comparisons(runs, cands_doc['reference'])
     if 'comparisons' in cands_doc and cands_doc['comparisons'] != cmp:
         errs.append('candidates.json comparisons do not follow from runs.json; rerun compare_engines.py')
+    # runs captured but not comparable (an environment cause, a blank rerun) and the environment causes
+    screened, env = ce.screen_runs(runs), ce.environment(runs)
+    if not static and (cands_doc.get('screened_runs') or []) != screened:
+        errs.append(f'candidates.json screened_runs do not follow from runs.json ({len(screened)} run(s) screened); rerun '
+                    'compare_engines.py')
+    if not static and (cands_doc.get('environment') or []) != env:
+        errs.append('candidates.json environment does not follow from runs.json; rerun compare_engines.py')
+    for e in env:
+        if not any(re.search(r'upgrade-insecure-requests|https', x, re.I) for x in rep['limitations']):
+            errs.append(f'limitations: {", ".join(e["engines"])} fetched the site over https on a plain-http target and '
+                        f'failed ({e["requests"]} request(s), {e["runs"]} run(s)): name this environment cause '
+                        '(upgrade-insecure-requests, https) in a limitation; those runs were not compared')
     planned_engines = [e for e in sc['engines']]
     plan = runs.get('planned')
     if a.targets:
@@ -291,6 +308,16 @@ def main() -> int:
     thin = cmp['made'] == 0 or cmp['made'] * 2 < cmp['planned'] or chk['ran'] * 2 < chk['planned']
     exp['overall_confidence'] = ('low' if thin else
                                  'medium' if partial or any(d['confidence'] != 'high' for d in rep['differences']) else 'high')
+    # the verdict is the agent's: with nothing promoted and every comparison made, "inconclusive" is a more cautious
+    # reading than "no_differences_detected" (candidates held for review, flaky entries) and is accepted; it still needs
+    # a summary that says why. --write-summary never rewrites it.
+    if exp['verdict'] == 'no_differences_detected' and hl['verdict'] == 'inconclusive':
+        exp['verdict'] = 'inconclusive'
+    if hl['verdict'] != exp['verdict']:
+        errs.append(f'headline.verdict is {hl["verdict"]!r}; expected {exp["verdict"]!r}' +
+                    (' (a promoted difference makes it differences_found)' if rep['differences'] else
+                     ' (nothing was promoted)') + ': the verdict is the agent\'s to write, and --write-summary leaves it')
+    want_verdict = exp.pop('verdict')
     for k, v in exp.items():
         if hl[k] != v:
             if a.write_summary:
@@ -301,7 +328,7 @@ def main() -> int:
         errs.append('no_differences_detected with no engine comparison made: nothing was compared, so the verdict is inconclusive')
     elif hl['verdict'] == 'no_differences_detected' and (not_run or incomplete):
         errs.append(f'no_differences_detected while {", ".join(not_run) or "some runs"} did not run or capture: the verdict is inconclusive')
-    if hl['verdict'] == 'inconclusive' or exp['verdict'] == 'inconclusive':
+    if hl['verdict'] == 'inconclusive' or want_verdict == 'inconclusive':
         if not INCONCLUSIVE_SAYS.search(hl['summary']):
             errs.append('headline.summary must say the check was inconclusive (runs errored, were skipped or not compared)')
         if NO_DIFF_CLAIM.search(hl['summary']):

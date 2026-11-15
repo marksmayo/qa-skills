@@ -15,7 +15,16 @@ persistence of a whole data cache (Apollo, React Query, Redux persist to localSt
 error-tracker PII settings are candidates on their own. SDKs come from package manifests, from script hosts in
 HTML (<script src>), from scripts injected by JavaScript (el.src = "https://...", setAttribute('src', ...), a URL
 literal in a file that creates a script element), from URL literals on a listed vendor's domain
-(data/vendors.json, such as the gtag.js and adsbygoogle.js loader URLs), and from importScripts() hosts.
+(data/vendors.json, such as the gtag.js and adsbygoogle.js loader URLs), from importScripts() hosts, and from JSX:
+next/script <Script src> (any strategy), <script src> in a component and @next/third-parties components (Next.js
+projects are read with the shared next_app.py). Every mention of a host is kept under host_mentions with its kind
+(loader, a resource hint such as preconnect or dns-prefetch, csp, reference); an SDK entry sits at the loader line,
+and a host a file only hints at or allows in its CSP is no SDK there. A script from a host data/vendors.json does not
+list stays in the inventory with vendor null (an unknown_third_party_loader candidate when no consent check guards it).
+Content Security Policies (next.config headers(), vercel.json, netlify.toml, public/_headers, <meta http-equiv>) are
+read into "csp": loader hosts and the hosts a loader goes on to use (data/vendors.json companions) are checked against
+each enforced policy, allowances nothing names are listed, and a consent-message host the CSP blocks is a
+consent_message_blocked_by_csp candidate.
 
 A sink line names a collected field when the field appears as an identifier or a key: `email`, `{email: x}`,
 `data['email']`, `${email}` / `{email}` inside a template or f-string. Ordinary string text ("Enter your name")
@@ -69,6 +78,7 @@ from urllib.parse import urlparse
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from match_canaries import Matcher  # noqa: E402
+import next_app  # noqa: E402
 from domains import registrable  # noqa: E402
 import lang_census  # noqa: E402
 
@@ -106,8 +116,11 @@ BROWSER_FILE = re.compile(r'\bdocument\.|\bwindow\.|\blocalStorage\b|["\']use cl
 TEST_FILE = re.compile(r'[._-](test|spec|e2e)\.(js|jsx|ts|tsx|mjs|cjs|mts|cts|py|rb)$|^test_.*\.py$|_test\.(py|go)$', re.I)
 REDACT = Matcher({'id': 'none', 'fields': {}})
 GENERIC = set(CATS.get('generic_property_names', {}).get('names', []))
-VENDOR_DOMAINS = {d: v['vendor'] for d, v in json.loads((DATA / 'vendors.json').read_text(encoding='utf-8'))['domains'].items()}
-VENDOR_CATEGORY = {d: v['category'] for d, v in json.loads((DATA / 'vendors.json').read_text(encoding='utf-8'))['domains'].items()}
+VENDOR_DATA = json.loads((DATA / 'vendors.json').read_text(encoding='utf-8'))
+VENDOR_DOMAINS = {d: v['vendor'] for d, v in VENDOR_DATA['domains'].items()}
+VENDOR_CATEGORY = {d: v['category'] for d, v in VENDOR_DATA['domains'].items()}
+# hosts a vendor's loader goes on to use (a consent message, a collection endpoint), checked against the site's CSP
+COMPANIONS = {k: v for k, v in (VENDOR_DATA.get('companions') or {}).items() if k != 'note'}
 # vendors whose loader sets identifiers or sends hits as soon as it runs: loaded with no consent check, they track before any choice
 LOADER_CATEGORIES = {'analytics', 'advertising', 'tag_manager', 'marketing', 'session_replay'}
 # a script tag a consent manager holds back until the visitor agrees (type="text/plain" with a category attribute)
@@ -154,6 +167,21 @@ ALIAS_ELEMENT = re.compile(r'''\b(?:var|let|const)\s+(\w+)\s*=\s*document\.(?:ge
 ALIAS_VALUE = re.compile(r'\b(?:var|let|const)\s+(\w+)\s*=\s*(\w+)\.value\b')
 ALIAS_PARAM = re.compile(r'''\b(?:var|let|const)\s+(\w+)\s*=\s*new URLSearchParams\([^)]*\)\.get\(['"]([\w-]+)['"]\)''')
 SCRIPT_TAG = re.compile(r'''<script\b[^>]*?\bsrc\s*=\s*["']?(?:https?:)?//([^/"'\s:>?#]+)''', re.I)
+# a JSX script element: next/script's <Script src=...> (any strategy) or a plain <script src=...> in a component
+JSX_SCRIPT = re.compile(r'''<(Script|script)\b[^>]*?\bsrc\s*=\s*\{?\s*["'`](?:https?:)?//([^/"'`\s:>?#]+)''')
+# where a host is mentioned: a loader runs its script; a resource hint only opens a connection or fetches ahead; a CSP
+# allowance only permits; a reference is any other literal URL on a vendor's domain
+LOADER_SOURCES = {'script_tag', 'injected_script', 'importScripts', 'next_script', 'jsx_script', 'next_third_parties'}
+HINT_KINDS = ('preconnect', 'dns-prefetch', 'preload', 'prefetch', 'modulepreload')
+CSP_LINE = re.compile(r'\b(?:default|script|script-src-elem|connect|img|frame|child|style|font|media|worker|manifest)-src\b|Content-Security-Policy', re.I)
+META_CSP = re.compile(r'''<meta\b[^>]*http-equiv\s*=\s*["']Content-Security-Policy(?:-Report-Only)?["'][^>]*>''', re.I)
+ANY_HOST = re.compile(r'(?:https?:)?//((?:[a-z0-9-]+\.)+[a-z]{2,})(?![\w-])', re.I)
+# CSP directives that govern fetches, and the fallback chain a request type follows
+CSP_FETCH = ('default-src', 'script-src', 'script-src-elem', 'connect-src', 'img-src', 'frame-src', 'child-src', 'style-src',
+             'style-src-elem', 'font-src', 'media-src', 'worker-src', 'manifest-src')
+CSP_CHAIN = {'script-src-elem': ('script-src-elem', 'script-src', 'default-src'), 'script-src': ('script-src', 'default-src'),
+             'connect-src': ('connect-src', 'default-src'), 'img-src': ('img-src', 'default-src'),
+             'frame-src': ('frame-src', 'child-src', 'default-src')}
 # identity tokens and claims read from an identity SDK or browser storage: collected identity data, so a log or
 # analytics line that names them is a candidate. A bearer token sent to an API is how sign-in works: http sinks
 # naming only token fields are not candidates.
@@ -174,6 +202,18 @@ TELEMETRY_PATH = re.compile(r'(^|/)(telemetry|analytics|metrics|usage|tracking|s
 GO_FLAG = re.compile(r'\b(?:flag|\w+\.(?:Persistent)?Flags\(\))\.(?:String|StringP|StringVar|StringVarP)\(\s*(?:&[\w.]+\s*,\s*)?"(?P<name>[\w-]+)"')
 NOT_RECIPIENT = re.compile(r'(^|\.)(localhost|example\.(com|org|net)|[\w-]+\.(test|invalid|local|localhost|example))$|^127\.|^0\.0\.0\.0$'
                            r'|(^|\.)(w3\.org|xmlsoap\.org|json-schema\.org)$|^schemas\.', re.I)
+
+
+def vendor_entry(host: str | None) -> dict:
+    """data/vendors.json's entry for a host: the host itself or a parent of it (fundingchoicesmessages.google.com,
+    analytics.google.com), else its registrable domain; {} when the vendor is not listed."""
+    h = (host or '').lower().strip('.')
+    parts = h.split('.')
+    for i in range(len(parts) - 1):
+        e = VENDOR_DATA['domains'].get('.'.join(parts[i:]))
+        if e:
+            return e
+    return VENDOR_DATA['domains'].get(registrable(h)) or {} if h else {}
 
 
 def sdk_like(host: str, path: str) -> bool:
@@ -715,6 +755,65 @@ def build_coverage(repo: Path, cen: dict, build_dirs: list[dict]) -> dict:
     return cov
 
 
+def read_next(repo: Path) -> tuple[dict | None, dict]:
+    """The shared Next.js reader's model of the repository (None when it holds no Next.js project), and its script
+    loaders and resource hints by file. A failure to read it is a note, never the end of the scan."""
+    try:
+        if not next_app.find_next_roots(repo):
+            return None, {}
+        model = next_app.read_next_app(repo)
+    except Exception as exc:  # noqa: BLE001
+        return {'error': f'{exc.__class__.__name__}: {exc}', 'projects': []}, {}
+    by_file: dict = {}
+    for proj in model.get('projects') or []:
+        for s in proj.get('scripts') or []:
+            by_file.setdefault(s['file'], []).append(s)
+    return model, by_file
+
+
+def csp_source_host(tok: str) -> str | None:
+    """The host pattern of a CSP source expression ("https://a.example.com/path" -> "a.example.com", "*.example.com"),
+    or None for keywords ('self'), schemes (https:, data:) and *."""
+    t = tok.strip().lower()
+    if not t or t.startswith("'") or t.endswith(':') or t == '*':
+        return None
+    t = re.sub(r'^[a-z][a-z0-9+.-]*://', '', t).split('/', 1)[0].split(':', 1)[0]
+    return t if '.' in t else None
+
+
+def host_matches(pattern: str, host: str) -> bool:
+    """A CSP host pattern (exact, or *.domain for its subdomains) covers host."""
+    host = host.lower()
+    if pattern.startswith('*.'):
+        return host.endswith(pattern[1:])
+    return host == pattern
+
+
+def csp_verdict(pol: dict, directive: str, host: str) -> tuple[str, str | None]:
+    """Whether a policy lets the browser fetch from host under directive (following the fallback chain): allowed,
+    blocked, strict_dynamic (script-src with 'strict-dynamic': a trusted script may add it, host lists are ignored) or
+    unknown (blocked by what was read, but the policy holds parts the reader could not resolve). Returns the verdict
+    and the directive that decided it (None when no directive restricts the fetch)."""
+    d = pol.get('directives') or {}
+    used = next((x for x in CSP_CHAIN.get(directive, (directive, 'default-src')) if x in d), None)
+    if used is None:
+        return 'allowed', None
+    toks = [t.lower() for t in d[used]]
+    if used.startswith('script') and "'strict-dynamic'" in toks:
+        return 'strict_dynamic', used
+    if '*' in toks or 'https:' in toks:
+        return 'allowed', used
+    if any(host_matches(h, host) for h in filter(None, map(csp_source_host, toks))):
+        return 'allowed', used
+    return ('unknown' if pol.get('unresolved') else 'blocked'), used
+
+
+def line_naming(text: str, needle: str, default: int) -> int:
+    """The first line of text that holds needle, else default."""
+    i = text.find(needle) if needle else -1
+    return text.count('\n', 0, i) + 1 if i >= 0 else default
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('repo', type=Path)
@@ -758,8 +857,14 @@ def main() -> int:
     go_pkgs: dict[str, dict] = {}   # package directory -> its sends, hosts, opt-out variables and identifiers
     build_dirs: list[dict] = []
     include = {x.replace('\\', '/').strip('/') for x in a.include}
+    mentions: list[dict] = []     # every host mention with its kind (loader, hint, csp, reference)
+    meta_csp: list[dict] = []     # CSPs set in <meta http-equiv>
+    used_hosts: set[str] = set()  # hosts named outside a CSP string anywhere in the scanned code
+    walked: set[str] = set()
+    next_model, next_by_file = read_next(repo)
     for p in files(repo, pruned, SKIP | set(a.exclude), test_names, kept_dirs, build_dirs, include, set(a.exclude)):
         rel = p.relative_to(repo).as_posix()
+        walked.add(rel)
         lang = LANG.get(p.suffix.lower())
         if not (lang or p.name in MANIFESTS or p.name in PLATFORM or p.name == 'package.json'):
             continue
@@ -806,22 +911,61 @@ def main() -> int:
         generated = bool(GENERATED_NAME.search(p.name))
         if not generated and lang in ('js', 'ts') and size > 20000:  # a bundle: few, very long lines
             generated = max(b - a_ for a_, b in zip(T.starts, T.starts[1:] + [len(text) + 1])) > 5000
-        # ---- SDK hosts: script tags, injected scripts, vendor URLs (also in generated files)
-        found_hosts = set()
+        # ---- SDK hosts: script tags, injected scripts, vendor URLs (also in generated files). Every mention of a host is
+        # recorded with its kind (a loader, a resource hint, a CSP allowance, another reference); the SDK inventory is
+        # built from loaders and references afterwards, so a host only hinted at is not an SDK
+        low = text.lower()
+        seen_mention: set = set()
+        hint_spans: list = []   # (start, end, kind) of <link rel="preconnect|dns-prefetch|preload..."> tags
+        csp_spans: list = []    # (start, end) of <meta http-equiv="Content-Security-Policy"> tags
 
-        def script(host, off, source):
+        def script(host, off, source, extra=None, literal=False):
             host = (urlparse('//' + host).hostname or host).lower()  # no port, query or fragment
             n = T.line_of(off)
-            if host in found_hosts:  # each host once per file, at its first mention
+            ln = T.line(n)
+            kind = source if source in HINT_KINDS else 'loader' if source in LOADER_SOURCES else 'reference'
+            if literal:  # a URL literal inside a resource hint or a CSP string loads nothing
+                hint = next((k for s_, e_, k in hint_spans if s_ <= off < e_), None)
+                if hint:
+                    kind = source = hint
+                elif CSP_LINE.search(ln) or any(s_ <= off < e_ for s_, e_ in csp_spans):
+                    kind = source = 'csp'
+            if (n, host) in seen_mention:
                 return
-            found_hosts.add(host)
-            scripts.append({'file': rel, 'line': n, 'host': host, 'source': source, 'vendor': VENDOR_DOMAINS.get(registrable(host)),
-                            '_consent': consent_nearby(T, n) or bool(GATED_TAG.search(T.line(n)))})
-        low = text.lower()
+            seen_mention.add((n, host))
+            e = {'file': rel, 'line': n, 'host': host, 'kind': kind, 'source': source, 'vendor': vendor_entry(host).get('vendor'),
+                 '_consent': consent_nearby(T, n) or bool(GATED_TAG.search(ln))}
+            e.update(extra or {})
+            mentions.append(e)
+        if lang in ('html', 'js', 'ts') and '<link' in low:
+            for m in re.finditer(r'<link\b[^>]*>', text, re.I):
+                rel_ = re.search(r'''\brel\s*=\s*\{?\s*["'`]([^"'`]*)''', m.group(0), re.I)
+                kinds = [k for k in HINT_KINDS if rel_ and k in rel_.group(1).lower().split()]
+                if kinds:
+                    hint_spans.append((m.start(), m.end(), kinds[0]))
+        if lang == 'html' and 'http-equiv' in low:
+            for m in META_CSP.finditer(text):
+                csp_spans.append((m.start(), m.end()))
+                meta_csp.append({'file': rel, 'line': T.line_of(m.start()), 'source': 'meta http-equiv',
+                                 'header': 'Content-Security-Policy' + ('-Report-Only' if 'report-only' in m.group(0).lower() else ''),
+                                 'directives': next_app.parse_csp(attr(m.group(0), 'content') or '')})
+        for e in next_by_file.get(rel, ()):  # next/script, <script>, @next/third-parties and resource hints (shared Next.js reader)
+            if not e.get('host') or e.get('first_party'):
+                continue
+            src_ = {'next/script': 'next_script', 'script': 'jsx_script', 'next/third-parties': 'next_third_parties'}.get(e['kind'], e['kind'])
+            script(e['host'], T.starts[min(e['line'], len(T.starts)) - 1], src_, {k: e[k] for k in ('strategy', 'component') if e.get(k)})
+        for s_, e_, k in hint_spans:
+            href = re.search(r'''\bhref\s*=\s*\{?\s*["'`](?:https?:)?//([^/"'`\s:>?#]+)''', text[s_:e_], re.I)
+            if href:
+                script(href.group(1), s_, k)
         server_file = lang in ('js', 'ts', 'py', 'rb') and is_server_file(rel, text, cli_packages)
         if lang == 'html' and '<script' in low:
             for m in SCRIPT_TAG.finditer(text):
                 script(m.group(1), m.start(), 'script_tag')
+        if lang in ('js', 'ts') and '<script' in low:  # JSX: <Script src> (next/script) and <script src>
+            nxt = 'next/script' in text
+            for m in JSX_SCRIPT.finditer(text):
+                script(m.group(2), m.start(), 'next_script' if m.group(1) == 'Script' and nxt else 'jsx_script')
         if lang in ('js', 'ts', 'html', 'py', 'rb') and '//' in text:
             if '.src' in text or 'setattribute(' in low:
                 for m in SRC_ASSIGN.finditer(text):
@@ -829,14 +973,19 @@ def main() -> int:
             creates = 'createelement(' in low and CREATES_SCRIPT.search(text) is not None
             for m in (URL_LIT.finditer(text) if creates or any(d in low for d in VENDOR_DOMAINS) else ()):
                 host, path = m.group(1), m.group(2) or ''
-                if VENDOR_DOMAINS.get(registrable(host)):
+                ve = vendor_entry(host)
+                if ve:
                     if lang in ('js', 'ts', 'html') and (creates and re.search(r'\.m?js(?:[?#]|$)', path) or sdk_like(host, path)):
-                        script(host, m.start(), 'injected_script' if creates else 'vendor_url')
+                        script(host, m.start(), 'injected_script' if creates else 'vendor_url', literal=True)
                     if server_file and SERVER_SEND_HINT.search(text):
-                        server_sends.append({'file': rel, 'line': T.line_of(m.start()), 'host': host.lower(),
-                                             'vendor': VENDOR_DOMAINS[registrable(host)]})
+                        server_sends.append({'file': rel, 'line': T.line_of(m.start()), 'host': host.lower(), 'vendor': ve['vendor']})
                 elif creates and re.search(r'\.m?js(?:[?#]|$)|/js(?:[/?#]|$)', path):
-                    script(host, m.start(), 'injected_script')
+                    script(host, m.start(), 'injected_script', literal=True)
+        if '//' in text and lang in ('html', 'js', 'ts', 'py', 'rb', 'go'):
+            # every host the text names outside a CSP string: a CSP allowance none of them names is reported as unused
+            for m in ANY_HOST.finditer(text):
+                if not CSP_LINE.search(T.line(T.line_of(m.start()))):
+                    used_hosts.add(m.group(1).lower())
         for m in (re.finditer(r'\bimportScripts\(\s*["\'`](https?:)?//([^/"\'`:]+)', text) if 'importScripts(' in text else ()):
             script(m.group(2), m.start(), 'importScripts')
         if generated:
@@ -996,6 +1145,110 @@ def main() -> int:
             pkg['ids'] |= {k for k, rx in GO_IDENTIFIERS.items() if re.search(rx, text)}
             pkg['hash'] = pkg['hash'] or bool(GO_HASH.search(text))
         texts_meta[rel] = (lang, T, server_file)
+    # the SDK inventory: per file and host, the loader line (else the first other reference); a host that a file only
+    # hints at (preconnect, dns-prefetch) or allows in a CSP is no SDK there. Every mention stays under host_mentions.
+    by_fh: dict = {}
+    for m in mentions:
+        by_fh.setdefault((m['file'], m['host']), []).append(m)
+    for (f_, h_), ms in by_fh.items():
+        ms.sort(key=lambda m: m['line'])
+        main_ = next((m for m in ms if m['kind'] == 'loader'), None) or next((m for m in ms if m['kind'] == 'reference'), None)
+        if main_:
+            e = dict(main_)
+            e.pop('kind')
+            e['mentions'] = [{'line': m['line'], 'kind': m['kind'], 'source': m['source']} for m in ms]
+            scripts.append(e)
+    # ---- Content Security Policies: next.config headers(), vercel.json, netlify.toml, public/_headers, <meta http-equiv>
+    policies = []
+    for proj in (next_model or {}).get('projects') or []:
+        for c in ((proj.get('config') or {}).get('csp') or []) + [c for pl in (proj.get('platform') or {}).values() for c in pl.get('csp') or []]:
+            policies.append(dict(c))
+    if not any(pr.get('root') == '' for pr in (next_model or {}).get('projects') or []):
+        try:
+            for pl in next_app.read_platform(repo, '', walked).values():
+                policies += [dict(c) for c in pl.get('csp') or []]
+        except Exception:  # noqa: BLE001  (an unreadable platform file is not the scan's business)
+            pass
+    policies += meta_csp
+    for pol in policies:
+        pol['enforced'] = not (pol.get('header') or '').lower().endswith('report-only')
+        pol['at'] = f'{pol["file"]}:{pol.get("line") or 1}'
+    ptext = {}
+    for pol in policies:
+        try:
+            ptext[pol['file']] = (repo / pol['file']).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            ptext[pol['file']] = ''
+    for pol in policies:  # each allowed host is a mention of kind csp, at the line that names it
+        for d_, toks in (pol.get('directives') or {}).items():
+            for tok in toks:
+                h_ = csp_source_host(tok)
+                if h_ and not h_.startswith('*.'):
+                    mentions.append({'file': pol['file'], 'line': line_naming(ptext[pol['file']], tok, pol.get('line') or 1), 'host': h_,
+                                     'kind': 'csp', 'source': d_, 'vendor': vendor_entry(h_).get('vendor')})
+    loads = [x for x in scripts if x['source'] in LOADER_SOURCES and not NOT_RECIPIENT.search(x['host'])]
+    present = {}
+    for x in loads:
+        if x.get('vendor'):
+            present.setdefault(x['vendor'], x)
+    needs: dict = {}   # (host, role) -> what needs it
+    for x in loads:
+        needs.setdefault((x['host'], 'loader'), {'host': x['host'], 'role': 'loader', 'directive': 'script-src-elem',
+                                                 'needed_by': x.get('vendor') or x['host'], 'at': f'{x["file"]}:{x["line"]}'})
+    for v, x in present.items():
+        for comp in COMPANIONS.get(v) or []:
+            needs.setdefault((comp['host'], comp['role']), {'host': comp['host'], 'role': comp['role'], 'directive': comp['directive'],
+                                                            'needed_by': v, 'at': f'{x["file"]}:{x["line"]}', 'why': comp.get('why')})
+    enforced = [pol for pol in policies if pol['enforced']]
+    checks = []
+    for need in needs.values():
+        verdicts = [(pol, *csp_verdict(pol, need['directive'], need['host'])) for pol in enforced]
+        bad = next(((pol, v, d_) for pol, v, d_ in verdicts if v == 'blocked'), None) or \
+            next(((pol, v, d_) for pol, v, d_ in verdicts if v in ('unknown', 'strict_dynamic')), None)
+        if not enforced:
+            res, pol, d_ = ('report_only' if policies else 'no_policy'), None, None
+        elif bad:
+            pol, res, d_ = bad
+        else:
+            pol, res, d_ = verdicts[0][0], 'allowed', verdicts[0][2]
+        chk = dict(need, result=res, policy=pol['at'] if pol else None, decided_by=d_)
+        if pol and d_:
+            chk['policy_line'] = line_naming(ptext.get(pol['file'], ''), d_, pol.get('line') or 1)
+            chk['policy_file'] = pol['file']
+        checks.append(chk)
+    csp_result = {x['host']: x['result'] for x in checks if x['role'] == 'loader'}
+    # allowances nothing uses: a host source no code, hint, companion host or image setting names (a heuristic: a host
+    # built at run time, or used only by a script the CSP allows, looks unused)
+    image_hosts = set()
+    for proj in (next_model or {}).get('projects') or []:
+        img = (proj.get('config') or {}).get('images') or {}
+        image_hosts |= {str(p_.get('hostname') or '').lower() for p_ in img.get('remote_patterns') or [] if isinstance(p_, dict)}
+        image_hosts |= {str(d_).lower() for d_ in img.get('domains') or []}
+    named = used_hosts | {m['host'] for m in mentions if m['kind'] != 'csp'} | image_hosts | {n['host'] for n in needs.values()}
+    comp_patterns = [c.get('match') or c['host'] for v in present for c in COMPANIONS.get(v) or []]
+    unused, seen_u = [], set()
+    for pol in policies:
+        for d_, toks in (pol.get('directives') or {}).items():
+            if d_ not in CSP_FETCH:
+                continue
+            for tok in toks:
+                h_ = csp_source_host(tok)
+                if not h_ or (tok, d_, pol['file']) in seen_u:
+                    continue
+                seen_u.add((tok, d_, pol['file']))
+                if any(host_matches(h_, x) or (h_.startswith('*.') and x == h_[2:]) for x in named) or \
+                        any(host_matches(h_, c.lstrip('*.')) or c == h_ or (c.startswith('*.') and host_matches(c, h_.lstrip('*.')))
+                            for c in comp_patterns):
+                    continue
+                unused.append({'source': tok, 'directive': d_, 'file': pol['file'], 'line': line_naming(ptext[pol['file']], tok, pol.get('line') or 1),
+                               'policy': pol['at']})
+    csp_out = {'policies': [{k: pol.get(k) for k in ('file', 'line', 'header', 'source', 'enforced', 'directives', 'unresolved') if k in pol}
+                            for pol in policies],
+               'checks': checks, 'blocked': [x for x in checks if x['result'] == 'blocked'], 'unused_allowances': unused,
+               'note': 'a static reading: each loader host and each host data/vendors.json says its loader goes on to use (companions) '
+                       'is checked against every enforced policy; unused allowances are hosts no code names (a heuristic)'}
+    if next_model and next_model.get('error'):
+        csp_out['next_reader_error'] = next_model['error']
     # calls to app wrappers around a sink (found above, or named with --log-sinks / --analytics-sinks), one level deep
     for opt, kind in ((a.log_sinks, 'log'), (a.analytics_sinks, 'analytics')):
         for name in filter(None, (x.strip() for x in opt.split(','))):
@@ -1157,29 +1410,61 @@ def main() -> int:
     # analytics, advertising and tag-manager loaders (and gtag config calls) with no consent check: before any choice
     if not consent_defaults:
         loaders: dict = {}
+        unknown: dict = {}   # a third-party script from a host data/vendors.json does not list: listed, and a candidate to identify
         for x in scripts:
-            cat = VENDOR_CATEGORY.get(registrable(x['host']))
-            if cat in LOADER_CATEGORIES and x['source'] in ('script_tag', 'injected_script') and not x['_consent']:
+            if x['source'] not in LOADER_SOURCES or x['_consent']:
+                continue
+            ve = vendor_entry(x['host'])
+            if ve.get('category') in LOADER_CATEGORIES:
                 loaders.setdefault(x['vendor'], []).append(x)
+            elif not ve and not NOT_RECIPIENT.search(x['host']) and not DOC_HOST.match(x['host']):
+                unknown.setdefault(x['host'], []).append(x)
         for s in sinks:
             if (s['sink'] == 'gtag' and re.search(r'''gtag\(\s*["']config["']''', s['excerpt']) and not s['_consent'] and s.get('side') != 'server'
                     and not any(x['file'] == s['file'] for xs in loaders.values() for x in xs)):
                 loaders.setdefault(s.get('vendor') or 'Google Analytics', []).append(
                     {'file': s['file'], 'line': s['line'], 'host': None, 'source': 'gtag_config', 'vendor': s.get('vendor')})
-        cmp_present = any(VENDOR_CATEGORY.get(registrable(x['host'])) == 'consent_management' for x in scripts)
-        for vend, xs in sorted(loaders.items(), key=lambda kv: (kv[1][0]['file'], kv[1][0]['line'])):
+        cmp_present = any(vendor_entry(x['host']).get('category') == 'consent_management' for x in scripts)
+        groups = [(vend, xs, False) for vend, xs in loaders.items()] + [(None, xs, True) for xs in unknown.values()]
+        for vend, xs, unk in sorted(groups, key=lambda g: (g[1][0]['file'], g[1][0]['line'])):
             x = xs[0]
             T_ = texts_meta.get(x['file'], (None, None, None))[1]
             excerpt = REDACT.redact(T_.line(x['line']).strip())[:160] if T_ else f'<script src="//{x["host"]}/...">'
-            c = cand(type='tracking_before_consent', subtype='loader_before_consent', file=x['file'], line=x['line'], vendor=vend, host=x['host'],
-                     excerpt=excerpt, fields=[], categories=[], confidence='pattern',
-                     facts={'source': x['source'], 'vendor_category': VENDOR_CATEGORY.get(registrable(x['host'] or '')) or 'analytics',
-                            'consent_check_nearby': False, 'consent_mode_default': False, 'consent_manager_script': cmp_present},
-                     note=f'the {vend} loader runs with no consent check nearby and no consent-mode default anywhere in the code, so it '
-                          'loads, sets its identifiers and sends hits before any choice' + (' unless the consent manager on the page blocks it '
-                          'automatically' if cmp_present else '') + '; the live capture decides')
+            facts = {'source': x['source'], 'vendor_category': None if unk else vendor_entry(x['host'] or '').get('category') or 'analytics',
+                     'consent_check_nearby': False, 'consent_mode_default': False, 'consent_manager_script': cmp_present}
+            if x.get('strategy'):
+                facts['strategy'] = x['strategy']
+            if x.get('host'):
+                facts['csp'] = csp_result.get(x['host'], 'no_policy')
+            if unk:
+                c = cand(type='tracking_before_consent', subtype='unknown_third_party_loader', file=x['file'], line=x['line'], vendor=None,
+                         host=x['host'], excerpt=excerpt, fields=[], categories=[], confidence='pattern', facts=facts,
+                         note=f'a script from {x["host"]}, which data/vendors.json does not list, runs with no consent check nearby: find out '
+                              'what it is. An analytics or advertising service tracks before any choice; a library CDN or a widget that sets '
+                              'no identifier can be dismissed (functional_no_identifier), the site\'s own host as false_match')
+            else:
+                c = cand(type='tracking_before_consent', subtype='loader_before_consent', file=x['file'], line=x['line'], vendor=vend, host=x['host'],
+                         excerpt=excerpt, fields=[], categories=[], confidence='pattern', facts=facts,
+                         note=f'the {vend} loader runs with no consent check nearby and no consent-mode default anywhere in the code, so it '
+                              'loads, sets its identifiers and sends hits before any choice' + (' unless the consent manager on the page blocks it '
+                              'automatically' if cmp_present else '') + '; the live capture decides')
             if len(xs) > 1:
                 c['also_at'] = [f'{y["file"]}:{y["line"]}' for y in xs[1:10]]
+    # a host a vendor's consent message loads from that the site's CSP blocks: the consent step never shows, and the
+    # browser capture cannot see it (it blocks third parties before the CSP applies)
+    for chk in checks:
+        if chk['role'] == 'consent_message' and chk['result'] == 'blocked':
+            pf, pl = chk['policy_file'], chk['policy_line']
+            ln_ = (ptext.get(pf) or '').splitlines()
+            cand(type='tracking_before_consent', subtype='consent_message_blocked_by_csp', file=pf, line=pl, vendor=chk['needed_by'],
+                 host=chk['host'], excerpt=REDACT.redact(ln_[pl - 1].strip())[:160] if 0 < pl <= len(ln_) else chk['policy'],
+                 fields=[], categories=[], confidence='pattern',
+                 facts={'directive': chk['decided_by'], 'policy': chk['policy'], 'loader': chk['at'], 'role': chk['role'],
+                        'consent_host_vendor': vendor_entry(chk['host']).get('vendor'), 'why': chk.get('why')},
+                 note=f'the {chk["needed_by"]} loader ({chk["at"]}) shows its consent message from {chk["host"]}, which the site\'s Content '
+                      f'Security Policy ({chk["policy"]}, {chk["decided_by"]}) does not allow: visitors the message is meant for never see '
+                      'it, so the vendor may serve and track with no consent step. The browser capture blocks third parties before the CSP '
+                      'applies, so only this reading shows it; check in a browser with the vendor allowed')
     seen_sends = set()
     for x in server_sends:
         if (x['file'], x['vendor']) in seen_sends:
@@ -1203,7 +1488,7 @@ def main() -> int:
             if host in seen_h:
                 continue
             seen_h.add(host)
-            vendor = VENDOR_DOMAINS.get(registrable(host))
+            vendor = vendor_entry(host).get('vendor')
             excerpt = REDACT.redact(texts_meta[rel_][1].line(ln).strip())[:160]
             if callhome:
                 cand(type='telemetry', subtype='call_home', file=rel_, line=ln, host=host, vendor=vendor, side='client', excerpt=excerpt,
@@ -1237,7 +1522,7 @@ def main() -> int:
                 continue
             seen_out.add((host, s['file']))
             outbound_hosts.append({'host': host, 'file': s['file'], 'line': s['line'], 'side': s.get('side') or 'client',
-                                   'via': s['sink'], 'vendor': VENDOR_DOMAINS.get(registrable(host))})
+                                   'via': s['sink'], 'vendor': vendor_entry(host).get('vendor')})
     # a proxy that copies the visitor's request headers (cookies, Authorization, Referer) into an outbound call
     for rel, text in texts.items():
         lang, T_, server_file = texts_meta[rel]
@@ -1296,7 +1581,7 @@ def main() -> int:
         if x['package'] not in declared and (x['package'], x['file']) not in seen_imports:
             seen_imports.add((x['package'], x['file']))
             sdks.append(x)
-    for x in scripts:
+    for x in scripts + mentions:
         x.pop('_consent', None)
     for x in sinks:
         x.pop('_view', None)
@@ -1320,10 +1605,11 @@ def main() -> int:
            'test_named_dirs_scanned': [{'dir': d + '/', 'reason': 'holds a package manifest (a product package)' if any(
                (repo / d / m).is_file() for m in PACKAGE_MANIFESTS) else 'named after a test tool but holds no test files'} for d in kept_dirs],
            'wrappers': sorted(wrappers.values(), key=lambda w: (w['file'] or '', w['line'] or 0, w['name'])), 'candidates': candidates,
-           'outbound_hosts': outbound_hosts, 'build_output_dirs': build_dirs, 'language_coverage': coverage}
+           'outbound_hosts': outbound_hosts, 'build_output_dirs': build_dirs, 'language_coverage': coverage,
+           'host_mentions': sorted(mentions, key=lambda m: (m['host'], m['file'], m['line'])), 'csp': csp_out}
     # the validator rejects any email, phone or card-like value in the evidence: redact every remaining string
     # (labels, placeholders, notes) the same way, whatever pattern put it there; paths are left alone
-    for k in ('collection', 'sinks', 'sdks', 'permissions', 'wrappers', 'candidates'):
+    for k in ('collection', 'sinks', 'sdks', 'permissions', 'wrappers', 'candidates', 'host_mentions'):
         out[k] = redact_strings(out[k])
     a.out.parent.mkdir(parents=True, exist_ok=True)
     if coverage.get('warning'):
@@ -1348,7 +1634,16 @@ def main() -> int:
               + ', '.join(kept_dirs[:5]) + (' ...' if len(kept_dirs) > 5 else ''))
     hosts = sorted({(x['host'], x.get('vendor') or '-', x['source']) for x in sdks if x.get('host')})
     for h, v, src in hosts:
-        print(f'  script host {h} ({v}, {src})')
+        print(f'  script host {h} ({v if v != "-" else "vendor unknown: not in data/vendors.json"}, {src})')
+    hinted = sorted({m['host'] for m in mentions if m['kind'] != 'csp'} - {x['host'] for x in sdks if x.get('host')})
+    if hinted:
+        print(f'  named only by resource hints (nothing loads from them in the code): {", ".join(hinted[:8])}')
+    for pol in policies:
+        print(f'  CSP {pol["at"]} ({pol.get("header")}{"" if pol["enforced"] else ", not enforced"})')
+    for x in csp_out['blocked']:
+        print(f'  CSP {x["policy"]} blocks {x["host"]} ({x["role"]}, needed by {x["needed_by"]} at {x["at"]}; {x["decided_by"]})')
+    for x in unused:
+        print(f'  CSP {x["file"]}:{x["line"]} allows {x["source"]} ({x["directive"]}), which nothing in the code names')
     for c in candidates:
         print(f'  {c["id"]} {c["type"]:30} {c["file"]}:{c["line"]} {c.get("fields")}')
     return 0

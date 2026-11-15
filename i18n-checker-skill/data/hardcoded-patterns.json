@@ -1,8 +1,9 @@
 {
-  "note": "Heuristic patterns for user-facing text that bypasses translation, and for code that breaks it. Every match is 'possible' until the rendered UI confirms it. The allow-list holds text that is never translated.",
+  "note": "Heuristic patterns (an optional 'unless' regex skips a line, such as a CSS percentage in a style object) for user-facing text that bypasses translation, and for code that breaks it. Every match is 'possible' until the rendered UI confirms it. The allow-list holds text that is never translated.",
   "hardcoded": [
     {"framework": "html", "ext": [".html", ".htm"], "kind": "html-text", "translated_attrs": ["data-i18n", "i18n", "translate", "v-t", "data-l10n-id"]},
-    {"framework": "jsx", "ext": [".jsx", ".tsx"], "kind": "regex", "match": ">\\s*([A-Z][A-Za-z ,.'!?-]{2,})\\s*<"},
+    {"framework": "jsx", "ext": [".jsx", ".tsx", ".js", ".mjs"], "kind": "jsx", "note": "read by scripts/jsx_text.py: element text in any script beside {expressions}, the text attributes (alt, aria-label, title, placeholder, label), className utilities, arrows and Next.js metadata; .js/.mjs only when they hold JSX"},
+    {"framework": "next-metadata", "ext": [".ts", ".js", ".mjs"], "kind": "next-metadata", "note": "Next.js metadata exports and generateMetadata() in files without JSX"},
     {"framework": "vue", "ext": [".vue"], "kind": "regex", "match": ">\\s*([A-Z][A-Za-z ,.'!?-]{2,})\\s*<"},
     {"framework": "android-layout", "ext": [".xml"], "kind": "regex", "match": "android:(?:text|hint|contentDescription)=\"([^@\"][^\"]+)\""},
     {"framework": "swiftui", "ext": [".swift"], "kind": "regex", "match": "Text\\(verbatim:\\s*\"([^\"]+)\"\\)"},
@@ -16,6 +17,8 @@
   "format": [
     {"ext": [".js", ".mjs", ".ts", ".jsx", ".tsx", ".vue"], "match": "['\"`][$€£¥]['\"`]\\s*\\+|\\.toFixed\\(\\d\\)", "what": "number or currency formatted by hand (use Intl.NumberFormat with the locale)"},
     {"ext": [".js", ".mjs", ".ts", ".jsx", ".tsx", ".vue"], "match": "getMonth\\(\\)\\s*\\+\\s*1|\\.toDateString\\(\\)|\\bnew Date\\(\\)\\.toString\\(\\)", "what": "date formatted by hand (use Intl.DateTimeFormat with the locale)"},
+    {"ext": [".js", ".mjs", ".ts", ".jsx", ".tsx", ".vue"], "match": "\\.toLocale(?:Date|Time)?String\\(\\s*['\"`][A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*['\"`]|\\bIntl\\.[A-Za-z]+\\(\\s*\\[?\\s*['\"`][A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*['\"`]", "what": "a hard-coded locale passed to toLocale*String or Intl (every user gets that locale's format; pass the user's locale)"},
+    {"ext": [".js", ".mjs", ".ts", ".jsx", ".tsx", ".vue"], "match": "\\}\\s?%(?![\\w{])|\\+\\s*['\"`]\\s?%['\"`]|['\"`]\\s?%['\"`]\\s*\\+", "unless": "(?i)\\b(?:width|height|top|left|right|bottom|inset|translate[xyz]?|transform|opacity|flex-?basis|max-?width|min-?width|max-?height|min-?height|margin\\w*|padding\\w*|gap|style|background-?position|scale|rotate|calc|className|class|clip-?path|offset)\\s*[:=(]", "what": "a percentage formatted by hand ({value}%); use Intl.NumberFormat with style \"percent\" (the sign's position and spacing differ by locale)"},
     {"ext": [".kt", ".java"], "match": "String\\.format\\(\\s*\"", "what": "String.format without a Locale"},
     {"ext": [".swift"], "match": "String\\(format:\\s*\"%\\.\\d+f", "what": "String(format:) without a locale"}
   ],
@@ -25,7 +28,8 @@
   ],
   "rtl_physical": [
     {"ext": [".css", ".scss"], "match": "(?<![-\\w])(margin-left|margin-right|padding-left|padding-right|border-left|border-right|left|right)\\s*:", "what": "physical direction property; use logical properties (margin-inline-start) so RTL mirrors"},
-    {"ext": [".css", ".scss"], "match": "text-align\\s*:\\s*(left|right)\\b", "what": "physical text alignment; use start or end so RTL mirrors"}
+    {"ext": [".css", ".scss"], "match": "text-align\\s*:\\s*(left|right)\\b", "what": "physical text alignment; use start or end so RTL mirrors"},
+    {"ext": [".html", ".htm", ".vue"], "match": "[←→⇐⇒➔‹›]|&(?:larr|rarr|lsaquo|rsaquo);", "what": "direction arrow drawn as text; it will not mirror in RTL (use an icon flipped with :dir(rtl))"}
   ],
   "allow_list": ["OK", "Bookclub", "Wander", "STOREFRONT", "PDF", "API", "URL", "ID"]
 }

@@ -256,7 +256,7 @@ def advisory_errors(d: dict) -> list[str]:
     adv = d.get('dependency_advisories')
     dep_ran = [t['name'] for t in d['tools'] if t['area'] == 'dependencies' and t['status'] == 'ran']
     if adv is None:
-        if d['schema_version'] in ('1.2', '1.3', '1.4'):
+        if d['schema_version'] in ('1.2', '1.3', '1.4', '1.5'):
             E('dependency_advisories: required from schema 1.2 (assessed, partial or not_assessed)')
     else:
         if adv['status'] in ('assessed', 'partial') and not dep_ran:
@@ -625,6 +625,46 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None, recon
         if rank_key(a) > rank_key(b):
             E(f"findings: {a['id']} (rank {a['rank']}) should rank below {b['id']} (priority score, then CVSS score, then confidence)")
 
+    # observations: evidence (a guard check from run_poc.py, a screenshot, a captured response) must exist; a run_poc
+    # record must be for that observation and must show the guard held: a guard that did not hold, or a confirmed
+    # vulnerability, is a finding, not an observation
+    obs_ran = []
+    for o in d['observations']:
+        if not o.get('evidence'):
+            continue
+        ev = base / o['evidence']
+        if not ev.exists():
+            E(f"observations[{o['id']}]: evidence {o['evidence']} not found")
+            continue
+        if ev.suffix.lower() != '.json':
+            continue
+        try:
+            rec = json.loads(ev.read_text(encoding='utf-8'))
+        except ValueError:
+            E(f"observations[{o['id']}]: evidence {o['evidence']} is not JSON")
+            continue
+        if not isinstance(rec, dict) or rec.get('tool') != 'run_poc':
+            continue
+        obs_ran.append(o['id'])
+        if rec.get('finding') != o['id']:
+            E(f"observations[{o['id']}]: evidence {o['evidence']} is for {rec.get('finding')!r}")
+        if rec.get('result') in ('guard_not_held', 'confirmed'):
+            E(f"observations[{o['id']}]: evidence {o['evidence']} shows the guard did not hold (result {rec['result']}); "
+              'that is a finding to write up, not an observation')
+        elif rec.get('result') == 'guard_held' and not (rec.get('proof') or {}).get('passed'):
+            E(f"observations[{o['id']}]: evidence {o['evidence']} says guard_held but its proof did not pass")
+        if not rec.get('permission'):
+            E(f"observations[{o['id']}]: evidence {o['evidence']} does not record the permission")
+    # the run_poc tool row must agree with the PoCs that ran
+    ran = [f['id'] for f in findings if f['poc']['result'] in ('confirmed', 'not_confirmed')] + obs_ran
+    row = next((t for t in d['tools'] if t['name'] == 'run_poc'), None)
+    if ran and row is not None and row['status'] != 'ran':
+        E(f"tools: run_poc is {row['status']} but PoCs ran for {', '.join(ran[:5])}")
+    elif ran and row is None:
+        W(f"tools: PoCs ran for {', '.join(ran[:5])} but there is no run_poc row (area dynamic)")
+    if row is not None and row['status'] == 'ran' and not ver['permitted']:
+        E('tools: run_poc ran, but verification was not permitted')
+
     # variant rules and observations
     for r in d['variant_rules']:
         for ref in r['for_findings']:
@@ -641,7 +681,7 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None, recon
                 E(f"observations[{o['id']}]: {o['file']}:{o['line']} does not exist")
             elif o.get('excerpt') and norm(o['excerpt']) not in norm(got[0]):
                 E(f"observations[{o['id']}]: excerpt is not on {o['file']}:{o['line']} (line reads {got[0].strip()[:80]!r})")
-            elif not o.get('excerpt') and d['schema_version'] in ('1.2', '1.3', '1.4'):
+            elif not o.get('excerpt') and d['schema_version'] in ('1.2', '1.3', '1.4', '1.5'):
                 W(f"observations[{o['id']}]: no excerpt, so {o['file']}:{o['line']} can only be checked for existence")
         # recon entry points: the handler line must exist and, in Python, not sit inside a string or docstring
         for e in eps.values():

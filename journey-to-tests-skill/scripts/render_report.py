@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Render a Journey to Tests report as a terminal/Markdown report with optional ANSI colour."""
+"""Render a Journey to Tests report as a terminal/Markdown report with optional ANSI colour, with who approved the
+run and any bootstrapped framework.
+
+    python render_report.py journey_tests_report.json [--color auto|always|never]
+    python render_report.py --self-test"""
 from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
@@ -21,7 +25,31 @@ def bar(fraction, width=20):
     filled=max(0,min(width,round(fraction*width)))
     return '█'*filled+'░'*(width-filled)
 
+def self_test():
+    """Who approved the run, and a bootstrapped framework, are shown under the target line."""
+    import contextlib, io, tempfile
+    d=json.loads((Path(__file__).resolve().parent.parent/'examples'/'journey_tests_report.example.json').read_text(encoding='utf-8'))
+    d['metadata']['approval'].update(approved_by='delegated',note='The brief that started the run allowed it.')
+    d['metadata']['bootstrap']={'framework':'playwright','version':'1.50.0','config':'web/playwright.config.ts','approved_by':'delegated'}
+    with tempfile.TemporaryDirectory() as tmp:
+        f=Path(tmp)/'r.json'; f.write_text(json.dumps(d),encoding='utf-8')
+        buf=io.StringIO(); argv=sys.argv; sys.argv=['render_report.py',str(f),'--color','never']
+        try:
+            with contextlib.redirect_stdout(buf): main()
+        finally:
+            sys.argv=argv
+    out=buf.getvalue(); problems=[]
+    if 'Approval: plan approved (delegated: The brief that started the run allowed it.)' not in out:
+        problems.append('the approval line names who approved')
+    if 'Bootstrapped: playwright 1.50.0 (web/playwright.config.ts; approved by delegated)' not in out:
+        problems.append('a bootstrapped framework is named')
+    for p in problems: print('FAIL',p)
+    print('SELF-TEST FAILED' if problems else 'self-test passed')
+    return 1 if problems else 0
+
 def main():
+    if '--self-test' in sys.argv[1:]:
+        return self_test()
     ap=argparse.ArgumentParser()
     ap.add_argument('json_file', type=Path)
     ap.add_argument('--color', choices=['auto','always','never'], default='auto')
@@ -36,6 +64,15 @@ def main():
     print(paint(title,BOLD,color)); print('='*len(title))
     print(f"Frameworks: {', '.join(meta.get('frameworks') or ['unknown'])}  |  Platforms: {', '.join(meta.get('platforms') or ['unknown'])}")
     print(f"Target: {target.get('kind','?')} {target.get('value','?')}  |  Stability runs per test: {meta.get('repeat')}  |  Generated: {meta['generated_at']}")
+    appr=meta.get('approval') or {}
+    who=appr.get('approved_by')
+    state='plan approved' if appr.get('plan_approved') else ('gate off' if appr.get('gate')=='off' else 'plan not approved')
+    detail=f"{who}: {appr['note']}" if who and appr.get('note') else (who or '')
+    print(f"Approval: {state}" + (f" ({detail})" if detail else ''))
+    boot=meta.get('bootstrap')
+    if isinstance(boot,dict):
+        print(f"Bootstrapped: {boot.get('framework')}{' '+boot['version'] if boot.get('version') else ''} "
+              f"({boot.get('config')}; approved by {boot.get('approved_by')})")
     if s.get('headline'): print('\n'+s['headline'])
 
     total=s.get('expects_total',0); ver=s.get('expects_verified',0); frac=ver/total if total else 0

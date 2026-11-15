@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from py_routes import scan_python, blank_strings          # noqa: E402
 import py_routes, py_extras                                 # noqa: E402  (mounts, conditions, CLIs, PHP, dist/)
+import next_app                                            # noqa: E402  (Next.js file conventions, scripts, workers)
 from js_routes import scan_js_routes, Constants           # noqa: E402
 
 SKIP_DIRS = {'.git', '.hg', '.svn', 'node_modules', 'bower_components', 'dist', 'build', 'out',
@@ -135,6 +136,15 @@ PATH_LIST = re.compile(r'\b(?:const|let|var)\s+(\w+)\s*(?::[^=\n]+)?=\s*\[([^\]]
 PATH_CHECK = re.compile(r'(?:startsWith|===|==|includes|match)\s*\(?\s*' + Q + r'(/[^"\'`]*)' + Q)
 STRING_LIT = re.compile(r'"([^"\n]*)"|\'([^\'\n]*)\'|`([^`]*)`')
 REDIRECT_CALL = re.compile(r'(?:NextResponse\.redirect|\bredirect)\(')
+NEXT_DEFAULT_COMPONENT = re.compile(r'export\s+default\s+(?:async\s+)?function\s+([A-Z]\w*)')
+COMPONENT_SUFFIX = re.compile(r'(?:Page|Screen|View|Route|Template|Detail|Details)$')
+GENERIC_PARAMS = {'id', 'slug', 'param', 'params', 'path', 'key', 'name', 'uid', 'uuid', 'locale', 'lang', 'segments'}
+# hosts of analytics tags (page views and events); a loader from one of these with no goal event found is named in limitations
+ANALYTICS_HOST = re.compile(r'(googletagmanager\.com|google-analytics\.com|plausible\.io|cdn\.segment\.com|posthog|'
+                            r'mixpanel|amplitude|hotjar|clarity\.ms|matomo|heapanalytics|usefathom|umami|'
+                            r'cloudflareinsights|vercel-insights|_vercel/insights|simpleanalytics|statcounter)', re.I)
+PUBLIC_MEDIA_EXT = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.svg', '.ico', '.woff', '.woff2', '.ttf',
+                    '.otf', '.eot', '.mp4', '.webm', '.mp3', '.ogg', '.wav', '.pdf', '.map'}
 GUARD_FILE_STEMS = ('middleware', 'proxy')
 INTERCEPT = re.compile(r'^(\(\.\.\.\)|\(\.\)|(?:\(\.\.\))+)(.*)$')
 
@@ -237,6 +247,7 @@ class Extractor:
         self.skipped_data_dirs: list[dict] = []
         self.skipped_data_files = 0              # .json files not opened: only manifests and configs matter by name
         self.template_files: dict[str, str] = {}  # server-side templates (Jinja/Django), read after the walk
+        self.texts: dict[str, str] = {}   # every file the walk read, handed to the Next.js reader so it reads none again
         self.rendered_by: dict[str, list[str]] = {}   # template path -> page routes whose view renders it
         self.py_trees: dict[str, object] = {}
         self.view_paths: dict[str, list[str]] = {}
@@ -261,6 +272,10 @@ class Extractor:
         self.unit_tests = {'files': 0, 'test_cases': 0}
         self.py_notes: list[str] = []
         self.manifest_dirs: dict[str, bool] = {}
+        self.route_states: list[dict] = []        # Next.js not-found / error / loading / ... files per segment
+        self.third_party_scripts: list[dict] = []
+        self.service_workers: list[dict] = []
+        self.public_files: list[dict] = []
 
     # ---- helpers ----
     def rel(self, p: Path) -> str:
@@ -532,7 +547,9 @@ class Extractor:
                              note=f'intercepting route: on client-side navigation it renders {r} inside the current '
                                   f'layout (often a modal); a full page load shows the target page instead')
                 elif r:
-                    self.add('route', r, path, 1, 'next-app-router', 'high', 'nextjs', 'web')
+                    comp = NEXT_DEFAULT_COMPONENT.search(text)
+                    extra = {'component': comp.group(1)} if comp else {}
+                    self.add('route', r, path, 1, 'next-app-router', 'high', 'nextjs', 'web', **extra)
                 return
             if stem == 'route' and (segs := after('app')) is not None:
                 r = self.segments_to_route(segs)
@@ -1187,6 +1204,132 @@ class Extractor:
         elif path.suffix == '.swift':
             self.frameworks.add('swift')
 
+    @staticmethod
+    def next_path(url: str) -> str:
+        """next_app's `{x}` / `{x*}` URL parameters in this extractor's `:x` / `*x` spelling."""
+        return re.sub(r'\{(\w+)\}', r':\1', re.sub(r'\{(\w+)\*\}', r'*\1', url or '/'))
+
+    @staticmethod
+    def segment_note(cfg: dict) -> str | None:
+        """What a page's or handler's segment config means for a journey (which URLs exist, when content changes)."""
+        if not cfg:
+            return None
+        parts = []
+        gsp, dp = cfg.get('generate_static_params'), cfg.get('dynamic_params')
+        if gsp and dp and dp.get('value') is False:
+            parts.append(f"generateStaticParams (line {gsp.get('line')}) with dynamicParams = false (line {dp.get('line')}): "
+                         'only the generated parameter values are pages; any other value answers 404 with the not-found '
+                         'page, a variant every journey through this route should cover')
+        elif gsp:
+            parts.append(f"generateStaticParams (line {gsp.get('line')}): the listed parameter values are prerendered; "
+                         'other values render on demand (dynamicParams is not false)')
+        elif dp and dp.get('value') is False:
+            parts.append(f"dynamicParams = false (line {dp.get('line')}) with no generateStaticParams here: values "
+                         'not generated by a parent segment answer 404')
+        for key, label in (('dynamic', 'dynamic'), ('revalidate', 'revalidate'), ('runtime', 'runtime')):
+            v = cfg.get(key)
+            if v and v.get('value') is not None:
+                parts.append(f"export const {label} = {json.dumps(v.get('value'))} (line {v.get('line')})")
+        return '; '.join(parts) or None
+
+    def scan_next(self):
+        """Next.js file conventions the walk does not route: metadata routes (robots, sitemap, manifest, icons, Open
+        Graph and Twitter images), segment config of pages and handlers, not-found/error/loading files, script loaders,
+        service workers and files served from public/ (read with the shared next_app reader)."""
+        try:
+            model = next_app.read_next_app(self.root, max_files=self.max_files, texts=self.texts)
+        except Exception as exc:  # noqa: BLE001 - a reader failure must not lose the rest of the surface
+            self.extra_limitations.append(f'The Next.js reader failed ({type(exc).__name__}: {exc}); metadata routes, '
+                                          'route states, script loaders and service workers were not listed.')
+            return
+        by_file: dict[str, dict] = {}
+        for it in self.items:
+            if it.get('framework') == 'nextjs':
+                by_file.setdefault(it['file'], []).append(it)
+        for proj in model.get('projects') or []:
+            for r in proj.get('routes') or []:
+                cfg = r.get('segment_config') or {}
+                if r.get('kind') == 'metadata':
+                    meta, url = r.get('metadata'), self.next_path(r.get('url'))
+                    if meta in ('opengraph-image', 'twitter-image', 'icon', 'apple-icon'):
+                        tag = {'opengraph-image': 'og:image', 'twitter-image': 'twitter:image',
+                               'icon': '<link rel="icon">', 'apple-icon': '<link rel="apple-touch-icon">'}[meta]
+                        seg = url.rsplit('/', 1)[0] or '/'
+                        note = (f'{meta} file convention: Next.js adds it to the page metadata ({tag}) of {seg} and the '
+                                'pages below it, so a sharing-preview or install journey reads it from the page head')
+                        if r.get('form') == 'generated':
+                            note += '; a generated image URL may carry a hash suffix, so match it by prefix'
+                    else:
+                        who = {'favicon': 'browsers request it for the tab icon',
+                               'manifest': 'Next.js links it from every page head (<link rel="manifest">) for '
+                                           'installing the site'}.get(meta, 'for crawlers, not linked from a page')
+                        note = f"{meta} file convention ({r.get('form')}): served at {url}; {who}"
+                    self.add('endpoint', f'GET {url}', self.root / r['file'], r.get('line') or 1, 'next-metadata-route',
+                             'high', 'nextjs', 'web', domain='site-files', note=note)
+                elif r.get('kind') in ('page', 'route_handler'):
+                    if not cfg and not r.get('inherited_config'):
+                        continue
+                    for it in by_file.get(r.get('file'), []):
+                        if cfg:
+                            it['segment_config'] = cfg
+                        if r.get('inherited_config'):
+                            it['inherited_config'] = r['inherited_config']
+                        note = self.segment_note(cfg or r.get('inherited_config') or {})
+                        if note:
+                            it['note'] = f"{it['note']}; {note}" if it.get('note') else note
+            for seg in proj.get('segments') or []:
+                for state, ref in sorted((seg.get('files') or {}).items()):
+                    if state == 'layout':
+                        continue   # context.layouts
+                    self.route_states.append({'segment': self.next_path(seg.get('url')), 'state': state,
+                                              'file': ref.get('file'), 'line': ref.get('line')})
+            rs = proj.get('root_special') or {}
+            if proj.get('app_dir') and 'not-found' in (rs.get('missing') or []):
+                self.route_states.append({'segment': '/', 'state': 'not-found', 'file': None, 'line': None,
+                                          'note': 'no not-found file: unknown URLs get the Next.js default 404 page'})
+            for s in proj.get('scripts') or []:
+                if s.get('first_party') or not (s.get('host') or s.get('body_hosts') or s.get('unresolved')):
+                    continue
+                entry = {k: s.get(k) for k in ('kind', 'src', 'href', 'host', 'strategy', 'file', 'line', 'inline',
+                                               'body_hosts', 'component', 'unresolved') if s.get(k) not in (None, [], '')}
+                self.third_party_scripts.append(entry)
+            for w in proj.get('service_workers') or []:
+                self.service_workers.append({
+                    **{k: w.get(k) for k in ('url', 'worker_file', 'exists', 'registrations', 'generated_by', 'events',
+                                             'fetch_strategies') if w.get(k) not in (None, [])},
+                    'note': 'A service worker can answer navigations and assets itself: browser tests that route or '
+                            "block requests must block it (Playwright serviceWorkers: 'block'), while offline and update "
+                            'journeys need it allowed.'})
+            pub = Path(self.root, proj.get('root') or '', 'public')
+            if pub.is_dir():
+                workers = {w.get('worker_file') for w in proj.get('service_workers') or []}
+                listed = []
+                for base in (pub, pub / '.well-known'):
+                    try:
+                        entries = sorted(base.iterdir())
+                    except OSError:
+                        continue
+                    for f in entries:
+                        if not f.is_file() or f.suffix.lower() in PUBLIC_MEDIA_EXT:
+                            continue
+                        rel = self.rel(f)
+                        listed.append({'url': '/' + f.relative_to(pub).as_posix(), 'file': rel,
+                                       **({'service_worker': True} if rel in workers else {})})
+                self.public_files.extend(listed[:60])
+        loaders = [s for s in self.third_party_scripts if s.get('kind') in ('next/script', 'script', 'next/third-parties')
+                   and ANALYTICS_HOST.search(' '.join([s.get('host') or '', s.get('src') or ''] + (s.get('body_hosts') or [])))]
+        if loaders and not any(i['kind'] == 'goal' for i in self.items):
+            where = ', '.join(f"{s.get('host') or (s.get('body_hosts') or ['?'])[0]} ({s['file']}:{s['line']})"
+                              for s in loaders[:4])
+            self.extra_limitations.append(
+                f'An analytics loader is present ({where}) but no goal events were found: it probably measures page '
+                'views only. Journeys then have no tracked outcome; ask which outcomes matter rather than inventing goals.')
+        if self.third_party_scripts:
+            self.extra_limitations.append(
+                'Third-party scripts load on these pages (context.third_party_scripts): observation runs and the tests '
+                'written from these journeys should block them, and a journey that depends on one (consent, ads, '
+                'embedded media) names it as a precondition.')
+
     def run(self) -> dict:
         for path in self.walk():
             try:
@@ -1195,6 +1338,7 @@ class Extractor:
                 text = path.read_text(encoding='utf-8', errors='replace')
             except OSError:
                 continue
+            self.texts[self.rel(path)] = text
             rel_parts = Path(self.rel(path)).parts
             if self.is_template(path):
                 self.template_files[self.rel(path)] = text   # read after the walk, with the views that render them
@@ -1223,6 +1367,8 @@ class Extractor:
         self.templates = self.scan_templates()
         self.scan_client_routes()
         self.wrappers = self.resolve_wrappers()
+        if 'nextjs' in self.frameworks:
+            self.scan_next()
         fw = self.frameworks
         if any(i['platform'] == 'cli' for i in self.items if i.get('platform')): self.platforms.add('cli')
         if any(i.get('platform') == 'web' for i in self.items): self.platforms.add('web')
@@ -1232,6 +1378,27 @@ class Extractor:
         if 'swift' in fw: self.platforms.add('ios')
         if fw & API_FW or any(i['kind'] == 'endpoint' for i in self.items): self.platforms.add('api')
         return self.result()
+
+    @staticmethod
+    def dynamic_domain(it: dict) -> str | None:
+        """A domain for a route with no static segment (`/:slug`): from the page component's name (`SightingPage` ->
+        sighting), else from a parameter name that says what it is (`/:recipe` -> recipe). A note says it was guessed."""
+        guess, why = None, None
+        comp = it.get('component')
+        if comp:
+            base = COMPONENT_SUFFIX.sub('', comp) or comp
+            slug = re.sub(r'(?<=[a-z0-9])(?=[A-Z])', '-', base).lower().strip('-')
+            if slug and slug not in ('default', 'index', 'home', 'catch-all', 'dynamic'):
+                guess, why = slug, f'its page component {comp}'
+        if guess is None:
+            params = [p.lstrip(':*') for p in it['name'].split('/') if p.startswith((':', '*'))]
+            named = [p for p in params if p.lower() not in GENERIC_PARAMS]
+            if named:
+                guess, why = re.sub(r'[^a-z0-9]+', '-', named[0].lower()).strip('-'), f'its parameter :{named[0]}'
+        note = (f'no static path segment: domain "{guess}" proposed from {why}; confirm it' if guess else
+                'no static path segment and no telling component or parameter name: choose its domain during review')
+        it['note'] = f"{it['note']}; {note}" if it.get('note') else note
+        return guess
 
     def result(self) -> dict:
         seen, unique = set(), []
@@ -1248,7 +1415,9 @@ class Extractor:
             if service:
                 it['service'] = service
             if it['kind'] in ('route', 'screen', 'endpoint'):
-                dom = domain_hint(it['name'])
+                dom = it.get('domain') or domain_hint(it['name'])
+                if dom is None and it['kind'] in ('route', 'screen'):
+                    dom = self.dynamic_domain(it)
                 if it['kind'] == 'endpoint' and re.match(r'^[A-Z|]+ /api(/|$)', it['name']) \
                         and self.app_root(it['file']) in page_roots:
                     dom = 'api'
@@ -1281,6 +1450,10 @@ class Extractor:
                         'services': sorted({it['service'] for it in unique if it.get('service')}),
                         'python_mounts': self.py_notes,
                         'static_pages': self.static_pages,
+                        'route_states': self.route_states,
+                        'third_party_scripts': self.third_party_scripts,
+                        'service_workers': self.service_workers,
+                        'public_files': self.public_files,
                         'templates': getattr(self, 'templates', [])},
             'stats': {'files_scanned': self.files_scanned, 'truncated': self.truncated,
                       'counts': {k: len(v) for k, v in surface.items()},
@@ -1567,6 +1740,93 @@ def self_test_static_site(problems: list[str]) -> None:
         problems.append('static site: --include dist reads a built dist/')
 
 
+# A Next.js App Router content site (bird-watching notes): a root dynamic segment with generateStaticParams and
+# dynamicParams = false, generated metadata routes (robots, sitemap, an Open Graph image per page), not-found, error and
+# loading files, a force-static route handler, next/script loaders for an analytics tag and an ad script, and a service
+# worker registered from a client component, with plain files served from public/.
+SELF_TEST_NEXT = {
+    'package.json': '{"name": "birdnotes", "dependencies": {"next": "15.0.0", "react": "19.0.0"}}\n',
+    'next.config.ts': 'const nextConfig = {};\nexport default nextConfig;\n',
+    'src/app/layout.tsx': (
+        "import Script from 'next/script';\nimport SwRegister from './SwRegister';\n\n"
+        'export default function RootLayout({ children }: { children: React.ReactNode }) {\n'
+        '  return (\n    <html lang="en">\n      <body>\n        {children}\n        <SwRegister />\n'
+        '        <Script src="https://plausible.io/js/script.js" strategy="afterInteractive" />\n'
+        '        <Script src="https://ads.example.test/loader.js" strategy="lazyOnload" />\n'
+        '      </body>\n    </html>\n  );\n}\n'),
+    'src/app/page.tsx': 'export default function HomePage() {\n  return <main><h1>Bird notes</h1></main>;\n}\n',
+    'src/app/not-found.tsx': 'export default function NotFound() {\n  return <p>No such sighting</p>;\n}\n',
+    'src/app/error.tsx': "'use client';\nexport default function Error() {\n  return <p>Something went wrong</p>;\n}\n",
+    'src/app/loading.tsx': 'export default function Loading() {\n  return <p>Loading</p>;\n}\n',
+    'src/app/robots.ts': ("export default function robots() {\n  return { rules: { userAgent: '*', allow: '/' }, "
+                          "sitemap: 'https://birds.example.test/sitemap.xml' };\n}\n"),
+    'src/app/sitemap.ts': "export default function sitemap() {\n  return [{ url: 'https://birds.example.test/' }];\n}\n",
+    'src/app/[slug]/page.tsx': (
+        "import { notFound } from 'next/navigation';\n\nexport const dynamicParams = false;\n\n"
+        "export async function generateStaticParams() {\n  return [{ slug: 'heron' }, { slug: 'wren' }];\n}\n\n"
+        'export default async function SightingPage({ params }: { params: Promise<{ slug: string }> }) {\n'
+        '  const { slug } = await params;\n  return <article><h1>{slug}</h1></article>;\n}\n'),
+    'src/app/[slug]/loading.tsx': 'export default function Loading() {\n  return <p>Loading sighting</p>;\n}\n',
+    'src/app/[slug]/opengraph-image.tsx': (
+        "import { ImageResponse } from 'next/og';\nexport const alt = 'A sighting';\n"
+        'export default async function Image() {\n  return new ImageResponse(<div>bird</div>);\n}\n'),
+    'src/app/feed.xml/route.ts': ("export const dynamic = 'force-static';\n\nexport async function GET() {\n"
+                                  "  return new Response('<rss/>', { headers: { 'content-type': 'application/xml' } });\n}\n"),
+    'src/app/SwRegister.tsx': ("'use client';\nimport { useEffect } from 'react';\n\nexport default function SwRegister() {\n"
+                               "  useEffect(() => {\n    navigator.serviceWorker.register('/sw.js');\n  }, []);\n"
+                               '  return null;\n}\n'),
+    'public/sw.js': ("self.addEventListener('fetch', (event) => {\n  if (event.request.mode === 'navigate') {\n"
+                     '    event.respondWith(fetch(event.request));\n  }\n});\n'),
+    'public/humans.txt': 'Bird notes team\n',
+    'public/manifest.json': '{"name": "Bird notes"}\n',
+}
+
+
+def self_test_next(problems: list[str]) -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'birdnotes'
+        for rel, text in SELF_TEST_NEXT.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        data = Extractor(root.resolve(), 1000).run()
+    s, ctx = data['surface'], data['context']
+    eps = {i['name']: i for i in s['endpoints']}
+    for name in ('GET /robots.txt', 'GET /sitemap.xml', 'GET /:slug/opengraph-image'):
+        it = eps.get(name) or {}
+        if it.get('detector') != 'next-metadata-route' or it.get('domain') != 'site-files':
+            problems.append(f'next: metadata route {name} is a site-files endpoint (next-metadata-route), got {it or sorted(eps)}')
+    if 'metadata' not in ((eps.get('GET /:slug/opengraph-image') or {}).get('note') or ''):
+        problems.append('next: the Open Graph image notes that Next.js wires it into the page metadata')
+    feed = eps.get('GET /feed.xml') or {}
+    if ((feed.get('segment_config') or {}).get('dynamic') or {}).get('value') != 'force-static':
+        problems.append(f'next: the route handler records export const dynamic, got {feed}')
+    routes = {i['name']: i for i in s['routes']}
+    slug = routes.get('/:slug') or {}
+    if slug.get('domain') != 'sighting':
+        problems.append(f"next: a root dynamic segment gets a domain from its component (SightingPage -> sighting), "
+                        f"got {slug.get('domain')!r}")
+    note = slug.get('note') or ''
+    if not ('generateStaticParams' in note and 'dynamicParams' in note and '404' in note):
+        problems.append(f'next: the dynamic page notes generateStaticParams, dynamicParams = false and the 404, got {note!r}')
+    states = {(x.get('segment'), x.get('state')) for x in ctx.get('route_states') or []}
+    want_states = {('/', 'not-found'), ('/', 'error'), ('/', 'loading'), ('/:slug', 'loading')}
+    if not want_states <= states:
+        problems.append(f'next: context.route_states lists not-found, error and loading files, missing '
+                        f'{sorted(want_states - states)}, got {sorted(states)}')
+    tps = {(x.get('host'), x.get('strategy')) for x in ctx.get('third_party_scripts') or []}
+    if not {('plausible.io', 'afterInteractive'), ('ads.example.test', 'lazyOnload')} <= tps:
+        problems.append(f'next: context.third_party_scripts lists the next/script loaders, got {sorted(tps)}')
+    if not any('analytics' in x and 'no goal' in x for x in data['limitations']):
+        problems.append('next: an analytics loader with no goal events is named in limitations')
+    sws = ctx.get('service_workers') or []
+    if [w.get('url') for w in sws] != ['/sw.js'] or not (sws[0].get('registrations') or []) or \
+            'serviceWorkers' not in (sws[0].get('note') or ''):
+        problems.append(f'next: context.service_workers lists /sw.js with its registration and a test note, got {sws}')
+    pub = {x.get('url') for x in ctx.get('public_files') or []}
+    if not {'/humans.txt', '/manifest.json'} <= pub:
+        problems.append(f'next: context.public_files lists files served from public/, got {sorted(pub)}')
+
+
 def self_test() -> int:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d) / 'bakery'
@@ -1594,6 +1854,10 @@ def self_test() -> int:
     if 'cli' not in data['platforms'] or data['context']['services'] != ['orders', 'stock', 'stock-functions-watcher']:
         problems.append(f"platforms {data['platforms']}, services {data['context']['services']}")
     self_test_flask(problems)
+    try:
+        self_test_next(problems)
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"next: crashed: {type(exc).__name__}: {exc}")
     try:
         self_test_static_site(problems)
     except Exception as exc:  # noqa: BLE001

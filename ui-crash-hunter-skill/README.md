@@ -65,17 +65,18 @@ Crashes are ranked by blast radius × reach × likelihood × recoverability into
 Scripts, in the order the skill runs them:
 
 ```bash
-python scripts/recon.py <repo> --out recon.json                          # site model, routes or pages, boundaries (incl. router errorElement), contracts (incl. FastAPI), stored state, module-scope env config; Next.js layouts, proxy, route handlers (also a project nested beside its next.config.*); pages a Node server renders from template literals; Flask/Django sites rendered from templates/ (served_by flask); --exclude DIR (data directories are skipped: skipped_data_dirs); dist/, build/, out/ are skipped as build output unless a server serves them or a committed index.html nothing builds is in them (skipped_build_dirs / kept_build_dirs), --include DIR walks one anyway
-python scripts/ui_graph.py <repo> --out graph.json                        # UI entry points and the files they import (tsconfig paths incl. referenced projects and nested app projects, Vite resolve.alias); warns on unresolved imports
+python scripts/recon.py <repo> --out recon.json                          # site model, routes or pages, boundaries (incl. router errorElement), contracts (incl. FastAPI), stored state, module-scope env config; Next.js layouts, proxy, route handlers (also a project nested beside its next.config.*), global-error (or its absence), metadata routes, generateStaticParams/dynamicParams per dynamic route, next/script third parties and service workers; a root-layout boundary's wraps/outside; Cache Storage as stored state; pages a Node server renders from template literals; Flask/Django sites rendered from templates/ (served_by flask); --exclude DIR (data directories are skipped: skipped_data_dirs); dist/, build/, out/ are skipped as build output unless a server serves them or a committed index.html nothing builds is in them (skipped_build_dirs / kept_build_dirs), --include DIR walks one anyway
+python scripts/ui_graph.py <repo> --out graph.json                        # UI entry points and the files they import (tsconfig paths incl. referenced projects and nested app projects, Vite resolve.alias), service workers the UI registers; warns on unresolved imports
 python scripts/strict_overlay.py tsc <repo> --scratch <tmp> --out tsc.json  # strict tsc in a scratch config (checkJs for plain JS; a solution tsconfig compiles its app project; always names the tsconfig it compiled and warns when it misses the UI); --scope ui|all
 python scripts/strict_overlay.py eslint <repo> --scratch <tmp> --out eslint.json
 python scripts/contract_diff.py <repo> --out contract.json               # nullable contract fields vs unguarded access (OpenAPI, GraphQL, Prisma, types); --contract f --discover, --scope all, --defaults-present
 python scripts/scan_pitfalls.py <repo> --sarif semgrep.sarif --extra tsc.json eslint.json contract.json --out candidates.json  # UI code only; --all-files; generated code (Emscripten glue, @generated) excluded unless --include-generated; --include DIR
 python scripts/scan_pitfalls.py --self-test                               # the multi-line promise-chain test, and recon/scan scope on a synthetic workspace, a Go tool with an HTML page in a string constant, and a Flask site with Jinja templates and a data directory
-python scripts/self_test.py                                               # all of the above, plus probe_web (file:// targets, query strings, a live file:// probe) and validator checks
+python scripts/self_test.py                                               # all of the above, plus probe_web (file:// targets, query strings, a live file:// probe, live loopback probes of a service worker, a 404 baseline and Firefox) and validator checks
 python scripts/probe_web.py probes/C-1.json --check                        # validate a scenario's steps and assertions without a browser
 python scripts/probe_web.py probes/C-1.json --out-dir evidence/C-1 --emit-spec repro/repro_C-1.py  # --authorised-by for a non-loopback target; --storage-state for a signed-in test session
 python scripts/probe_web.py probes/D-1.json --out-dir evidence/D-1 --base-url out/report.html      # a generated local file, probed read-only as file://
+python scripts/probe_web.py probes/baseline.json probes/not-found.json --out-dir evidence           # several scenarios share one browser launch; each writes evidence/<file stem>/
 python scripts/validate_crash_report.py crash_report.json --repo <repo> --candidates candidates.json --recon recon.json --write-summary
 python scripts/render_report.py crash_report.json --sarif crashes.sarif  # --brief, --color always|never
 python scripts/sarif.py read detekt.sarif swiftlint.sarif                 # normalise any SARIF file
@@ -156,13 +157,14 @@ To rerun the probes: `cd examples/pantry && npm install && npm run build && npm 
 - `data/pitfalls.json`: per-platform pitfall packs (patterns, triggers, fixes, matching tool rules)
 - `schemas/crash_report.schema.json`: output contract
 - `scripts/recon.py`: platforms, site and blast-radius model, routes or pages, boundaries, data layer, contracts, stored state, targets
-- `scripts/ui_graph.py`: UI entry points, the import graph (with `tsconfig` `paths` aliases), and file classes (test, route handler, UI)
+- `scripts/ui_graph.py`: UI entry points, the import graph (with `tsconfig` `paths` aliases, injected scripts and registered service workers), and file classes (test, route handler, metadata route, UI)
 - `scripts/scan_pitfalls.py`: pattern scan over UI code, and merging of SARIF and other candidates (excluded files counted)
 - `scripts/strict_overlay.py`: strict `tsc` and ESLint runs from scratch configs (nothing written to the repo)
 - `scripts/contract_diff.py`: nullable contract fields against unguarded access (OpenAPI, GraphQL, Prisma, TypeScript, Kotlin, Swift, Dart)
 - `scripts/probe_web.py`: Playwright probes (errors with console Error arguments, white screens and
-  observable-effect assertions; third parties blocked; read-only mode; blocked storage, init scripts,
-  browser preferences) and standalone repro specs
+  observable-effect assertions, including document status, service-worker state and Cache Storage; third
+  parties blocked, in every engine; read-only mode; blocked storage, init scripts, browser preferences;
+  several scenarios per browser launch) and standalone repro specs
 - `scripts/validate_crash_report.py`: structure and honesty checks
 - `scripts/render_report.py`: coloured terminal/Markdown report (`--brief`), with probes, and SARIF export
 - `scripts/sarif.py`: SARIF reader and writer (shared with Code Security Auditor)

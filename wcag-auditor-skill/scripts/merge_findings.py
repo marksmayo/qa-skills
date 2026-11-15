@@ -16,7 +16,10 @@
 Each candidate keeps its sources (tool, version, rule, ACT ids), outcome (`failed` if any source
 failed, otherwise `cantTell`), kind, a suggested confidence (high when two independent sources
 agree or the failing rule implements an ACT rule; medium for one heuristic source or a probe
-alone) and the default failure pattern. The agent triages every candidate: finding, needs review,
+alone) and the default failure pattern: the one the rule implies (rule-map.json `pattern`, or a probe's), the
+only pattern of its SCs, or none with `pattern_choices` (never the most severe pattern of the SC). An instance
+from a state that navigated to another sampled page carries `via` (the page and state it started from), one that
+ended on an unsampled URL `ended_on`. The agent triages every candidate: finding, needs review,
 advisory or dismissed with a checkable reason. `sc_draft` gives every SC at the target level a
 draft EARL outcome; it never drafts `passed`.
 """
@@ -54,16 +57,19 @@ def scs_overlap(a, b):
     return bool(set(a) & set(b)) or (not a and not b)
 
 
-def default_pattern(scs: dict, sc_list, items):
+def default_pattern(scs: dict, sc_list, items) -> tuple[str | None, list[dict]]:
+    """The failure pattern a candidate's rules imply, and the patterns to choose from when they imply none.
+
+    A rule-level pattern (rule-map.json, or a probe's) wins; an SC list with a single failure pattern gives that
+    one; otherwise there is no default: the most severe pattern of the SC over-rates (axe link-in-text-block is a
+    colour-only link, moderate, not a colour-only state), so the agent picks from pattern_choices."""
     for i in items:
         if i.get('pattern'):
-            return i['pattern']
-    best = None
-    for s in sc_list:
-        for p in scs[s]['failure_patterns']:
-            if best is None or SEVERITY_ORDER.index(p['default_severity']) > SEVERITY_ORDER.index(best[1]):
-                best = (p['id'], p['default_severity'])
-    return best[0] if best else None
+            return i['pattern'], []
+    choices = [{'id': p['id'], 'default_severity': p['default_severity']} for s in sc_list for p in scs[s]['failure_patterns']]
+    if len(choices) == 1:
+        return choices[0]['id'], []
+    return None, choices
 
 
 def related_xpath(a: str | None, b: str | None) -> bool:
@@ -136,14 +142,17 @@ def merge(items: list[dict], scs: dict) -> list[dict]:
                              'viewports': sorted({i['viewport'] for i in inst['items']}),
                              'states': sorted({i['state'] for i in inst['items']}),
                              'screenshot': first['screenshot'],
+                             **({'via': first['via']} if first.get('via') else {}),
+                             **({'ended_on': first['ended_on']} if first.get('ended_on') else {}),
                              'items': [i['id'] for i in inst['items']]})
-        pattern = default_pattern(scs, c['sc'], failed or its) if c['kind'] == 'wcag' else None
+        pattern, choices = default_pattern(scs, c['sc'], failed or its) if c['kind'] == 'wcag' else (None, [])
         out.append({
             'sc': c['sc'], 'kind': c['kind'], 'outcome': outcome, 'component': c['sig'],
             'suggested_confidence': conf, 'agreeing_sources': tools if outcome == 'failed' else [],
             'evidence_type': 'probe' if all(i['tool'] == 'probe' for i in its) else 'tool',
             'pattern': pattern,
             'default_severity': next((p['default_severity'] for s in c['sc'] for p in scs[s]['failure_patterns'] if p['id'] == pattern), None),
+            **({'pattern_choices': choices} if choices else {}),
             'non_interference': any(scs[s]['non_interference'] for s in c['sc']),
             'pages': pages, 'instance_count': len(inst_out), 'instances': inst_out,
             'sources': [{**v, 'outcomes': sorted(v['outcomes'])} for v in sources.values()],

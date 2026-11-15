@@ -1,7 +1,7 @@
 ---
 name: code-security-auditor
 description: Audit a codebase for security weaknesses with open-source scanners (Semgrep OSS, Bandit, gosec, Brakeman, gitleaks, osv-scanner, pip-audit, npm audit, zizmor, Trivy, Checkov and more) plus a deep manual review, trace each finding from attacker-controlled input to the dangerous operation, rate it with CVSS v4.0, and write safe reproduction steps, a fix and a regression test. Optionally confirms findings with canary-only proofs of concept against localhost or a test environment the user names. Every candidate is triaged, every tool's status is recorded, and the report never calls the code secure.
-version: 1.5.0
+version: 1.6.0
 ---
 
 # Code Security Auditor
@@ -181,6 +181,84 @@ deep review also read: NextAuth callbacks (`jwt`, `session`, `redirect`, `signIn
 config (`dynamic`, `revalidate`, and `Cache-Control` on responses that read the session), server
 actions' argument checks, `redirect()`/`NextResponse.redirect`/`router.push` with values from
 `searchParams`, and Prisma writes that take the request body whole.
+
+recon also reads every Next.js project with the shared static reader (`scripts/next_app.py`, via
+`scripts/next_surface.py`), so a content site with no API has entry points too: each App Router or
+`pages/` page (`page`, GET, auth read from the page and its layouts or a covering middleware), each
+generated metadata route (`metadata_route`: `robots.ts`, `sitemap.ts`, `opengraph-image.tsx`, icon
+routes), the built-in image optimiser (`http_route` GET `/_next/image`, at the `images` config line,
+with the remote sources it may fetch; absent for a static export, a custom loader or
+`unoptimized: true`), service workers (`service_worker`, at the worker file in `public/`, with the
+registration, scope and fetch strategies) and middleware in nested projects. Pages and route
+handlers carry `static` (prerendered at build: `dynamic = 'force-static'` or `'error'`, or
+`output: 'export'`) and `params_bounded` (`generateStaticParams` with `dynamicParams = false`: only
+build-time values are served, any other id is a 404), and `seed_report.py` copies the reason into
+the entry point's note. These bound the attack surface: a bounded `[id]` is not an IDOR lead, and a
+static route that returns a list (a feed) is not an uncapped-collection lead; neither is a route
+whose handler caps the result with a literal (`slice(0, 20)`, `take: 50`). Outbound calls are
+matched on code only (prose in a string such as "whatever you have got." is not a call), and
+scripts under `public/` are browser code, not server-side requests.
+
+**Security headers, CSP and service workers.** recon's `security_headers` lists the header rules in
+`next.config` `headers()`, `vercel.json`, `netlify.toml` and `public/_headers` (source, catch-all or
+not, header names), each Content-Security-Policy with its directives and weaknesses, the headers
+missing everywhere (`Content-Security-Policy`; `frame-ancestors`, when there is no `X-Frame-Options`
+either; `Strict-Transport-Security`) unless code sets them (`set_in_code`), shared-cache
+`Cache-Control` on catch-all sources, the `images` config and the third-party scripts the pages
+load. Each is a review lead; the `security_headers` pack of the pattern scan flags the same
+weaknesses at their lines (`HDR-CSP-UNSAFE-INLINE`, `HDR-CSP-UNSAFE-EVAL`,
+`HDR-CSP-WILDCARD-SOURCE`, `HDR-CSP-TAG-MANAGER`, `HDR-CACHE-CATCH-ALL`). Headers the CDN, the host
+or a proxy adds are not in the repository: before reporting a header as missing, check a deployed
+or locally started response (a `run_poc.py` guard check with `header_matches`), or say in the
+observation that it was not checked. In the review:
+
+- **CSP:** `'unsafe-inline'` in `script-src` (without nonces or hashes, which make browsers ignore
+  it) means the policy does not stop an injected script; `'unsafe-eval'`; `*`, `https:`, `data:` or
+  `blob:` as a script source; a tag-manager host (`googletagmanager.com` and the like) allowed as a
+  script source lets whoever can publish the container run any script, so treat container access
+  as deploy access; `Content-Security-Policy-Report-Only` enforces nothing. Missing
+  `frame-ancestors` (and `X-Frame-Options`) allows clickjacking; missing HSTS allows a downgrade on
+  a first visit.
+- **Caching:** `Cache-Control: public, s-maxage=...` on `/:path*` or `/(.*)` applies to every
+  route, including ones added later that read cookies; a CDN would serve one visitor's page to the
+  next. Scope shared caching to static paths.
+- **Image optimiser:** `images.remotePatterns` with hostname `**` (or the old `domains`) makes
+  `/_next/image` an open image proxy and a cost amplifier; `dangerouslyAllowSVG` serves SVG that can
+  carry script.
+- **Third-party scripts** (`next/script`, `<script src>`, `@next/third-parties`): each runs with the
+  page's privileges, and a versionless vendor URL cannot carry Subresource Integrity; name them and
+  what they can read.
+- **Service workers:** a worker answers every request in its scope. Check its fetch strategies
+  (cache-first or stale-while-revalidate for navigations or for every request serves stored pages,
+  including signed-in or error pages, until it is replaced), that it never stores cross-origin,
+  opaque or per-user responses, that cache names are versioned and old caches deleted on
+  `activate`, the scope it is registered with, `skipWaiting`/`clients.claim`, and that there is a
+  way to roll back a bad worker (a kill-switch worker at the same URL).
+- **Inline JSON-LD:** `dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}` is its own
+  pattern (`JS-JSONLD-STRINGIFY`), not an HTML sink: `JSON.stringify` does not escape `</script>`,
+  so a value that comes from outside the repository (a CMS, the request, user content) can close the
+  script element. When every value is a constant in the repository, record it as an observation (or
+  dismiss it with that reason); otherwise trace the value like any XSS.
+
+**Static and content sites.** A site with no API and no sign-in still has an attack surface, and a
+complete review covers it: the pages and metadata routes recon lists, and for each dynamic segment
+whether its parameters are bounded; the response headers and CSP above; every third-party script,
+stylesheet and font (which vendors, loaded how, with or without SRI, and what the CSP allows); the
+service worker; the image optimiser; route handlers (feeds, search, revalidation or preview hooks)
+and server actions such as a contact form (spam, mail-header injection, outbound calls); where the
+content comes from (repository constants and Markdown, a CMS, a build-time fetch): content from
+outside the repository is attacker-controlled input to every sink it reaches, including JSON-LD;
+redirects and rewrites in the config (open redirects through `destination` parameters); and
+**committed agent and editor configuration**. recon lists `agent_config`: files such as
+`.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, `.cursor/mcp.json`,
+`.vscode/settings.json`, `.vscode/tasks.json` and `.vscode/launch.json` that grant permissions
+(shell commands, `git push`, web fetches to any domain), run commands (hooks, tasks, launch
+configurations) or start MCP servers for everyone who opens the repository in that tool. Read
+each: an allow-list or hook a contributor inherits by cloning is a supply-chain path, a token or a
+personal path in it is data exposure, and a personal `*.local.json` usually belongs in
+`.gitignore`. When the review finds nothing exploitable, the report says what it covered
+(`coverage`, `limitations`) and records weaknesses that need another condition as observations;
+render_report.py says "No findings" instead of printing an empty table.
 
 **FastAPI and Flask.** recon reads Python routes from the syntax tree, so decorators split over
 several lines are found and decorators quoted in docstrings (usage examples) are not. It follows
@@ -436,6 +514,16 @@ python scripts/run_poc.py poc.json --check
 python scripts/run_poc.py poc.json --workdir <copy outside the repo> --repo <repo> --permission "<...>" --out <out>/evidence/F-2.json
 ```
 
+**Guard checks.** To show that a guard holds rather than that a weakness is exploitable (an id
+outside `generateStaticParams` gets a 404, the response carries the CSP the config sets, a
+cross-origin request is refused), give the PoC `"purpose": "guard_check"`, name the observation it
+supports in `finding` (`"O-3"`), and write the proof for the secure behaviour. run_poc.py records
+`result: guard_held` when the proof passes and `guard_not_held` when it does not, never
+`confirmed`, which only ever means a confirmed vulnerability. Cite a held guard as the
+observation's `evidence`; a guard that did not hold is a candidate finding, and the validator
+rejects it as an observation's evidence. Set the `run_poc` tool row (`area: dynamic`, seeded as
+`not_run`) to `ran` with the number of PoCs and guard checks whenever any ran.
+
 It runs in the copy with HOME, temp and XDG folders inside it and HTTP(S)_PROXY pointed at a closed
 loopback port, refuses a working copy inside the repository, and records argv, exit codes and
 output excerpts. Record the copy in `verification.local_copy`; the validator then accepts the
@@ -584,7 +672,11 @@ and leaves sibling ones to that report.
 - Locations (file, line and snippet) against the source: the line must be the one that holds the
   snippet, so for a statement over several lines cite the line with the dangerous expression.
   Agent-found findings' basis excerpts are checked the same way, and so are observations'
-  optional `excerpt`. Recon entry points' handler lines must exist, and in Python must not sit
+  optional `excerpt`. An observation's optional `evidence` must exist; a run_poc.py record cited
+  there must be for that observation, record the permission and show `guard_held` (a guard that did
+  not hold, or a confirmed vulnerability, is a finding). The `run_poc` tool row must be `ran` when
+  any PoC or guard check ran, and may only be `ran` when verification was permitted. Recon entry
+  points' handler lines must exist, and in Python must not sit
   inside a string or docstring. Regression tests exist and fail on the vulnerable code; variant
   rule files exist.
 - `dependency_advisories` (required from schema 1.2): `assessed` or `partial` need a dependency

@@ -38,7 +38,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["verdict", "summary", "severity_counts", "key_coverage", "translation_quality", "evidence_completeness", "overall_confidence"],
       "properties": {
-        "verdict": {"enum": ["issues_found", "none_detected", "not_assessed"]},
+        "verdict": {"enum": ["issues_found", "none_detected", "not_assessed", "readiness_only"]},
         "summary": {"type": "string", "minLength": 20},
         "severity_counts": {"type": "object"},
         "key_coverage": {"type": "object"},

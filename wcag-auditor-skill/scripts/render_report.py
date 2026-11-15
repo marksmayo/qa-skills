@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Render a WCAG audit as a terminal/Markdown report with optional ANSI colour.
 
-    python render_report.py audit.json [--color auto|always|never] [--brief]
+    python render_report.py audit.json [--color auto|always|never] [--brief] [--markdown report.md]
 
 --brief prints the headline, the ranked findings table and the SC summary without per-finding
-detail, needs-review items or the manual test plan.
+detail, needs-review items or the manual test plan. --markdown writes the same report, without colour, to a
+Markdown file instead of printing it.
 """
 from __future__ import annotations
 import argparse, json, os, sys
@@ -37,6 +38,7 @@ def main() -> int:
     ap.add_argument('json_file', type=Path)
     ap.add_argument('--color', choices=['auto', 'always', 'never'], default='auto')
     ap.add_argument('--brief', action='store_true')
+    ap.add_argument('--markdown', type=Path, help='write the report (no colour) to this Markdown file instead of printing it')
     args = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(errors='replace')
@@ -45,7 +47,7 @@ def main() -> int:
     except Exception as exc:
         print(f"Unable to read report: {exc}", file=sys.stderr)
         return 2
-    color = supports_color(args.color)
+    color = supports_color(args.color) and not args.markdown
     P = lambda t, s: paint(t, s, color)  # noqa: E731
     sc, meta, h = d['scope'], d['metadata'], d['headline']
     pages = {p['id']: p for p in meta['sample']}
@@ -120,7 +122,8 @@ def main() -> int:
             if srcs:
                 w(f"Sources: {srcs}")
             for i in f['instances'][:5]:
-                w(f"- {i['url']} @ {i['viewport']} [{i['state']}]: `{i['selector'] or i['xpath']}` {('- ' + i['html_snippet']) if i['html_snippet'] else ''}" +
+                via = f" via {i['via']['page']}" if i.get('via') else (f", ended on {i['ended_on']}" if i.get('ended_on') else '')
+                w(f"- {i['url']} @ {i['viewport']} [{i['state']}{via}]: `{i['selector'] or i['xpath']}` {('- ' + i['html_snippet']) if i['html_snippet'] else ''}" +
                   (f" (screenshot {i['screenshot']})" if i['screenshot'] else ''))
             if len(f['instances']) > 5:
                 w(f"- ... and {len(f['instances']) - 5} more instance(s)")
@@ -165,6 +168,10 @@ def main() -> int:
     w(P('## Limitations', BOLD))
     for l in d['limitations']:
         w(f"- {l}")
+    if args.markdown:
+        args.markdown.write_text('\n'.join(out) + '\n', encoding='utf-8')
+        print(f'wrote {args.markdown}')
+        return 0
     print('\n'.join(out))
     return 0
 

@@ -9,7 +9,9 @@ the planned faults that didn't), metadata (browser, requests sent, request budge
 allowed, blocked requests), the baseline section, scenarios, coverage, `unreachable`, notes, each promoted
 finding's ratings and evidence, and the headline counts and confidence. Limitations the run proves (a
 failed baseline, an untriggered fault, single runs, the request budget, unreachable data, faults not run)
-are written too.
+are written too, as are the runs the watchdog stopped, baselines that passed only when retried, and a
+service worker the app ships (the plan's `service_workers`, from --repo) that the run blocked. A run.json
+the runner did not finish (`run_status: partial`) is refused: resume it first.
 
 What needs judgement is left as text starting with "TODO": each finding's title, actual behaviour, user
 impact, fix and verification step; each triage reason; the headline summary. Candidates not in --promote
@@ -30,7 +32,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from classify import derive_baselines  # noqa: E402
 
-SKILL_VERSION = '1.3.0'
+SKILL_VERSION = '1.4.0'
 TODO = 'TODO: '
 
 
@@ -82,10 +84,49 @@ def _confidence(run: dict, plan: dict, statuses: dict, findings: list[dict], nee
     crit_broken = any(b['status'] != 'passed' and b.get('critical_path') for b in run['baselines'].values())
     if ran * 2 < planned or crit_broken or run.get('runs_per_scenario', 2) < 2:
         return 'low'
-    if (ran < planned or any(b['status'] != 'passed' for b in run['baselines'].values()) or
+    if (ran < planned or any(b['status'] != 'passed' or b.get('retried') for b in run['baselines'].values()) or
             any(f['confidence'] != 'reproduced' for f in findings) or needs_review):
         return 'medium'
     return 'high'
+
+
+def service_worker_limitations(run: dict, plan: dict) -> list[str]:
+    """A service worker the app ships (the plan's `service_workers`, read from the source) that the run blocked."""
+    sws = plan.get('service_workers') or []
+    safety = run.get('safety') or {}
+    by_flow = safety.get('service_workers_by_flow') or {}
+    mode = safety.get('service_workers', 'block')
+    if not sws or (mode == 'allow' and all(v == 'allow' for v in by_flow.values())):
+        return []
+    blocked = sorted(n for n, v in by_flow.items() if v != 'allow') if mode == 'allow' else []
+    names = ', '.join(f'{w.get("url")}' + (f' (navigation: {nav[0]["strategy"]})' if (nav := [x for x in w.get('fetch_strategies') or []
+                                                                                            if x.get('when') == 'navigation']) else '')
+                      for w in sws)
+    return [f'The app ships a service worker ({names}) that this run blocked' + (f' in the {", ".join(blocked)} flow(s)' if blocked else '')
+            + ': every page ran as on a first visit, so returning visitors and offline navigation through the worker were not tested.']
+
+
+def run_limitations(run: dict) -> list[str]:
+    """Runs the watchdog stopped, and baselines that passed only on a retry."""
+    lim = []
+    hung = run.get('hung') or []
+    if hung:
+        lim.append(f'{len(hung)} run(s) did not finish within their time limit and were stopped by the watchdog ('
+                   + ', '.join(h['unit'] for h in hung[:6]) + '): their scenarios are errored, and the requests they sent are not counted.')
+    for name, b in run['baselines'].items():
+        if b.get('retried'):
+            lim.append(f'The {name} flow\'s baseline failed {b["retried"]} time(s) and passed when tried again (a slow or loaded machine, or '
+                       'a flaky journey): its scenarios ran, but the failed attempt is kept in run.json (retried_runs).')
+    return lim
+
+
+def note_limitations(notes: list[dict]) -> list[str]:
+    """Limitations the notes prove: blocking prefetch changed the app under test."""
+    lim = []
+    if any(n['kind'] == 'prefetch_changed_app' for n in notes):
+        lim.append('Prefetch was blocked, and the app fell back to full page loads where it would navigate on the client: loading states '
+                   'that only a client-side navigation shows (a route skeleton) were not tested (prefetch_changed_app note).')
+    return lim
 
 
 REPRO = '''# Repro for {fid} (resilience-prober): {effect} in {flow} / {step}, fault {fault} on {endpoint}.
@@ -218,6 +259,8 @@ def main() -> int:
     ap.add_argument('--out', type=Path, required=True)
     a = ap.parse_args()
     run, plan, cands, cfg = load(a.run), load(a.scenarios), load(a.candidates), load(a.flows)
+    if run.get('run_status') == 'partial':
+        raise SystemExit(f'{a.run} is partial: the runner did not finish. Rerun run_resilience.py with --resume, then build the report')
     faults = load(Path(__file__).resolve().parent.parent / 'data' / 'faults.json')['faults']
     flows = {f['name']: f for f in cfg['flows']}
     ran = {s['id']: s for s in run['scenarios']}
@@ -280,6 +323,7 @@ def main() -> int:
         lim.append(f'Each scenario ran {run.get("runs_per_scenario")} time(s): nothing can be reproduced, so every finding is observed and capped at P2.')
     if run.get('budget_reached'):
         lim.append(f'The request budget ({run["safety"]["request_budget"]}) was reached; the remaining scenarios are untested.')
+    lim += run_limitations(run) + service_worker_limitations(run, plan) + note_limitations(cands['notes'])
     if fu:
         lim.append('Planned but not run: ' + ', '.join(fu) + '.')
     rep = {
@@ -292,7 +336,8 @@ def main() -> int:
                                 'note': 'faults injected with page.route and set_offline'}],
                      'har': None, 'blocked_requests': len(run['blocked_requests']), 'requests_sent': run.get('requests_sent'),
                      'request_budget': run.get('safety', {}).get('request_budget'),
-                     'allow_form_submission': run.get('safety', {}).get('allow_form_submission'), 'runs_per_scenario': run.get('runs_per_scenario')},
+                     'allow_form_submission': run.get('safety', {}).get('allow_form_submission'), 'runs_per_scenario': run.get('runs_per_scenario'),
+                     'service_workers': run.get('safety', {}).get('service_workers', 'block')},
         'baseline': baseline,
         'scenarios': scenarios,
         'findings': findings,

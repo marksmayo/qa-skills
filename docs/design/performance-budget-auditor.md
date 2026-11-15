@@ -333,3 +333,35 @@ a loopback-tuned design breaks:
   - Not done: `source: "agent"` findings with a `basis` (hand-checked header findings), checking prose
     limitations against data, and a media/document target type that keeps a video's pseudo-page CLS out
     of page budgets.
+- **v1.4.0** (a framework-rendered content site with a service worker that answers static assets from its
+  cache and revalidates them on every load, responsive images, near-tied hydration chunks, a loaded machine):
+  - *http_cache from the plan*: `harness_config` passes the plan's `http_cache` to the shared harness, keeps
+    the cache by default for Chromium runs with warm loads, and refuses warm runs with `route`. The
+    cache-disabled check reads the harness metadata's dict (`http_cache.mode`); it compared the dict with a
+    string, so it never fired, and the self-test had fed it the old string shape.
+  - *Service workers*: a response a worker answered is `from_service_worker`, never an HTTP-cache hit;
+    `cache_check` counts them apart and is effective only on real cache hits, 304s, or the worker's own
+    requests answered from the cache. The worker's own requests (Playwright reports them on the context;
+    the page's CDP Network domain never sees them) are counted as `transfer_sw` and summarised in
+    `service_workers`; a limitation is required when a worker was active.
+  - *Delivery*: `s-maxage` is no longer a browser cache lifetime; `oversized_images` from each run's
+    rendered images (natural width over 1.5x rendered width x DPR).
+  - *Measurement model*: `mobile-mid` has a device pixel ratio of 2.625, set over CDP in Chromium (the
+    shared harness's `new_page` has no device scale factor; recorded in `throttling.applied`). Image,
+    font, stylesheet and document weight are budgetable (also as Lighthouse `resourceSizes`); Lighthouse
+    entries the skill cannot measure are listed as `budget.ignored`.
+  - *Attribution*: TBT scripts within 10% of the top one are one cause keyed on the set, and keys that
+    share a script merge; a CPU-bound overrun within the machine's slowdown is low confidence; weight
+    causes name framework prefetches when they are a fifth of the weight (they stay in `transfer_total`).
+  - *Calibration*: a graded `state` (`loaded` from 1.2x to 1.5x the idle reference); `--no-reference-update`.
+  - *Usability*: `--only`/`--templates` matching nothing exit 2 (with a hint about Git Bash path
+    rewriting); `build_report.py` seeds the report from the run, the candidates and the agent's triage,
+    adding each limitation `validate_report.limitation_rules` requires (INP untested everywhere, a loaded
+    machine, a service worker, DPR 1 on a mobile profile, besides the earlier ones).
+  - `self_test.py` covers each of these (a red case first); one check drives a real warm load in Chromium
+    through `Runner` against a local page whose worker answers every request.
+  - The example's measurements were not re-run (they predate DPR, service-worker and image records): its
+    candidates gained an empty `service_workers`, and its report a DPR-1 limitation and the current
+    skill version (it said 1.1.0).
+  - Not done: the harness's own `device_scale_factor` and a service-worker network hook (shared changes),
+    and a "font configured but never applied" signal.

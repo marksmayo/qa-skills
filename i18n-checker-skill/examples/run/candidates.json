@@ -5,6 +5,7 @@
   "de",
   "fr"
  ],
+ "single_locale": false,
  "candidates": [
   {
    "id": "K1",
@@ -716,39 +717,26 @@
   },
   {
    "id": "K12",
-   "kind": "rtl_mirroring",
-   "source": "runtime",
+   "kind": "rtl_physical",
+   "source": "static",
    "status": "confirmed",
    "set": null,
    "locales": [
-    "ar"
+    "ar",
+    "de",
+    "fr"
    ],
    "keys": [],
-   "locations": [],
+   "locations": [
+    {
+     "file": "site/events.html",
+     "line": 12
+    }
+   ],
    "details": [
-    "rtl_mirroring on span.icon:in(p): {\"glyph\": \"→\", \"expected\": \"a glyph pointing left in RTL\"}",
-    "rtl_mirroring on span.icon:in(p): {\"glyph\": \"→\", \"expected\": \"a glyph pointing left in RTL\"}"
+    "direction arrow drawn as text; it will not mirror in RTL (use an icon flipped with :dir(rtl))"
    ],
    "evidence": [
-    {
-     "page": "home",
-     "locale": "ar",
-     "mode": "rtl",
-     "screenshot": "home.rtl.ar.1280x800.png",
-     "element": "span.icon:in(p)",
-     "text": "→",
-     "box": [
-      1182,
-      257,
-      16,
-      17
-     ],
-     "measure": {
-      "glyph": "→",
-      "expected": "a glyph pointing left in RTL"
-     },
-     "critical_path": false
-    },
     {
      "page": "events",
      "locale": "ar",
@@ -769,15 +757,72 @@
      "critical_path": true
     }
    ],
-   "reach": 1,
-   "leverage": 2,
+   "text": null,
+   "note": null,
+   "selector": null,
+   "runtime_kind": "rtl_mirroring",
+   "reach": 3,
+   "leverage": 1,
    "severity": "Medium",
    "confidence": "high",
-   "score": 4,
-   "priority": "P3"
+   "score": 6,
+   "priority": "P2"
   },
   {
    "id": "K13",
+   "kind": "rtl_physical",
+   "source": "static",
+   "status": "confirmed",
+   "set": null,
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "keys": [],
+   "locations": [
+    {
+     "file": "site/index.html",
+     "line": 14
+    }
+   ],
+   "details": [
+    "direction arrow drawn as text; it will not mirror in RTL (use an icon flipped with :dir(rtl))"
+   ],
+   "evidence": [
+    {
+     "page": "home",
+     "locale": "ar",
+     "mode": "rtl",
+     "screenshot": "home.rtl.ar.1280x800.png",
+     "element": "span.icon:in(p)",
+     "text": "→",
+     "box": [
+      1182,
+      257,
+      16,
+      17
+     ],
+     "measure": {
+      "glyph": "→",
+      "expected": "a glyph pointing left in RTL"
+     },
+     "critical_path": false
+    }
+   ],
+   "text": null,
+   "note": null,
+   "selector": null,
+   "runtime_kind": "rtl_mirroring",
+   "reach": 3,
+   "leverage": 1,
+   "severity": "Medium",
+   "confidence": "high",
+   "score": 6,
+   "priority": "P2"
+  },
+  {
+   "id": "K14",
    "kind": "placeholder_mismatch",
    "source": "static",
    "status": "confirmed",
@@ -808,7 +853,7 @@
    "priority": "P3"
   },
   {
-   "id": "K14",
+   "id": "K15",
    "kind": "placeholder_mismatch",
    "source": "static",
    "status": "confirmed",
@@ -860,7 +905,7 @@
    "priority": "P3"
   },
   {
-   "id": "K15",
+   "id": "K16",
    "kind": "plural_categories",
    "source": "static",
    "status": "confirmed",
@@ -891,7 +936,7 @@
    "priority": "P3"
   },
   {
-   "id": "K16",
+   "id": "K17",
    "kind": "untranslated",
    "source": "static",
    "status": "possible",
@@ -922,7 +967,7 @@
    "priority": "P3"
   },
   {
-   "id": "K17",
+   "id": "K18",
    "kind": "unused_key",
    "source": "static",
    "status": "confirmed",

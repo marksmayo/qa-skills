@@ -112,6 +112,8 @@ Retries, longer timeouts and sleeps are not fixes.
 - [ ] Credentials come from the repository's mechanism (environment variables, fixtures)
 - [ ] The journey ID is in every test title and tag
 - [ ] Each Expect has its assertion(s), with a `Step N` comment before the step
+- [ ] Requests to other hosts are aborted (blocked URLs attached as evidence) and service workers are
+      blocked; `lint_tests.py` on the specs, the guard fixture and the config shows no network warning
 
 ## 6. Review checklist (before reporting)
 
@@ -120,5 +122,8 @@ Retries, longer timeouts and sleeps are not fixes.
 - [ ] Every flaky or blocked test has evidence and a suggested next step
 - [ ] Every testability gap names the element, the problem and a concrete code change
 - [ ] Deferred Expects say what framework or environment would unblock them
-- [ ] The headline gives verified/total Expects and leads with problems, not successes
+- [ ] The headline gives verified/total Expects ("7 of 13 Expects verified") and leads with problems
+      (suspected bugs, flaky, blocked and failing tests), not successes; the validator checks both
+- [ ] `metadata.approval.approved_by` says who approved (user, delegated with a note, unattended), and a
+      bootstrapped framework is recorded in `metadata.bootstrap`
 - [ ] Nothing committed; every changed file is listed

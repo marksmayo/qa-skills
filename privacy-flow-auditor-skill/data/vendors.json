@@ -64,7 +64,18 @@
     "stripe.com": {"vendor": "Stripe", "category": "payments"},
     "paypal.com": {"vendor": "PayPal", "category": "payments"},
     "recaptcha.net": {"vendor": "Google reCAPTCHA", "category": "security"},
-    "hcaptcha.com": {"vendor": "hCaptcha", "category": "security"}
+    "hcaptcha.com": {"vendor": "hCaptcha", "category": "security"},
+    "ahrefs.com": {"vendor": "Ahrefs Web Analytics", "category": "analytics"},
+    "usefathom.com": {"vendor": "Fathom", "category": "analytics"},
+    "simpleanalytics.com": {"vendor": "Simple Analytics", "category": "analytics"},
+    "simpleanalyticscdn.com": {"vendor": "Simple Analytics", "category": "analytics"},
+    "umami.is": {"vendor": "Umami", "category": "analytics"},
+    "matomo.cloud": {"vendor": "Matomo", "category": "analytics"},
+    "fundingchoicesmessages.google.com": {"vendor": "Google Funding Choices", "category": "consent_management"},
+    "jsdelivr.net": {"vendor": "jsDelivr", "category": "cdn"},
+    "unpkg.com": {"vendor": "unpkg", "category": "cdn"},
+    "cdnjs.cloudflare.com": {"vendor": "cdnjs", "category": "cdn"},
+    "jquery.com": {"vendor": "jQuery CDN", "category": "cdn"}
   },
   "vendors": {
     "Google Analytics": {"company": "Google", "aliases": ["GA4", "Google Analytics 4", "Universal Analytics", "Google Analytics for Firebase"]},
@@ -87,7 +98,41 @@
     "Snap": {"company": "Snap", "aliases": ["Snapchat", "Snap Pixel"]},
     "Zendesk": {"company": "Zendesk", "aliases": ["Zendesk Chat", "Zopim"]},
     "Vercel Web Analytics": {"company": "Vercel", "aliases": ["Vercel Analytics"]},
-    "Vercel Speed Insights": {"company": "Vercel", "aliases": []}
+    "Vercel Speed Insights": {"company": "Vercel", "aliases": []},
+    "Ahrefs Web Analytics": {"company": "Ahrefs", "aliases": ["Ahrefs", "Ahrefs Analytics"]},
+    "Fathom": {"company": "Conva Ventures", "aliases": ["Fathom Analytics"]},
+    "Simple Analytics": {"company": "Simple Analytics", "aliases": []},
+    "Umami": {"company": "Umami Software", "aliases": ["Umami Cloud", "Umami Analytics"]},
+    "Matomo": {"company": "InnoCraft", "aliases": ["Matomo Cloud", "Matomo Analytics", "Piwik"]},
+    "Google Funding Choices": {"company": "Google", "aliases": ["Funding Choices", "Google Privacy & messaging", "Privacy & messaging"],
+                               "why": "the consent message AdSense and Ad Manager show to visitors in the EEA, the UK and Switzerland is served from fundingchoicesmessages.google.com"}
+  },
+  "companions": {
+    "note": "Hosts a vendor's loader goes on to use once it runs, keyed by vendor: scan_privacy.py checks them against the site's Content Security Policy (a consent message the CSP blocks never shows) and counts them as used when it looks for CSP allowances nothing uses. host is a sample host for the check, match the allowance pattern it stands for; directive is the CSP directive the request falls under (script-src-elem falls back to script-src, then default-src).",
+    "Google AdSense": [
+      {"host": "fundingchoicesmessages.google.com", "directive": "script-src-elem", "role": "consent_message",
+       "why": "AdSense's consent message for the EEA, the UK and Switzerland (Privacy & messaging) loads from this host"},
+      {"host": "tpc.googlesyndication.com", "match": "*.googlesyndication.com", "directive": "frame-src", "role": "ads",
+       "why": "ads render in frames from *.googlesyndication.com"},
+      {"host": "googleads.g.doubleclick.net", "match": "*.doubleclick.net", "directive": "frame-src", "role": "ads",
+       "why": "ad and conversion frames and requests go to *.doubleclick.net"},
+      {"host": "www.googletagservices.com", "directive": "script-src-elem", "role": "ads",
+       "why": "the ad tag loads further scripts from www.googletagservices.com"}
+    ],
+    "Google Tag Manager": [
+      {"host": "region1.google-analytics.com", "match": "*.google-analytics.com", "directive": "connect-src", "role": "collection",
+       "why": "gtag.js sends Google Analytics hits to *.google-analytics.com"},
+      {"host": "region1.analytics.google.com", "match": "*.analytics.google.com", "directive": "connect-src", "role": "collection",
+       "why": "gtag.js sends Google Analytics hits to *.analytics.google.com"}
+    ]
+  },
+  "category_data": {
+    "note": "The personal-data categories (data/categories.json) a vendor of each category receives as soon as its tag runs: an identifier in a cookie or the request (online_identifier) and the pages viewed (browsing_behaviour). The validator expects a tracking_before_consent or tracking_after_reject finding about a vendor of these categories to carry them, so its rating does not depend on who wrote it; other categories need a categories_basis.",
+    "analytics": ["online_identifier", "browsing_behaviour"],
+    "advertising": ["online_identifier", "browsing_behaviour"],
+    "tag_manager": ["online_identifier", "browsing_behaviour"],
+    "marketing": ["online_identifier", "browsing_behaviour"],
+    "session_replay": ["online_identifier", "browsing_behaviour"]
   },
   "path_rules": {
     "note": "First-party paths that are a vendor's collection endpoint served from the site's own host, or forward to one (an analytics proxy, an error-tracker tunnel). merge_candidates.py checks every first-party request's path and query against these (substring) and against EasyPrivacy's path rules from the list; a match is first-party tracking, named only when a rule here names the vendor. body_rules match the request body (with 'requires' also in it).",

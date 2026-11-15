@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Render a Journey Mapper journey_map.json as a terminal/Markdown report with optional ANSI colour.
 In a scoped run the coverage headline counts only the run's domains; the whole-repository figure follows it.
+Steps a run observed (steps[].observed) are listed apart from the inferred journeys and counted in --brief.
 
-    python render_report.py journeys/journey_map.json [--brief] [--color auto|always|never]"""
+    python render_report.py journeys/journey_map.json [--brief] [--color auto|always|never]
+    python render_report.py --self-test"""
 from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
@@ -44,7 +46,44 @@ def open_questions(data):
         if key not in seen: seen.add(key); out.append((q['id'],q['question']))
     return out
 
+def observed_steps(journeys):
+    """(journey id, step number, observed) for every step a run observed."""
+    return [(j['id'],n,s['observed']) for j in journeys for n,s in enumerate(j.get('steps') or [],1)
+            if isinstance(s,dict) and isinstance(s.get('observed'),dict)]
+
+def self_test():
+    """Observed step results are shown apart from the inferred journeys, in the full report and counted in --brief."""
+    import contextlib, io, tempfile
+    example=Path(__file__).resolve().parent.parent/'examples'/'journeys'/'journey_map.json'
+    d=json.loads(example.read_text(encoding='utf-8'))
+    d['journeys'][0]['steps'][0]['observed']={'result':'the page answered 200 and showed the form',
+                                              'run':'run/probe/home.txt','at':'2026-11-15'}
+    problems=[]
+    with tempfile.TemporaryDirectory() as tmp:
+        f=Path(tmp)/'journey_map.json'; f.write_text(json.dumps(d),encoding='utf-8')
+        outs={}
+        for mode in ('full','brief'):
+            buf=io.StringIO(); argv=sys.argv
+            sys.argv=['render_report.py',str(f),'--color','never']+(['--brief'] if mode=='brief' else [])
+            try:
+                with contextlib.redirect_stdout(buf): main()
+            finally:
+                sys.argv=argv
+            outs[mode]=buf.getvalue()
+    full,brief=outs['full'],outs['brief']
+    jid=d['journeys'][0]['id']
+    if 'OBSERVED' not in full or 'the page answered 200 and showed the form' not in full or 'run/probe/home.txt' not in full \
+            or f'{jid} step 1' not in full:
+        problems.append('the full report lists each observed step with its result and run')
+    if 'Observed steps: 1' not in brief:
+        problems.append('the brief report counts observed steps')
+    for p in problems: print('FAIL',p)
+    print('SELF-TEST FAILED' if problems else 'self-test passed')
+    return 1 if problems else 0
+
 def main():
+    if '--self-test' in sys.argv[1:]:
+        return self_test()
     ap=argparse.ArgumentParser()
     ap.add_argument('json_file', type=Path)
     ap.add_argument('--color', choices=['auto','always','never'], default='auto')
@@ -94,6 +133,9 @@ def main():
         else:
             print('Untested P1 journeys: none')
         print(f"Open questions: {len(open_questions(data))}")
+        obs=observed_steps(journeys)
+        print(f"Observed steps: {len(obs)} of {sum(len(j['steps']) for j in journeys)}"
+              +(f" (runs: {', '.join(sorted({o['run'] for _,_,o in obs}))})" if obs else ' (every Expect is inferred from code)'))
         print(paint('All journeys are status "inferred": they describe current behaviour and need human review.',DIM,color))
         return 0
     if untested:
@@ -107,6 +149,12 @@ def main():
         auto=j['automation']
         line=f"{j['priority']}  {j['id']:14} {j['title'][:46]:46} {len(j['steps']):>2} steps {len(j.get('variants',[])):>2} var  "
         print(paint(line,PRIORITY_STYLE[j['priority']] if j['priority']=='P1' else '',color)+paint(f"[{auto}]",AUTOMATION_STYLE[auto],color))
+
+    obs=observed_steps(journeys)
+    if obs:
+        print('\n'+paint('OBSERVED IN RUNS (what a run showed; every other Expect is inferred from code)',BOLD,color))
+        for jid,n,o in obs:
+            print(f"- {jid} step {n} ({o.get('at')}, run {o.get('run')}): {' '.join(str(o.get('result')).split())}")
 
     if cov['unreachable']:
         print('\n'+paint('UNREACHABLE (not turned into journeys)',BOLD,color))

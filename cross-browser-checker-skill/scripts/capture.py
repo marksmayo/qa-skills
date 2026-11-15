@@ -41,7 +41,13 @@ Every run also records http_errors ("<status> <url>" for each response of 400 or
 engine writes about an HTTP error response is compared with the responses every engine received.
 
 A run that couldn't load, inject or capture has run_status "errored" (or "skipped") with the error text; an
-engine none of whose runs captured is "errored", never "ran".
+engine none of whose runs captured is "errored", never "ran". A run that loaded but can't be compared is errored
+too (compare_engines.screen_runs): one whose own requests to the site were upgraded to https and failed (a CSP
+upgrade-insecure-requests on a plain-http target; capture records csp_upgrade_insecure_requests and warns), and a
+blank or incomplete rerun (far fewer elements than its sibling reruns, or a one-colour screenshot when theirs
+aren't: each run records the screenshot's `uniformity`), which is captured once more first (`retried`). Each run
+also records `faces` (per computed font family, the width of a test string drawn with it) and each SVG shape its
+`stroke` width.
 
 A page or a state may carry "viewports", a subset of the top-level list, to run only there (a mobile
 menu state at the mobile width only); a state inherits its page's. The planned checks (page or state
@@ -78,6 +84,8 @@ from urllib.parse import urljoin
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from browser_harness import Harness, check_authorised, is_loopback, NotAuthorised, now, retry_decision  # noqa: E402
+import browser_harness  # noqa: E402
+import compare_engines as ce  # noqa: E402
 from compare_engines import planned_checks  # noqa: E402
 
 STABLE_CSS = ('*, *::before, *::after { animation-duration: 0s !important; animation-delay: 0s !important; '
@@ -92,6 +100,7 @@ APPLIED = "(name) => getComputedStyle(document.documentElement).getPropertyValue
 # Other console errors are dropped only when they name a blocked URL.
 BLOCKED_NOISE = re.compile(r'ERR_BLOCKED_BY_CLIENT')
 CAPTURE_CSS = '* { content-visibility: visible !important; } :root { --qa-capture-visible: 1; }'
+UPGRADE = re.compile(r'upgrade-insecure-requests', re.I)
 
 SCROLL = r"""
 async ([stepPx, pauseMs, maxSteps, waitMs]) => {
@@ -144,6 +153,9 @@ SNAP = r"""
     // the computed font family of text and form controls: a control that doesn't inherit the page font is drawn in the
     // engine's own default face (a serif in some builds), which box metrics alone dismiss as noise
     if (own || ['input', 'button', 'select', 'textarea'].includes(item.tag)) item.font = cs.fontFamily;
+    // an SVG shape's stroke width: one engine's box includes the stroke, another's doesn't
+    if (typeof SVGGeometryElement !== 'undefined' && el instanceof SVGGeometryElement && cs.stroke && cs.stroke !== 'none')
+      item.stroke = parseFloat(cs.strokeWidth) || 0;
     // covered by another element at its centre (a modal overlay, a sticky panel): its ink is the cover's, not its own
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     if (cx >= 0 && cy >= 0 && cx < innerWidth && cy < innerHeight) {
@@ -152,6 +164,15 @@ SNAP = r"""
     }
     els.push(item);
     if (els.length >= 2000) break;
+  }
+  // the face each computed font family resolves to, as the width of a test string drawn with it: the same family
+  // string (system-ui, a generic family, a local font) can resolve to another face in another engine
+  const faces = {};
+  const ctx = document.createElement('canvas').getContext('2d');
+  for (const e of els) {
+    if (!e.font || e.font in faces || Object.keys(faces).length >= 40) continue;
+    try { ctx.font = '100px ' + e.font; faces[e.font] = Math.round(ctx.measureText('Hamburgefontsiv 0123456789 WMwm').width * 10) / 10; }
+    catch (err) { faces[e.font] = null; }
   }
   const imgs = [...document.images].map(i => ({sig: sigOf(i), src: i.currentSrc || i.src, complete: i.complete, natural: [i.naturalWidth, i.naturalHeight]}));
   const scripts = [...document.scripts].map(s => s.src || ('inline:' + s.textContent.length));
@@ -170,7 +191,10 @@ SNAP = r"""
   }
   // the viewport the page really had after the steps: a step that entered fullscreen (click to play) resizes it to the
   // screen in some engines, and boxes measured at another viewport are not comparable
-  return {elements: els, images: imgs, scripts, scrollers, overflow_x: de.scrollWidth > de.clientWidth + 1,
+  // a Content-Security-Policy in a meta tag that upgrades insecure requests (headers are read from the response)
+  const meta = [...document.querySelectorAll('meta[http-equiv]')].filter(m => /content-security-policy/i.test(m.httpEquiv))
+    .some(m => /upgrade-insecure-requests/i.test(m.content || ''));
+  return {elements: els, images: imgs, scripts, scrollers, faces, meta_csp_upgrade: meta, overflow_x: de.scrollWidth > de.clientWidth + 1,
           size: [de.scrollWidth, de.scrollHeight], inner: [innerWidth, innerHeight],
           fullscreen: !!(document.fullscreenElement || document.webkitFullscreenElement)};
 }
@@ -266,8 +290,16 @@ def run_once(h: Harness, url: str, viewport: str, actions: list, shot: Path, scr
             inject(page, CAPTURE_CSS, '--qa-capture-visible', 'content-visibility')
             page.wait_for_timeout(200)
         rec.update(page.evaluate(SNAP))
+        csp = ' '.join(v for k, v in (resp.headers if resp else {}).items() if k.lower() == 'content-security-policy')
+        if UPGRADE.search(csp) or rec.pop('meta_csp_upgrade', False):
+            rec['csp_upgrade_insecure_requests'] = True
         h.screenshot(page, shot, full_page=True)
         rec['screenshot'] = shot.as_posix()
+        try:   # a one-colour screenshot: a blank capture (compare_engines.screen_runs weighs it against the other runs)
+            u = browser_harness.image_uniformity(shot.read_bytes())
+            rec['uniformity'] = {'dominant_share': u['dominant_share'], 'uniform': u['uniform']}
+        except Exception:  # noqa: BLE001 - an unreadable PNG is the screenshot's problem, recorded elsewhere
+            pass
         rec['run_status'] = 'ran'
         rec['ok'] = bool(resp and resp.status < 400)
     except Exception as e:  # noqa: BLE001
@@ -288,6 +320,29 @@ def run_once(h: Harness, url: str, viewport: str, actions: list, shot: Path, scr
             del rec['backoff']
         h.close_page(page)
     return rec
+
+
+def retry_outliers(group: list[dict], rerun) -> list[dict]:
+    """The reruns of one page, viewport and engine, with every run compare_engines.screen_runs would screen as blank or
+    incomplete (far fewer elements than its siblings, a one-colour screenshot) captured once more with rerun(run) ->
+    new run. A good retry replaces the run and records `retried` (why the first attempt was set aside); a retry that is
+    still an outlier is kept errored, with the reason. Runs screened for an environment cause (requests upgraded to
+    https) are not retried: every attempt fails alike."""
+    doc = {'runs': [dict(r) for r in group]}
+    out = list(group)
+    for s in ce.screen_runs(doc):
+        if s['reason'].startswith('environment:'):
+            continue
+        i = next(j for j, r in enumerate(group) if r.get('run', r.get('rerun')) == s['run'])
+        new = rerun(group[i])
+        trial = {'runs': [dict(r) for r in out[:i]] + [dict(new)] + [dict(r) for r in out[i + 1:]]}
+        again = [x for x in ce.screen_runs(trial) if x['run'] == s['run']]
+        if again:
+            out[i] = dict(new, run_status='errored', ok=False, error=again[0]['reason'], screened=again[0]['reason'],
+                          retried=s['reason'])
+        else:
+            out[i] = dict(new, retried=s['reason'])
+    return out
 
 
 def csp_bypass(h: Harness, on: bool) -> str:
@@ -379,6 +434,7 @@ def main() -> int:
                 for chk in plan:
                     name, vp = chk['page'], chk['viewport']
                     p, st = pages[name.split('~')[0]], states[name]
+                    first_run = len(doc['runs'])
                     for r in range(1, reruns + 1):
                         base = {'engine': eng, 'page': name, 'viewport': vp, 'run': r, 'critical_path': bool((st or {}).get('critical_path'))}
                         if req['budget'] is not None and req['sent'] >= req['budget']:
@@ -397,10 +453,23 @@ def main() -> int:
                         req['by_engine'][eng] = req['by_engine'].get(eng, 0) + rec['requests_sent']
                         req['backoffs'] += len(rec.get('backoff') or [])
                         doc['runs'].append({**base, **rec})
+
+                    def again(old, p=p, st=st, name=name, vp=vp):
+                        if req['budget'] is not None and req['sent'] >= req['budget']:
+                            return dict(old, error='request budget reached: not retried')
+                        shot = a.out / eng / vp / f'{name}.r{old["run"]}.retry.png'
+                        rec = run_once(h, urljoin(cfg['site'], p['path']), vp, (st or {}).get('actions') or [], shot, scroll, s)
+                        req['sent'] += rec['requests_sent']
+                        req['by_engine'][eng] = req['by_engine'].get(eng, 0) + rec['requests_sent']
+                        print(f'note: {eng} {name} {vp} run {old["run"]} looked blank or incomplete; captured it once more',
+                              file=sys.stderr)
+                        return {k: old[k] for k in ('engine', 'page', 'viewport', 'run', 'critical_path')} | rec
+                    doc['runs'][first_run:] = retry_outliers(doc['runs'][first_run:], again)
                 doc['blocked_requests'].extend(h.blocked)
                 if hasattr(h, 'metadata'):   # the harness's own record: CSP bypass, read-only, request totals, retry policy
                     doc.setdefault('harness', {})[eng] = h.metadata()
             mine = doc['runs'][start:]
+            ce.screen_runs({'site': cfg['site'], 'runs': mine})   # environment causes and blank reruns: errored
             captured = [r for r in mine if r.get('run_status') == 'ran']
             failed = [r for r in mine if r.get('run_status') != 'ran']
             if mine and not captured:
@@ -417,6 +486,12 @@ def main() -> int:
             r['screenshot_sha256'] = hashlib.sha256((a.out / r['screenshot']).read_bytes()).hexdigest()
     a.out.mkdir(parents=True, exist_ok=True)
     (a.out / 'runs.json').write_text(json.dumps(doc, indent=1) + '\n', encoding='utf-8')
+    if cfg['site'].startswith('http://') and any(r.get('csp_upgrade_insecure_requests') for r in doc['runs']):
+        print('warning: the site is served over plain http and its Content-Security-Policy says upgrade-insecure-requests: '
+              'engines that honour it on this host fetch subresources over https and fail (bypass_csp does not cover it); '
+              'serve over https, or without the directive, for the capture', file=sys.stderr)
+    for e in ce.environment(doc):
+        print(f'warning: environment: {e["detail"]}', file=sys.stderr)
     errored = sum(1 for r in doc['runs'] if r.get('run_status') != 'ran')
     print(f'{len(doc["runs"])} run(s), {errored} errored or skipped, {req["sent"]} request(s) sent, over '
           f'{", ".join(e["name"] + " " + e["status"] for e in doc["engines"])} -> {a.out}', file=sys.stderr)
