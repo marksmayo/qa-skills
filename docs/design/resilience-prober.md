@@ -360,3 +360,47 @@ A read-only run against a Next.js App Router site on Vercel showed these gaps; v
 - The example's optional widgets (notices, recommendations) are listed under `optional_endpoints`.
 - **Not done:** a `block_media` option for media-heavy pages, and a recovery that "succeeds" only because
   the faulted attempt's `done` is still on screen is still counted as recovered.
+
+### v1.4.0: after a run on a Next.js App Router content site with a service worker
+
+- **The runner hung forever after a reload that timed out.** Playwright's `page.evaluate` has no timeout,
+  and on a page whose navigation timed out it never returns (nor do `is_visible` and
+  `context.set_offline`). Every read of the page now goes through a bounded call (`wait_for_function` with
+  a timeout), screenshots time out after 10 s, page loads after `nav_timeout_ms`, and a reload that did not
+  finish is recorded without reading the page (`reload_not_checked` note; it is never read as a persisted
+  failure). On top of that a watchdog runs the work in a child process with a time limit per baseline or
+  scenario run: a run past it is stopped with its browser, listed in `hung.json`, recorded `errored` with
+  the reason, and the work resumes after it. The self-test's browser check reproduces the hang with a stub
+  whose document never answers the reload.
+- **run.json was written only at the end**, so each hang lost everything. It is written after every flow's
+  baselines and every scenario (`run_status: partial` until done), `--resume` continues a stopped run with
+  its request counts, and the report builder and validator refuse a partial run.
+- **Offline on a link became `errored` with a wrong reason**: Next fell back to a full page load, Chromium
+  showed its own offline page, and the observation failed. Observation retries once, records the page URL,
+  and `browser_error_page` becomes a note with the screenshots (no app code ran there).
+- **Next's fallback to a full page load and its client cache were rated `misleading_state` P0**. The run
+  records the page's own document loads; a failed request followed by a 2xx document load of the same path
+  is a `full_page_fallback` note. Offline counted every failed request in the context, so a prefetch
+  blocked before the fault made a cache-served step "ran": offline now counts only requests the scenario
+  targets, and a `not_triggered` reason says whether matching requests came before the fault, only after
+  it, or never.
+- **Decorative images failing were P0**: a fault that only hit images, fonts or media is optional for the
+  step by default, and visible broken images are counted (`broken_images` note).
+- **`prefetch: block` changed the app** without saying so: SKILL.md describes the trade-off and the
+  faithful alternative (`"from": "load"` with `Next-Router-Prefetch: 1`), and classify notes the fallbacks
+  in the baselines (`prefetch_changed_app`).
+- **No back step**: flows may use `back`, `forward` and `reload` (bounded by the navigation timeout); a
+  step made only of them recovers by `reload` (not tried).
+- **Service workers could not be tested**: `service_workers: "allow"` (global or per flow) lets the worker
+  run, waits for it and reloads once so it controls the page; a targeted request the worker answers offline
+  counts as reached by the fault and is a `served_by_service_worker` note. `plan_scenarios.py --repo` lists
+  the workers a Next.js app ships (shared `next_app.py`), warns when the run blocks them, and the report
+  says so in limitations.
+- **A baseline that failed once under load made its scenarios untested**: a failed baseline run is tried
+  again after a pause (`baseline_retries`); a flow that passed only then is `retried` in the report's
+  baseline section and keeps the confidence at medium at most. Baseline steps record `done_ms`.
+- `--plan-only` prints an `estimate` of runs, page loads and requests against `request_budget`, and a
+  `not_triggered` reason names what the request log shows.
+- **Not done:** the shared harness's `settle()` and `viewport_now()` still evaluate without a deadline, and
+  its `press` action has no timeout (the runner avoids `h.screenshot` and drives history steps itself; the
+  watchdog covers the rest).

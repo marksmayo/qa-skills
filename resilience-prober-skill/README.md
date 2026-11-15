@@ -18,7 +18,10 @@ your server), and records what the user sees and loses:
 
 It is strict about what a run shows:
 
-- Each flow's baseline must pass twice before its faults count.
+- Each flow's baseline must pass twice before its faults count (a failed run is tried once more, and a
+  flow that needed it is marked `retried`).
+- The run never hangs: every page call has a deadline, a watchdog stops a run past its time limit and
+  goes on, and `run.json` is written after every scenario (`--resume` continues a stopped run).
 - The expected outcome is written before the run, so the bar can't move.
 - Retry storms are counted, not guessed; typed input is recorded as length and hash only.
 - A console error alone is a note, and "nothing broke" is never "resilient".
@@ -68,6 +71,7 @@ the report. `examples/README.md` has the answer key.
 python scripts/validate_resilience.py examples/resilience_report.example.json --run examples/run/run.json --scenarios examples/run/scenarios.json --candidates examples/run/candidates.json
 python scripts/render_report.py examples/resilience_report.example.json
 python scripts/self_test.py     # offline checks of classify, build_report and the runner's helpers (no browser)
+python scripts/self_test.py --browser [PORT]     # the runner against a loopback stub (Playwright with Chromium)
 ```
 
 ## Files
@@ -84,7 +88,7 @@ python scripts/self_test.py     # offline checks of classify, build_report and t
 - `scripts/classify.py`: effects, root-cause merging and ratings
 - `scripts/build_report.py`: the report skeleton and a guarded repro script per finding
 - `scripts/validate_resilience.py`, `scripts/render_report.py`, `scripts/schema_check.py`
-- `scripts/browser_harness.py`: shared copy (edit it in `shared/`)
+- `scripts/browser_harness.py`, `scripts/next_app.py`: shared copies (edit them in `shared/`)
 - `examples/`: the app, the flows, the run and the report
 
 ## Design principles
