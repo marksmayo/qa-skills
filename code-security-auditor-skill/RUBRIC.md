@@ -142,16 +142,17 @@ appears in the request is rejected.
 
 ## Weakness catalogue
 
-`data/pitfalls.json` has 143 patterns in 17 packs (Python, server-side templates (Jinja, Django,
+`data/pitfalls.json` has 149 patterns in 18 packs (Python, server-side templates (Jinja, Django,
 Nunjucks), JavaScript/TypeScript, Java/Kotlin, Android manifests, iOS, Go, PHP, Ruby, C#, C/C++,
 Rust, GitHub Actions workflows and composite actions, Dockerfiles, Terraform, Azure Bicep/ARM,
-Azure Pipelines), each with a CWE, an OWASP 2025 category, a typical CVSS vector, a fix
+Azure Pipelines, and security headers in `next.config`, `vercel.json`, `netlify.toml` and
+`_headers`), each with a CWE, an OWASP 2025 category, a typical CVSS vector, a fix
 and the matching rules of other tools.
 
 | Category | Weaknesses |
 |---|---|
 | Injection | SQL and NoSQL (including Prisma `$queryRawUnsafe`/`$executeRawUnsafe`, `Prisma.raw` and `$queryRaw` called with a string), OS command, template (SSTI), eval, LDAP/XPath, header and log injection, format strings, CSV formula injection |
-| Web | XSS sinks (including `dangerouslySetInnerHTML` with non-literal content and values in `<style>` blocks; in templates `\|safe`, `{% autoescape false %}`, values in inline `<script>` without `\|tojson`, unquoted attributes, and Jinja environments with `autoescape=False`), CSRF, open redirect (`res.redirect`, `NextResponse.redirect`, `redirect()`, `router.push`, and `startsWith('/')`-only checks), CORS, cookie flags, postMessage origin checks, shared-cache headers on session responses |
+| Web | XSS sinks (including `dangerouslySetInnerHTML` with non-literal content and values in `<style>` blocks; inline JSON-LD built with `JSON.stringify` is its own pattern, a `</script>` breakout only when a value comes from outside the repository; in templates `\|safe`, `{% autoescape false %}`, values in inline `<script>` without `\|tojson`, unquoted attributes, and Jinja environments with `autoescape=False`), CSRF, open redirect (`res.redirect`, `NextResponse.redirect`, `redirect()`, `router.push`, and `startsWith('/')`-only checks), CORS, cookie flags, postMessage origin checks, shared-cache headers on session responses; CSP weaknesses (`'unsafe-inline'` or `'unsafe-eval'` for script, `*` or a bare scheme as a script source, a tag-manager host allowed as a script source) and `Cache-Control: public, s-maxage` on a catch-all header source; recon leads for missing `frame-ancestors`/`X-Frame-Options` and HSTS, an image optimiser open to any host, third-party scripts and service-worker caching |
 | Server-side | SSRF, path traversal and zip slip, XXE, unsafe uploads (including the client's `file.type` stored as the content type, and uploads read whole into memory or handed to a parser with no size limit), unverified webhooks |
 | Access control | IDOR/BOLA, missing function-level checks (recon: handlers with no auth call), mass assignment (`data: body`, `data: { ...body }`), mostly agent review |
 | Authentication | Hard-coded session keys, JWT verification, reset tokens, rate limits, OAuth `state` not bound to the session, development bypass tokens or extra roles read from an environment variable with no environment guard |
@@ -183,7 +184,19 @@ JavaScript source patterns cover Express (`req.query`, `req.body`, `req.params`)
 - NextAuth: `callbacks.redirect` (open redirect), `callbacks.jwt`/`session` (what goes in the
   token, stale roles after a change), `authorize` (rate limits, enumeration), and whether a deleted
   or disabled user keeps a valid JWT.
-- Responses that read the session must not carry `Cache-Control: public` or `s-maxage`.
+- Responses that read the session must not carry `Cache-Control: public` or `s-maxage`, and neither
+  should a `headers()` rule for a catch-all source (`/:path*`, `/(.*)`): it covers routes added later.
+- Pages, generated metadata routes (`robots.ts`, `sitemap.ts`, `opengraph-image.tsx`), the image
+  optimiser (`/_next/image`) and service workers are entry points. `dynamic = 'force-static'` (or a
+  static export) means the route is rendered at build, not per request; `generateStaticParams` with
+  `dynamicParams = false` limits a dynamic segment to the build-time values. Both bound what an
+  attacker can reach, and recon records them as `static` and `params_bounded`.
+- Security headers live in `next.config` `headers()`, platform files or middleware; headers the host
+  or CDN adds are not in the repository, so a missing header is checked on a response before it is
+  reported. A CSP with `'unsafe-inline'` for script, or a tag-manager host as a script source, does
+  not limit injected script.
+- A service worker in `public/` answers every request in its scope: cache-first storage of
+  navigations or per-user responses outlives the deploy that fixes it.
 - Prisma: `$queryRaw` as a tagged template is parameterised; the `Unsafe` variants and `Prisma.raw`
   are not. `data: body` lets the caller set any column, including owner and role fields.
 
@@ -204,11 +217,13 @@ JavaScript source patterns cover Express (`req.query`, `req.body`, `req.params`)
 
 ## Reviewer checklist
 
-- [ ] Recon covers every entry point (including CI workflows, composite actions, server actions, middleware, CLI commands, MCP tools, local listeners and config inputs), with auth confirmed by reading; any recon entry point dropped is in `removed_entry_points` with the reason.
+- [ ] Recon covers every entry point (including CI workflows, composite actions, server actions, middleware, pages, metadata routes, the image optimiser, service workers, CLI commands, MCP tools, local listeners and config inputs), with auth confirmed by reading; any recon entry point dropped is in `removed_entry_points` with the reason.
 - [ ] Every tool is ran, not_run (why), errored (why) or not_applicable; no licensed tools.
 - [ ] Every candidate and advisory triaged with checkable reasons.
 - [ ] Every finding has a traced path (or a stated gap), a CVSS vector with rationale, repro steps,
       impact, fix and a regression test that fails on the vulnerable code.
 - [ ] Confirmed findings had permission, a safe target and canary-only PoCs; proofs fail on the fix.
+- [ ] Guard checks (`purpose: guard_check`) are recorded as `guard_held`, cited only by observations; a guard that did not hold became a finding.
+- [ ] For a static or content site: headers and CSP, third-party scripts, the service worker, data provenance and committed agent or editor configuration were reviewed (or named in `not_reviewed`).
 - [ ] No secret values anywhere; the report and evidence are outside the repository.
 - [ ] Coverage and limitations say what wasn't reviewed; the headline doesn't call the code secure.
