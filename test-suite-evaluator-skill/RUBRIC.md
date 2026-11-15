@@ -91,7 +91,7 @@ Never translate inferred scenarios into line or branch percentages.
 - **7–8:** Critical interfaces and risks all tested; gaps are in low-risk areas and known.
 - **9–10:** Coverage measured against source or specification and risk, with no untested critical path.
 
-Below 4 caps the overall score at 4 (`coverage_below_4`), and then reliability, assertions, isolation and performance, which grade the few tests that exist, are `medium` confidence at most **(checked)**. A repository with no tests at all (`execution: no_tests`, discovery verified the absence) is the exception: coverage, effectiveness, trust and assertions are 1 and may be held with high confidence, and the dimensions that grade existing tests are not assessed **(checked)**.
+Below 4 caps the overall score at 4 (`coverage_below_4`), and then reliability, assertions, isolation and performance, which grade the few tests that exist, are `medium` confidence at most **(checked)**. A repository with no tests at all (`execution: no_tests`, discovery verified the absence) is the exception: coverage, effectiveness, trust and assertions are 1 and may be held with high confidence, and the dimensions that grade existing tests are not assessed **(checked)**. Its test source is `missing` in the evidence inventory; `available` or `partial` beside `no_tests` contradicts the verified absence **(checked)**.
 
 ## 7. Isolation and state management
 
