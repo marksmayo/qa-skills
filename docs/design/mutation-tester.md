@@ -403,3 +403,51 @@ Agreed with the user before the build.
     original is `original_not_run` (was `fails_on_original`) and its mutants are not run; a test
     that never ran on a mutant (collection broke) is `runtime_error` (was `does_not_kill`). The
     validator still accepts only `kills`. The example is unchanged and validates.
+- **v1.6.0: a Rust workspace with Python tooling.** A review on a Cargo workspace (the product)
+  whose Python helper scripts in `scripts/` had unittest tests (CI: `coverage run -m unittest`)
+  mutated the helper scripts and said nothing about the Rust going untested. Fixed with red/green
+  cases in `scripts/self_test.py` (a synthetic tide-gauge workspace and a synthetic `tide-cli`
+  crate under `examples/cargo-mutants/`); report schema 1.3.0.
+  - **Product language and tooling** (`detect_tools_unscripted_dominant`,
+    `report_language_limitation`): `detect_tools.py` counts product lines with the shared
+    `lang_census.py` (test code and tooling folders apart) and prints `WARNING:` lines when the
+    language with the most product code has no engine that can run here and when a language's
+    only non-test code is tooling; `tools.json` has `language_coverage`, `tooling` and
+    `warnings`. `normalize_results.py` writes `language_coverage` (dominant language, mutated
+    languages, `unmutated_dominant`, `tooling_scope_files`) into `mutants.json`; the report
+    copies it (`metadata.language_coverage`, required from 1.3.0) and the validator re-derives
+    it with `--repo` and requires a limitation naming an unmutated product language and one
+    calling tooling tooling.
+  - **cargo-mutants** (`cargo_mutants_normalise`, `run_engine_cargo_mutants`, `prove_kill_rust`):
+    `normalize_results.py --cargo-mutants` reads `outcomes.json` (statuses, operators from the
+    genre and replaced text, original lines from the repository, `killed_by` from the mutant's
+    libtest log, a failed baseline as `errored`, a coverage note on every missed mutant: no
+    per-test coverage). `run_engine.py cargo-mutants` runs an installed cargo-mutants on the
+    scope with the tree hashed and the code hash recorded, and exits 2 with the install command
+    when it is missing (it is never installed). `prove_kill.py` proves `.rs` tests with
+    `run_tests.py --preset cargo` by the id `cargo_project.py` gives; the fixture's output is
+    synthetic (written in cargo-mutants' format, since cargo-mutants was not installed), the
+    crate and the proofs are real. A shared build directory let a second proof reuse the first
+    proof's mutant binary, because the copy kept the repository's older mtimes: copies now get
+    fresh mtimes and the proof builds in its own target directory, never the repository's.
+  - **unittest** (`builtin_unittest_runner`, `prove_kill_unittest`): `builtin_mutator.py
+    --runner unittest --unittest-args "-s tests"` and `prove_kill.py --runner unittest` run
+    the suite through `unittest_runner.py` (discovery as `python -m unittest discover`, per
+    TestCase tracing, ids `file::Class::method`), so pytest's extra collection (a
+    `@contextmanager` helper named `test_*`) never enters. `--runner auto` picks pytest only
+    when it imports.
+  - **Budget** (`builtin_budget_estimate_measured`): the estimate was the covering-test share of
+    one suite run plus a fixed second; on Windows the start-up dominates and the real run took
+    about 1.6 times the estimate. The engine now measures the start-up (a run that loads the
+    tests and runs none), prints a `measured:` line after the first few mutants, and records
+    both in `builtin.json` (`estimate`).
+  - **Smaller fixes**: strings used as keys or defaults are `constant_string_data`, kind value
+    (`operator_keys_and_defaults`); a placeholder headline is rejected and from 1.3.0 the
+    headline names every P0 finding by id (`headline_names_p0`); a wrong `schema_version` says
+    which to write (`schema_version_hint`); the renderer names a path scope's paths
+    (`render_path_scope`); `path_scope.py` records `head` and `dirty`
+    (`path_scope_records_head`); a no-coverage mutant in a file the tests launch as a child
+    process notes the launching test (`builtin_subprocess_only_coverage`).
+  - The example is now schema 1.3.0: `mutants.json` was re-normalised (adding
+    `language_coverage` and the engines' `run_by`; the mutants are unchanged), the headline names
+    F1, and it validates.

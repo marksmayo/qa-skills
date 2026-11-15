@@ -1,7 +1,7 @@
 ---
 name: mutation-tester
-description: Run mutation testing on the code that changed (or a path you name) and turn the surviving mutants into a short, ranked list of weak assertions and missing cases, each naming the test that should have caught it and the assertion or input that would. Uses the repo's own mutation tool when it is configured, the standard open-source tool otherwise (from a scratch config, never added to the repo), and a stdlib AST engine for Python as a fallback. Every score is shown with its counts and scope; equivalent mutants need a checkable reason; timeouts and errors are never counted as kills; no-coverage mutants are coverage gaps, not weak assertions. Never claims code is "well tested".
-version: 1.5.0
+description: Run mutation testing on the code that changed (or a path you name) and turn the surviving mutants into a short, ranked list of weak assertions and missing cases, each naming the test that should have caught it and the assertion or input that would. Uses the repo's own mutation tool when it is configured, the standard open-source tool otherwise (from a scratch config, never added to the repo), and a stdlib engine for Python (pytest or unittest) and Go as a fallback; reads cargo-mutants for Rust. It says loudly when the product language was not mutated or the mutated code is tooling. Every score is shown with its counts and scope; equivalent mutants need a checkable reason; timeouts and errors are never counted as kills; no-coverage mutants are coverage gaps, not weak assertions. Never claims code is "well tested".
+version: 1.6.0
 ---
 
 # Mutation tester
@@ -95,7 +95,7 @@ or not applicable, with the reason.
 | JavaScript, TypeScript | StrykerJS (Apache-2.0) | `run_engine.py stryker` (needs `@stryker-mutator/core` and the runner plugin, e.g. `@stryker-mutator/vitest-runner`, in the repo) |
 | C# | Stryker.NET (Apache-2.0) | `dotnet stryker --reporter json --mutate <scoped files>` |
 | Java, Kotlin, Android unit tests | PIT (Apache-2.0) + JUnit 5 plugin | `mvn org.pitest:pitest-maven:mutationCoverage -DoutputFormats=XML,HTML` (or Gradle `pitest`) with the mutation-testing-elements report plugin |
-| Rust | cargo-mutants (MIT) | `cargo mutants --in-diff <diff>` |
+| Rust | cargo-mutants (MIT) | `run_engine.py cargo-mutants` (needs cargo-mutants installed); `normalize_results.py --cargo-mutants` |
 | Go | builtin Go engine; gremlins (Apache-2.0), go-mutesting (MIT) | `builtin_mutator.py` (needs `go`); gremlins/go-mutesting by hand, converted to mutation-testing-elements JSON (`normalize_results.py --mte`) |
 | Swift (iOS unit tests) | Muter (MIT) | `muter --files-to-mutate <files>` |
 | Dart, Flutter | mutation_test (BSD-3-Clause) | `dart run mutation_test` |
@@ -126,15 +126,44 @@ versions: with TypeScript 7 or later, Stryker's tsconfig rewrite and the typescr
 cannot run (TypeScript 7 has no JavaScript API they can call), `run_engine.py` disables both,
 and compile errors are never `compile_error`; say so in the limitations.
 
-**Rust / cargo-mutants.** `detect_tools.py` recognises Rust and recommends cargo-mutants, but
-there is no scripted runner, normaliser or kill-prover for it: `run_engine.py`,
-`builtin_mutator.py`, `normalize_results.py` and `prove_kill.py` cover only Python (mutmut,
-builtin) and JavaScript/TypeScript (Stryker). So for Rust you run cargo-mutants by hand (typically
-`cargo mutants --in-diff <diff>` for a scoped change, or `cargo mutants` for the whole crate) and
-read its own output. There is no automated normalisation or kill-proving, so Rust mutation
-findings are agent-driven: they follow the same honesty rules as every other finding (no
-fabricated kills, survivors stay survivors until a real run shows otherwise, mark unproven
-suggestions as unproven, and show every score with its counts and scope).
+**Which language is the product.** `detect_tools.py` counts lines of product code per language
+(the shared `lang_census.py`: test files and tooling folders such as `scripts/`, `tools/`, `ci/`
+are counted apart) and prints a `WARNING:` line when the language with the most product code has
+no engine that can run here (a Rust workspace without cargo-mutants installed), and another when
+a language's only non-test code sits in tooling folders while the product is elsewhere (Python
+helper scripts beside a Rust product). Both are in `tools.json` (`language_coverage`, `tooling`,
+`warnings`). Mutating the helper scripts is still worth doing when asked, but the report must
+say what it covered: `normalize_results.py` records `language_coverage` in `mutants.json`
+(copy it into `metadata.language_coverage`), and the validator requires a limitation naming the
+product language when no mutant is in it (`unmutated_dominant`) and one saying the mutated files
+are tooling (`tooling_scope_files`).
+
+**Rust / cargo-mutants.** cargo-mutants is never installed by this skill; ask first
+(`cargo install --locked cargo-mutants`). Once it is installed:
+
+```bash
+python scripts/run_engine.py cargo-mutants --repo <workspace root> --scope <run>/scope.json --run-dir <run> \
+    [--minutes 30] [--cargo-mutants-arg=--package --cargo-mutants-arg=<crate>] [--cargo-mutants-arg=--test-tool=nextest]
+python scripts/normalize_results.py --scope <run>/scope.json --repo <workspace root> \
+    --cargo-mutants <run>/mutants.out --cargo-mutants-run <run>/cargo-mutants.run.json --out <run>/mutants.json
+```
+
+`run_engine.py cargo-mutants` runs `cargo mutants --no-shuffle --output <run>` from the
+workspace root with `--in-diff <diff>` when the scope came from a diff file, `--file <f>` per
+scoped `.rs` file otherwise; cargo-mutants builds in its own copy of the tree, and the repository
+is hashed before and after. Without cargo-mutants it exits 2 with the install command: record the
+engine `not_run` with that reason and Rust as not mutated in the limitations. A run by hand
+(`cargo mutants --in-diff <diff> --output <run>`) normalises the same way without
+`--cargo-mutants-run`; it is then `run_by: "external"` and has no tree check, which the validator
+reports. The normaliser reads `mutants.out/outcomes.json`: CaughtMutant is `killed` (with
+`killed_by` from the mutant's log when it names a failing libtest test), MissedMutant `survived`,
+Timeout `timeout`, Unviable `compile_error`, and a failed baseline makes the engine `errored`.
+Operators come from the genre and the replaced text (`>=` to `>` is `comparison_boundary`,
+`&&` to `||` `logical`, FnValue `return_value`, MatchArm `remove_block`). cargo-mutants has no
+per-test coverage, so `covering_tests` is empty and every missed mutant carries a note that its
+line may be unexecuted: check before calling it a weak assertion (a `missing_case` with no
+`should_have_caught` is the honest default), and proximity is 1. Prove suggestions with
+`prove_kill.py` (Step 7: cargo test by test id). `builtin_mutator.py` does not mutate Rust.
 
 **Go.** The builtin engine mutates Go: `builtin_mutator.py` picks Go when the scope's changed
 source is Go (`--language go` when Python changed too). It makes text-level mutants from Go
@@ -170,7 +199,9 @@ python scripts/path_scope.py --repo <repo> --path src/billing [--path src/auth/r
 
 `diff_scope.py` is the `changed` scope. `path_scope.py` is the path scope: every line of the
 files under each path (a file may take a line range), in the same `scope.json` shape, with
-`source.kind: "path"`; set `metadata.scope.mode` to `path` and `paths` to `source.paths`.
+`source.kind: "path"`; set `metadata.scope.mode` to `path` and `paths` to `source.paths`. It
+records the commit it read (`source.head`, and `source.dirty`: scoped paths with uncommitted
+changes); copy `source.head` into `metadata.commit`.
 
 Only `source` files' added or changed lines (or, for a path, all their lines) are mutated.
 Tests, generated code, migrations, vendored code, type declarations, config and docs are
@@ -199,6 +230,19 @@ through the module that re-exports them), or the related tests the engine itself
 the repo's own test command and environment (`--cmd`, `--env TZ=...` when `npm test` sets them),
 and list the files, and how you chose them, in `baseline.note`. A failure elsewhere in the suite
 doesn't stop a scoped run, but it goes in the limitations.
+
+**Use the repository's runner.** `detect_conventions.py` gives each area's `python_runner`
+(unittest when CI runs `python -m unittest` or `coverage run -m unittest` and nothing uses
+pytest) and the CI command (`ci_gates`). For a unittest suite, run the builtin engine and the
+proofs with `--runner unittest --unittest-args "-s tests"` (the CI's discovery options), so the
+same tests run as in CI. pytest also runs `unittest.TestCase` classes, but it collects more: a
+plain function named `test_*` (a `@contextmanager` helper, say) becomes a passing "test", and
+pytest may not be installed at all. `run_tests.py` has no unittest preset yet: when pytest is
+installed, take the baseline with `--preset pytest --tests <the TestCase files>` and say in
+`baseline.note` that pytest ran the unittest suite; otherwise the builtin engine's own coverage
+and timing runs (both must pass unmutated) are the only green runs, which the baseline must say.
+For Rust, the baseline is `run_tests.py --preset cargo` (cargo-mutants also runs its own
+baseline and stops when it fails).
 
 **Flaky tests.** If a test in the baseline set passes in one run and fails in the other, the
 baseline is flaky: list it in `baseline.flaky_tests`, set `passed: false`, and stop; a mutant
@@ -281,12 +325,27 @@ classified. The per-mutant timeout is 3 times one untraced suite run, at least 1
   The engine records such lines under `<import>` and treats them as covered by every test that
   touched the file (every test it saw, when none did), with a note on the mutant; they are not
   `no_coverage`. Expect those mutants to be killed (or survive) by tests far from the line.
-- **Budget.** Before the loop the engine prints its plan: how many mutants, and an estimate from
-  the share of the suite's tests that cover each one (a mutant runs only its covering tests,
-  with `-x`). It then runs mutants in an interleaved order until `--minutes` is spent, so a short
+- **Budget.** Before the loop the engine prints its plan: how many mutants, and an estimate per
+  mutant of the measured start-up (a run that loads the runner, conftest and the test modules
+  and runs no test) plus the share of the suite's test time its covering tests take (a mutant
+  runs only its covering tests, failing fast). Start-up often dominates (two or three seconds
+  per run on Windows), so this is the figure to plan with; after the first few mutants a
+  `measured:` line gives the real mean and what the rest would take, and `builtin.json` keeps
+  both (`estimate`). Mutants run in an interleaved order until `--minutes` is spent, so a short
   budget still gives an even sample and an over-estimate never leaves budget unused. Keep
   crawl-everything tests (a test that renders every page) out of `--tests`: they dominate the
   coverage run, which traces every line.
+- **unittest suites.** `--runner unittest --unittest-args "-s tests"` runs every coverage, timing
+  and mutant run with unittest's own discovery (the CI's `python -m unittest discover` options),
+  traced per TestCase method; test ids are `tests/test_x.py::Class::test_method`, and `--tests`
+  takes test files, folders or such ids. A test module that fails to import under a mutant is a
+  `runtime_error`, never a kill. `--runner auto` (the default) uses pytest when it imports.
+- **Code run only in a child process.** A test that runs a script with `subprocess` (`sys.executable
+  scripts/report.py`) exercises it out of the tracer's sight, so its mutants are `no_coverage`.
+  The engine notes each such mutant with the test lines that launch the file
+  (`coverage.json` `launched_as_child`). Read that test: it may check the output well, or not at
+  all. Either way the in-process mutants stay `no_coverage`; say in the gap's note that the file
+  is exercised only as a child process (on which platforms, when the test is skipped on some).
 - **Templates.** The engine mutates Python only. When the change also edits Jinja or Django
   templates, list them in the scope's exclusions as "not mutated: template", and check survivors
   whose values flow into a template (a context variable the template branches on) by reading it.
@@ -296,8 +355,16 @@ classified. The per-mutant timeout is 3 times one untraced suite run, at least 1
 ```bash
 python scripts/normalize_results.py --scope <run>/scope.json --repo <repo> --builtin <run>/builtin.json \
     --mutmut <run>/mutmut.json [--stryker <run>/stryker-report.json --stryker-run <run>/stryker.run.json] \
-    [--mte <run>/gremlins.mte.json --mte-engine gremlins] --coverage <run>/coverage.json --out <run>/mutants.json
+    [--mte <run>/gremlins.mte.json --mte-engine gremlins] \
+    [--cargo-mutants <run>/mutants.out --cargo-mutants-run <run>/cargo-mutants.run.json] \
+    --coverage <run>/coverage.json --out <run>/mutants.json
 ```
+
+`mutants.json` also holds `language_coverage`: the language with the most product code, the
+languages the mutants are in, `unmutated_dominant` when the product's language has no mutant, and
+`tooling_scope_files` when the mutated files sit in tooling folders while the product is
+elsewhere (both are printed as warnings). Copy it into `metadata.language_coverage` unchanged.
+cargo-mutants' mutants get C1.. ids (Step 1, Rust).
 
 A mutation-testing-elements report other than Stryker's goes in with `--mte`; its mutants get
 P1.. (PIT) or X1.. ids and its own engine name. Mutants of one engine that make the same edit on
@@ -331,7 +398,10 @@ exactly one finding, and nothing else does:
 A string compared in a condition (`role != "*"`, `kind in ("a", "b")`) or held in an UPPER_CASE
 constant is not display text: its operator is `constant_string_compared` (kind branch) or
 `constant_string_named` (value), so a mutant that turns a wildcard check or a role name into
-`""` ranks with the logic it changes. A builtin mutant inside a typing `Literal[...]` carries a
+`""` ranks with the logic it changes. A string used as a key or a default is data, not text:
+`c.get("platforms", [p])`, `row["kind"]`, a dict literal's key, `def f(kinds=("sea", "river"))`
+give `constant_string_data` (kind value), since emptying the key disables a lookup and emptying a
+default changes which items a rule applies to. A builtin mutant inside a typing `Literal[...]` carries a
 note: it changes behaviour only where the type is checked at run time (pydantic models,
 typeguard), which may be outside the tests in this repo; triage it on that basis.
 
@@ -359,9 +429,23 @@ before calling the suggestion wrong.
 
 For a Go test file (`*_test.go`) it runs `go test -count=1 -vet=off -run '^TestName$'` on the
 package from the nearest `go.mod`, with the test file and each mutant swapped in by `-overlay`:
-nothing is copied. A mutant that does not build is `not_viable`, never a kill. Any other test
-file (Rust, Java, ...) is refused before anything is copied; prove it by hand and leave the
-finding's `proof_ids` empty.
+nothing is copied. A mutant that does not build is `not_viable`, never a kill.
+
+For a unittest suite give `--runner unittest --unittest-args "-s tests"` and the test as
+`--test-name Class.test_method` (the appended code is a `unittest.TestCase` class, using the
+test file's imports); it runs with unittest's own discovery, and the proof's `test_id` is
+`tests/test_x.py::Class::test_method`.
+
+For a Rust test file (`.rs`: an integration test in `tests/`, or a `#[test]` appended to a source
+file's module) it appends the test in a scratch copy (without `target/`), finds the test's id with
+`cargo_project.py` (`crossing::high_from_300`, `<lib>::tests::name`) and runs it with
+`run_tests.py --preset cargo --tests <id>` (`cargo test -p <crate> --test <target> -- --exact`).
+Builds go to `CARGO_TARGET_DIR` (default `<run-dir>/cargo-target`, removed afterwards; set it to
+reuse a build). A mutant that does not compile is `not_viable`. The default timeout is at least
+300 s, since each run compiles.
+
+Any other test file (Java, ...) is refused before anything is copied; prove it by hand and leave
+the finding's `proof_ids` empty.
 
 The new test runs on the original code (must pass) and on each mutant (must fail), in a scratch
 copy. Prove every ranked suggestion you can; cite the proof ids on the finding or gap. With
@@ -388,8 +472,12 @@ python scripts/render_report.py <run>/mutation_report.json [--brief]
 `--write-summary` computes each ranked finding's kind factor, proximity, score and priority, and
 every count, score and score text in the summary, and sorts the findings by priority; errors
 name the finding id as well as its index. `render_report.py` needs the computed summary, so
-run `--write-summary` first. Write the headline yourself, and fix every error rather than
-editing computed fields. Show the user:
+run `--write-summary` first. Write `"schema_version": "1.3.0"`. Write the headline yourself: it
+names every P0 finding by id (`F1`), and a placeholder is rejected. Copy
+`metadata.language_coverage` from `mutants.json`; when it names an `unmutated_dominant`
+language, a limitation says that language was not mutated (and why: no engine installed, out of
+scope), and when it lists `tooling_scope_files`, a limitation says the mutated code is tooling,
+not the product. Fix every error rather than editing computed fields. Show the user:
 
 1. the headline;
 2. the ranked findings, each with its mutants, the test that should have caught them, the
@@ -430,11 +518,11 @@ editing computed fields. Show the user:
 
 | Field | Content |
 |---|---|
-| `metadata` | Repo, commit, code hash, scope (files, ranges, exclusions), engines (version, config source, counts, tree check), coverage, budget, write_tests, platform |
+| `metadata` | Repo, commit, code hash, scope (files, ranges, exclusions), engines (version, config source, counts, tree check), coverage, budget, write_tests, platform, language_coverage (the product language and what was mutated) |
 | `tools[]` | Each tool ran, not run or not applicable, with the reason |
 | `baseline` | The green runs, flaky tests, note |
 | `mutants[]` | Exactly the normalised results |
 | `findings[]` | Triage, mutants, function, reason, test that should have caught it, suggestion, proofs, criticality and the computed ranking |
 | `coverage_gaps[]` | Unexecuted lines by function, their mutants, a suggested test and proofs |
 | `summary` | Headline, per-engine counts and scores (computed), triage counts, priorities, evidence completeness |
-| `limitations[]`, `files_changed[]` | What the run couldn't show; files written with `write_tests` |
+| `limitations[]`, `files_changed[]` | What the run couldn't show (always: a product language left unmutated, tooling mutated instead of the product); files written with `write_tests` |

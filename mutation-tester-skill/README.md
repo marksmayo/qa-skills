@@ -52,6 +52,8 @@ python scripts/diff_scope.py --repo <repo> --base main --out run/scope.json
 #   or, for a path scope:  python scripts/path_scope.py --repo <repo> --path src/billing --out run/scope.json
 python scripts/run_tests.py --preset pytest --cwd <repo> --out run/runs.json --repeat 2 --label baseline --run-prefix G
 python scripts/builtin_mutator.py --repo <repo> --scope run/scope.json --run-dir run --tests tests/unit
+#   a unittest suite (CI runs python -m unittest):  ... --runner unittest --unittest-args "-s tests"
+#   Rust, once cargo-mutants is installed:  python scripts/run_engine.py cargo-mutants --repo <workspace> #       --scope run/scope.json --run-dir run   (then normalize_results.py --cargo-mutants run/mutants.out #       --cargo-mutants-run run/cargo-mutants.run.json)
 python scripts/normalize_results.py --scope run/scope.json --repo <repo> --builtin run/builtin.json \
     --coverage run/coverage.json --out run/mutants.json
 python scripts/prove_kill.py --repo <repo> --mutants run/mutants.json --mutant B24 --test-file tests/test_x.py \
@@ -70,7 +72,13 @@ python scripts/render_report.py run/mutation_report.json [--brief]
 
 Criticality is 3 for money, auth, permissions, data deletion or a critical journey, 2 for ordinary
 logic and 1 for display text. Kind is 3 for a branch or boundary (including a string compared in
-a condition), 2 for a value (including an UPPER_CASE string constant) and 1 for other strings.
+a condition), 2 for a value (including an UPPER_CASE string constant and a string used as a key or
+a default) and 1 for other strings.
+
+`detect_tools.py` warns when the language with the most product code (test code and tooling
+folders such as `scripts/` counted apart) has no engine that can run here, and when the code you
+would mutate is tooling rather than the product; the report records both in
+`metadata.language_coverage` and the validator requires a limitation for each.
 Proximity is 2 when a unit test of the function ran the line and still passed.
 
 ## Output
@@ -142,17 +150,19 @@ python scripts/self_test.py
 - `scripts/diff_scope.py`: changed files, lines and functions from git or a diff (shared)
 - `scripts/run_tests.py`, `scripts/parse_results.py`, `scripts/detect_conventions.py`: test runs and conventions (shared)
 - `scripts/path_scope.py`: a path scope (every line of the files under a path) in `scope.json` form
-- `scripts/builtin_mutator.py`: stdlib AST mutation engine and per-test line coverage for pytest, limited to `--tests`; Go through `go_mutator.py`
+- `scripts/builtin_mutator.py`: stdlib AST mutation engine and per-test line coverage for pytest or unittest (`--runner`), limited to `--tests`; Go through `go_mutator.py`
+- `scripts/unittest_runner.py`: runs a unittest suite as `python -m unittest discover` does, with per-test results and tracing (used by the builtin engine and `prove_kill.py`)
 - `scripts/go_mutator.py`, `scripts/go_scan.py`: the builtin engine's Go half (Go tokens, `go test -overlay`, per-test coverprofiles) and the Go helpers the validator and `prove_kill.py` use
-- `scripts/self_test.py`: synthetic cases for the Go engine, loud refusals, engine naming, merged duplicates, proximity and evidence completeness
-- `scripts/run_engine.py`: runs mutmut in a scratch copy, or StrykerJS on the scope's line ranges (with `--sandbox` and `--stryker-option`), and keeps the raw results and the tree check
+- `scripts/self_test.py`: synthetic cases for the Go engine, loud refusals, engine naming, merged duplicates, proximity, evidence completeness, the product-language and tooling warnings, unittest suites, the budget estimate, cargo-mutants and Rust proofs
+- `scripts/lang_census.py`, `scripts/cargo_project.py`: the language census (product, test and tooling lines) and the Cargo workspace model (shared)
+- `scripts/run_engine.py`: runs mutmut in a scratch copy, StrykerJS on the scope's line ranges (with `--sandbox` and `--stryker-option`), or cargo-mutants on the scoped Rust files, and keeps the raw results and the tree check
 - `scripts/js_workspace.py`: workspace root, package manager and module versions, and the workspace mirror Stryker's sandbox and `prove_kill.py` use
 - `scripts/ts_scan.py`: finds JavaScript/TypeScript tests by name and whether they call a function (for proximity)
-- `scripts/normalize_results.py`: one mutant list across engines, limited to the scope
-- `scripts/prove_kill.py`: proves a suggested test passes on the original and fails on the mutants
+- `scripts/normalize_results.py`: one mutant list across engines (builtin, mutmut, mutation-testing-elements, cargo-mutants' `outcomes.json`), limited to the scope, with the report's language coverage
+- `scripts/prove_kill.py`: proves a suggested test passes on the original and fails on the mutants (pytest, unittest, Vitest, Jest, Go, cargo test)
 - `scripts/validate_mutation_report.py`: checks the report against the evidence and the rules
 - `scripts/render_report.py`: coloured terminal/Markdown report
-- `examples/`: sample package, change, real run and report
+- `examples/`: sample package, change, real run and report; `examples/cargo-mutants/`, a synthetic Rust crate with a synthetic cargo-mutants output for the normaliser
 
 ## Design principles
 
