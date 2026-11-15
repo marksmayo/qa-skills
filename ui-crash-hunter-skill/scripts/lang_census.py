@@ -45,6 +45,12 @@ source file and little else is a data tree: it is not walked and is listed under
 `prune_data_dirs(dirpath, dirnames, skipped)` applies the same rule inside any os.walk loop, so walkers looking for
 code never open thousands of data records (`data_dir_reason(files)` is the test on one directory's file names).
 
+UI markup for desktop and mobile toolkits (.slint Slint, .qml QML, .xaml XAML, .ui Qt Designer or GtkBuilder
+'UI definition', .glade Glade, .kv Kivy) is counted under `markup` and `ui_markup` ({kind: files}, examples in
+`ui_markup_examples`): never a language, never dominant. language_coverage() lists it under `ui_markup` with a note
+that it is present but not analysed (unless the caller names the kind among its supported languages); the status is
+unchanged.
+
 Markup is counted apart, under `markup` (HTML, CSS, Templates; an .html file under templates/, views/, layouts/ or
 partials/ is a template). `server_rendered` names a Python web app that renders templates (Flask, Django, Jinja2,
 Starlette/FastAPI templating, Bottle, Pyramid ...: an import or a render call) with its template count and
@@ -130,6 +136,12 @@ MARKUP_BY_EXT = {'.html': 'HTML', '.htm': 'HTML', '.xhtml': 'HTML', '.css': 'CSS
                  '.ejs': 'Templates', '.twig': 'Templates', '.liquid': 'Templates', '.tmpl': 'Templates',
                  '.gohtml': 'Templates', '.pug': 'Templates', '.jade': 'Templates', '.haml': 'Templates',
                  '.slim': 'Templates', '.cshtml': 'Templates', '.razor': 'Templates', '.blade.php': 'Templates'}
+# UI markup for desktop and mobile toolkits: the UI is described in these files, but no tool here reads them. Counted
+# apart (under `markup` and `ui_markup`), never a language and never the dominant one; language_coverage names them.
+UI_MARKUP_BY_EXT = {'.slint': 'Slint', '.qml': 'QML', '.xaml': 'XAML', '.ui': 'UI definition', '.glade': 'Glade',
+                    '.kv': 'Kivy'}
+MARKUP_BY_EXT.update(UI_MARKUP_BY_EXT)
+UI_MARKUP_KINDS = set(UI_MARKUP_BY_EXT.values())
 TEMPLATE_DIRS = {'templates', 'template', 'views', 'layouts', 'partials', 'includes', '_includes', '_layouts'}
 # a Python module that serves pages from templates: the web framework it imports, or a template render call
 PY_WEB = re.compile(r'^\s*(?:from|import)\s+(flask|django|jinja2|bottle|pyramid|quart|sanic|starlette\.templating|'
@@ -615,6 +627,7 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
     evidence = BuildEvidence(root, inc)
     langs: Counter = Counter()
     markup: Counter = Counter()
+    ui_markup_examples: dict[str, list[str]] = {}
     generated: Counter = Counter()
     generated_files: list[dict] = []
     examples: dict[str, list[str]] = {}
@@ -704,6 +717,8 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
             mk = markup_kind(frel)
             if mk:
                 markup[mk] += 1
+                if mk in UI_MARKUP_KINDS and len(ui_markup_examples.setdefault(mk, [])) < 3:
+                    ui_markup_examples[mk].append(frel)
                 if mk == 'Templates':
                     template_files.append(frel)
     ordered = dict(sorted(langs.items(), key=lambda kv: (-kv[1], kv[0])))
@@ -742,6 +757,8 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
             'generated_source_files': sum(generated.values()),
             'generated_files': generated_files,
             'markup': dict(sorted(markup.items())),
+            'ui_markup': {k: v for k, v in sorted(markup.items()) if k in UI_MARKUP_KINDS},
+            'ui_markup_examples': ui_markup_examples,
             'data_trees': data_trees,
             'server_rendered': server_rendered(root, py_files, template_files)}
 
@@ -828,6 +845,13 @@ def language_coverage(c: dict, supported, tool: str = 'this script', what: str =
     for b in c.get('build_output') or []:
         if b.get('decision') == 'source':
             notes.append(f'{b["path"]}/ is counted as source although named like build output: {b["reason"]}.')
+    ui = {k: v for k, v in (c.get('ui_markup') or {}).items() if k not in supported}
+    if ui:
+        out['ui_markup'] = ui
+        for kind, n in sorted(ui.items(), key=lambda kv: (-kv[1], kv[0])):
+            shown = ', '.join((c.get('ui_markup_examples') or {}).get(kind, [])[:3])
+            notes.append(f'{n} {kind} UI markup file(s){" (" + shown + ("" if n <= 3 else ", ...") + ")" if shown else ""} '
+                         f'present but not analysed by {tool}: the user interface they describe is not assessed.')
     gen = c.get('generated') or {}
     if gen:
         out['generated'] = gen
@@ -1086,6 +1110,23 @@ def _line_checks(tree) -> list:
     checks.append(('a test-named folder holding a package manifest is product code; its own test/ is test code',
                    (c.get('lines') or {}).get('JavaScript') == 5 and (c.get('test_files') or {}).get('JavaScript') == 1,
                    (c.get('lines'), c.get('test_files'))))
+    # a weather-station logger with a desktop UI described in UI markup files next to its Rust code
+    ui = dict(ws)
+    ui.update({f'crates/tides-cli/ui/panel{i}.slint': 'export component Panel {\n  Text { text: "x"; }\n}\n' * 200
+               for i in range(4)})
+    ui.update({'qml/Main.qml': 'Item {}\n', 'win/App.xaml': '<Window/>\n', 'forms/main.ui': '<ui/>\n',
+               'gtk/main.glade': '<interface/>\n', 'kivy/app.kv': '<Root>:\n'})
+    c = census(tree(ui))
+    um = c.get('ui_markup') or {}
+    checks.append(('UI markup (.slint, .qml, .xaml, .ui, .glade, .kv) is counted apart and never decides dominance',
+                   um == {'Slint': 4, 'QML': 1, 'XAML': 1, 'UI definition': 1, 'Glade': 1, 'Kivy': 1}
+                   and c.get('dominant') == 'Rust' and 'Slint' not in c['languages']
+                   and (c.get('markup') or {}).get('Slint') == 4, (um, c.get('dominant'), c.get('markup'))))
+    cov = language_coverage(c, {'Rust', 'Python'}, tool='scan_rs.py')
+    notes = ' '.join(cov.get('notes') or [])
+    checks.append(('language_coverage names UI markup as present but not analysed, without changing the status',
+                   cov.get('status') == 'ok' and 'Slint' in notes and 'panel0.slint' in notes and 'not analysed' in notes
+                   and (cov.get('ui_markup') or {}).get('Slint') == 4, cov))
     return checks
 
 
