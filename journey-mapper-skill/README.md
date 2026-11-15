@@ -61,8 +61,8 @@ line between the item's line and the next item's. `python scripts/validate_journ
 --self-test` runs negative cases (a `not_automatable` entry written as a string is reported, not
 a crash; an observation whose run file is missing or absolute is refused). A step's
 `observed.run` is relative to the map's directory and must exist. `write_journeys.py --self-test`
-and `render_report.py --self-test` check that observed step results reach the journey files (as an
-Evidence entry of the step, never in the Expect) and the report.
+and `render_report.py --self-test` check that observed step results reach the journey files (as the
+step's `**Observed:**` line after its Expect, never in the Expect or the Evidence) and the report.
 
 `python scripts/extract_surface.py --self-test` runs the extractor on a small built-in
 multi-service repository (FastAPI routers with prefixes, a docstring with decorators, an Azure

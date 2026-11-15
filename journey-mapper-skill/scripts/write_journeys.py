@@ -7,8 +7,8 @@ Merge rules (see JOURNEY_FORMAT.md):
   as <name>.proposed.md.
 - The human-owned ## Notes section is preserved; `tests` lists are merged, not replaced.
 - Journey files are never deleted. IDs in scope that the map no longer contains are reported as stale.
-- A step's `observed` result (what a run showed) is written as its own Evidence entry,
-  `Step N: Observed <at> (run `<run>`): <result> (Expect inferred from `file:line`)`, never into the Expect.
+- A step's `observed` result (what a run showed) is written as the step's own indented line after its Expect,
+  `**Observed:** <result> (run `<run>`, <at>)` (Journey Markdown 1.1), never into the Expect.
 
     python write_journeys.py journeys/journey_map.json --out journeys
     python write_journeys.py --self-test
@@ -34,28 +34,21 @@ def slug(text: str, limit: int = 48) -> str:
 def ref(ev: dict) -> str:
     return f"`{ev['file']}:{ev['line']}`" + (f" — {ev['note']}" if ev.get('note') else '')
 
-def observed_text(step: dict) -> str:
-    """`Observed <at> (run `<run>`): <result>` plus the step's first code reference, so a reader can tell what a run
-    showed from what the code implies (the Expect) and the entry keeps the `path:line` strict lint asks for."""
-    obs = step['observed']
-    first = (step.get('evidence') or [None])[0]
-    code = f" (Expect inferred from `{first['file']}:{first['line']}`)" if first else ''
-    return f"Observed {obs.get('at')} (run `{obs.get('run')}`): {' '.join(str(obs.get('result')).split())}{code}"
-
 def to_doc(jm: dict) -> dict:
     meta = {k: jm[k] for k in ORDER if k in jm}
     meta['status'] = 'inferred'
     meta.setdefault('automation', 'none')
     meta.setdefault('tests', [])
     evidence = [{'step': n, 'text': ref(ev)} for n, s in enumerate(jm['steps'], 1) for ev in s.get('evidence', [])]
-    # what a run showed stays apart from the inferred Expect: an Evidence entry of its own, tied to the step's code
-    evidence += [{'step': n, 'text': observed_text(s)} for n, s in enumerate(jm['steps'], 1) if s.get('observed')]
     evidence += [{'step': None, 'text': f"{v['id']}: {ref(ev)}"} for v in jm.get('variants', []) for ev in v.get('evidence', [])]
     evidence += [{'step': None, 'text': ref(ev)} for ev in jm.get('evidence', [])]
     return {
         'meta': meta,
         'preconditions': jm.get('preconditions', []),
-        'steps': [{'action': s['action'], 'expect': s['expect']} for s in jm['steps']],
+        # what a run showed stays apart from the inferred Expect: the step's own **Observed:** line
+        'steps': [{'action': s['action'], 'expect': s['expect'],
+                   **({'observed': {k: s['observed'].get(k) for k in ('result', 'run', 'at')}} if s.get('observed') else {})}
+                  for s in jm['steps']],
         'variants': [{'id': v['id'], 'name': v['name'], 'from_step': v['from_step'],
                       'action': v.get('action', ''), 'expect': v['expect']} for v in jm.get('variants', [])],
         'test_data': jm.get('test_data', []),
@@ -228,6 +221,13 @@ def self_test() -> int:
         problems.append('the observed result, its run and the word Observed are in the journey file')
     if parsed['steps'][0]['expect'] != ' '.join(jm['steps'][0]['expect'].split()):
         problems.append(f"the observation leaves the Expect unchanged, got {parsed['steps'][0]['expect']!r}")
+    if parsed['steps'][0].get('observed') != jm['steps'][0]['observed']:
+        problems.append(f"the observation is the step's own **Observed:** line (Journey Markdown 1.1), parsed back as "
+                        f"steps[0].observed, got {parsed['steps'][0].get('observed')!r}")
+    if any('Observed' in e['text'] for e in parsed['evidence']):
+        problems.append('the observation is no longer repeated as an Evidence entry')
+    if 'observed' in parsed['steps'][1]:
+        problems.append('a step with no observation has no **Observed:** line')
     errs = [m for lvl, m in lint(parsed) if lvl in ('error', 'strict')]
     if errs:
         problems.append(f'the written journey lints clean in strict mode, got {errs}')

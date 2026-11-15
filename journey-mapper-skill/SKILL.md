@@ -363,8 +363,9 @@ probe, a browser capture), record what it showed on the step as `observed: {"res
 `run` is the run's evidence file, relative to the map's directory (keep it under the output
 directory, e.g. `journeys/run/probe/home.txt` is `run/probe/home.txt`), and `at` is when it ran. The
 validator checks all three are there and that the run file exists. `write_journeys.py` writes each
-observation as its own Evidence entry of the step (`Step N: Observed <at> (run ...): <result>`), never
-into the Expect, and `render_report.py` lists observed steps apart from the inferred ones.
+observation as the step's own indented line after its Expect (``**Observed:** <result> (run
+`<run>`, <at>)``, Journey Markdown 1.1), never into the Expect, and `render_report.py` lists
+observed steps apart from the inferred ones.
 
 Admin-only and internal-tool paths are **not** unreachable. Map them as journeys with the right
 persona.

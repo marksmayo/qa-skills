@@ -230,14 +230,14 @@ analytics and ad loaders, a service worker in `public/`). Red/green checks in
   analytics loader exists and no goal event was found, and one asking tests to block third
   parties), `context.service_workers` (with a note to block them in tests that route requests) and
   `context.public_files`.
-- `observed` was dropped after validation: `write_journeys.py` writes it as an Evidence entry of
-  the step (the shared Journey Markdown format has no `Observed` line yet, and an indented line
-  would be read as part of the Expect), `render_report.py` lists observed steps and counts them in
-  `--brief`, and the validator checks `observed.run` exists relative to the map's directory.
+- `observed` was dropped after validation: `write_journeys.py` writes it as the step's indented
+  ``**Observed:** <result> (run `<run>`, <at>)`` line after the Expect (Journey Markdown 1.1, shared:
+  `journey_md.py` parses it into `steps[].observed`, never into the Expect, renders it back and
+  lints one that names no run as an error), `render_report.py` lists observed steps and counts them
+  in `--brief`, and the validator checks `observed.run` exists relative to the map's directory.
+  (A first cut wrote it as an Evidence entry of the step, because the format had no place for it.)
 - SKILL.md Step 8: two paragraphs had split the bucket table; the validator self-test now checks
   the table names every orphan and unreachable reason.
 - RUBRIC: a privacy or cookie notice that captures nothing is P2 (P1 when consent or a privacy
   request happens there); reading the main content is the core value of a content site.
-- Not done: an `**Observed:**` line in the shared Journey Markdown format (JOURNEY_FORMAT.md and
-  `journey_md.py` parse and render), which would replace the Evidence entry.
 
