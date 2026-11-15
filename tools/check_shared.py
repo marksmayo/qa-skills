@@ -57,6 +57,12 @@ SHARED = {
                             'risk-based-test-planner-skill', 'privacy-flow-auditor-skill', 'cross-browser-checker-skill',
                             'wcag-auditor-skill', 'performance-budget-auditor-skill', 'resilience-prober-skill',
                             'i18n-checker-skill', 'journey-to-tests-skill'],
+    'scripts/cargo_project.py': ['code-security-auditor-skill', 'privacy-flow-auditor-skill', 'risk-based-test-planner-skill',
+                                 'test-impact-selector-skill', 'test-suite-evaluator-skill',
+                                 'flaky-test-hunter-skill', 'mutation-tester-skill', 'dead-test-finder-skill',
+                                 'ci-failure-triager-skill',
+                                 # run_tests.py maps cargo test ids to their targets with it
+                                 'test-data-auditor-skill', 'bug-reproducer-skill'],
     'scripts/png_io.py': ['visual-regression-reviewer-skill', 'cross-browser-checker-skill', 'mobile-app-auditor-skill'],
     'data/wcag-sc.json': ['wcag-auditor-skill', 'mobile-app-auditor-skill'],
     'data/en301549-map.json': ['wcag-auditor-skill', 'mobile-app-auditor-skill'],
