@@ -277,17 +277,23 @@ RUN_HINTS = re.compile(r'\b(pytest|python -m pytest|tox|nox|npm (run )?test\S*|n
                        r'dotnet test|cargo (\+\S+ )?(nextest run|test|llvm-cov|tarpaulin)|flutter test|phpunit|xcodebuild (\S+ )*test|'
                        r'maestro test|detox test|behave|python[\d.]* -m unittest|coverage run)\b')
 
+# where a command starts on a CI line: the line's start or after && || ; | $( ( `, then any VAR=value assignments and
+# wrappers (sudo, time, env, uv run, poetry run, pipenv run, pdm run, hatch run, rye run, xvfb-run); so `pytest` in
+# `pip install pytest pytest-cov` or in an echo is never an invocation
+CMD_START = (r'(?:^|&&|\|\||;|\||\$\(|\(|`)\s*(?:[A-Za-z_]\w*=\S*\s+)*'
+             r'(?:(?:sudo|time|exec|env|uv run|poetry run|pipenv run|pdm run|hatch run|rye run|xvfb-run(?: -\S+)*)\s+)*'
+             r'(?:[\w.~$/\\-]*[/\\])?')   # a path to the executable (.venv/bin/pytest)
 # CI test gates: (runner, pattern) tried in order on each command line of a CI file; thresholds are read separately
 CI_GATE_RUNNERS = [
     ('cargo-llvm-cov', re.compile(r'\bcargo (\+\S+ )?llvm-cov\b')),
     ('cargo-tarpaulin', re.compile(r'\bcargo (\+\S+ )?tarpaulin\b')),
     ('cargo-nextest', re.compile(r'\bcargo (\+\S+ )?nextest run\b')),
     ('cargo-test', re.compile(r'\bcargo (\+\S+ )?test\b')),
-    ('coverage-unittest', re.compile(r'\bcoverage run\b.*-m unittest\b')),
-    ('coverage-pytest', re.compile(r'\bcoverage run\b.*-m pytest\b')),
+    ('coverage-unittest', re.compile(CMD_START + r'(?:python[\d.]* -m )?coverage run\b.*-m unittest\b')),
+    ('coverage-pytest', re.compile(CMD_START + r'(?:python[\d.]* -m )?coverage run\b.*-m pytest\b')),
     ('coverage-report', re.compile(r'\bcoverage (report|xml|json|html)\b.*--fail-under')),
-    ('unittest', re.compile(r'\bpython[\d.]* -m unittest\b')),
-    ('pytest', re.compile(r'(?<![\w-])(python[\d.]* -m )?pytest\b(?!-)')),
+    ('unittest', re.compile(CMD_START + r'python[\d.]* -m unittest\b')),
+    ('pytest', re.compile(CMD_START + r'(?:python[\d.]* -m |py(?: -[\d.]+)? -m )?pytest\b(?!-)')),
     ('go-test', re.compile(r'\bgo test\b')),
 ]
 CI_THRESHOLDS = [
@@ -1123,6 +1129,13 @@ jobs:
           coverage run -m unittest discover -s tests
           coverage report --fail-under=80
       - run: python -m unittest discover -s tests -p "test_*.py"
+      - name: Install tools
+        run: |
+          pip install pytest pytest-cov
+          python -m pip install --upgrade pytest
+          uv pip install pytest-xdist
+          pipx run pytest-check-links docs
+          echo "pytest is not used here"
 """
 
 
@@ -1164,6 +1177,9 @@ def _rust_unittest_checks() -> list:
          {'cargo-nextest', 'cargo-test', 'coverage-unittest', 'unittest'} <= set(by)
          and by.get('coverage-unittest', {}).get('line') == 19 and by.get('coverage-unittest', {}).get('step') == 'Helper script tests' and by.get('coverage-unittest', {}).get('job') == 'python'
          and (by.get('coverage-report') or {}).get('fail_under') == {'total': 80.0}, sorted(by)),
+        ('ci_gates: installing pytest (pip install pytest pytest-cov) or mentioning it is not a pytest gate',
+         not [g for g in gates if g.get('runner') in ('pytest', 'coverage-pytest')],
+         [(g.get('line'), g.get('command')) for g in gates if g.get('runner') in ('pytest', 'coverage-pytest')]),
         ('CI run commands include cargo llvm-cov and coverage run -m unittest',
          {'cargo llvm-cov --workspace --all-features --fail-under-lines 90 --fail-under-functions 85',
           'coverage run -m unittest discover -s tests'} <= {c['command'] for c in areas.get('.', {}).get('run_commands', [])},
