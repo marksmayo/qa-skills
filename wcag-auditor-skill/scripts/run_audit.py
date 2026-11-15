@@ -768,7 +768,12 @@ class Runner:
             # the focused control the traversal starts from is its first stop
             info = page.evaluate('() => window.__qa.activeInfo()')
             if info:
-                if measure:
+                if measure and (info.get('tabindex') or '').strip().startswith('-'):
+                    # focused by script (a focus manager moving focus to <main tabindex="-1"> after navigation), not
+                    # a Tab stop a keyboard user reaches: no indicator is required of it, so none is measured
+                    info['indicator'] = {'changed_px': None, 'perimeter': None,
+                                         'note': 'start element focused by script (tabindex -1): not measured'}
+                elif measure:
                     info['indicator'] = self.start_indicator(page, info)
                     pending = info
                 stops.append(info); moves.append(info['xpath']); seen.add(info['xpath'])

@@ -477,7 +477,8 @@ Differences from the draft above, and decisions made while building:
     `ended_on`; instances in the candidates and the report carry them.
   - States now record `focus_after_actions` (selector, snippet, crop, `null` for the body) and
     `final_url`; `"keyboard_start": "active_element"` starts the traversal from the focused element in
-    any state (from the top with a `start_note` when nothing is focused).
+    any state (from the top with a `start_note` when nothing is focused; a script-focused `tabindex=-1`
+    start element, such as `<main>` after a client navigation, is not measured for an indicator).
   - The default failure pattern was the most severe of the SC (axe `link-in-text-block` became a
     colour-only state). It is now the rule's (`pattern` in rule-map overrides for 25 rules), or the
     SC's only pattern, or none with `pattern_choices`. The example's candidates were regenerated: 24

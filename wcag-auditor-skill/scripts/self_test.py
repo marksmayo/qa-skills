@@ -794,6 +794,10 @@ def state_focus_checks() -> tuple[list[str], str]:
         if kb.get('start') != 'active_element' or len(stops) < 2 or 'More' not in (stops[1].get('html') or ''):
             fails.append(f"keyboard_start active_element did not start from the focused element: start {kb.get('start')}, "
                          f"stops {[(s.get('html') or '')[:30] for s in stops[:3]]}")
+        ind0 = (stops[0].get('indicator') or {}) if stops else {}
+        if stops and ind0.get('changed_px') is not None:
+            fails.append(f'the start element <main tabindex="-1"> (focused by script, not in the Tab order) had its focus '
+                         f'indicator measured: {ind0}')
         if not st.get('final_url', '').endswith('/about'):
             fails.append(f"the state's summary does not say where it ended: {st}")
         browser.close()
