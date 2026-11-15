@@ -563,13 +563,37 @@ def libtest_binary(src: str, binary: str, cargo: dict | None = None, unittests: 
     return out
 
 
-def nextest_target(binary_id: str) -> str:
+TEST_KINDS = ('lib', 'bin', 'test', 'bench', 'example')
+
+
+def qualified_target(cargo: dict | None, crate: str, kind: str, name: str) -> str:
+    """The target part of a test id, as cargo_project.qualified_target gives it: the name when no other
+    lib/bin/test/bench/example target of the project has it, `<crate>/<name>` when another crate has one (tests/cli.rs
+    in two crates), `<crate>/<kind>/<name>` when the crate itself has two (a lib and tests/<lib name>.rs)."""
+    owners = [(c.get('name'), t.get('kind')) for c in (cargo or {}).get('crates') or [] for t in c.get('targets') or []
+              if t.get('kind') in TEST_KINDS and t.get('name') == name]
+    if len(owners) <= 1 or not crate:
+        return name
+    if sum(1 for o, _ in owners if o == crate) <= 1:
+        return f'{crate}/{name}'
+    return f'{crate}/{kind}/{name}'
+
+
+def nextest_target(binary_id: str, cargo: dict | None = None) -> str:
     """The cargo target of a cargo-nextest binary id: `tides-core` (the lib) -> tides_core, `tides-cli::cli` -> cli,
-    `tides-cli::bin/tides` -> tides (the same names parse_libtest uses, so ids match across both runners)."""
+    `tides-cli::bin/tides` -> tides (the same names parse_libtest uses, so ids match across both runners). With the
+    cargo_project model, a name that is not unique carries its crate (qualified_target), as the binary id names it."""
     crate, sep, rest = binary_id.partition('::')
     if not sep:
-        return crate.replace('-', '_')
-    return rest.split('/', 1)[1] if '/' in rest else rest
+        kind, name = 'lib', crate.replace('-', '_')
+        for c in (cargo or {}).get('crates') or []:
+            if c.get('name') == crate:
+                name = next((t['name'] for t in c.get('targets') or [] if t.get('kind') == 'lib'), name)
+    elif '/' in rest:
+        kind, name = rest.split('/', 1)
+    else:
+        kind, name = 'test', rest
+    return qualified_target(cargo, crate, kind, name) if cargo else name
 
 
 def parse_libtest(text: str, run_id: str, cargo: dict | None = None,
@@ -577,7 +601,10 @@ def parse_libtest(text: str, run_id: str, cargo: dict | None = None,
     """(cases, notes) from `cargo test` output (libtest's text format, or `--format json` lines). Ids are
     `<target>::<path::name>`, the target found from cargo's `Running <source> (<binary>)` line by libtest_binary
     (with `cargo`, the cargo_project.read_cargo model of the project the run was in, target names are the model's, so
-    runtime ids equal cargo_project's; `doctest:<crate>` for doc tests); each case records its target_kind. A failed test carries its panic message (`---- name stdout ----`), `file` from the panic location
+    runtime ids equal cargo_project's, and a target name two crates share is `<crate>/<target>` as qualified_target
+    gives it, the crate told apart by `packages` (the run's -p), cargo's `to rerun pass -p <crate>` hint, or which
+    crate's test file holds the tests the binary ran; `doctest:<crate>` for doc tests). Each case records its
+    target_kind. A failed test carries its panic message (`---- name stdout ----`), `file` from the panic location
     (else the integration test's file), failure_type assertion for assertion panics and error for other panics. A
     test binary that died before its summary (a signal, an access violation) becomes `<target>::(crashed)`, an error
     case with the crash signal. Summary lines and compile errors are notes."""
@@ -586,6 +613,7 @@ def parse_libtest(text: str, run_id: str, cargo: dict | None = None,
     notes: list[str] = []
     target, tfile, expected, seen_here, ended = None, None, None, 0, True
     tkind, bidx = None, 0
+    bins: dict[int, dict] = {}
     pending = None
     stdout: dict[tuple, list[str]] = {}
     cur_out = None
@@ -595,7 +623,7 @@ def parse_libtest(text: str, run_id: str, cargo: dict | None = None,
         cid = f'{target or "(unknown)"}::{tname}'
         c = {'run_id': run_id, 'id': cid, 'name': tname, 'classname': target or '', 'file': file,
              'status': status, 'failure_type': ftype, 'signals': signals or [], 'message_excerpt': excerpt(message),
-             'time': None, 'target_kind': tkind}
+             'time': None, 'target_kind': tkind, '_bin': bidx}
         cases.append(c)
         by_key[(bidx, tname)] = c
         return c
@@ -616,6 +644,12 @@ def parse_libtest(text: str, run_id: str, cargo: dict | None = None,
             if m:
                 b = libtest_binary(m.group(1), m.group(2), cargo, 'Running unittests ' in s)
                 target, tkind = b['target'], b['kind']
+                cands = b['candidates']
+                if len(cands) > 1 and packages:
+                    cands = [x for x in cands if x[0].get('name') in packages] or cands
+                if len(cands) == 1:
+                    target = qualified_target(cargo, cands[0][0].get('name'), tkind, target)
+                bins[bidx] = {'cands': cands, 'hint': None, 'src': m.group(1)}
                 tfile = m.group(1).replace('\\', '/') if not m.group(1).startswith('src/') else None
             else:
                 target, tfile, tkind = f'doctest:{d.group(1)}', None, 'doc'
@@ -674,6 +708,9 @@ def parse_libtest(text: str, run_id: str, cargo: dict | None = None,
             notes.append(f'{target}: {s}')
             ended = True
             continue
+        m = re.search(r'to rerun pass `-p (\S+)', s)
+        if m and bidx in bins:
+            bins[bidx]['hint'] = m.group(1)
         m = LT_DIED.search(s)
         if m and target is not None and not ended:
             close_binary(m.group(0))
@@ -697,6 +734,29 @@ def parse_libtest(text: str, run_id: str, cargo: dict | None = None,
     for c in cases:
         if c['status'] == 'failed' and not c['failure_type']:
             c['failure_type'] = 'error'
+    for bi, info in bins.items():
+        if len(info['cands']) < 2:
+            continue
+        mine = [c for c in cases if c['_bin'] == bi]
+        seen = {c['name'] for c in mine}
+        pool = [x for x in info['cands'] if x[0].get('name') == info['hint']] if info['hint'] else []
+        if len(pool) != 1:
+            score = {i: len(seen & {t.get('name') for t in x[0].get('tests') or []
+                                     if t.get('target') == x[1]['name'] and t.get('target_kind') == x[1]['kind']})
+                     for i, x in enumerate(info['cands'])}
+            best = max(score.values(), default=0)
+            pool = [info['cands'][i] for i, n in score.items() if n == best] if best else []
+        if len(pool) == 1:
+            crate, t = pool[0]
+            q = qualified_target(cargo, crate.get('name'), t['kind'], t['name'])
+            for c in mine:
+                c['classname'], c['id'] = q, f"{q}::{c['name']}"
+        else:
+            notes.append(f"{info['src']}: crates {', '.join(x[0].get('name') for x in info['cands'])} each have a "
+                         f"target `{info['cands'][0][1]['name']}` built from it and the output does not say which ran; "
+                         'its ids name the target only')
+    for c in cases:
+        c.pop('_bin', None)
     return cases, notes
 
 
@@ -1055,6 +1115,15 @@ def libtest_workspace_checks() -> list:
                 'recorded as a bin', 'round-trip::reads_back' in by and any(
                     c['name'] == 'tests::parses_args' and c.get('target_kind') == 'bin' for c in plain),
                 sorted((c['id'], c.get('target_kind')) for c in plain)))
+    want = {'tide-log/cli::prints_help', 'tide-log/cli::writes_log', 'tidectl/cli::prints_help',
+            'tidectl/cli::slow_station'}
+    out.append(('libtest (workspace, model known): tests/cli.rs of two crates gets ids carrying the crate '
+                '(<crate>/<target>), told apart by their tests and cargo\'s rerun hint; no id is recorded twice',
+                want <= ids and len(ids) == len(cases), sorted(c['id'] for c in cases)))
+    pick = globals().get('qualified_target')
+    out.append(('qualified_target: a name one target holds stays plain; a name two crates share carries the crate',
+                pick is not None and pick(LIBTEST_WS_MODEL, 'tide-log', 'lib', 'tide_log') == 'tide_log'
+                and pick(LIBTEST_WS_MODEL, 'tidectl', 'test', 'cli') == 'tidectl/cli', pick))
     return out
 
 

@@ -1316,18 +1316,25 @@ def cargo_targets(cwd: Path) -> dict[str, list[tuple[str, str]]]:
     return out
 
 
-def _cargo_candidates(model: dict, tname: str, path: str, doc: bool) -> list[dict]:
+def _cargo_candidates(model: dict, tname: str, path: str, doc: bool, crate: str | None = None,
+                      kind: str | None = None, packages: list[str] | None = None) -> list[dict]:
     """The targets an id's target part may name: the exact name, else (an id written from cargo's deps file name,
-    as older runs recorded them) the name with dashes and underscores alike. A target whose static tests include
-    the id's path is preferred, so a bin's test is never re-run as the same-named lib's."""
+    as older runs recorded them) the name with dashes and underscores alike; only `crate` (and `kind`) when the id
+    names them (<crate>/[<kind>/]<target>), only `packages` (the run's -p) when one of them has it. A target whose
+    static tests include the id's path is preferred, so a bin's test is never re-run as the same-named lib's."""
     norm = tname.replace('-', '_')
     exact, loose = [], []
+    pkgs = set(packages or [])
+    if pkgs and not crate and not any(c['name'] in pkgs for c in model.get('crates', [])):
+        pkgs = set()
     for c in model.get('crates', []):
+        if (crate and c['name'] != crate) or (pkgs and not crate and c['name'] not in pkgs):
+            continue
         static: dict[tuple, set] = {}
         for t in c.get('tests') or []:
             static.setdefault((t.get('target'), t.get('target_kind')), set()).add(t.get('name'))
         for t in c['targets']:
-            if t['kind'] == 'build' or (doc and t['kind'] != 'lib'):
+            if t['kind'] == 'build' or (doc and t['kind'] != 'lib') or (kind and t['kind'] != kind):
                 continue
             hit = {'crate': c['name'], 'kind': t['kind'], 'name': t['name'],
                    'has_path': path in static.get((t['name'], t['kind']), set())}
@@ -1340,11 +1347,27 @@ def _cargo_candidates(model: dict, tname: str, path: str, doc: bool) -> list[dic
     return with_path or exact or loose
 
 
-def cargo_ids(tests: list[str], cwd: Path) -> tuple[list[str], list[str], bool]:
+def _cargo_packages(cargo_args: list[str]) -> list[str]:
+    """The -p/--package values among cargo options."""
+    out = []
+    for i, a in enumerate(cargo_args):
+        if a in ('-p', '--package') and i + 1 < len(cargo_args):
+            out.append(cargo_args[i + 1])
+        elif a.startswith('--package='):
+            out.append(a.split('=', 1)[1])
+        elif a.startswith('-p') and len(a) > 2:
+            out.append(a[2:])
+    return out
+
+
+def cargo_ids(tests: list[str], cwd: Path, packages: list[str] | None = None) -> tuple[list[str], list[str], bool]:
     """(cargo selection args, libtest filters, exact) for --tests: ids `<target>::<path::name>` (as parse_libtest
-    records them; `doctest:<lib>::<name>` for doc tests) become `-p <crate> --lib|--bin|--test|--bench|--example
-    <target>` plus `--exact` paths. Ids of two crates in one run are refused (use --isolate). Anything else is a
-    plain libtest name filter."""
+    and cargo_project record them; `<crate>/<target>` or `<crate>/<kind>/<target>` where the name is not unique;
+    `doctest:<lib>::<name>` for doc tests) become `-p <crate> --lib|--bin|--test|--bench|--example <target>` plus
+    `--exact` paths. A target name several crates (or kinds) share is resolved by the crate in the id, the run's -p
+    (packages), or the one target whose static tests hold the path; otherwise it is refused, naming the candidates,
+    so another crate's same-named test never runs. Ids of two crates in one run are refused (use --isolate).
+    Anything else is a plain libtest name filter."""
     ids = [re.sub(r'#\d+$', '', t) for t in tests if '::' in t]
     if not ids:
         return [], list(tests), False
@@ -1357,10 +1380,20 @@ def cargo_ids(tests: list[str], cwd: Path) -> tuple[list[str], list[str], bool]:
         target, _, path = t.partition('::')
         doc = target.startswith('doctest:')
         tname = target.split(':', 1)[1] if doc else target
-        hits = _cargo_candidates(model, tname, path, doc)
+        parts = tname.split('/')
+        q_crate, q_kind = (parts[0], parts[1] if len(parts) == 3 else None) if len(parts) > 1 else (None, None)
+        tname = parts[-1]
+        hits = _cargo_candidates(model, tname, path, doc, q_crate, q_kind, packages)
         if not hits:
-            raise ValueError(f'cargo: no target named {tname!r} in the Cargo project at {cwd} (ids are '
+            raise ValueError(f'cargo: no target named {target!r} in the Cargo project at {cwd} (ids are '
                              '<target>::<path>; cargo_project.py lists the targets)')
+        if len({(h['crate'], h['kind'], h['name']) for h in hits}) > 1:
+            many_crates = len({h['crate'] for h in hits}) > 1
+            named = ', '.join(f"{h['crate']}/{h['name']}" if many_crates else f"{h['crate']}/{h['kind']}/{h['name']}"
+                              for h in hits)
+            raise ValueError(f'cargo: {t!r} could be the test of any of {len(hits)} targets ({named}); give the id as '
+                             '<crate>/<target>::<path> (or -p <crate> in --runner-args), so another crate\'s '
+                             'same-named test is never run')
         h = hits[0]
         crate, kind, tname = h['crate'], h['kind'], h['name']
         if crate not in crates:
@@ -1380,12 +1413,13 @@ def cargo_ids(tests: list[str], cwd: Path) -> tuple[list[str], list[str], bool]:
     if len(crates) > 1:
         raise ValueError(f'cargo: test ids from {len(crates)} crates ({", ".join(crates)}) in one run; libtest filters '
                          'apply to every selected binary. Run each crate separately, or use --isolate')
-    return ['-p', crates[0]] + [x for f in sel for x in f], names, True
+    return ([] if crates[0] in (packages or []) else ['-p', crates[0]]) + [x for f in sel for x in f], names, True
 
 
-def nextest_filter(tests: list[str]) -> list[str]:
+def nextest_filter(tests: list[str], cwd: Path | None = None) -> list[str]:
     """`-E` filterset for ids `<target>::<path>` (nextest's binary names: the crate for a lib, the target
-    otherwise), or the tests as plain name filters."""
+    otherwise; a `<crate>/[<kind>/]<target>` id by its binary id, `<crate>`, `<crate>::<target>` or
+    `<crate>::<kind>/<target>`), or the tests as plain name filters."""
     ids = [re.sub(r'#\d+$', '', t) for t in tests if '::' in t]
     if not ids:
         return list(tests)
@@ -1394,7 +1428,16 @@ def nextest_filter(tests: list[str]) -> list[str]:
     parts = []
     for t in ids:
         target, _, path = t.partition('::')
-        parts.append(f'(binary(={target}) & test(={path}))')
+        q = target.split('/')
+        if len(q) == 1:
+            parts.append(f'(binary(={target}) & test(={path}))')
+            continue
+        crate, name = q[0], q[-1]
+        kind = q[1] if len(q) == 3 else next(
+            (tg['kind'] for c in (cargo_model(cwd) if cwd else {}).get('crates', []) if c['name'] == crate
+             for tg in c['targets'] if tg['name'] == name and tg['kind'] != 'build'), 'test')
+        bid = crate if kind == 'lib' else (f'{crate}::{name}' if kind == 'test' else f'{crate}::{kind}/{name}')
+        parts.append(f'(binary_id(={bid}) & test(={path}))')
     return ['-E', ' | '.join(parts)]
 
 
@@ -1407,9 +1450,9 @@ def cargo_command(args, preset: dict, base: list[str], tests: list[str], fill) -
     if preset.get('tests') == 'nextest':
         if args.workers:
             cmd += [fill(x) for x in preset['workers']]
-        cmd += nextest_filter(tests)
+        cmd += nextest_filter(tests, cwd)
         return cmd + (['--'] + lib_side if lib_side else [])
-    sel, names, exact = cargo_ids(tests, cwd)
+    sel, names, exact = cargo_ids(tests, cwd, _cargo_packages(cargo_side))
     cmd += sel
     lib = list(lib_side)
     if args.workers:
@@ -1617,7 +1660,8 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
     copy_notes = []
     text_out = (out or b'').decode('utf-8', 'replace')
     if preset.get('libtest') and not args.cmd:   # cargo test: libtest's text output becomes the run's JUnit
-        junit.write_text(parse_results.libtest_to_junit(text_out, cargo_model(cwd) or None), encoding='utf-8')
+        junit.write_text(parse_results.libtest_to_junit(
+            text_out, cargo_model(cwd) or None, _cargo_packages(_split_dashdash(cmd)[0])), encoding='utf-8')
     if preset.get('tests') == 'nextest' and not args.cmd and not junit.exists():
         src, note = nextest_junit(cwd, env, _split_dashdash(shlex.split(args.runner_args or ''))[0], wall0)
         copy_notes.append(note)
@@ -1633,7 +1677,7 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
     if preset.get('tests') == 'nextest':   # nextest binary ids (crate, crate::target, crate::bin/name) -> target names
         for c in cases:
             if c.get('classname'):
-                tg = parse_results.nextest_target(c['classname'])
+                tg = parse_results.nextest_target(c['classname'], cargo_model(cwd) or None)
                 rep_n = re.search(r'#\d+$', c['id'])
                 c['id'] = f"{tg}::{c['name']}" + (rep_n.group(0) if rep_n else '')
                 c['classname'] = tg
@@ -1739,6 +1783,8 @@ CARGO_FIXTURE = {
     'tide-log/src/lib.rs': '#[cfg(test)]\nmod tests {\n    #[test]\n    fn opens() {}\n}\n',
     'tide-log/src/main.rs': 'fn main() {}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn parses_args() {}\n}\n',
     'tide-log/tests/round-trip.rs': '#[test]\nfn reads_back() {}\n',
+    # a second tests/cli.rs (target `cli` in two crates), sharing one test name with tidectl's
+    'tide-log/tests/cli.rs': '#[test]\nfn prints_help() {}\n\n#[test]\nfn writes_log() {}\n',
     'tide-plot/Cargo.toml': '[package]\nname = "tide-plot"\nversion = "0.1.0"\nedition = "2021"\n',
     'tide-plot/src/main.rs': 'fn main() {}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn scales() {}\n}\n',
 }
@@ -1768,14 +1814,15 @@ def cargo_self_checks() -> list:
     checks.append(('cargo: a whole run is cargo test --no-fail-fast, --test-threads after --',
                    isinstance(cmd, list) and cmd[:3] == ['cargo', 'test', '--no-fail-fast']
                    and cmd[-3:] == ['--', '--test-threads', '2'], cmd))
-    cmd = try_build(mk('cargo'), ['cli::prints_help', 'cli::slow_station'])
-    checks.append(('cargo: ids <target>::<path> re-run as -p <crate> --test <target> -- --exact <paths>',
+    cmd = try_build(mk('cargo'), ['tidectl/cli::prints_help', 'cli::slow_station'])
+    checks.append(('cargo: ids <target>::<path> (and <crate>/<target>::<path>) re-run as -p <crate> --test <target> '
+                   '-- --exact <paths>',
                    cmd == ['cargo', 'test', '--no-fail-fast', '-p', 'tidectl', '--test', 'cli', '--', '--exact',
                            'prints_help', 'slow_station'], cmd))
     cmd = try_build(mk('cargo'), ['gauge::tests::converts'])
     checks.append(('cargo: a lib id re-runs with --lib', cmd == ['cargo', 'test', '--no-fail-fast', '-p', 'gauge',
                                                                 '--lib', '--', '--exact', 'tests::converts'], cmd))
-    cmd = try_build(mk('cargo'), ['gauge::tests::converts', 'cli::prints_help'])
+    cmd = try_build(mk('cargo'), ['gauge::tests::converts', 'cli::slow_station'])
     checks.append(('cargo: ids from two crates in one run are refused (use --isolate)',
                    isinstance(cmd, str) and '--isolate' in cmd, cmd))
     base = ['cargo', 'test', '--no-fail-fast']
@@ -1791,13 +1838,26 @@ def cargo_self_checks() -> list:
     cmd = try_build(mk('cargo'), ['tide_plot::tests::scales'])
     checks.append(('cargo: an older id of a dashed bin-only package (tide_plot) re-runs --bin tide-plot',
                    cmd == base + ['-p', 'tide-plot', '--bin', 'tide-plot', '--', '--exact', 'tests::scales'], cmd))
+    cmd = try_build(mk('cargo'), ['cli::prints_help'])
+    checks.append(('cargo: a target name two crates share, whose test both have, is refused naming the candidates',
+                   isinstance(cmd, str) and 'tidectl/cli' in cmd and 'tide-log/cli' in cmd, cmd))
+    cmd = try_build(mk('cargo'), ['cli::writes_log'])
+    checks.append(('cargo: a shared target name is resolved to the crate whose test file has the test',
+                   cmd == base + ['-p', 'tide-log', '--test', 'cli', '--', '--exact', 'writes_log'], cmd))
+    cmd = try_build(mk('cargo', runner_args='-p tide-log'), ['cli::prints_help'])
+    checks.append(('cargo: -p in --runner-args picks the crate of a shared target name (and is not repeated)',
+                   cmd == base + ['-p', 'tide-log', '--test', 'cli', '--', '--exact', 'prints_help'], cmd))
+    cmd = try_build(mk('cargo'), ['tide-log/cli::prints_help'])
+    checks.append(('cargo: a <crate>/<target> id runs that crate\'s target only',
+                   cmd == base + ['-p', 'tide-log', '--test', 'cli', '--', '--exact', 'prints_help'], cmd))
     cmd = try_build(mk('cargo'), ['round_trip::reads_back'])
     checks.append(('cargo: an older id of a dashed integration test (round_trip) re-runs --test round-trip',
                    cmd == base + ['-p', 'tide-log', '--test', 'round-trip', '--', '--exact', 'reads_back'], cmd))
-    cmd = try_build(mk('nextest', 2), ['cli::prints_help', 'gauge::tests::converts'])
-    checks.append(('nextest: no ci profile is required; ids become one -E filterset of binary and test',
+    cmd = try_build(mk('nextest', 2), ['tidectl/cli::prints_help', 'gauge::tests::converts'])
+    checks.append(('nextest: no ci profile is required; ids become one -E filterset of binary and test (a '
+                   '<crate>/<target> id by its binary id)',
                    isinstance(cmd, list) and '--profile' not in cmd and '-E' in cmd
-                   and cmd[cmd.index('-E') + 1] == ('(binary(=cli) & test(=prints_help)) | '
+                   and cmd[cmd.index('-E') + 1] == ('(binary_id(=tidectl::cli) & test(=prints_help)) | '
                                                     '(binary(=gauge) & test(=tests::converts))')
                    and cmd[cmd.index('--test-threads') + 1] == '2', cmd))
     # nextest JUnit: the default profile's junit under CARGO_TARGET_DIR, and never a stale one
@@ -1832,13 +1892,22 @@ def cargo_self_checks() -> list:
     checks.append(('nextest: its own output is read when there is no JUnit, ids as cargo test gives them', got == [
         ('cli::prints_help', 'passed'), ('gauge::tests::converts', 'passed'), ('gauge::tests::rounds_badly', 'failed')],
         got))
+    try:
+        got = [parse_results.nextest_target(b, cargo_model(d)) for b in
+               ('tidectl::cli', 'tide-log::cli', 'tide-log', 'tide-log::bin/tide-log', 'gauge')]
+    except Exception as e:   # noqa: BLE001
+        got = repr(e)
+    checks.append(('nextest (model known): a binary id of a target name two crates share carries the crate',
+                   got == ['tidectl/cli', 'tide-log/cli', 'tide_log', 'tide-log', 'gauge'], got))
     if shutil.which('cargo'):
         tgt = Path(os.environ.get('QA_SKILLS_CARGO_TARGET_DIR') or tempfile.mkdtemp(prefix='qa-cargo-target-'))
         out_dir = Path(tempfile.mkdtemp(prefix='qa-cargo-runs-'))
         old = {k: os.environ.get(k) for k in ('CARGO_TARGET_DIR', 'CARGO_BUILD_JOBS')}
         os.environ['CARGO_TARGET_DIR'], os.environ['CARGO_BUILD_JOBS'] = str(tgt), '1'
         want = {'gauge::tests::converts': 'passed', 'gauge::tests::rounds_badly': 'failed',
-                'gauge::tests::live_reading': 'skipped', 'cli::prints_help': 'passed', 'cli::slow_station': 'passed',
+                'gauge::tests::live_reading': 'skipped', 'tidectl/cli::prints_help': 'passed',
+                'tidectl/cli::slow_station': 'passed', 'tide-log/cli::prints_help': 'passed',
+                'tide-log/cli::writes_log': 'passed',
                 'tide_log::tests::opens': 'passed', 'tide-log::tests::parses_args': 'passed',
                 'round-trip::reads_back': 'passed', 'tide-plot::tests::scales': 'passed'}
         try:

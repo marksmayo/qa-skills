@@ -31,7 +31,7 @@ of candidates iterated into the call (`for p in list`, `list.iter().find_map(|p|
 another base (base.join("x")) is not resolved against the working directory and is not counted.
 """
 from __future__ import annotations
-import argparse, glob, json, os, re, sys, tempfile
+import argparse, glob, json, os, re, shutil, sys, tempfile
 from pathlib import Path, PurePosixPath
 
 TOOL = 'cargo_project.py'
@@ -1105,7 +1105,8 @@ def read_cargo(repo, metadata: dict | None = None) -> dict:
                         should_panic, cfg: [cfg exprs of the fn, its inline modules and the `mod x;`
                         declarations that include its file], features (required: see cfg_features), features_any
                         ([[a, b]]: one of them needed), target, target_kind,
-                        id: '<target>::<name>' (None for doc tests)}],
+                        id: '<target>::<name>' (None for doc tests; the target part is qualified_target's:
+                            '<crate>/<target>' or '<crate>/<kind>/<target>' when the name is not unique)}],
                clis: [{bin, target, file, line, style derive|builder, name, struct, parent,
                        commands: [{name, line, parent, file, ...}],
                        args: [{name, long, short, env, line, positional, parent, file}]}],
@@ -1151,6 +1152,10 @@ def read_cargo(repo, metadata: dict | None = None) -> dict:
             out['crates'].append(c)
     if metadata:
         _apply_metadata(out, metadata, root, notes)
+    for c in out['crates']:   # ids carry the crate (and kind) where a target name is not unique
+        for t in c['tests']:
+            if t.get('id') and t.get('target'):
+                t['id'] = f"{qualified_target(out, c['name'], t['target_kind'], t['target'])}::{t['name']}"
     if not any(c['tests'] for c in out['crates']):
         notes.append('no #[test] function or doc test was found')
     return out
@@ -1190,6 +1195,23 @@ def _apply_metadata(out: dict, meta: dict, root: Path, notes: list) -> None:
             c['features'] = _features({'features': feats})
         del cdir
     notes.append('targets and features come from cargo metadata')
+
+
+TEST_KINDS = ('lib', 'bin', 'test', 'bench', 'example')
+
+
+def qualified_target(model: dict, crate: str, kind: str, name: str) -> str:
+    """The target part of a test id: the target's name when no other lib/bin/test/bench/example target in the
+    project has it; `<crate>/<name>` when another crate has one of that name (tests/cli.rs in two crates);
+    `<crate>/<kind>/<name>` when the crate itself has two (a lib and tests/<lib name>.rs). parse_results.py keeps
+    the same rule, so runtime ids equal these."""
+    owners = [(c.get('name'), t.get('kind')) for c in model.get('crates') or [] for t in c.get('targets') or []
+              if t.get('kind') in TEST_KINDS and t.get('name') == name]
+    if len(owners) <= 1:
+        return name
+    if sum(1 for o, _ in owners if o == crate) <= 1:
+        return f'{crate}/{name}'
+    return f'{crate}/{kind}/{name}'
 
 
 def test_ids(model: dict) -> list[str]:
@@ -1681,6 +1703,24 @@ def self_test() -> int:
     mc = next(c for c in mm['crates'] if c['name'] == 'tides-core')
     check('--metadata replaces targets and features with cargo\'s own', mc['features']['all'] == ['gui']
           and mc['targets'][0].get('from') == 'cargo metadata', mc['features'])
+    # two crates with tests/cli.rs, and a crate whose lib and integration test share a name
+    two = Path(tempfile.mkdtemp(prefix='cargo-two-'))
+    for rel, body in {'Cargo.toml': '[workspace]\nmembers = ["recipe-scale", "pantry"]\n',
+                      'recipe-scale/Cargo.toml': '[package]\nname = "recipe-scale"\nversion = "0.1.0"\n',
+                      'recipe-scale/src/lib.rs': '#[cfg(test)]\nmod tests {\n    #[test]\n    fn halves() {}\n}\n',
+                      'recipe-scale/tests/cli.rs': '#[test]\nfn prints_help() {}\n',
+                      'recipe-scale/tests/recipe_scale.rs': '#[test]\nfn round_trip() {}\n',
+                      'pantry/Cargo.toml': '[package]\nname = "pantry"\nversion = "0.1.0"\n',
+                      'pantry/src/main.rs': 'fn main() {}\n',
+                      'pantry/tests/cli.rs': '#[test]\nfn prints_help() {}\n'}.items():
+        (two / rel).parent.mkdir(parents=True, exist_ok=True)
+        (two / rel).write_text(body, encoding='utf-8')
+    ids2 = sorted(test_ids(read_cargo(two)))
+    check('test ids carry the crate when two crates share a target name (<crate>/<target>), and the kind when one '
+          'crate has two targets of that name (<crate>/<kind>/<target>); unique names stay plain',
+          ids2 == ['pantry/cli::prints_help', 'recipe-scale/cli::prints_help',
+                   'recipe-scale/lib/recipe_scale::tests::halves', 'recipe-scale/test/recipe_scale::round_trip'], ids2)
+    shutil.rmtree(two, ignore_errors=True)
     failed = 0
     for name, ok, extra in checks:
         failed += not ok
