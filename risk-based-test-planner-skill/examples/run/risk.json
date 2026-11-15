@@ -47,6 +47,8 @@
   "unassigned": [],
   "unscored_areas": [],
   "scope_outside_areas": [],
+  "scope_deleted": [],
+  "unreferenced": [],
   "warnings": [],
   "excluded": [],
   "flaky_tests_not_counted": [],

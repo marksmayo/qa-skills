@@ -10,7 +10,9 @@
 A root go.mod makes the module's Go packages the areas (nested packages and non-Go code under the module beside
 them); --coverage takes a Go coverprofile as the test-weakness evidence. Otherwise areas are the workspace packages when the repo has several (a package with more than
 SPLIT_PACKAGE source files is split by subdirectory below its source root); for a Next.js App Router project,
-one per API resource (app/api/<x>), one per top-level route segment or group, app (root),
+one per API resource (app/api/<x>), one per top-level route segment or group, the files directly in app/ by
+role (app (layout), pages/(root), app (metadata routes), app (error and loading pages), app (root)), runtime config
+(a next.config.* or platform file setting headers, CSP, redirects or rewrites, from the shared next_app reader),
 middleware/proxy, and lib/, components/ and the other source directories split by subdirectory
 (and by file-name prefix when flat and large); otherwise the immediate subdirectories of the
 main source directory (the top-level directory holding the most source files, followed down
@@ -18,7 +20,10 @@ while one subdirectory holds nearly all of it), with container directories such 
 common/ split again. --areas gives them explicitly as {"areas": [{"id": ..., "paths": [...]}]}.
 A root module that creates a web app (Flask(__name__), FastAPI(), express(), the module a
 gunicorn/uvicorn command in a Procfile, app.yaml or Dockerfile names) is product code: it is its
-own area, with the templates/ and static/ directories beside it, never root tooling.
+own area, with the templates/ and static/ directories beside it, never root tooling. A service worker that
+navigator.serviceWorker.register names is its own area in any layout. Files the scope deletes count in the change in
+scope of the area covering them (scope_deleted, with a warning); a repository with no test files gets a loud warning;
+in a Next.js project, source files nothing imports are hinted in unreferenced.
 Test, generated, vendored, tool-configuration and docs files are not areas. Templates, styles and
 data records in an area (ASSET_EXT; data only inside a directory, never a manifest) count for its
 churn, defects and change in scope, but not for complexity, surfaces or test weakness; an area
@@ -71,7 +76,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import detect_conventions, diff_scope, lang_census  # noqa: E402
+import detect_conventions, diff_scope, lang_census, next_app  # noqa: E402
 
 SURFACES = json.loads((HERE.parent / 'data' / 'surfaces.json').read_text(encoding='utf-8'))
 LIKELIHOOD = {'churn': 2, 'defects': 3, 'complexity': 1, 'change_in_scope': 2, 'test_weakness': 2}
@@ -386,10 +391,113 @@ DOC_DIRS = {'docs', 'doc', 'documentation', 'examples'}
 def is_area_code(f: str) -> bool:
     """A file that counts in its area's scores: code that is not a test, tool configuration or documentation.
     Migrations, static and generated-looking directories still count here (a migration that drops a column is a
-    destructive surface); is_source() is the stricter test for choosing areas."""
+    destructive surface); is_source() is the stricter test for choosing areas. Runtime configuration (KEPT_CONFIG: a
+    next.config.* or platform file setting headers, CSP, redirects or rewrites, or a configuration file an explicit
+    --areas entry names by its path) is product behaviour and counts."""
+    if f in KEPT_CONFIG:
+        return True
     p = PurePosixPath(f)
     return (p.suffix in CODE_EXT and not is_test(f) and not CONFIG_NAME.match(p.name)
             and not dir_names(f) & DOC_DIRS)
+
+
+# Configuration that is product behaviour, not tooling: set by score() from the Next.js model (next.config.* with
+# headers, CSP, redirects or rewrites; vercel.json, netlify.toml or public/_headers that set them) and from explicit
+# --areas entries that name a configuration file by its path.
+KEPT_CONFIG: set[str] = set()
+RUNTIME_CONFIG_REASON = ('runtime configuration (response headers, CSP, redirects or rewrites): product behaviour, '
+                         'not tool configuration; add it to --areas to score it')
+SW_REGISTER = re.compile(r'''\bserviceWorker\s*\.\s*register\s*\(\s*['"`]([^'"`]+)['"`]''')
+NEXT_MODEL: dict = {}
+
+
+def service_workers(root: Path, files: list[str]) -> dict[str, str]:
+    """{worker file: 'registered at file:line'}: the scripts navigator.serviceWorker.register('/x.js') names, found in
+    public/, static/, the Next.js public/ beside a nested project, or the root. A worker in public/ is product code that
+    intercepts the site's requests, not a static asset. Workers the Next.js model lists unregistered are included."""
+    fileset = set(files)
+    out: dict[str, str] = {}
+    for f in files:
+        if PurePosixPath(f).suffix not in CODE_EXT or is_test(f) or 'node_modules' in f.split('/'):
+            continue
+        try:
+            text = (root / f).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        if 'serviceWorker' not in text:
+            continue
+        for m in SW_REGISTER.finditer(text):
+            url = m.group(1).split('?')[0].lstrip('./').lstrip('/')
+            top = f.split('/')[0] if '/' in f else ''
+            for cand in (f'public/{url}', f'static/{url}', url, f'{top}/public/{url}' if top else None):
+                if cand and cand in fileset:
+                    out.setdefault(cand, f'registered at {f}:{text.count(chr(10), 0, m.start()) + 1}')
+                    break
+    for p in NEXT_MODEL.get('projects', []):
+        for w in p.get('service_workers') or []:
+            if w.get('exists') and w.get('worker_file') in fileset:
+                out.setdefault(w['worker_file'], 'a service worker in public/ (not registered by code found)')
+    return out
+
+
+def next_model(root: Path, files: list[str]) -> dict:
+    """The shared static Next.js model (next_app.read_next_app) when the repository holds a Next.js project, else {}."""
+    try:
+        if not next_app.find_next_roots(root, files):
+            return {}
+        return next_app.read_next_app(root)
+    except Exception as e:                 # a reader failure must not stop the scoring; it is named in a warning
+        return {'error': f'{type(e).__name__}: {e}', 'projects': []}
+
+
+def runtime_config_files(model: dict, fileset: set) -> dict[str, str]:
+    """{file: what it sets}: next.config.* with headers, CSP, redirects or rewrites, and platform files (vercel.json,
+    netlify.toml, public/_headers) that set them."""
+    out: dict[str, str] = {}
+    for p in model.get('projects', []):
+        c = p.get('config') or {}
+        what = [k for k in ('headers', 'csp') if c.get(k)] + [k for k in ('redirects', 'rewrites') if c.get(k)]
+        if c.get('file') in fileset and what:
+            out[c['file']] = ', '.join(what)
+        for name, pf in (p.get('platform') or {}).items():
+            what = [k for k in ('headers', 'csp', 'redirects', 'rewrites') if pf.get(k)]
+            if pf.get('file') in fileset and what:
+                out[pf['file']] = ', '.join(what)
+    return out
+
+
+JS_SCRIPT_TYPES = {'', 'text/javascript', 'application/javascript', 'module', 'text/partytown'}
+
+
+def next_surface_hits(model: dict) -> dict[str, list[tuple[str, str]]]:
+    """{file: [(surface class, evidence)]} from the Next.js model: third-party script loaders (next/script, <script>,
+    next/third-parties) for third_party_script, whatever their src is written as (a constant, a template); and the
+    headers, CSP, redirects and rewrites of next.config.* and the platform files for response_policy."""
+    hits: dict[str, list[tuple[str, str]]] = {}
+    for p in model.get('projects', []):
+        for s in p.get('scripts') or []:
+            if s.get('kind') not in ('next/script', 'script', 'next/third-parties') or s.get('first_party'):
+                continue
+            if (s.get('type') or '').strip().lower() not in JS_SCRIPT_TYPES:    # JSON-LD and other data blocks run nothing
+                continue
+            hosts = [s['host']] if s.get('host') else list(s.get('body_hosts') or [])
+            if s.get('kind') == 'next/third-parties' or hosts:
+                hits.setdefault(s['file'], []).append(
+                    ('third_party_script', f'{s["file"]}:{s["line"]} ({s["kind"]} {", ".join(hosts) or s.get("component") or ""})'.rstrip()))
+        c = p.get('config') or {}
+        if c.get('file'):
+            for h in c.get('headers') or []:
+                keys = ', '.join(x['key'] for x in h.get('headers') or [] if x.get('key'))
+                hits.setdefault(c['file'], []).append(('response_policy', f'{c["file"]}:{h["line"]} (headers for {h.get("source")}: {keys})'))
+            for k in ('redirects', 'rewrites'):
+                if c.get(k):
+                    hits.setdefault(c['file'], []).append(
+                        ('response_policy', f'{c["file"]}:{c[k]["line"]} ({len(c[k].get("entries") or [])} {k})'))
+        for name, pf in (p.get('platform') or {}).items():
+            what = [f'{len(pf[k])} {k}' for k in ('headers', 'redirects', 'rewrites') if pf.get(k)]
+            if pf.get('file') and what:
+                hits.setdefault(pf['file'], []).append(('response_policy', f'{pf["file"]} ({", ".join(what)})'))
+    return hits
 
 
 def is_area_asset(f: str) -> bool:
@@ -464,11 +572,21 @@ def split_dir(d: str, source: list[str], label: str, by_prefix: bool = True) -> 
     return areas
 
 
+NEXT_ROOT_ROLES = (('app (layout)', {'layout', 'template'}), ('pages/(root)', {'page'}),
+                   ('app (metadata routes)', {'robots', 'sitemap', 'manifest', 'icon', 'apple-icon', 'opengraph-image',
+                                              'twitter-image'}),
+                   ('app (error and loading pages)', {'not-found', 'error', 'global-error', 'loading', 'default',
+                                                      'forbidden', 'unauthorized'}))
+
+
 def next_app_areas(root: Path, files: list[str], source: list[str]) -> list[dict] | None:
     """Areas for a Next.js App Router project, where the directory tree under app/ is routing, not modules: one area per
-    API resource (app/api/<resource>), one per top-level route segment or route group, app (root) for the root layout
-    and files; then lib/, components/ and the other source directories split by subdirectory (and by file-name prefix
-    when flat and large); middleware.ts / proxy.ts as their own area."""
+    API resource (app/api/<resource>), one per top-level route segment or route group; the files directly in app/ split
+    by role: app (layout) for the root layout and template (they wrap every page and load what every visitor gets),
+    pages/(root) for the home page, app (metadata routes) for robots, sitemap, manifest, icons and social images,
+    app (error and loading pages) for not-found, error, global-error and loading, app (root) for the rest; then lib/,
+    components/ and the other source directories split by subdirectory (and by file-name prefix when flat and large);
+    middleware.ts / proxy.ts as their own area."""
     pkg = root / 'package.json'
     try:
         deps = json.loads(pkg.read_text(encoding='utf-8')) if pkg.is_file() else {}
@@ -491,7 +609,16 @@ def next_app_areas(root: Path, files: list[str], source: list[str]) -> list[dict
                 areas.append({'id': 'api (top level)', 'paths': [f'{app}/api/*']})
         else:
             areas.append({'id': f'pages/{seg}', 'paths': [f'{app}/{seg}']})
-    if any('/' not in r for r in in_app):
+    roles: dict[str, list[str]] = {}
+    for r in sorted(r for r in in_app if '/' not in r):
+        stem = PurePosixPath(r).stem
+        role = next((rid for rid, stems in NEXT_ROOT_ROLES if stem in stems), None)
+        if role:
+            roles.setdefault(role, []).append(f'{app}/{r}')
+    for rid, _ in NEXT_ROOT_ROLES:
+        if roles.get(rid):
+            areas.append({'id': rid, 'paths': roles[rid]})
+    if any('/' not in r and not any(f'{app}/{r}' in v for v in roles.values()) for r in in_app):
         areas.append({'id': 'app (root)', 'paths': [f'{app}/*']})
     prefix = base + '/' if base else ''
     guards = [f for f in source if f.startswith(prefix) and f[len(prefix):].count('/') == 0
@@ -556,6 +683,16 @@ def define_areas(root: Path, files: list[str], explicit: Path | None) -> tuple[l
         areas.append({'id': f, 'paths': [f] + extra})
     if apps:
         basis += '; root app module(s): ' + '; '.join(f'{f} ({why})' for f, why in sorted(apps.items()))
+    # a service worker in public/ or static/ intercepts the site's requests: product code, its own area
+    workers = {f: why for f, why in service_workers(root, files).items() if area_of(f, areas) is None}
+    if workers:
+        areas.append({'id': 'service worker', 'paths': sorted(workers)})
+        basis += '; service worker(s): ' + '; '.join(f'{f} ({why})' for f, why in sorted(workers.items()))
+    # next.config.* and platform files that set headers, CSP, redirects or rewrites: what every response gets
+    cfg = sorted(f for f in KEPT_CONFIG if area_of(f, areas) is None)
+    if cfg:
+        areas.append({'id': 'runtime config', 'paths': cfg})
+        basis += '; runtime configuration: ' + ', '.join(cfg)
     return areas, basis
 
 
@@ -1182,7 +1319,77 @@ def code_view(text: str, suffix: str) -> str:
     """The text with comments and string literals blanked (newlines kept, so line numbers hold): a payment provider
     named in a CSP header, an API description or a comment doesn't move money."""
     rx = PY_TOKENS if suffix in HASH_COMMENT else JS_TOKENS
-    return rx.sub(lambda m: '""' + '\n' * m.group(0).count('\n'), text)
+    out = rx.sub(lambda m: '""' + '\n' * m.group(0).count('\n'), text)
+    return blank_jsx_text(out) if suffix in JSX_EXT else out
+
+
+JSX_EXT = {'.tsx', '.jsx', '.js'}
+JSX_BEFORE_WORDS = {'return', 'yield', 'await', 'default', 'case', 'else', 'in', 'of'}
+TOP_LEVEL = re.compile(r'\n(?=(?:export|function|const|let|var|import|class|async\s+function|type|interface)\b)')
+
+
+def _brace_end(s: str, i: int) -> int:
+    """Index of the } closing the { at i (strings and comments are already blanked), or len(s)-1."""
+    depth = 0
+    for j in range(i, len(s)):
+        if s[j] == '{':
+            depth += 1
+        elif s[j] == '}':
+            depth -= 1
+            if depth == 0:
+                return j
+    return len(s) - 1
+
+
+def blank_jsx_text(s: str) -> str:
+    """Blank JSX text (copy between tags: '<p>We follow the GDPR</p>') in a code view whose strings and comments are
+    already blanked, keeping newlines, tags and {expressions}. A '<' opens a tag when JSX is open, or at depth 0 when the
+    character before it is not an identifier, ')' or ']' (so a generic like useState<string> or a comparison a < b is
+    not a tag) unless that identifier is a keyword such as return. A declaration at column 0 closes any JSX left open,
+    so a missed closing tag cannot blank the rest of the file."""
+    if '<' not in s:
+        return s
+    out = list(s)
+    n, i, depth = len(s), 0, 0
+    while i < n:
+        c = s[i]
+        if c == '\n' and depth and TOP_LEVEL.match(s, i):
+            depth = 0
+        if depth and c == '{':
+            i = _brace_end(s, i) + 1
+            continue
+        if c == '<' and i + 1 < n and (s[i + 1].isalpha() or s[i + 1] in '/>'):
+            tag = bool(depth)
+            if not tag:
+                j = i - 1
+                while j >= 0 and s[j] in ' \t\r\n':
+                    j -= 1
+                if j < 0 or not (s[j].isalnum() or s[j] in '_$)].'):
+                    tag = True
+                else:
+                    k = j
+                    while k >= 0 and (s[k].isalnum() or s[k] in '_$'):
+                        k -= 1
+                    tag = s[k + 1:j + 1] in JSX_BEFORE_WORDS
+            if tag:
+                j = i + 1
+                while j < n and s[j] != '>':          # the tag's end, past {attribute expressions}
+                    if s[j] == '{':
+                        j = _brace_end(s, j)
+                    elif s[j] == '<' and j > i + 1:   # not a tag after all ('<' again before '>')
+                        break
+                    j += 1
+                if j < n and s[j] == '>':
+                    if s[i + 1] == '/':
+                        depth = max(0, depth - 1)
+                    elif s[j - 1] != '/':
+                        depth += 1
+                    i = j + 1
+                    continue
+        if depth and c != '\n':
+            out[i] = ' '
+        i += 1
+    return ''.join(out)
 
 
 def comment_free(text: str, suffix: str) -> str:
@@ -1227,7 +1434,8 @@ def compiled_surfaces() -> dict:
     if _COMPILED is None:
         _COMPILED = {cls: (_any(spec.get('patterns', [])), _any(spec.get('raw_patterns', [])),
                            _any(spec.get('exclude', [])), spec.get('langs'),
-                           {ext: _any(pats) for ext, pats in (spec.get('lang_exclude') or {}).items()})
+                           {ext: _any(pats) for ext, pats in (spec.get('lang_exclude') or {}).items()},
+                           _any(spec.get('raw_exclude', [])))
                      for cls, spec in SURFACES['classes'].items()}
     return _COMPILED
 
@@ -1238,13 +1446,13 @@ def line_classes(raw: str, code: str, suffix: str) -> list[str]:
     if not raw.strip() or (suffix in TS_EXT and TS_SIGNATURE.match(code)):
         return []
     out = []
-    for cls, (pat, rawp, excl, langs, lang_excl) in compiled_surfaces().items():
+    for cls, (pat, rawp, excl, langs, lang_excl, raw_excl) in compiled_surfaces().items():
         if langs and suffix not in langs:        # the systems/CLI pack is Rust-only
             continue
         if not ((pat and pat.search(code)) or (rawp and rawp.search(raw))):
             continue
         lx = lang_excl.get(suffix)               # web-tuned idioms the language reuses harmlessly
-        if (excl and excl.search(code)) or (lx and lx.search(code)):
+        if (excl and excl.search(code)) or (lx and lx.search(code)) or (raw_excl and raw_excl.search(raw)):
             continue
         out.append(cls)
     return out
@@ -1329,11 +1537,14 @@ def manifest_entries(root: Path, files: list[str]) -> dict[str, str]:
     return out
 
 
-def surface_scan(root: Path, files: list[str], entries: dict[str, str] | None = None) -> tuple[int, list[str], list[str]]:
+def surface_scan(root: Path, files: list[str], entries: dict[str, str] | None = None,
+                 extra: dict[str, list[tuple[str, str]]] | None = None) -> tuple[int, list[str], list[str]]:
     """Surface classes found in the area's files. Patterns run on code with comments and strings blanked;
     raw_patterns (SQL statements, the 'use server' directive) run on the line as written. Type declaration files
     (.d.ts) declare, they don't do, so they are skipped. `entries` (manifest_entries) are the files a package manifest
-    names as public entry points; they match the class with manifest_entries set."""
+    names as public entry points; they match the class with manifest_entries set. `extra` ({file: [(class,
+    evidence)]}, next_surface_hits) adds what the Next.js model found: script loaders whose src is a constant, and the
+    headers, CSP and redirects of next.config.* and platform files."""
     hits: dict[str, list[str]] = {}
     by_path = {cls: [re.compile(p, re.I) for p in spec.get('path_patterns', [])] for cls, spec in SURFACES['classes'].items()}
     entry_cls = next((c for c, spec in SURFACES['classes'].items() if spec.get('manifest_entries')), None)
@@ -1345,6 +1556,9 @@ def surface_scan(root: Path, files: list[str], entries: dict[str, str] | None = 
                 hits.setdefault(cls, []).append(f'{f} (path)')
         if entry_cls and entries and f in entries:
             hits.setdefault(entry_cls, []).append(f'{f} ({entries[f]})')
+        for cls, ev in (extra or {}).get(f, []):
+            if cls in SURFACES['classes'] and ev not in hits.get(cls, []):
+                hits.setdefault(cls, []).append(ev)
         try:
             text = (root / f).read_text(encoding='utf-8', errors='replace')
         except OSError:
@@ -1357,7 +1571,8 @@ def surface_scan(root: Path, files: list[str], entries: dict[str, str] | None = 
             raw_lines, code_lines = raw_lines[:cut], code_lines[:cut]
         for i, (raw, code) in enumerate(zip(raw_lines, code_lines), 1):
             for cls in line_classes(raw, code, suffix):
-                hits.setdefault(cls, []).append(f'{f}:{i}')
+                if not any(h.startswith(f'{f}:{i} (') for h in hits.get(cls, [])):   # the model already cites it
+                    hits.setdefault(cls, []).append(f'{f}:{i}')
     if not hits:
         return SURFACES['none_score'], [], ['no surface pattern matched in data/surfaces.json']
     best = max(hits, key=lambda c: SURFACES['classes'][c]['score'])
@@ -1412,6 +1627,52 @@ def uncovered_language(files: list[str], owner: dict, cx: dict, root: Path, area
     return None
 
 
+CI_FILES = re.compile(r'^(\.github/workflows/[^/]+\.ya?ml|\.gitlab-ci\.yml|azure-pipelines\.ya?ml|Jenkinsfile|'
+                      r'\.circleci/config\.ya?ml|bitbucket-pipelines\.yml|\.travis\.yml|\.buildkite/.+|\.drone\.ya?ml)$')
+NO_TESTS = 'the repository has no test files'
+
+
+def no_tests_warning(files: list[str]) -> str | None:
+    """A loud warning when no file is a test: test weakness is then 5 for every area and carries no ranking signal."""
+    if any(is_test(f) and PurePosixPath(f).suffix in CODE_EXT for f in files):
+        return None
+    ci = [f for f in files if CI_FILES.match(f)]
+    return (f'{NO_TESTS}' + ('' if ci else ' and no CI configuration') + ': test weakness is 5 for every area, so it '
+            'ranks nothing; the plan must say so (headline, an assumption or an open question) and start with the tests '
+            'the High areas need')
+
+
+JS_LIKE = {'.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.vue', '.svelte'}
+ENTRY_STEMS = {'middleware', 'proxy', 'instrumentation', 'instrumentation-client', 'mdx-components'}
+
+
+def unreferenced_files(root: Path, files: list[str], areas: list[dict], owner: dict, excluded_paths: set, imports,
+                       entries: dict) -> tuple[list[str], str | None]:
+    """(files, note): JavaScript/TypeScript source files of a Next.js project that no file in the repository imports and
+    that are not entry points by convention (App Router and Pages Router files, metadata routes, middleware,
+    instrumentation, package manifest entries, service workers, runtime configuration). A hint of dead code, never a
+    score. Skipped, with a note, when so many files look unreferenced that import resolution is likely incomplete."""
+    if not NEXT_MODEL.get('projects'):
+        return [], None
+    code = [f for f in files if PurePosixPath(f).suffix in JS_LIKE and not f.endswith('.d.ts')]
+    imported = {t for f in code for t in imports(f)}
+    entry_dirs = {d for p in NEXT_MODEL['projects'] for d in (p.get('app_dir'), p.get('pages_dir')) if d}
+    workers = {w.get('worker_file') for p in NEXT_MODEL['projects'] for w in p.get('service_workers') or []}
+    cands = []
+    for f in code:
+        p = PurePosixPath(f)
+        if (owner.get(f) is None or f in excluded_paths or is_test(f) or not is_area_code(f) or f in imported
+                or f in entries or f in workers or f in KEPT_CONFIG or CONFIG_NAME.match(p.name) or p.stem in ENTRY_STEMS
+                or any(f.startswith(d + '/') for d in entry_dirs) or dir_names(f) & {'public', 'static', 'scripts'}):
+            continue
+        cands.append(f)
+    pool = [f for f in code if owner.get(f) is not None and not is_test(f) and not any(f.startswith(d + '/') for d in entry_dirs)]
+    if cands and len(cands) > max(3, len(pool) // 3):
+        return [], (f'the unreferenced-file hint was skipped: {len(cands)} of {len(pool)} source files outside the routing '
+                    'directories resolved no importer, so import resolution (aliases, barrels) looks incomplete')
+    return sorted(cands), None
+
+
 def score(args) -> dict:
     root = args.repo.resolve()
     hist = json.loads(args.history.read_text(encoding='utf-8'))
@@ -1422,8 +1683,22 @@ def score(args) -> dict:
     PRODUCT_DIRS.clear()
     PRODUCT_DIRS.update(product_dirs(root, files))
     set_runner_dirs(root, files)
+    fileset = set(files)
+    NEXT_MODEL.clear()
+    NEXT_MODEL.update(next_model(root, files))
+    KEPT_CONFIG.clear()
+    runtime_cfg = runtime_config_files(NEXT_MODEL, fileset)
+    KEPT_CONFIG.update(runtime_cfg)
+    if args.areas:
+        # an explicit area that names a configuration file by its path is the user's decision: it is scored
+        named = {p for a in json.loads(args.areas.read_text(encoding='utf-8'))['areas'] for p in a['paths']}
+        KEPT_CONFIG.update(f for f in named & fileset if CONFIG_NAME.match(PurePosixPath(f).name)
+                           or ('/' not in f and PurePosixPath(f).suffix.lower() in DATA_EXT | {'.toml'}))
     areas, area_basis = define_areas(root, files, args.areas)
     warnings = []
+    if NEXT_MODEL.get('error'):
+        warnings.append(f'the Next.js model could not be read ({NEXT_MODEL["error"]}): script loaders, next.config headers '
+                        'and redirects and service workers are not scored from it')
     excluded = []
     kept_generated: dict[str, list[tuple[str, str]]] = {}
     for f in files:
@@ -1469,6 +1744,8 @@ def score(args) -> dict:
         names = dir_names(f)
         if kind in ('generated', 'vendored'):
             reason = why
+        elif f in KEPT_CONFIG:
+            reason = RUNTIME_CONFIG_REASON
         elif CONFIG_NAME.match(p.name):
             reason = 'tool configuration file'
         elif names & DOC_DIRS:
@@ -1492,6 +1769,8 @@ def score(args) -> dict:
             continue
         top = sp.split('/')[0] + '/' if '/' in sp else sp
         reason = why_excluded.get(sp) or ('a template, style or data file in no area' if is_area_asset(sp) else 'in no area')
+        if sf.get('status') == 'deleted' and sp not in fileset:
+            reason = f'deleted in the scope; {reason}'
         acc = loose.setdefault((top, reason), [0, 0])
         acc[0] += 1
         acc[1] += (sf.get('lines_added') or 0) + (sf.get('lines_deleted') or 0)
@@ -1503,6 +1782,23 @@ def score(args) -> dict:
                         + ', '.join(f'{x["path"]} ({x["files"]} file(s), {x["lines"]} lines; {x["reason"]})' for x in scope_outside[:6])
                         + '; no area\'s change in scope reflects them, so add them to --areas (or say in the plan why they '
                         'need no testing) and lower the plan\'s confidence until they are scored')
+    # Deleted code is removed behaviour (a redirect, a guard, a handler): the scope's deletions are named wherever they
+    # count, so a release that removes middleware never reads as a small change.
+    gone_scope = [sf for sf in (scope or {}).get('files', []) if sf.get('status') == 'deleted' and sf['path'] not in fileset
+                  and not is_test(sf['path']) and PurePosixPath(sf['path']).suffix in CODE_EXT | ASSET_EXT]
+    if gone_scope:
+        gone_scope.sort(key=lambda sf: (-(sf.get('lines_deleted') or 0), sf['path']))
+        warnings.append(f'{len(gone_scope)} file(s) deleted in the scope ({sum(sf.get("lines_deleted") or 0 for sf in gone_scope)} '
+                        'lines removed): ' + ', '.join(f'{sf["path"]} ({sf.get("lines_deleted") or 0} lines, '
+                                                       f'{area_of(sf["path"], areas) or "no area"})' for sf in gone_scope[:6])
+                        + (f' (+{len(gone_scope) - 6})' if len(gone_scope) > 6 else '') + '; deleted code is removed '
+                        'behaviour: plan a regression check that what it did (redirects, guards, handlers) still happens '
+                        'or is meant to stop')
+    public_code = [e['path'] for e in outside if dir_names(e['path']) & {'public', 'static'}]
+    if public_code:
+        warnings.append(f'{len(public_code)} code file(s) in public/ or static/ are served to browsers but not scored: '
+                        + ', '.join(public_code[:6]) + (f' (+{len(public_code) - 6})' if len(public_code) > 6 else '')
+                        + '; a script a page loads (a worker, a widget) is product code, so add it to --areas if it is one')
     tooling = [e['path'] for e in outside if e['reason'] == OUTSIDE_REASON]
     if tooling:
         warnings.append(f'{len(tooling)} code file(s) outside the workspace packages and the main source tree are not scored '
@@ -1580,6 +1876,7 @@ def score(args) -> dict:
             o = coverage.get(k, (0, 0))
             coverage[k] = (max(o[0], n), max(o[1], c))
     entries = manifest_entries(root, files)
+    next_hits = next_surface_hits(NEXT_MODEL)
     release = json.loads(args.release.read_text(encoding='utf-8')) if args.release else None
     rel_pkgs = {n: p for n, p in ((release or {}).get('packages') or {}).items() if isinstance(p, dict) and p.get('dir') is not None}
 
@@ -1604,13 +1901,24 @@ def score(args) -> dict:
     window = hist['window']
     cmd = hist['command']
     commits = {c['sha']: c for c in hist['commits']}
+    # Files gone from HEAD keep their history and their scope deletions in the area whose paths cover them: a file
+    # deleted before HEAD keeps its churn and fix commits, and a deletion in the scope counts as lines changed.
+    gone_hist: dict[str, list[str]] = {}
+    for p in hist['files']:
+        if p not in fileset and not is_test(p) and (is_area_code(p) or is_area_asset(p)) and area_of(p, areas):
+            gone_hist.setdefault(area_of(p, areas), []).append(p)
+    gone_in_scope: dict[str, list[dict]] = {}
+    for sf in gone_scope:
+        if area_of(sf['path'], areas):
+            gone_in_scope.setdefault(area_of(sf['path'], areas), []).append(sf)
     raw = {}
     for a in areas:
         mine = [f for f in files if owner[f] == a['id'] and is_area_code(f) and f not in excluded_paths]
         assets = [f for f in files if owner[f] == a['id'] and is_area_asset(f) and f not in excluded_paths]
         every = mine + assets                      # history and scope count templates, styles and data too
-        mine_set = set(every)
-        h = [hist['files'][f] for f in every]
+        gone_h, gone_s = gone_hist.get(a['id'], []), gone_in_scope.get(a['id'], [])
+        mine_set = set(every) | set(gone_h)
+        h = [hist['files'][f] for f in every + gone_h]
         added_in_scope = [f for f in every if scope_files.get(f, {}).get('status') == 'added']
         novel = bool(every) and len(added_in_scope) == len(every)
         loc = sum(cx.get(f, {}).get('loc', 0) for f in mine)
@@ -1618,6 +1926,7 @@ def score(args) -> dict:
         code_files = [f for f in mine if cx.get(f, {}).get('loc', 0) > 0]
         test_loc = sum(cx.get(t, {}).get('loc', 0) for t in tests[a['id']])
         scope_lines = sum(scope_files[f]['lines_added'] + scope_files[f]['lines_deleted'] for f in every if f in scope_files)
+        scope_lines += sum((sf.get('lines_added') or 0) + (sf.get('lines_deleted') or 0) for sf in gone_s)
         fix_shas = sorted({s for x in h for s in x['fix_commits']})
         commit_keys = {k for s in fix_shas if s in commits for k in commits[s]['keys']}
         area_bugs = [t for t in bugs if a['id'].lower() in {x.lower() for x in (t.get('components') or []) + (t.get('labels') or [])}
@@ -1634,6 +1943,7 @@ def score(args) -> dict:
             'scope_lines': scope_lines, 'tests': tests[a['id']], 'test_loc': test_loc, 'code_files': code_files,
             'packages': sorted({package_of(x) for x in mine} - {None}),
             'breaking_commits': [c for c in (release or {}).get('breaking_commits') or [] if set(c.get('files') or []) & mine_set],
+            'gone_history': gone_h, 'gone_scope': gone_s,
         }
     # A package with a breaking pending changeset (major, or a "Breaking" note) flags the areas of it the scope changed;
     # when the scope changed none of them (or there is no scope), every area of the package.
@@ -1668,7 +1978,10 @@ def score(args) -> dict:
             hv = lambda key: vals(key, lambda k: not raw[k]['novel'])  # noqa: E731
             f['churn'] = {'score': pct_score(r['churn'], hv('churn')), 'status': 'assessed', 'command': cmd,
                           'evidence': [f'{r["churn"]} lines changed in {r["commits"]} commits by {len(r["authors"])} author(s), '
-                                       f'{window["from"]} to {window["to"]} (formatting-only commits excluded)']}
+                                       f'{window["from"]} to {window["to"]} (formatting-only commits excluded)'
+                                       + (f'; including {len(r["gone_history"])} file(s) no longer at HEAD '
+                                          f'({", ".join(r["gone_history"][:3])}{" ..." if len(r["gone_history"]) > 3 else ""})'
+                                          if r['gone_history'] else '')]}
             n_def = lambda k: len(raw[k]['fixes']) + len(raw[k]['bugs'])  # noqa: E731
             f['defects'] = {'score': pct_score(n_def(a['id']), [n_def(k) for k in live if not raw[k]['novel']]),
                             'status': 'assessed', 'command': cmd,
@@ -1691,6 +2004,9 @@ def score(args) -> dict:
                                     'command': (scope.get('source') or {}).get('command') or 'diff_scope.py',
                                     'evidence': [f'{r["scope_lines"]} lines changed in the scope diff'
                                                  + (f' ({in_assets} in templates, styles or data)' if in_assets else '')
+                                                 + (f' ({sum(sf.get("lines_deleted") or 0 for sf in r["gone_scope"])} in '
+                                                    f'{len(r["gone_scope"])} deleted file(s): '
+                                                    f'{", ".join(sf["path"] for sf in r["gone_scope"][:3])})' if r['gone_scope'] else '')
                                                  + (f' (percentile {pct}, capped at {cap} for a change this size)' if cap < pct else '')]}
         else:
             f['change_in_scope'] = {'score': None, 'status': 'not_assessed', 'evidence': ['no scope diff given']}
@@ -1750,7 +2066,7 @@ def score(args) -> dict:
             classes = []
             f['surface'] = {'score': None, 'status': 'not_assessed', 'evidence': [NO_CODE + '; surface patterns read code']}
         else:
-            s, classes, sev = surface_scan(root, r['files'], entries)
+            s, classes, sev = surface_scan(root, r['files'], entries, next_hits)
             f['surface'] = {'score': s, 'status': 'assessed', 'evidence': sev}
         if usage and a['id'] in usage.get('areas', {}):
             share = usage['areas'][a['id']]
@@ -1800,6 +2116,27 @@ def score(args) -> dict:
         if args.areas or u['id'] != 'unassigned':
             warnings.append(f'area {u["id"]} is not scored: {u["reason"]}; it is listed in unscored_areas (no file to score '
                             'is not low risk: fix its paths or say in the plan why it is out of scope)')
+    no_tests = no_tests_warning(files)
+    if no_tests:
+        warnings.append(no_tests)
+    scored = lambda p: (area_of(p, areas) is not None and p not in excluded_paths  # noqa: E731
+                        and (is_area_code(p) or is_area_asset(p)))
+    stray = [c for c in hist['commits'] if c.get('fix') and not c.get('merge') and c['files']
+             and not any(scored(fl['path']) for fl in c['files']) and not all(is_test(fl['path']) for fl in c['files'])]
+    if stray:
+        warnings.append(f'{len(stray)} fix commit(s) in the window touch no scored area and count in no area\'s defects: '
+                        + '; '.join(f'{c["sha"][:7]} {c["subject"][:70]} ({", ".join(fl["path"] for fl in c["files"][:3])})'
+                                    for c in stray[:6]) + (f' (+{len(stray) - 6})' if len(stray) > 6 else '')
+                        + '; if what they fixed is product behaviour (deploy configuration, redirects, scripts that ship), '
+                        'add those files to --areas')
+    unreferenced, unref_note = unreferenced_files(root, files, areas, owner, excluded_paths, imports, entries)
+    if unreferenced:
+        warnings.append(f'hint: {len(unreferenced)} source file(s) that nothing in the repository imports (possibly dead '
+                        'code; their complexity still counts in their areas): ' + ', '.join(unreferenced[:8])
+                        + (f' (+{len(unreferenced) - 8})' if len(unreferenced) > 8 else '')
+                        + '; confirm before testing them, and say in the plan if an area\'s complexity rests on them')
+    elif unref_note:
+        warnings.append(unref_note)
     if out_areas and all(a['factors'][k]['status'] == 'not_assessed' for a in out_areas for k in ('journey_criticality', 'reach')):
         warnings.append(SURFACE_ONLY_WARNING)
     rel_meta = None
@@ -1821,6 +2158,9 @@ def score(args) -> dict:
             'journey_map_scope': ({'domains': jscope['domains'], 'partial': jscope['partial'],
                                    'out_of_scope_files': len(jscope['out_of_scope_files'])} if have_map else None),
             'area_basis': area_basis, 'unassigned': unassigned, 'unscored_areas': unscored, 'scope_outside_areas': scope_outside,
+            'scope_deleted': [{'path': sf['path'], 'lines': sf.get('lines_deleted') or 0, 'area': area_of(sf['path'], areas)}
+                              for sf in gone_scope],
+            'unreferenced': unreferenced,
             'warnings': warnings + list(hist.get('notes') or []),
             'excluded': excluded, 'flaky_tests_not_counted': flaky_skipped, 'tests_not_counted': tests_not_counted,
             'release': rel_meta, 'language_coverage': lang_cov,
@@ -1931,6 +2271,27 @@ SELF_TEST_CASES = [
     ('.py', 'target.write_bytes(payload)', ['file_write']),
     ('.js', 'fs.writeFileSync(target, body);', ['file_write']),
     ('.ts', 'await fs.promises.appendFile(logPath, line);', ['file_write']),
+    # JSX text is copy: a page that mentions the GDPR or consent does not handle either
+    ('.tsx', '<p>We follow the GDPR and keep a data retention policy.</p>', []),
+    ('.jsx', '<li>Ask us to record_consent( for you</li>', []),
+    ('.tsx', 'if (a > b && record_consent(user) < 3) {', ['compliance']),
+    # a same-origin fetch (a relative URL, or a service worker passing the request through) is not an integration
+    ('.ts', "const res = await fetch('/api/bikes');", []),
+    ('.ts', 'const res = await fetch(`/api/bikes/${id}`);', []),
+    ('.js', 'event.respondWith(fetch(event.request));', ['service_worker']),
+    ('.js', 'return fetch(request).then((r) => r);', []),
+    ('.ts', "const res = await fetch('https://rates.example.test/v1');", ['external']),
+    ('.ts', 'const res = await fetch(url, { method: "POST" });', ['external']),
+    # third-party tag loaders: string literals are blanked for patterns, so these are read on the raw line
+    ('.tsx', '<Script src="https://www.googletagmanager.com/gtag/js?id=G-TEST000" strategy="afterInteractive" />',
+     ['third_party_script']),
+    ('.tsx', "  gtag('config', 'G-TEST000');", ['third_party_script']),
+    ('.tsx', '(window.adsbygoogle = window.adsbygoogle || []).push({});', ['third_party_script']),
+    ('.ts', '  { key: "Content-Security-Policy", value: "script-src https://www.googletagmanager.com" },', []),
+    # a service worker's fetch handler answers every request the page makes, from the network or a cache
+    ('.js', "self.addEventListener('fetch', (event) => {", ['service_worker']),
+    ('.js', '  event.respondWith(caches.match(event.request));', ['service_worker']),
+    ('.ts', "window.addEventListener('resize', onResize);", []),
 ]
 
 
@@ -1972,7 +2333,7 @@ def self_test() -> int:
         PRODUCT_DIRS.clear()
         PRODUCT_DIRS.update(saved)
         tmp.cleanup()
-    checks = go_layout_checks() + web_app_checks() + static_front_end_checks()
+    checks = go_layout_checks() + web_app_checks() + static_front_end_checks() + next_site_checks()
     bad += [name for name, ok in checks if not ok]
     for b in bad:
         print('FAIL ' + b)
@@ -2292,6 +2653,224 @@ def web_app_checks() -> list[tuple[str, bool]]:
             if 'RUNNER_DIRS' in globals():
                 RUNNER_DIRS.clear()
                 RUNNER_DIRS.update(saved[1])
+    return out
+
+
+NEXT_SITE = {
+    'package.json': '{"name": "spokes", "dependencies": {"next": "15.1.0", "react": "19.0.0"}}\n',
+    'tsconfig.json': '{"compilerOptions": {"paths": {"@/*": ["./src/*"]}}}\n',
+    'next.config.ts': (
+        "const csp = \"default-src 'self'; script-src 'self' https://www.googletagmanager.com\";\n"
+        'const nextConfig = {\n'
+        '  async headers() {\n'
+        "    return [{ source: '/(.*)', headers: [{ key: 'Content-Security-Policy', value: csp },\n"
+        "      { key: 'X-Frame-Options', value: 'DENY' }] }];\n"
+        '  },\n'
+        '  async redirects() {\n'
+        "    return [{ source: '/old-bikes', destination: '/bikes', permanent: true }];\n"
+        '  },\n'
+        '};\n'
+        'export default nextConfig;\n'),
+    'vercel.json': '{"redirects": [{"source": "/shop", "destination": "/bikes", "permanent": true}]}\n',
+    'src/app/layout.tsx': (
+        "import Script from 'next/script';\n"
+        "import Header from '@/components/Header';\n"
+        "import SwRegister from '@/components/SwRegister';\n"
+        '\n'
+        'export default function RootLayout({ children }: { children: React.ReactNode }) {\n'
+        '  return (\n'
+        '    <html lang="en">\n'
+        '      <body>\n'
+        '        <Header />\n'
+        '        {children}\n'
+        '        <SwRegister />\n'
+        '        <Script src="https://www.googletagmanager.com/gtag/js?id=G-TEST000" strategy="afterInteractive" />\n'
+        '        <Script id="ga-init" strategy="afterInteractive">{`\n'
+        '          window.dataLayer = window.dataLayer || [];\n'
+        "          function gtag(){dataLayer.push(arguments);}\n"
+        "          gtag('config', 'G-TEST000');\n"
+        '        `}</Script>\n'
+        '      </body>\n'
+        '    </html>\n'
+        '  );\n'
+        '}\n'),
+    'src/app/page.tsx': ("import { listBikes } from '@/lib/bikes';\n\nexport default async function Home() {\n"
+                         '  const bikes = await listBikes();\n  return <main>{bikes.length} bikes</main>;\n}\n'),
+    'src/app/robots.ts': ("export default function robots() {\n  return { rules: { userAgent: '*', allow: '/' } };\n}\n"),
+    'src/app/sitemap.ts': ("export default function sitemap() {\n  return [{ url: 'https://bikes.example.test/' }];\n}\n"),
+    'src/app/not-found.tsx': 'export default function NotFound() {\n  return <p>No such bike.</p>;\n}\n',
+    'src/app/error.tsx': ("'use client';\nexport default function Error({ reset }: { reset: () => void }) {\n"
+                          '  return <button onClick={() => reset()}>Try again</button>;\n}\n'),
+    'src/app/about/page.tsx': (
+        'export default function About() {\n'
+        '  return (\n'
+        '    <article>\n'
+        '      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({\n'
+        "        '@context': 'https://schema.org', '@type': 'BikeStore', url: 'https://bikes.example.test' }) }} />\n"
+        '      <h1>About the shop</h1>\n'
+        '      <p>\n'
+        '        We follow the GDPR and keep a data retention policy for every order.\n'
+        '      </p>\n'
+        '    </article>\n'
+        '  );\n'
+        '}\n'),
+    'src/app/bikes/[id]/page.tsx': ("import { getBike } from '@/lib/bikes';\n\nexport function generateStaticParams() {\n"
+                                    "  return [{ id: 'roadster' }];\n}\n\nexport default async function Bike({ params }: any) {\n"
+                                    '  const bike = await getBike(params.id);\n  return <h1>{bike.name}</h1>;\n}\n'),
+    'src/app/bikes/[id]/opengraph-image.tsx': ("import { ImageResponse } from 'next/og';\n\nexport default function Image() {\n"
+                                               '  return new ImageResponse(<div>Bike</div>);\n}\n'),
+    'src/components/Header.tsx': 'export default function Header() {\n  return <header>Spokes</header>;\n}\n',
+    'src/components/SwRegister.tsx': ("'use client';\nimport { useEffect } from 'react';\n\nexport default function SwRegister() {\n"
+                                      '  useEffect(() => {\n'
+                                      "    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');\n"
+                                      '  }, []);\n  return null;\n}\n'),
+    'src/components/OldGallery.tsx': ('export default function OldGallery({ items }: { items: string[] }) {\n'
+                                      '  if (!items.length) return null;\n  return <ul>{items.map((i) => <li key={i}>{i}</li>)}</ul>;\n}\n'),
+    'src/lib/bikes.ts': ("export async function listBikes() {\n  const res = await fetch('/api/bikes');\n  return res.json();\n}\n"
+                         'export async function getBike(id: string) {\n'
+                         '  const res = await fetch(`/api/bikes/${id}`);\n  return res.json();\n}\n'),
+    'public/sw.js': ("self.addEventListener('fetch', (event) => {\n"
+                     '  const url = new URL(event.request.url);\n'
+                     '  if (url.origin !== self.location.origin) return;\n'
+                     "  if (event.request.mode === 'navigate') {\n"
+                     '    event.respondWith(fetch(event.request).catch(() => caches.match(\'/offline\')));\n'
+                     '    return;\n'
+                     '  }\n'
+                     '  event.respondWith(caches.match(event.request).then((hit) => hit || fetch(event.request)));\n'
+                     '});\n'),
+    'public/robots-extra.txt': 'User-agent: *\n',
+    'scripts/build-feed.mjs': "import fs from 'node:fs';\nfs.writeFileSync('public/feed.xml', '<rss/>');\n",
+}
+
+
+def next_site_checks() -> list[tuple[str, bool]]:
+    """A synthetic Next.js App Router bike shop with no tests: next.config headers (CSP) and redirects, a vercel.json
+    redirect, a root layout loading an analytics tag with next/script, metadata routes, not-found and error pages, a
+    service worker in public/ registered by a client component, a component nothing imports, same-origin fetches,
+    prose that mentions the GDPR, and a scope that deletes middleware. Each gap of the App Router layout is a check."""
+    import tempfile
+    out: list[tuple[str, bool]] = []
+    saved = (set(PRODUCT_DIRS), set(RUNNER_DIRS))
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        for rel, text in NEXT_SITE.items():
+            p = root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text, encoding='utf-8')
+        files = sorted(NEXT_SITE)
+        stat = lambda: {'commits': 0, 'lines_added': 0, 'lines_deleted': 0, 'authors': [], 'fix_commits': [],  # noqa: E731
+                        'formatting_commits': [], 'first_commit': '2026-01-01'}
+        hist = {'repo': 'spokes', 'head': 'abc123', 'shallow': False, 'notes': [], 'command': 'git log',
+                'window': {'days': 180, 'from': '2026-05-01', 'to': '2026-11-01', 'head_date': '2026-11-01'},
+                'excluded_formatting': [], 'summary': {'commits': 3, 'fix_commits': 2, 'formatting_commits': 0},
+                'commits': [{'sha': 'c1', 'date': '2026-10-01', 'author': 'A', 'subject': 'Fix analytics loading', 'fix': True,
+                             'keys': [], 'formatting': False,
+                             'files': [{'path': 'src/app/layout.tsx', 'added': 6, 'deleted': 2}]},
+                            {'sha': 'c2', 'date': '2026-10-02', 'author': 'A', 'subject': 'Fix feed build script', 'fix': True,
+                             'keys': [], 'formatting': False, 'files': [{'path': 'scripts/build-feed.mjs', 'added': 1, 'deleted': 1}]},
+                            {'sha': 'c3', 'date': '2026-10-03', 'author': 'A', 'subject': 'Fix legacy redirect', 'fix': True,
+                             'keys': [], 'formatting': False, 'files': [{'path': 'src/lib/legacy.ts', 'added': 3, 'deleted': 1}]}],
+                'files': {f: stat() for f in files + ['src/lib/legacy.ts']}}
+        hist['files']['src/app/layout.tsx'].update(commits=1, lines_added=6, lines_deleted=2, authors=['A'], fix_commits=['c1'])
+        hist['files']['scripts/build-feed.mjs'].update(commits=1, lines_added=1, lines_deleted=1, authors=['A'], fix_commits=['c2'])
+        hist['files']['src/lib/legacy.ts'].update(commits=1, lines_added=3, lines_deleted=1, authors=['A'], fix_commits=['c3'])
+        cx = {'files': {f: {'loc': len(t.splitlines()), 'branches': t.count('if '), 'method': 'regex'}
+                        for f, t in NEXT_SITE.items() if PurePosixPath(f).suffix in CODE_EXT}}
+        scope = {'source': {'kind': 'git', 'base_ref': 'v1', 'command': 'git diff'},
+                 'files': [{'path': 'src/middleware.ts', 'status': 'deleted', 'kind': 'source', 'lines_added': 0,
+                            'lines_deleted': 39},
+                           {'path': 'src/lib/legacy.ts', 'status': 'deleted', 'kind': 'source', 'lines_added': 0,
+                            'lines_deleted': 12},
+                           {'path': 'src/app/layout.tsx', 'status': 'modified', 'kind': 'source', 'lines_added': 4,
+                            'lines_deleted': 0}]}
+        (root / '_in').mkdir()
+        for name, data in (('history.json', hist), ('complexity.json', cx), ('scope.json', scope)):
+            (root / '_in' / name).write_text(json.dumps(data), encoding='utf-8')
+        (root / '_in' / 'areas.json').write_text(json.dumps({'areas': [
+            {'id': 'site', 'paths': ['src']}, {'id': 'platform-config', 'paths': ['next.config.ts', 'vercel.json']}]}),
+            encoding='utf-8')
+
+        def run(areas: bool) -> dict:
+            ns = argparse.Namespace(repo=root, history=root / '_in' / 'history.json', complexity=root / '_in' / 'complexity.json',
+                                    scope=root / '_in' / 'scope.json', journeys=None, input=[], usage=None,
+                                    areas=(root / '_in' / 'areas.json') if areas else None, defects=None, finding_area=[],
+                                    release=None, coverage=[])
+            return score(ns)
+
+        def area_with(res: dict, path: str) -> dict:
+            return next((a for a in res['areas'] if area_of(path, [a]) == a['id']), {})
+        try:
+            PRODUCT_DIRS.clear()
+            set_runner_dirs(root, files)
+            res = run(False)
+            ids = [a['id'] for a in res['areas']]
+            warn = ' | '.join(res['warnings'])
+            excl = {e['path']: e['reason'] for e in res['excluded']}
+            cfg = area_with(res, 'next.config.ts')
+            out.append((f'next.config.* with headers/redirects is a scored runtime-config area, not tool configuration '
+                        f'(areas {ids}, excluded {excl.get("next.config.ts")!r})', bool(cfg) and 'next.config.ts' not in excl))
+            sw = area_with(res, 'public/sw.js')
+            out.append((f'a registered service worker in public/ is a scored area, not a static file (areas {ids}, excluded '
+                        f'{excl.get("public/sw.js")!r})', bool(sw) and 'public/sw.js' not in excl))
+            out.append((f'a same-origin fetch in the service worker is not an external integration (got {sw.get("surfaces")})',
+                        bool(sw) and 'external' not in sw.get('surfaces', [])))
+            out.append((f'the fetch handler of the service worker is a surface (got {sw.get("surfaces")})',
+                        'service_worker' in sw.get('surfaces', [])))
+            lib = area_with(res, 'src/lib/bikes.ts')
+            out.append((f'relative-URL fetches are not an external integration (got {lib.get("surfaces")})',
+                        bool(lib) and 'external' not in lib.get('surfaces', [])))
+            lay, rob = area_with(res, 'src/app/layout.tsx'), area_with(res, 'src/app/robots.ts')
+            out.append((f'the root layout is its own area, apart from metadata routes and pages (layout '
+                        f'{lay.get("id")!r}, robots {rob.get("id")!r}, home {area_with(res, "src/app/page.tsx").get("id")!r})',
+                        bool(lay) and lay.get('id') not in (rob.get('id'), area_with(res, 'src/app/page.tsx').get('id'))))
+            out.append((f'a next/script analytics loader is a third-party script surface (layout surfaces '
+                        f'{lay.get("surfaces")})', 'third_party_script' in lay.get('surfaces', [])))
+            out.append((f'metadata routes (robots, sitemap) are entry points (got {rob.get("surfaces")})',
+                        bool(set(rob.get('surfaces', [])) & {'ui_route', 'entry'})))
+            nf = area_with(res, 'src/app/not-found.tsx')
+            out.append((f'not-found and error pages are user-facing pages (got {nf.get("surfaces")})',
+                        'ui_route' in nf.get('surfaces', [])))
+            og = area_with(res, 'src/app/bikes/[id]/opengraph-image.tsx')
+            og_ev = ' '.join(og.get('factors', {}).get('surface', {}).get('evidence', []))
+            out.append((f'a generated opengraph-image is a public entry (got {og_ev!r})', 'opengraph-image' in og_ev))
+            about = area_with(res, 'src/app/about/page.tsx')
+            out.append((f'"GDPR" in JSX text is copy, not a compliance surface (got {about.get("surfaces")})',
+                        bool(about) and 'compliance' not in about.get('surfaces', [])))
+            out.append((f'a JSON-LD data block is not a third-party script loader (got {about.get("surfaces")})',
+                        bool(about) and 'third_party_script' not in about.get('surfaces', [])))
+            deleted = [x for x in res['scope_outside_areas'] if 'deleted' in x['reason']]
+            out.append((f'a deleted file in no area is listed in scope_outside_areas as deleted (got {res["scope_outside_areas"]})',
+                        any(x['lines'] == 39 for x in deleted)))
+            top = area_with(res, 'src/lib/legacy.ts')
+            cis = ' '.join(top.get('factors', {}).get('change_in_scope', {}).get('evidence', []))
+            out.append((f'a deleted file counts in the change in scope of the area covering it (got {cis!r})',
+                        cis.startswith('12 lines') and 'deleted' in cis))
+            out.append((f'deleted files in the scope are named in a warning (got {warn!r})',
+                        'src/middleware.ts' in warn and 'deleted' in warn))
+            out.append((f'a repository with no test files says so loudly (got {warn!r})', 'no test files' in warn))
+            out.append((f'fix commits that touch no scored area are named (got {warn!r})', 'Fix feed build script' in warn))
+            out.append((f'a file deleted before HEAD keeps its fix commits in the covering area (got '
+                        f'{top.get("factors", {}).get("defects", {}).get("evidence")})',
+                        any('c3' in e for e in top.get('factors', {}).get('defects', {}).get('evidence', []))))
+            out.append((f'source files nothing imports are hinted as possibly dead (got {res.get("unreferenced")})',
+                        'src/components/OldGallery.tsx' in (res.get('unreferenced') or [])
+                        and 'src/app/robots.ts' not in (res.get('unreferenced') or [])
+                        and 'src/components/Header.tsx' not in (res.get('unreferenced') or [])))
+            res = run(True)
+            got = {a['id']: a for a in res['areas']}
+            out.append((f'an explicit area naming next.config.ts and vercel.json is scored, not dropped as tool configuration '
+                        f'(unscored {res["unscored_areas"]})', 'platform-config' in got))
+            pc = got.get('platform-config', {})
+            out.append((f'next.config headers/CSP/redirects are a response-policy surface (got {pc.get("surfaces")})',
+                        'response_policy' in pc.get('surfaces', [])))
+        except Exception as e:
+            import traceback
+            out.append((f'Next.js site checks raised {type(e).__name__}: {e} {traceback.format_exc()[-600:]}', False))
+        finally:
+            PRODUCT_DIRS.clear()
+            PRODUCT_DIRS.update(saved[0])
+            RUNNER_DIRS.clear()
+            RUNNER_DIRS.update(saved[1])
     return out
 
 
