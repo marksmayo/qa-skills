@@ -42,3 +42,25 @@ repository itself is unchanged.
 
 Every file is real output. Editing `fare-calc/` changes its code hash and the mutants' line texts
 and invalidates the example until the run is repeated.
+
+## cargo-mutants fixture
+
+`cargo-mutants/tide-cli/` is a small synthetic Rust crate (tide-table helpers with one unit test
+and two integration tests). `cargo-mutants/mutants.out/` is a synthetic output in cargo-mutants'
+format (`outcomes.json`, `mutants.json` and one mutant log), written by hand, not recorded from a
+real cargo-mutants run: this skill never installs cargo-mutants. It exercises
+`normalize_results.py --cargo-mutants` (self-test `cargo_mutants_normalise`) and, through a
+stand-in `cargo` that replays it, `run_engine.py cargo-mutants` (`run_engine_cargo_mutants`).
+The crate itself is real: `prove_kill.py` proves a Rust test against it with `cargo test`
+(`prove_kill_rust`, skipped without cargo).
+
+| Mutant | Outcome |
+|---|---|
+| `band`: `>=` to `<` | caught by `tests::bands` (the log names it) |
+| `band`: `>=` to `>` | missed: no test reads exactly 300 cm |
+| `gap_minutes`: `>=` to `<` | caught |
+| `gap_minutes`: `-` to `+`, `*` to `/` in the wrap-around branch | missed: no test crosses midnight |
+| `can_cross`: `||` to `&&` | caught |
+| `can_cross`: `>` to `>=` | missed |
+| `can_cross` returns `true` / `false` | missed / caught |
+| `gap_minutes` returns `1` | timeout |

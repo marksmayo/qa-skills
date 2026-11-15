@@ -59,10 +59,109 @@ def runner_for(test_file: str) -> str | None:
         return 'go'
     if test_file.endswith('.py'):
         return 'pytest'
+    if test_file.endswith('.rs'):
+        return 'cargo'
     return None
 
 
-RUNNER_FILES = {'pytest': ('.py',), 'vitest': JS_SUFFIXES, 'jest': JS_SUFFIXES, 'go': ('_test.go',)}
+RUNNER_FILES = {'pytest': ('.py',), 'unittest': ('.py',), 'vitest': JS_SUFFIXES, 'jest': JS_SUFFIXES,
+                'go': ('_test.go',), 'cargo': ('.rs',)}
+
+
+def unittest_id(test_file: str, test_name: str) -> str:
+    """tests/test_x.py + Class.test_y (or Class::test_y) -> tests/test_x.py::Class::test_y (unittest_runner.py's ids)."""
+    return f'{test_file}::' + test_name.replace('::', '.').replace('.', '::')
+
+
+def run_unittest(cwd: Path, run_dir: Path, test_id: str, label: str, env: dict, timeout: float, ut: dict) -> dict:
+    """Run one TestCase method with unittest (unittest_runner.py, discovery as `python -m unittest discover`)."""
+    ut_dir = run_dir / '_ut'
+    ut_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(HERE / 'unittest_runner.py', ut_dir / 'unittest_runner.py')
+    out = run_dir / f'proof-{label}.json'
+    cfg = ut_dir / f'{label}.cfg.json'
+    cfg.write_text(json.dumps({**ut, 'ids': [test_id], 'result_out': str(out)}), encoding='utf-8')
+    shown = ('python -m unittest discover' + (f' -s {ut["start"]}' if ut.get('start') not in (None, '.') else '') +
+             (f' -p {shlex.quote(ut["pattern"])}' if ut.get('pattern') not in (None, 'test*.py') else '') +
+             (f' -t {ut["top"]}' if ut.get('top') else '') + f' (only {test_id}, by unittest_runner.py)')
+    kw = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' else {'start_new_session': True}
+    t0 = time.monotonic()
+    proc = subprocess.Popen([sys.executable, str(ut_dir / 'unittest_runner.py'), str(cfg)], cwd=cwd, env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kw)
+    timed_out = False
+    try:
+        text, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        run_tests.kill_tree(proc)
+        text, _ = proc.communicate()
+        timed_out = True
+    cases = json.loads(out.read_text(encoding='utf-8')).get('tests', []) if out.exists() else []
+    mine = next((c for c in cases if c['id'] == test_id), None)
+    status = 'timeout' if timed_out else (mine['status'] if mine and mine['status'] != 'skipped' else 'not_run')
+    rec = {'command': shown, 'exit_code': proc.returncode, 'test_status': status,
+           'duration_s': round(time.monotonic() - t0, 3)}
+    if status in ('failed', 'error') and mine.get('message'):
+        rec['message'] = run_tests.redact_home(mine['message'].strip().splitlines()[-1])[:300]
+    if status == 'not_run':
+        imp = [c for c in cases if c['id'].endswith('::(import)')]
+        first = (imp[0].get('message') or '').strip().splitlines()[-1:] if imp else []
+        if first:
+            rec['first_error'] = run_tests.redact_home(first[0])[:300]
+        rec['output_tail'] = run_tests.redact_home(text.decode('utf-8', 'replace')[-400:])
+    if out.exists():
+        out.unlink()
+    return rec
+
+
+def cargo_test_id(work: Path, test_file: str, test_name: str) -> str | None:
+    """The run_tests.py cargo id (`<target>::<path>`) of the test named test_name in test_file."""
+    import cargo_project
+    model = cargo_project.read_cargo(work)
+    for c in model.get('crates', []):
+        for t in c.get('tests', []):
+            if t.get('id') and t['file'] == test_file and test_name in (t['fn'], t['name']):
+                return t['id']
+    return None
+
+
+def run_cargo(cwd: Path, run_dir: Path, test_id: str, label: str, env: dict, timeout: float) -> dict:
+    """Run one Rust test with run_tests.py's cargo preset (`cargo test -p <crate> --lib|--test <t> -- --exact`).
+    A run that did not compile is build_failed: for a mutant, not_viable, never a kill."""
+    out = run_dir / f'cargo-{label}.runs.json'
+    if out.exists():
+        out.unlink()
+    cmd = [sys.executable, str(HERE / 'run_tests.py'), '--preset', 'cargo', '--cwd', str(cwd), '--out', str(out),
+           '--tests', test_id, '--timeout', str(int(timeout))]
+    t0 = time.monotonic()
+    try:
+        res = subprocess.run(cmd, env=env, capture_output=True, timeout=timeout + 120)
+        timed_out = False
+    except subprocess.TimeoutExpired:
+        res, timed_out = None, True
+    data = json.loads(out.read_text(encoding='utf-8')) if out.exists() else {'runs': [], 'cases': []}
+    run = data['runs'][-1] if data.get('runs') else {}
+    mine = next((c for c in data.get('cases', []) if c['id'] == test_id and c.get('run_id') == run.get('id')), None)
+    err = run.get('error') or ''
+    if timed_out or run.get('timed_out'):
+        status = 'timeout'
+    elif mine and mine['status'] in ('passed', 'failed', 'error'):
+        status = mine['status']
+    elif 'could not compile' in err:
+        status = 'build_failed'
+    else:
+        status = 'not_run'
+    rec = {'command': run.get('command') or 'cargo test (run_tests.py --preset cargo)',
+           'exit_code': run.get('exit_code', res.returncode if res else None), 'test_status': status,
+           'duration_s': round(time.monotonic() - t0, 3)}
+    if status in ('failed', 'error') and mine and (mine.get('message') or mine.get('message_excerpt')):
+        rec['message'] = run_tests.redact_home((mine.get('message') or mine.get('message_excerpt')).splitlines()[0])[:300]
+    if status in ('build_failed', 'not_run'):
+        if err:
+            rec['first_error'] = run_tests.redact_home(err)[:300]
+        if res is not None:
+            rec['output_tail'] = run_tests.redact_home((res.stdout + res.stderr).decode('utf-8', 'replace')[-400:])
+    out.unlink(missing_ok=True)
+    return rec
 GO_RESULT = re.compile(r'^\s*--- (PASS|FAIL|SKIP): (\S+)', re.M)
 GO_BUILD_FAILED = re.compile(r'\[(?:build|setup) failed\]|^# \S+', re.M)
 
@@ -330,8 +429,13 @@ def main(argv=None) -> int:
     ap.add_argument('--in-place', action='store_true', help='write_tests: also add the test to the repository file')
     ap.add_argument('--timeout', type=float,
                     help="seconds per test run (default: the engines' measured timeout_s in mutants.json, at least 60)")
-    ap.add_argument('--runner', choices=['pytest', 'vitest', 'jest', 'go'],
-                    help='default: vitest for a JS/TS test file, go for *_test.go, pytest for .py')
+    ap.add_argument('--runner', choices=['pytest', 'unittest', 'vitest', 'jest', 'go', 'cargo'],
+                    help='default: vitest for a JS/TS test file, go for *_test.go, cargo for .rs, pytest for .py '
+                         '(unittest when CI runs python -m unittest)')
+    ap.add_argument('--cargo-target-dir', help='cargo: where the proof builds (default <run-dir>/cargo-target, removed '
+                    'afterwards); never the repository\'s own target dir, and CARGO_TARGET_DIR is not inherited')
+    ap.add_argument('--unittest-args', default='',
+                    help='unittest discovery as for python -m unittest discover: "-s tests -p \'test*.py\'"')
     ap.add_argument('--env', nargs='+', action='append', default=[], metavar='K=V',
                     help="environment the repo's test command sets (e.g. TZ=...); several pairs per flag, or repeat the flag")
     ap.add_argument('--extra-args', default='', help="extra runner arguments the repo's test command adds")
@@ -341,8 +445,13 @@ def main(argv=None) -> int:
     if runner is None or not args.test_file.endswith(RUNNER_FILES[runner]):
         # refuse before anything is copied: a wrong runner would only report "not run" for every mutant
         print(f'ERROR: prove_kill.py has no runner for {args.test_file} ({Path(args.test_file).suffix or "no suffix"}); '
-              'it proves pytest (.py), Vitest/Jest (JS/TS) and Go (*_test.go) tests. Prove this one by hand with the '
-              'language\'s own runner and leave proof_ids empty (the suggestion stays unproven).', file=sys.stderr)
+              'it proves pytest or unittest (.py), Vitest/Jest (JS/TS), Go (*_test.go) and Rust (.rs, cargo test) '
+              'tests. Prove this one by hand with the language\'s own runner and leave proof_ids empty (the '
+              'suggestion stays unproven).', file=sys.stderr)
+        return 2
+    if runner == 'cargo' and args.extra_args:
+        print('ERROR: --extra-args is not used with --runner cargo (run_tests.py --preset cargo picks the target)',
+              file=sys.stderr)
         return 2
     extra = shlex.split(args.extra_args)
     data = json.loads(args.mutants.read_text(encoding='utf-8'))
@@ -351,7 +460,8 @@ def main(argv=None) -> int:
     if missing:
         raise SystemExit(f'unknown mutant id(s): {", ".join(missing)}')
     if args.timeout is None:
-        args.timeout = default_timeout(data, args.mutant)
+        # a Rust proof compiles the test target on each run: at least 300 s unless the user says otherwise
+        args.timeout = max(default_timeout(data, args.mutant), 300.0 if runner == 'cargo' else 0.0)
     code = args.test_code.read_text(encoding='utf-8')
     test_id = f'{args.test_file}::{args.test_name}'
     pycache = run_dir / '_pycache'
@@ -370,15 +480,48 @@ def main(argv=None) -> int:
     js_workspace.remove_tree(scratch)    # left by an interrupted run: links are unlinked, never followed
     # a JS package inside a workspace is copied to its own depth in a mirror of the workspace levels, so
     # relative tsconfig extends and pnpm's relative links resolve as in the repository
-    root = js_workspace.workspace_root(repo) if runner != 'pytest' else None
+    js = runner in ('vitest', 'jest')
+    root = js_workspace.workspace_root(repo) if js else None
     work = js_workspace.build_mirror(repo, root, scratch) if root else scratch
-    shutil.copytree(repo, work, ignore=lambda d, names: [n for n in names if n in COPY_SKIP or n.endswith('.egg-info')])
-    link = link_node_modules(repo, work) if runner != 'pytest' else None
+    skip = COPY_SKIP | ({'target'} if runner == 'cargo' else set())
+    if runner == 'cargo':
+        # cargo decides freshness by mtime: a copy keeping the repository's (older) mtimes could reuse a test binary
+        # built from an earlier mutant in the same target dir, so the copy's files get new mtimes, and the target
+        # dir is the proof's own, never one the repository's builds use
+        own = Path(args.cargo_target_dir).resolve() if args.cargo_target_dir else run_dir / 'cargo-target'
+        shared = {run_tests.cargo_target_dir(repo, {k: v for k, v in os.environ.items() if k != 'CARGO_TARGET_DIR'})}
+        if os.environ.get('CARGO_TARGET_DIR'):
+            shared.add(Path(os.environ['CARGO_TARGET_DIR']).resolve())
+        if own.resolve() in {p.resolve() for p in shared}:
+            raise SystemExit(f'--cargo-target-dir {own}: the repository\'s own builds use it, and a mutant built there '
+                             'could later pass for the real code; give a directory only proofs use')
+        env['CARGO_TARGET_DIR'] = str(own)
+    shutil.copytree(repo, work, ignore=lambda d, names: [n for n in names if n in skip or n.endswith('.egg-info')],
+                    copy_function=shutil.copy if runner == 'cargo' else shutil.copy2)
+    link = link_node_modules(repo, work) if js else None
     append_test(work / args.test_file, code)
     before = run_tests.tree_snapshot(repo, {run_dir})
     t = (args.test_file, args.test_name, env, args.timeout, extra)
+    ut = None
+    if runner == 'unittest':
+        import builtin_mutator
+        ut = builtin_mutator.parse_unittest_args(args.unittest_args)
+        test_id = unittest_id(args.test_file, args.test_name)
+    elif runner == 'cargo':
+        if shutil.which('cargo') is None:
+            raise SystemExit('a Rust proof needs cargo on PATH')
+        cid = cargo_test_id(work, args.test_file, args.test_name)
+        if cid is None:
+            js_workspace.remove_tree(scratch)
+            raise SystemExit(f'{args.test_file}: no #[test] fn {args.test_name} found after appending the test code '
+                             '(cargo_project.py reads #[test] functions in the crate\'s targets)')
+        test_id = cid
 
     def go(cwd: Path, junit: Path) -> dict:
+        if runner == 'unittest':
+            return run_unittest(cwd, run_dir, test_id, junit.stem, t[2], t[3], ut)
+        if runner == 'cargo':
+            return run_cargo(cwd, run_dir, test_id, junit.stem, t[2], t[3])
         return run_test(cwd, runner, t[0], t[1], junit, t[2], t[3], t[4])
 
     if args.in_place:
@@ -402,6 +545,8 @@ def main(argv=None) -> int:
             (work / m['file']).write_bytes(pristine[mid])
         if original['test_status'] != 'passed':
             verdict = 'fails_on_original'
+        elif res['test_status'] == 'build_failed':
+            verdict = 'not_viable'          # the mutant does not compile: never a kill
         else:
             verdict = mutant_verdict(res['test_status'])
         results.append({'mutant_id': mid, 'engine': m['engine'], 'run': res, 'verdict': verdict})
@@ -411,6 +556,9 @@ def main(argv=None) -> int:
     unlink_dir(link)          # the link first, so removing the copy never reaches the repo's node_modules
     js_workspace.remove_tree(scratch)
     shutil.rmtree(pycache, ignore_errors=True)
+    shutil.rmtree(run_dir / '_ut', ignore_errors=True)
+    if env.get('CARGO_TARGET_DIR') == str(run_dir / 'cargo-target'):
+        shutil.rmtree(run_dir / 'cargo-target', ignore_errors=True)
     return store_proof(args, test_id, code, original, results, changed)
 
 

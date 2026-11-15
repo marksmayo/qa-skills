@@ -1,0 +1,671 @@
+{
+  "outcomes": [
+    {
+      "scenario": "Baseline",
+      "log_path": "log/baseline.log",
+      "diff_path": null,
+      "summary": "Success",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.41,
+          "process_status": "Success",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.37,
+          "process_status": "Success",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "package": "tide-cli",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "band",
+            "return_type": "-> &'static str",
+            "span": {
+              "start": {
+                "line": 4,
+                "column": 1
+              },
+              "end": {
+                "line": 10,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 5,
+              "column": 18
+            },
+            "end": {
+              "line": 5,
+              "column": 20
+            }
+          },
+          "replacement": "<",
+          "genre": "BinaryOperator"
+        }
+      },
+      "log_path": "log/band_lt.log",
+      "diff_path": "diff/band_lt.diff",
+      "summary": "CaughtMutant",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.41,
+          "process_status": "Success",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.37,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "package": "tide-cli",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "band",
+            "return_type": "-> &'static str",
+            "span": {
+              "start": {
+                "line": 4,
+                "column": 1
+              },
+              "end": {
+                "line": 10,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 5,
+              "column": 18
+            },
+            "end": {
+              "line": 5,
+              "column": 20
+            }
+          },
+          "replacement": ">",
+          "genre": "BinaryOperator"
+        }
+      },
+      "log_path": "log/src__lib.rs_line_5_col_18.log",
+      "diff_path": "diff/src__lib.rs_line_5_col_18.diff",
+      "summary": "MissedMutant",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.41,
+          "process_status": "Success",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.37,
+          "process_status": "Success",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "package": "tide-cli",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "gap_minutes",
+            "return_type": "-> u32",
+            "span": {
+              "start": {
+                "line": 13,
+                "column": 1
+              },
+              "end": {
+                "line": 19,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 14,
+              "column": 11
+            },
+            "end": {
+              "line": 14,
+              "column": 13
+            }
+          },
+          "replacement": "<",
+          "genre": "BinaryOperator"
+        }
+      },
+      "log_path": "log/src__lib.rs_line_14_col_11.log",
+      "diff_path": "diff/src__lib.rs_line_14_col_11.diff",
+      "summary": "CaughtMutant",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.41,
+          "process_status": "Success",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.37,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "package": "tide-cli",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "gap_minutes",
+            "return_type": "-> u32",
+            "span": {
+              "start": {
+                "line": 13,
+                "column": 1
+              },
+              "end": {
+                "line": 19,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 17,
+              "column": 17
+            },
+            "end": {
+              "line": 17,
+              "column": 18
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "log_path": "log/src__lib.rs_line_17_col_17.log",
+      "diff_path": "diff/src__lib.rs_line_17_col_17.diff",
+      "summary": "MissedMutant",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.41,
+          "process_status": "Success",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.37,
+          "process_status": "Success",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "package": "tide-cli",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "gap_minutes",
+            "return_type": "-> u32",
+            "span": {
+              "start": {
+                "line": 13,
+                "column": 1
+              },
+              "end": {
+                "line": 19,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 17,
+              "column": 12
+            },
+            "end": {
+              "line": 17,
+              "column": 13
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "log_path": "log/src__lib.rs_line_17_col_12.log",
+      "diff_path": "diff/src__lib.rs_line_17_col_12.diff",
+      "summary": "MissedMutant",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.41,
+          "process_status": "Success",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.37,
+          "process_status": "Success",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "package": "tide-cli",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "can_cross",
+            "return_type": "-> bool",
+            "span": {
+              "start": {
+                "line": 22,
+                "column": 1
+              },
+              "end": {
+                "line": 24,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 23,
+              "column": 11
+            },
+            "end": {
+              "line": 23,
+              "column": 13
+            }
+          },
+          "replacement": "&&",
+          "genre": "BinaryOperator"
+        }
+      },
+      "log_path": "log/src__lib.rs_line_23_col_11.log",
+      "diff_path": "diff/src__lib.rs_line_23_col_11.diff",
+      "summary": "CaughtMutant",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.41,
+          "process_status": "Success",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.37,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "package": "tide-cli",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "can_cross",
+            "return_type": "-> bool",
+            "span": {
+              "start": {
+                "line": 22,
+                "column": 1
+              },
+              "end": {
+                "line": 24,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 23,
+              "column": 24
+            },
+            "end": {
+              "line": 23,
+              "column": 25
+            }
+          },
+          "replacement": ">=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "log_path": "log/src__lib.rs_line_23_col_24.log",
+      "diff_path": "diff/src__lib.rs_line_23_col_24.diff",
+      "summary": "MissedMutant",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.41,
+          "process_status": "Success",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.37,
+          "process_status": "Success",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "package": "tide-cli",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "can_cross",
+            "return_type": "-> bool",
+            "span": {
+              "start": {
+                "line": 22,
+                "column": 1
+              },
+              "end": {
+                "line": 24,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 22,
+              "column": 72
+            },
+            "end": {
+              "line": 24,
+              "column": 2
+            }
+          },
+          "replacement": "{\n    true /* ~ changed by cargo-mutants ~ */\n}",
+          "genre": "FnValue"
+        }
+      },
+      "log_path": "log/src__lib.rs_line_22_col_72.log",
+      "diff_path": "diff/src__lib.rs_line_22_col_72.diff",
+      "summary": "MissedMutant",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.41,
+          "process_status": "Success",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.37,
+          "process_status": "Success",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "package": "tide-cli",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "can_cross",
+            "return_type": "-> bool",
+            "span": {
+              "start": {
+                "line": 22,
+                "column": 1
+              },
+              "end": {
+                "line": 24,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 22,
+              "column": 72
+            },
+            "end": {
+              "line": 24,
+              "column": 2
+            }
+          },
+          "replacement": "{\n    false /* ~ changed by cargo-mutants ~ */\n}",
+          "genre": "FnValue"
+        }
+      },
+      "log_path": "log/src__lib.rs_line_22_col_72.log",
+      "diff_path": "diff/src__lib.rs_line_22_col_72.diff",
+      "summary": "CaughtMutant",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.41,
+          "process_status": "Success",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.37,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "package": "tide-cli",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "gap_minutes",
+            "return_type": "-> u32",
+            "span": {
+              "start": {
+                "line": 13,
+                "column": 1
+              },
+              "end": {
+                "line": 19,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 13,
+              "column": 47
+            },
+            "end": {
+              "line": 19,
+              "column": 2
+            }
+          },
+          "replacement": "{\n    1 /* ~ changed by cargo-mutants ~ */\n}",
+          "genre": "FnValue"
+        }
+      },
+      "log_path": "log/src__lib.rs_line_13_col_47.log",
+      "diff_path": "diff/src__lib.rs_line_13_col_47.diff",
+      "summary": "Timeout",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.41,
+          "process_status": "Success",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.37,
+          "process_status": "Timeout",
+          "argv": [
+            "/home/dev/.cargo/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=tide-cli@0.1.0"
+          ]
+        }
+      ]
+    }
+  ],
+  "total_mutants": 10,
+  "missed": 5,
+  "caught": 4,
+  "timeout": 1,
+  "unviable": 0,
+  "success": 0,
+  "failure": 0,
+  "cargo_mutants_version": "25.3.1"
+}

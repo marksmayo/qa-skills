@@ -46,8 +46,21 @@ hash is recorded, in <dir>/stryker.run.json, which normalize_results.py --stryke
 engine crash (no JSON report) is recorded as `errored` with the first error line from the log and,
 for known integration problems, a hint; it is never a run with zero mutants.
 
-Other engines (Stryker.NET, PIT, cargo-mutants, ...) are run with their own commands (SKILL.md
-lists them); normalize_results.py reads the mutation-testing-elements JSON.
+    python run_engine.py cargo-mutants --repo <workspace> --scope scope.json --run-dir <dir> [--minutes 30]
+        [--cargo "cargo"] [--cargo-mutants-arg=--package --cargo-mutants-arg=gauge ...]
+
+cargo-mutants (Rust; must already be installed: `cargo install --locked cargo-mutants`, which needs the
+user's agreement; without it the command exits 2 and says so): runs `cargo mutants --no-shuffle
+--output <dir>` from the workspace root, with `--in-diff <diff>` when the scope came from a diff file
+and `--file <f>` per scoped .rs file otherwise. cargo-mutants builds and tests in its own copy of
+the tree; the repository is hashed before and after anyway, and <dir>/cargo-mutants.run.json records
+the version, command, code hash and tree check for normalize_results.py --cargo-mutants-run (its
+outcomes are in <dir>/mutants.out/outcomes.json). Exit 4 from cargo-mutants (its baseline failed)
+or no outcomes.json is `errored`, never a run with zero mutants. cargo-mutants keeps no per-test
+coverage, so its missed mutants may be on lines no test runs.
+
+Other engines (Stryker.NET, PIT, ...) are run with their own commands (SKILL.md lists them);
+normalize_results.py reads the mutation-testing-elements JSON.
 """
 from __future__ import annotations
 import argparse, configparser, json, os, re, shlex, shutil, subprocess, sys, time
@@ -412,9 +425,88 @@ def do_stryker(args) -> int:
     return 0 if record['status'] == 'ran' else 1
 
 
+CARGO_MUTANTS_INSTALL = 'cargo install --locked cargo-mutants'
+
+
+def do_cargo_mutants(args) -> int:
+    """cargo-mutants on the scope: `cargo mutants --in-diff <diff>` for a changed scope made from a diff file,
+    otherwise `--file <f>` per scoped .rs file. cargo-mutants copies the tree to its own scratch directory; the
+    repository is still hashed before and after, and the record (code hash, tree check, command, version) goes to
+    <dir>/cargo-mutants.run.json for normalize_results.py --cargo-mutants-run. Nothing is installed."""
+    repo, run_dir = args.repo.resolve(), args.run_dir.resolve()
+    scope = json.loads(args.scope.read_text(encoding='utf-8'))
+    cargo = [c.strip('"') for c in shlex.split(args.cargo, posix=os.name != 'nt')] if args.cargo else ['cargo']
+    if shutil.which(cargo[0]) or Path(cargo[0]).exists():
+        code, out, _ = run([*cargo, 'mutants', '--version'], repo, timeout=60)
+    else:
+        code, out = 127, f'{cargo[0]}: not found'
+    m = re.search(r'cargo-mutants\s+(\d+\.\d+(?:\.\d+)?)', out)
+    if code != 0 or not m:
+        last = out.strip().splitlines()[-1] if out.strip() else f'exit {code}'
+        print(f'ERROR: cargo-mutants is not available here ({last}). Installing it needs the user\'s agreement: '
+              f'{CARGO_MUTANTS_INSTALL}. Until then record cargo-mutants as not_run with this reason, and Rust as not '
+              'mutated in the limitations.', file=sys.stderr)
+        return 2
+    version = m.group(1)
+    rs = [f['path'] for f in scope['files'] if f['kind'] == 'source' and f['status'] != 'deleted' and f['ranges']
+          and f['path'].endswith('.rs')]
+    if not rs:
+        print('ERROR: no Rust source lines in scope, so there is nothing for cargo-mutants to mutate', file=sys.stderr)
+        return 2
+    src = scope.get('source') if isinstance(scope.get('source'), dict) else {}
+    diff = src.get('diff_file')
+    diff_path = next((p for p in ((repo / diff), Path(diff)) if p.is_file()), None) if diff else None
+    sel = ['--in-diff', str(diff_path)] if diff_path else [x for f in rs for x in ('--file', f)]
+    shown_sel = ['--in-diff', diff] if diff_path else [x for f in rs for x in ('--file', f)]
+    extra = list(args.cargo_mutants_arg)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = run_dir / 'mutants.out'
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    skip = {run_dir}
+    before = run_tests.tree_snapshot(repo, skip)
+    config = next((p for p in ('.cargo/mutants.toml', 'mutants.toml') if (repo / p).is_file()), None)
+    cmd = [*cargo, 'mutants', '--no-shuffle', '--output', str(run_dir), *sel, *extra]
+    record = {'engine': {'name': 'cargo-mutants', 'version': version,
+                         'command': ' '.join(['cargo mutants --no-shuffle --output <run-dir>', *shown_sel, *extra]),
+                         'config_source': 'repo' if config else None, 'config': config},
+              'status': 'ran', 'reason': '', 'code_hash': run_tests.code_hash(repo),
+              'started_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'notes': []}
+    t0 = time.monotonic()
+    code, log, timed_out = run(cmd, repo, timeout=args.minutes * 60)
+    record['duration_s'] = round(time.monotonic() - t0, 1)
+    record['exit_code'] = code
+    (run_dir / 'cargo-mutants.log').write_text(clean_log(log), encoding='utf-8')
+    after = run_tests.tree_snapshot(repo, skip)
+    record['tree_changed'] = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+    outcomes = out_dir / 'outcomes.json'
+    if timed_out:
+        record.update(status='errored', reason=f'stopped at the {args.minutes}-minute budget; see cargo-mutants.log')
+    elif not outcomes.is_file():
+        record.update(status='errored', reason=f'cargo-mutants exited {code} without outcomes.json; see cargo-mutants.log')
+    elif code == 4:
+        record.update(status='errored', reason='cargo-mutants: the baseline build or tests failed in its copy of the '
+                                               'tree, so no mutant was tested; see cargo-mutants.log')
+    elif code not in (0, 2, 3):
+        record['notes'].append(f'cargo-mutants exited {code} after writing outcomes.json')
+    (run_dir / 'cargo-mutants.run.json').write_text(json.dumps(record, indent=1) + '\n', encoding='utf-8')
+    print(f'cargo-mutants {version} ({len(rs)} file(s)): {record["status"]} in {record["duration_s"]} s -> '
+          f'{outcomes if outcomes.is_file() else "no outcomes.json"}')
+    if record['status'] != 'ran':
+        print('  ' + record['reason'])
+    if record['tree_changed']:
+        print('ERROR: the repository changed during the run: ' + ', '.join(record['tree_changed'][:10]), file=sys.stderr)
+        return 3
+    return 0 if record['status'] == 'ran' else 1
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument('engine', choices=['mutmut', 'builtin', 'stryker', 'ranges'])
+    ap.add_argument('engine', choices=['mutmut', 'builtin', 'stryker', 'ranges', 'cargo-mutants'])
+    ap.add_argument('--cargo', help='cargo-mutants: the cargo command (default: cargo on PATH)')
+    ap.add_argument('--cargo-mutants-arg', action='append', default=[], metavar='ARG',
+                    help='cargo-mutants: one more argument for cargo mutants (repeatable), e.g. '
+                         '--cargo-mutants-arg=--package --cargo-mutants-arg=gauge, or --cargo-mutants-arg=--test-tool=nextest')
     ap.add_argument('--repo', type=Path)
     ap.add_argument('--scope', type=Path, required=True)
     ap.add_argument('--run-dir', type=Path)
@@ -446,7 +538,8 @@ def main(argv=None) -> int:
             print('WARNING: Stryker ranges cover only JavaScript/TypeScript; left out: ' +
                   '; '.join(f'{l}: {", ".join(fs[:5])}' + (f' (+{len(fs) - 5} more)' if len(fs) > 5 else '')
                             for l, fs in sorted(langs.items())) +
-                  ' (Python and Go: builtin_mutator.py; others: the tool table in SKILL.md)', file=sys.stderr)
+                  ' (Python and Go: builtin_mutator.py; Rust: run_engine.py cargo-mutants; others: the tool table in '
+                  'SKILL.md)', file=sys.stderr)
         if not ranges:
             print('ERROR: no JavaScript/TypeScript source lines in scope, so there is nothing for Stryker to mutate',
                   file=sys.stderr)
@@ -458,6 +551,10 @@ def main(argv=None) -> int:
         if rest:
             ap.error(f'unrecognised arguments: {" ".join(rest)}')
         return do_stryker(args)
+    if args.engine == 'cargo-mutants':
+        if rest:
+            ap.error(f'unrecognised arguments: {" ".join(rest)}')
+        return do_cargo_mutants(args)
     if args.engine == 'builtin':
         import builtin_mutator
         return builtin_mutator.main(['--repo', str(args.repo), '--scope', str(args.scope), '--run-dir', str(args.run_dir),

@@ -59,6 +59,9 @@ STRIP_METHODS = {'upper', 'lower', 'casefold', 'strip', 'lstrip', 'rstrip', 'tit
                  'toLocaleUpperCase', 'toLocaleLowerCase'}
 NAMED_CONST_LINE = re.compile(r'^\s*(?:export\s+)?(?:const\s+|static\s+|final\s+|readonly\s+)*_?[A-Z][A-Z0-9_]*\s*'
                               r'(?::[^=]*)?=\s*[rbufRBUF]*["\'`]')
+# a string used as a key or a default on the line: x["k"], .get("k", ...), getattr(o, "k"), {"k": ...}
+DATA_STRING_LINE = re.compile(r'''\[\s*[rbuRBU]?["']|\.(?:get|pop|setdefault|getenv)\(\s*[rbuRBU]?["']|'''
+                              r'''\b(?:getattr|hasattr|setattr)\(\s*[\w.]+\s*,\s*[rbuRBU]?["']|[{,]\s*["'][^"']*["']\s*:''')
 ARITH = {'+', '-', '*', '/', '//', '%', '**', '+=', '-=', '*=', '/=', '//=', '%=', '**=', '&', '|', '^', '<<', '>>'}
 STATUS_STRYKER = {'Killed': 'killed', 'Survived': 'survived', 'NoCoverage': 'no_coverage', 'Timeout': 'timeout',
                   'RuntimeError': 'runtime_error', 'CompileError': 'compile_error', 'Ignored': 'not_run',
@@ -133,6 +136,8 @@ def refine_string(op: str, original: str) -> str:
         cmps -= {'in'}
     if cmps:
         return 'constant_string_compared'
+    if DATA_STRING_LINE.search(original):
+        return 'constant_string_data'
     return op
 
 
@@ -323,6 +328,96 @@ def refine_method(op: str, span: str, replacement: str) -> str:
     return op
 
 
+STATUS_CARGO = {'CaughtMutant': 'killed', 'MissedMutant': 'survived', 'Timeout': 'timeout',
+                'Unviable': 'compile_error', 'Failure': 'runtime_error', 'Success': 'survived'}
+RUST_CMP = {'<', '<=', '>', '>=', '==', '!='}
+RUST_ARITH = {'+', '-', '*', '/', '%', '&', '|', '^', '<<', '>>', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=',
+              '<<=', '>>='}
+CARGO_COVERAGE_NOTE = ('cargo-mutants keeps no per-test coverage: a missed mutant may be on a line no test runs; '
+                       'check the tests reach this line before calling it a weak assertion')
+
+
+def cargo_outcomes_path(p: Path) -> Path:
+    """outcomes.json from a path to it, to mutants.out, or to the directory holding mutants.out."""
+    for c in (p, p / 'outcomes.json', p / 'mutants.out' / 'outcomes.json'):
+        if c.is_file():
+            return c
+    raise SystemExit(f'{p}: no cargo-mutants outcomes.json there (give mutants.out or its parent)')
+
+
+def cargo_operator(genre: str, span_text: str, replacement: str) -> str:
+    """The common operator for a cargo-mutants mutant, from its genre and the text it replaces."""
+    a, b = span_text.strip(), replacement.strip()
+    if genre == 'BinaryOperator':
+        if a in RUST_CMP and b in RUST_CMP:
+            return 'comparison_boundary' if frozenset((a, b)) in BOUNDARY else (
+                'comparison_relational' if b == '!=' and a != '==' else 'comparison_negate')
+        if {a, b} <= {'&&', '||'}:
+            return 'logical'
+        if a in RUST_ARITH and b in RUST_ARITH:
+            return 'arithmetic'
+        return 'other'
+    if genre == 'UnaryOperator':
+        return 'negate_condition' if a.startswith('!') else 'arithmetic'
+    return {'FnValue': 'return_value', 'MatchArm': 'remove_block', 'MatchArmGuard': 'negate_condition',
+            'StructField': 'call_args'}.get(genre, 'other')
+
+
+def first_failed_test(log: Path) -> str | None:
+    """The first failing libtest id (`<target>::<path>`) in a cargo-mutants mutant log."""
+    if not log.is_file():
+        return None
+    import parse_results
+    res = parse_results.parse_libtest(log.read_text(encoding='utf-8', errors='replace'), 'cargo-mutants')
+    cases = res[0] if isinstance(res, tuple) else res
+    return next((c['id'] for c in cases if c.get('status') in ('failed', 'error')), None)
+
+
+def from_cargo_mutants(raw: dict, out_dir: Path, src: Sources) -> tuple[list[dict], list[str], str | None]:
+    """(mutants, problems, baseline problem) from cargo-mutants' outcomes.json. Spans are 1-based lines and
+    columns with an exclusive end column; the original is the file's lines, the mutated text those lines with
+    the span replaced."""
+    out, problems, baseline = [], [], None
+    for o in raw.get('outcomes', []):
+        sc = o.get('scenario')
+        if sc == 'Baseline' or (isinstance(sc, dict) and 'Baseline' in sc):
+            if o.get('summary') != 'Success':
+                baseline = f'cargo-mutants\' baseline was {o.get("summary")}: no mutant result can be trusted'
+            continue
+        mu = (sc or {}).get('Mutant') if isinstance(sc, dict) else None
+        if not mu:
+            continue
+        rel = mu['file'].replace('\\', '/')
+        _, lines, _ = src.get(rel)
+        sp = mu['span']
+        a, b = sp['start']['line'], sp['end']['line']
+        if not lines or b > len(lines):
+            problems.append(f'{rel}:{a}: not in the repository (is --repo the directory cargo mutants ran in?)')
+            continue
+        sl, el = lines[a - 1], lines[b - 1]
+        head, tail = sl[:sp['start']['column'] - 1], el[sp['end']['column'] - 1:]
+        span_text = '\n'.join([sl[sp['start']['column'] - 1:]] + lines[a:b - 1] + [el[:sp['end']['column'] - 1]]) \
+            if b > a else sl[sp['start']['column'] - 1:sp['end']['column'] - 1]
+        repl = mu.get('replacement', '')
+        genre = mu.get('genre') or 'Other'
+        fn = (mu.get('function') or {}).get('function_name')
+        name = mu.get('name') or f'{rel}:{a}:{sp["start"]["column"]}: replace {span_text.strip()[:40]} with ' \
+                                 f'{repl.strip()[:40]}' + (f' in {fn}' if fn else '')
+        st = STATUS_CARGO.get(o.get('summary'), 'runtime_error')
+        m = {'engine': 'cargo-mutants', 'raw_id': name, 'file': rel, 'line': a, 'end_line': b,
+             'operator': cargo_operator(genre, span_text, repl), 'engine_operator': genre,
+             'original': '\n'.join(lines[a - 1:b]), 'mutated': head + repl + tail, 'status': st,
+             'engine_status': o.get('summary'), 'covering_tests': [], 'killed_by': None, '_function': fn}
+        if st == 'killed' and o.get('log_path'):
+            m['killed_by'] = first_failed_test(out_dir / o['log_path'])
+        if st == 'survived':
+            m['note'] = CARGO_COVERAGE_NOTE
+        if o.get('summary') not in STATUS_CARGO:
+            m['note'] = f'unrecognised cargo-mutants summary {o.get("summary")!r}'
+        out.append(m)
+    return out, problems, baseline
+
+
 MTE_PREFIX = {'stryker': 'S', 'pit': 'P'}       # every other mutation-testing-elements engine gets X
 
 
@@ -438,6 +533,10 @@ def main(argv=None) -> int:
     ap.add_argument('--mte-engine', help='the engine name for --mte (default: the report\'s framework.name)')
     ap.add_argument('--mte-run', type=Path, help='a run record for --mte in run_engine.py\'s shape (engine, status, '
                     'tree_changed, code_hash); without it the engine counts as external evidence')
+    ap.add_argument('--cargo-mutants', type=Path, help="cargo-mutants' output: mutants.out (or its parent, or "
+                    'outcomes.json); paths in it are relative to --repo, the directory cargo mutants ran in')
+    ap.add_argument('--cargo-mutants-run', type=Path, help='run_engine.py cargo-mutants\' record (cargo-mutants.run.json); '
+                    'without it the engine counts as external evidence and its tree check is missing')
     ap.add_argument('--coverage', type=Path)
     args = ap.parse_args(argv)
     repo = args.repo.resolve()
@@ -450,18 +549,26 @@ def main(argv=None) -> int:
     cov = json.loads(args.coverage.read_text(encoding='utf-8')) if args.coverage else None
     engines, mutants, problems = [], [], []
     stryker_cov = None
-    prefix = {'builtin': 'B', 'mutmut': 'M'}
+    prefix = {'builtin': 'B', 'mutmut': 'M', 'cargo-mutants': 'C'}
     inputs = [('builtin', args.builtin, None), ('mutmut', args.mutmut, None), ('stryker', args.stryker, args.stryker_run),
-              ('mte', args.mte, args.mte_run)]
+              ('mte', args.mte, args.mte_run), ('cargo', args.cargo_mutants, args.cargo_mutants_run)]
     for kind, path, run_path in inputs:
         if not path:
             continue
-        if kind in ('stryker', 'mte') and not path.exists() and run_path:
+        if kind == 'cargo':
+            try:
+                path = cargo_outcomes_path(path)
+                raw = json.loads(path.read_text(encoding='utf-8'))
+            except SystemExit:
+                if not run_path:
+                    raise
+                raw = {}      # cargo-mutants stopped before writing outcomes.json: recorded as the run says
+        elif kind in ('stryker', 'mte') and not path.exists() and run_path:
             raw = {}          # the engine crashed before writing a report: it is recorded as the run says
         else:
             raw = json.loads(path.read_text(encoding='utf-8'))
-        name = kind if kind in ('builtin', 'mutmut') else mte_engine_name(raw, args.mte_engine if kind == 'mte' else None,
-                                                                          'stryker' if kind == 'stryker' else 'mte')
+        name = kind if kind in ('builtin', 'mutmut') else 'cargo-mutants' if kind == 'cargo' else \
+            mte_engine_name(raw, args.mte_engine if kind == 'mte' else None, 'stryker' if kind == 'stryker' else 'mte')
         if kind == 'stryker' and name != 'stryker':
             print(f'NOTE: {path.name} was written by {name}, not Stryker; its mutants are labelled {name}', file=sys.stderr)
         if any(e['name'] == name for e in engines):
@@ -479,6 +586,24 @@ def main(argv=None) -> int:
                        run_by='skill')
             ms, probs = from_mutmut(raw, src) if rec['status'] == 'ran' else ([], [])
             problems += probs
+        elif kind == 'cargo':
+            run = json.loads(run_path.read_text(encoding='utf-8')) if run_path else {}
+            e = run.get('engine', {})
+            rec.update(raw=path.name, status=run.get('status', 'ran'), reason=run.get('reason', ''),
+                       version=raw.get('cargo_mutants_version') or e.get('version'),
+                       command=e.get('command') or 'cargo mutants (command not recorded)',
+                       config_source=e.get('config_source'), config=e.get('config'), timeout_s=None, sampled=None,
+                       tree_changed=run.get('tree_changed'),
+                       run_by='skill' if run_path and e.get('name') == 'cargo-mutants' else 'external')
+            if run.get('code_hash'):
+                rec['code_hash'] = run['code_hash']
+            if not raw and rec['status'] == 'ran':
+                raise SystemExit(f'{path}: no cargo-mutants outcomes.json, but the run record says it ran')
+            ms, probs, base = from_cargo_mutants(raw, path.parent, src) if raw else ([], [], None)
+            problems += probs
+            if base and rec['status'] == 'ran':
+                rec.update(status='errored', reason=base)
+                ms = []
         else:
             fw = raw.get('framework') or raw.get('frameworkInfo') or {}
             run = json.loads(run_path.read_text(encoding='utf-8')) if run_path else {}
@@ -518,7 +643,8 @@ def main(argv=None) -> int:
             lines = in_scope.get(m['file'], set())
             if not any(n in lines for n in range(m['line'], m['end_line'] + 1)):
                 continue
-            m['function'] = src.function_at(m['file'], m['line'])
+            fn = m.pop('_function', None)
+            m['function'] = src.function_at(m['file'], m['line']) or fn
             m['kind'] = kind_of(m['operator'])
             if (cov and m['engine'] != 'builtin' and m['status'] == 'survived'):
                 hit = cov['lines'].get(m['file'], {})
@@ -547,11 +673,20 @@ def main(argv=None) -> int:
                      'excluded': excluded},
            'coverage': {'file': args.coverage.name, 'method': cov['method']} if cov else stryker_cov,
            'engines': engines, 'problems': problems, 'mutants': mutants}
+    import detect_tools
+    lc = detect_tools.report_language_coverage(repo, {m['file'] for m in mutants}, [f['path'] for f in out['scope']['files']])
+    out['language_coverage'] = lc
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(out, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
     for e in engines:
         print(f'{e["name"]}: {e["in_scope"]} in scope ({e["out_of_scope"]} outside), ' +
               ', '.join(f'{v} {k}' for k, v in sorted(e['counts'].items())))
+    if lc['unmutated_dominant']:
+        print(f'WARNING: {lc["unmutated_dominant"]} has the most product code and none of it was mutated; the report '
+              f'must say so in a limitation (metadata.language_coverage)', file=sys.stderr)
+    if lc['tooling_scope_files']:
+        print('WARNING: the mutated files are tooling, not the product (' + ', '.join(lc['tooling_scope_files'][:5]) +
+              '); the report must say so in a limitation', file=sys.stderr)
     for p in problems:
         print('PROBLEM:', p)
     return 1 if problems else 0

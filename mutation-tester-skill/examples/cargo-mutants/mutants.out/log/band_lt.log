@@ -1,0 +1,37 @@
+*** mutation diff:
+--- src/lib.rs
++++ replace >= with < in band
+@@ -2,7 +2,7 @@
+ /// Height band for a tide reading in centimetres: "high" from 300 cm.
+ pub fn band(height_cm: u32) -> &'static str {
+-    if height_cm >= 300 {
++    if height_cm < 300 {
+         "high"
+     } else {
+         "low"
+
+*** /home/dev/.cargo/bin/cargo test --verbose --package=tide-cli@0.1.0
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src/lib.rs (target/debug/deps/tide_cli-5b2c0d9e1f7a3c44)
+
+running 1 test
+test tests::bands ... FAILED
+
+failures:
+
+---- tests::bands stdout ----
+
+thread 'tests::bands' panicked at src/lib.rs:31:9:
+assertion `left == right` failed
+  left: "low"
+ right: "high"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::bands
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`
+*** cargo result: Failure(101) in 0.371s
