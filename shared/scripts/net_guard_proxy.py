@@ -27,11 +27,21 @@ summary lists every file they left in it (`home_writes`). Go keeps its build and
 directory by default; when `go` is on PATH their current locations (GOCACHE, GOMODCACHE, GOPATH) are passed on
 explicitly, so a moved home does not force a rebuild or a module download. GOTOOLCHAIN=local and GOPROXY=off
 are also set (no toolchain or module downloads during the run; modules must already be in the cache), and
-GOFLAGS is left as it was. Pass --keep-network-env to leave GOPROXY alone.
+GOFLAGS is left as it was. Pass --keep-network-env to leave GOPROXY (and CARGO_NET_OFFLINE) alone.
+
+Rust and other toolchains keep their homes and caches under the home directory too, so with --home their current
+locations are passed on explicitly (toolchain_homes(): CARGO_HOME and RUSTUP_HOME, npm_config_cache, PIP_CACHE_DIR,
+GRADLE_USER_HOME, NUGET_PACKAGES; the variable's value when set, else the default folder under the real home when
+it exists): without them rustup finds no toolchain in the empty home and cargo re-downloads the registry.
+CARGO_NET_OFFLINE=true is set as well (cargo resolves from its local registry cache only). `cargo llvm-cov` may try
+to install the llvm-tools-preview component (rustup component add) when it is missing: under the guard rustup's
+download is refused and logged, so the coverage run fails rather than installing into a shared toolchain. Install
+the component beforehand with the owner's agreement, or record coverage as not run.
 
 The recipe without this script (no log, no attribution): HTTP_PROXY=HTTPS_PROXY=http://127.0.0.1:1 (a closed
 port), NO_PROXY=localhost,127.0.0.1,::1, HOME and USERPROFILE set to a scratch directory, GOCACHE and GOMODCACHE
-set to the values `go env` printed before HOME changed, GOTOOLCHAIN=local, GOPROXY=off.
+set to the values `go env` printed before HOME changed, GOTOOLCHAIN=local, GOPROXY=off; CARGO_HOME and RUSTUP_HOME
+set to the real ~/.cargo and ~/.rustup, CARGO_NET_OFFLINE=true.
 """
 from __future__ import annotations
 import argparse, json, os, re, shutil, subprocess, sys, threading
@@ -111,8 +121,38 @@ def go_caches() -> dict[str, str]:
     return {k: v for k, v in zip(('GOCACHE', 'GOMODCACHE', 'GOPATH'), vals) if v.strip()} if res.returncode == 0 else {}
 
 
-def env_pairs(port: int, home: str | None, go: bool = True, keep_network_env: bool = False) -> list[str]:
-    """K=V pairs that route proxy-honouring clients to the guard and (with home) isolate the home directory."""
+# toolchain homes and package caches that live under the real home by default: (variable, default paths under the
+# home, tried in order). When the home moves they are passed on explicitly, so a toolchain is not "missing" and a
+# cache is not rebuilt or downloaded again.
+TOOLCHAIN_HOMES = [
+    ('CARGO_HOME', ['.cargo']), ('RUSTUP_HOME', ['.rustup']),
+    ('npm_config_cache', ['AppData/Local/npm-cache', '.npm']),
+    ('PIP_CACHE_DIR', ['AppData/Local/pip/Cache', '.cache/pip', 'Library/Caches/pip']),
+    ('GRADLE_USER_HOME', ['.gradle']), ('NUGET_PACKAGES', ['.nuget/packages']),
+]
+
+
+def toolchain_homes(real_home: Path | None = None, environ: dict | None = None) -> dict[str, str]:
+    """{variable: path} for the toolchain homes and caches in TOOLCHAIN_HOMES: the variable's current value when set,
+    else the first default under the real home that exists."""
+    real_home = Path(real_home) if real_home else Path.home()
+    environ = os.environ if environ is None else environ
+    out = {}
+    for var, defaults in TOOLCHAIN_HOMES:
+        if environ.get(var):
+            out[var] = environ[var]
+            continue
+        hit = next((real_home / d for d in defaults if (real_home / d).is_dir()), None)
+        if hit:
+            out[var] = str(hit)
+    return out
+
+
+def env_pairs(port: int, home: str | None, go: bool = True, keep_network_env: bool = False,
+              real_home: Path | None = None, environ: dict | None = None) -> list[str]:
+    """K=V pairs that route proxy-honouring clients to the guard and (with home) isolate the home directory, keeping
+    the toolchain homes and caches (CARGO_HOME, RUSTUP_HOME, npm, pip, Gradle, NuGet; Go's with go=True) where they
+    are. CARGO_NET_OFFLINE=true (and GOPROXY=off) unless keep_network_env."""
     url = f'http://127.0.0.1:{port}'
     pairs = [f'{k}={url}' for k in ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy')]
     pairs += [f'NO_PROXY={LOOPBACK}', f'no_proxy={LOOPBACK}']
@@ -121,6 +161,9 @@ def env_pairs(port: int, home: str | None, go: bool = True, keep_network_env: bo
         pairs += [f'HOME={h}', f'USERPROFILE={h}', f'XDG_CONFIG_HOME={h}/.config', f'XDG_CACHE_HOME={h}/.cache',
                   f'XDG_DATA_HOME={h}/.local/share', f'XDG_STATE_HOME={h}/.local/state',
                   f'APPDATA={h}/AppData/Roaming', f'LOCALAPPDATA={h}/AppData/Local']
+        pairs += [f'{k}={v}' for k, v in toolchain_homes(real_home, environ).items()]
+    if not keep_network_env:
+        pairs.append('CARGO_NET_OFFLINE=true')
     if go:
         pairs += [f'{k}={v}' for k, v in go_caches().items()] + ['GOTOOLCHAIN=local']
         if not keep_network_env:
@@ -146,7 +189,7 @@ def main(argv=None) -> int:
     r.add_argument('--log', help='log file (default: stderr)')
     r.add_argument('--home', help='an empty scratch directory to use as the home directory')
     r.add_argument('--summary', help='write {refused, refused_hosts, home_writes, exit_code} here as JSON')
-    r.add_argument('--keep-network-env', action='store_true', help='leave GOPROXY as it is')
+    r.add_argument('--keep-network-env', action='store_true', help='leave GOPROXY and CARGO_NET_OFFLINE as they are')
     r.add_argument('command', nargs=argparse.REMAINDER)
     s = sub.add_parser('serve', help='run the proxy until stopped')
     s.add_argument('--port', type=int, default=0)
@@ -244,6 +287,27 @@ def self_test() -> int:
         checks.append(('env gives proxy, no-proxy and home variables for run_tests.py --env',
                        env.get('HTTPS_PROXY') == 'http://127.0.0.1:18080' and '127.0.0.1' in env.get('NO_PROXY', '')
                        and env.get('HOME') == str(home) and env.get('USERPROFILE') == str(home), env))
+        # a moved home must not hide the Rust toolchain or package caches that live under the real one
+        fake_real = Path(d) / 'real-home'
+        for sub in ('.cargo', '.rustup', '.npm', '.gradle'):
+            (fake_real / sub).mkdir(parents=True)
+        try:
+            env = dict(line.split('=', 1) for line in env_pairs(18080, str(home), go=False, real_home=fake_real,
+                                                                environ={'PIP_CACHE_DIR': str(Path(d) / 'pipc')}))
+        except TypeError as e:
+            env = {'error': repr(e)}
+        checks.append(('CARGO_HOME and RUSTUP_HOME (and npm, gradle and pip caches) keep pointing at the real ones',
+                       env.get('CARGO_HOME') == str(fake_real / '.cargo')
+                       and env.get('RUSTUP_HOME') == str(fake_real / '.rustup')
+                       and env.get('npm_config_cache') == str(fake_real / '.npm')
+                       and env.get('GRADLE_USER_HOME') == str(fake_real / '.gradle')
+                       and env.get('PIP_CACHE_DIR') == str(Path(d) / 'pipc')
+                       and env.get('CARGO_NET_OFFLINE') == 'true', env))
+        env = dict(line.split('=', 1) for line in env_pairs(18080, str(home), go=False, real_home=fake_real,
+                                                            environ={'CARGO_HOME': 'D:/rust/cargo'})) \
+            if 'error' not in env else {}
+        checks.append(('an explicit CARGO_HOME wins over the default under the home',
+                       env.get('CARGO_HOME') == 'D:/rust/cargo', env.get('CARGO_HOME')))
     failed = 0
     for name, ok, extra in checks:
         failed += not ok
