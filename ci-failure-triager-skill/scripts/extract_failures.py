@@ -399,11 +399,19 @@ def _panic_message(body: list[str]) -> str | None:
     return None
 
 
+CARGO_MARKERS = ('test result', 'panicked', ' ... ', 'running ', 'Running', 'FAIL', 'PASS', 'TIMEOUT', 'SIGSEGV',
+                 'SIGABRT', 'SIGKILL', 'SIGTERM', 'SIGILL', 'SIGBUS', 'Summary [')
+
+
 def cargo_tests(lines: list[str], lo: int, hi: int) -> list[dict]:
     """Failing Rust tests in a step's output, lines lo..hi (1-based): cargo-nextest's status lines (`FAIL [ 0.006s]
     crate::bin test::path`, TIMEOUT, SIG*), else libtest's (`cargo test`, with the target from its `Running` line).
     Ids are `<target>::<test path>` as parse_results gives them; the message is the panic with its location, the test
     file the panic location (else the integration test's file), the excerpt the test's own output."""
+    # a cheap look at the raw lines first: a step with no libtest or nextest output in it is not parsed (the markers
+    # are generous on purpose, so cargo output is never missed)
+    if not any(any(k in l for k in CARGO_MARKERS) for l in lines[lo - 1:hi]):
+        return []
     txt = {n: strip(lines[n - 1]) for n in range(lo, hi + 1)}
     out = []
     if any(NT_LINE.match(t) for t in txt.values()):
@@ -475,8 +483,14 @@ STEP_FAILURE_TYPE = (('REAL-COMPILE', 'compile'), ('REAL-LINT', 'lint'), ('REAL-
 FAIL_UNDER = re.compile(r'--fail-under(-lines|-functions|-regions)?[ =]\d+|--cov-fail-under[ =]\d+|fail_under\s*=\s*\d+')
 
 
+_STEP_SIGS: dict | None = None   # the signatures step_failure_type tries, compiled once
+
+
 def step_failure_type(texts: list[str]) -> str:
-    sigs = {s['id']: re.compile(s['pattern'], re.I) for s in SIG['signatures']}
+    global _STEP_SIGS
+    if _STEP_SIGS is None:
+        _STEP_SIGS = {s['id']: re.compile(s['pattern'], re.I) for s in SIG['signatures']}
+    sigs = _STEP_SIGS
     for sid, kind in STEP_FAILURE_TYPE:
         if sid in sigs and any(sigs[sid].search(t or '') for t in texts):
             return kind
@@ -754,6 +768,24 @@ def rust_self_test(d: Path, check) -> None:
     cov = by['rust-coverage'][0]
     check(any('--fail-under-lines 80' in l['text'] for l in cov['log_excerpt']['lines']),
           f'coverage gate: the excerpt quotes the threshold the step ran with: {cov["log_excerpt"]["lines"]}')
+    # cost on logs with no Rust in them: the signatures are compiled once, and a step's lines are not stripped for the
+    # cargo parser when nothing in them is cargo output
+    step_failure_type(['warm up'])
+    real_compile, compiled = re.compile, []
+    re.compile = lambda *a, **k: compiled.append(a[0]) or real_compile(*a, **k)
+    try:
+        step_failure_type(['npm ERR! code ELIFECYCLE'])
+    finally:
+        re.compile = real_compile
+    check(not compiled, f'step_failure_type compiles its signatures on every call ({len(compiled)} compiled)')
+    plain = ['npm ERR! code ELIFECYCLE', 'Error: expected 200 to be 400', '    at tests/unit/parcels.test.ts:21:17']
+    real_strip, stripped = globals()['strip'], []
+    globals()['strip'] = lambda s: stripped.append(s) or real_strip(s)
+    try:
+        none = cargo_tests(plain, 1, len(plain))
+    finally:
+        globals()['strip'] = real_strip
+    check(none == [] and not stripped, f'cargo_tests strips {len(stripped)} lines of a log with no cargo output')
 
 
 def go_self_test(d: Path, check) -> None:
