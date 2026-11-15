@@ -875,6 +875,49 @@ def totals(cases: list[dict]) -> dict:
         t[c['status']] += 1
     return t
 
+def redact_home(value):
+    """Replace the user's home folder with ~ in every string of `value` (any slash style, any case on Windows), so
+    recorded runs don't carry the OS account name. Dicts are rebuilt with redacted keys too."""
+    if isinstance(value, dict):
+        return {redact_home(k): redact_home(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [redact_home(v) for v in value]
+    if not isinstance(value, str):
+        return value
+    home = str(Path.home())
+    for h in sorted({home, home.replace('\\', '/')}, key=len, reverse=True):
+        if len(h) > 3:
+            value = re.sub(re.escape(h) + r'(?=[\\/]|$|[\s"\'])', lambda m: '~', value,
+                           flags=re.I if os.name == 'nt' else 0)
+    return re.sub(r'~\\', '~/', value)
+
+
+def home_path_checks() -> list:
+    """A run recorded from JUnit files under the home folder must not carry the home path (it names the OS account)."""
+    import contextlib, io, tempfile
+    home = Path.home()
+    with tempfile.TemporaryDirectory(dir=home, prefix='qa-parse-results-') as d:
+        junit = Path(d) / 'r1.xml'
+        junit.write_text('<?xml version="1.0"?><testsuite name="s"><testcase classname="t.py" name="ok" '
+                         f'file="{(Path(d) / "t.py").as_posix()}"/></testsuite>', encoding='utf-8')
+        (Path(d) / 't.py').write_text('def test_ok(): pass\n', encoding='utf-8')
+        results = Path(d) / 'results.json'
+        with contextlib.redirect_stdout(io.StringIO()):
+            main([str(results), '--junit', str(junit), str(Path(d) / 'missing.xml'), '--run-id', 'R1',
+                  '--command', f'pytest --junitxml {junit}', '--exit-code', '0',
+                  '--hash', str(Path(d) / 't.py'), '--root', d])
+        text = results.read_text(encoding='utf-8')
+        data = json.loads(text)
+    forms = {str(home), home.as_posix(), json.dumps(str(home))[1:-1]}
+    leaked = sorted(f for f in forms if len(f) > 3 and f in text)
+    run = (data.get('runs') or [{}])[0]
+    return [
+        ('a run recorded under the home folder does not carry the home path', not leaked, len(leaked)),
+        ('junit paths under the home folder are recorded from ~', all(p.startswith('~/') for p in run.get('junit_paths', []))
+         and len(run.get('junit_paths', [])) == 2, [p.startswith('~/') for p in run.get('junit_paths', [])]),
+    ]
+
+
 def self_test() -> int:
     """Check node:test ids, ANSI stripping and duplicate names on small synthetic JUnit files."""
     import tempfile
@@ -919,6 +962,7 @@ def self_test() -> int:
         ('ANSI codes are stripped', strip_ansi('\x1b[31mred\x1b[39m \x1b]8;;http://x\x07link\x1b]8;;\x07') == 'red link',
          strip_ansi('\x1b[31mred\x1b[39m')),
     ]
+    checks += home_path_checks()
     checks += go_self_checks()
     checks += playwright_windows_checks()
     checks += libtest_self_checks()
@@ -1369,6 +1413,8 @@ def main(argv=None) -> int:
            'totals': totals(cases), 'file_hashes': hashes, 'notes': notes}
     if args.phase:
         run['phase'] = args.phase
+    # the home folder names the OS account: record paths under it from ~ (run and cases alike)
+    run, cases = redact_home(run), redact_home(cases)
     data['runs'].append(run)
     data['cases'] += cases
     out.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')

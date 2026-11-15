@@ -1,5 +1,5 @@
 {
- "collected_at": "2026-11-15T08:14:47Z",
+ "collected_at": "2026-11-15T23:48:49Z",
  "candidate": {
   "commit": "a7c23dea801abfc544a0eebeaa71587787fc47ca",
   "build_id": "ci-4821",
@@ -1230,7 +1230,7 @@
   },
   {
    "path": "journey-to-tests-skill/examples/journey_tests_report.example.json",
-   "sha256": "3ca08badf1b73d7ef2d85dc2331966d67ac7f22f1005102818fe622300a5b4b8",
+   "sha256": "bd31d7e8bd7b4d3a7867bd0ae49965e852b7e141102c361f265af184b41c9aa7",
    "type": "journey-to-tests",
    "skill": "journey-to-tests",
    "skill_version": "1.0.0",
