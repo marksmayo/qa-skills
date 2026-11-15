@@ -18,6 +18,15 @@ Library use:
     m['is_cargo'], m['workspace'], m['crates']        # see read_cargo() for the full shape
     cargo_project.test_ids(m)                         # ['<target>::<path::name>', ...], the ids run_tests.py records
     cargo_project.targets_reaching(m, 'crates/a/src/x.rs')   # test targets whose build includes that file
+    cargo_project.test_lines(text)                    # {line numbers} of #[cfg(test)] items and #[test] functions
+
+clap builder CLIs follow the builder's nesting: an argument or command belongs to the command whose call encloses it,
+so `.arg(...)` chained on the root after a `.subcommand(...)` stays on the root. Library loads cover libloading
+(Library::new, open, load_with_flags), dlopen and LoadLibrary/LoadLibraryEx (A/W). A relative path reaches
+relative_paths when it is the call's literal argument, or (with `via` and `literals`) when it gets there through a
+const, static or let binding, PathBuf::from / Path::new, a w! literal macro, or an array, vec! or if/match-chosen list
+of candidates iterated into the call (`for p in list`, `list.iter().find_map(|p| ...)`). A literal joined onto
+another base (base.join("x")) is not resolved against the working directory and is not counted.
 """
 from __future__ import annotations
 import argparse, glob, json, os, re, sys, tempfile
@@ -196,7 +205,8 @@ CFG_ATTR = re.compile(r'#\[\s*cfg\s*\((.*)\)\s*\]\s*$', re.S)
 FEATURE = re.compile(r'feature\s*=\s*"([^"]+)"')
 ENV_READ = re.compile(r'\b(?:std::)?env::(var|var_os)\s*\(\s*"([^"]*)"|\b(option_env|env)!\s*\(\s*"([^"]*)"')
 ENV_DYNAMIC = re.compile(r'\b(?:std::)?env::(?:var|var_os)\s*\(\s*([^")\s][^)]*)\)')
-LIB_LOAD = re.compile(r'\b((?:libloading::)?(?:os::\w+::)?Library::(?:new|open)|dlopen|LoadLibrary[AW]?)\s*\(')
+LIB_LOAD = re.compile(r'\b((?:libloading::)?(?:os::\w+::)?Library::(?:new|open|load_with_flags)|dlopen'
+                      r'|LoadLibrary(?:Ex)?[AW]?)\s*\(')
 PROCESS_CALL = re.compile(r'\b((?:std::|tokio::|async_std::)?process::)?Command::new\s*\(')
 CURRENT_DIR = re.compile(r'\b(?:std::)?env::current_dir\s*\(\s*\)|\bcurrent_dir\s*\(\s*\)')
 
@@ -221,6 +231,190 @@ def _relative_literal(expr: str) -> str | None:
     if '/' in p or '\\' in p or p.startswith('.'):
         return p
     return None
+
+
+STR_LIT = re.compile(r'(?:\b[bc])?(?:\br(#*)"(.*?)"\1|"((?:[^"\\]|\\.)*)")', re.S)
+PATH_CTOR = re.compile(r'\b(?:(?:std::)?(?:path|ffi)::)?(PathBuf::from|Path::new|String::from|OsStr::new|OsString::from|'
+                       r'CString::new)\s*\(')
+LIT_MACRO = re.compile(r'\b(w|s|h|vec)!\s*[(\[]')
+BINDING = re.compile(r'\b(const|static|let)\s+(?:mut\s+)?([A-Za-z_]\w*)\s*(?::[^=;{}]{0,80}?(?:\[[^\]]*\][^=;{}]{0,20}?)?)?'
+                     r'=(?![=>])\s*')
+FOR_BIND = re.compile(r'\bfor\s+(?:\(\s*(?:\w+\s*,\s*)?)?&?(?:mut\s+)?([A-Za-z_]\w*)\s*\)?\s+in\s+&?(?:mut\s+)?'
+                      r'(?:[\w]+::)*([A-Za-z_]\w*)\b')
+CLOSURE_BIND = re.compile(r'\b([A-Za-z_]\w*)\s*(?:\.\s*(?:iter|into_iter)\s*\(\s*\)\s*)?(?:\.\s*\w+\s*\([^()|]*\)\s*)*'
+                          r'\.\s*(?:map|find|find_map|filter|filter_map|any|all|for_each|position|flat_map|try_for_each)'
+                          r'\s*\(\s*(?:move\s+)?\|\s*&*(?:mut\s+)?([A-Za-z_]\w*)')
+
+
+def _first_arg(expr: str) -> str:
+    """The first top-level argument of a call's argument text."""
+    depth = 0
+    for k, ch in enumerate(mask(expr)):
+        if ch in '([{':
+            depth += 1
+        elif ch in ')]}':
+            depth -= 1
+        elif ch == ',' and depth == 0:
+            return expr[:k].strip()
+    return expr.strip()
+
+
+def _path_value(expr: str) -> tuple[list[str], str] | None:
+    """(relative path literals, shape) when expr is built only from string literals: a literal, PathBuf::from("…"),
+    Path::new("…"), a w!/s! literal macro, or an array or vec! of those; None when anything else is in it. shape is
+    'literal', 'array', 'vec!', the constructor ('PathBuf::from', 'Path::new' ...) or the macro ('w!')."""
+    lits = [m.group(2) if m.group(2) is not None else m.group(3) for m in STR_LIT.finditer(expr)]
+    if not lits:
+        return None
+    rest = STR_LIT.sub('""', expr)
+    ctors = PATH_CTOR.findall(rest)
+    macros = LIT_MACRO.findall(rest)
+    rest = PATH_CTOR.sub('(', rest)
+    rest = LIT_MACRO.sub('(', rest)
+    rest = re.sub(r'\.\s*(?:to_path_buf|into|to_string|to_owned|as_ref|unwrap|expect\s*\(\s*""\s*|as_ptr|as_path|'
+                  r'as_c_str)\s*\(\s*\)', '', rest)
+    if re.sub(r'""|[\s\[\](),&]', '', rest):
+        return None
+    rel = [p for p in lits if _relative_literal(f'"{p}"')]
+    if 'vec' in macros:
+        shape = 'vec!'
+    elif len(lits) > 1 or rest.strip().startswith(('[', '&[')):
+        shape = 'array'
+    elif ctors:
+        shape = ctors[0]
+    elif macros:
+        shape = macros[0] + '!'
+    else:
+        shape = 'literal'
+    return rel, shape
+
+
+def _branch_paths(orig: str, masked: str) -> tuple[list[str], str] | None:
+    """(relative literals, 'if'|'match') for an if/match value whose branches build candidate paths: the elements of
+    every vec![...] or [...] made only of literals, and every PathBuf::from("…") / Path::new("…") on its own. A literal
+    passed to a method of another value (base.join("x"), exe.with_file_name("x")) is not one: it is not resolved
+    against the working directory."""
+    rel: list[str] = []
+    for mt in re.finditer(r'(?:\bvec!\s*)?\[', masked):
+        if mt.group(0) == '[' and mt.start() and re.match(r'[\w)\]]', masked[mt.start() - 1]):
+            continue   # indexing, not an array
+        end = _balanced(masked, mt.end() - 1, '[', ']')
+        for part in re.split(r',', orig[mt.end():end - 1]):
+            pv = _path_value(part)
+            rel += [p for p in (pv[0] if pv else []) if p not in rel]
+    for mt in PATH_CTOR.finditer(masked):
+        if mt.group(1) not in ('PathBuf::from', 'Path::new') or (mt.start() and masked[mt.start() - 1] == '.'):
+            continue
+        end = _balanced(masked, mt.end() - 1)
+        pv = _path_value(orig[mt.start():end])
+        rel += [p for p in (pv[0] if pv else []) if p not in rel]
+    if not rel:
+        return None
+    return rel, re.match(r'\s*(\w+)', masked).group(1)
+
+
+def _path_bindings(orig: str, masked: str) -> dict[str, list]:
+    """{name: [(index, literals, via)]}: const, static and let bindings whose value is built only from relative path
+    literals, and loop or closure variables that iterate over such an array."""
+    out: dict[str, list] = {}
+    for mt in BINDING.finditer(masked):
+        start = mt.end()
+        depth, end = 0, len(masked)
+        for k in range(start, len(masked)):
+            ch = masked[k]
+            if ch in '([{':
+                depth += 1
+            elif ch in ')]}':
+                depth -= 1
+                if depth < 0:
+                    end = k
+                    break
+            elif ch == ';' and depth == 0:
+                end = k
+                break
+        pv = _path_value(orig[start:end])
+        if not pv and re.match(r'\s*(?:if|match)\b', masked[start:end]):
+            pv = _branch_paths(orig[start:end], masked[start:end])
+        if not pv or not pv[0]:
+            continue
+        rel, shape = pv
+        via = f'{mt.group(1)} {mt.group(2)}' + (f' = {shape}' if shape not in ('literal', 'array') else '')
+        out.setdefault(mt.group(2), []).append((mt.start(), rel, via))
+    for rx in (FOR_BIND, CLOSURE_BIND):
+        for mt in rx.finditer(masked):
+            var, src = (mt.group(1), mt.group(2)) if rx is FOR_BIND else (mt.group(2), mt.group(1))
+            b = _binding_at(out, src, mt.start())
+            if b:
+                out.setdefault(var, []).append((mt.start(), b[1], f'{b[2]} (iterated as {var})'))
+    return out
+
+
+def _binding_at(bindings: dict, name: str, idx: int):
+    """The binding of name in effect at idx: the last one before it, else the first after it (a const declared below
+    its use)."""
+    cands = bindings.get(name) or []
+    before = [b for b in cands if b[0] < idx]
+    return before[-1] if before else (cands[0] if cands else None)
+
+
+def _resolve_path(arg: str, idx: int, bindings: dict) -> tuple[list[str], str] | None:
+    """(relative literals, via) when a call argument that is not itself a relative literal reaches one through a
+    binding, a path constructor or a literal macro."""
+    e = re.sub(r'^[&*\s]+', '', arg.strip())
+    e = re.sub(r'(?:\s*\.\s*(?:as_ref|as_path|as_os_str|clone|to_owned|to_path_buf|as_str|deref|as_ptr)\s*\(\s*\))+$',
+               '', e)
+    if re.fullmatch(r'(?:\w+::)*[A-Za-z_]\w*', e):
+        b = _binding_at(bindings, e.split('::')[-1], idx)
+        return (b[1], b[2]) if b else None
+    pv = _path_value(arg)
+    if pv and pv[0] and pv[1] != 'literal':
+        return pv[0], pv[1]
+    return None
+
+
+def test_lines(text: str) -> set[int]:
+    """Line numbers (1-based) of Rust test code in text: every item under a #[cfg(test)] attribute (a cfg expression
+    naming `test` outside not(...), such as cfg(all(test, feature = "x"))), from the attribute to the item's closing
+    brace or semicolon, and every #[test] (or #[tokio::test], #[rstest] ...) function with its attributes. Comments and
+    strings are masked first, so braces inside them never count."""
+    masked = mask(text)
+    out: set[int] = set()
+    inner = re.search(r'#!\[\s*cfg\s*\((.*?)\)\s*\]', masked)
+    if inner and '{' not in masked[:inner.start()] and re.search(r'\btest\b', re.sub(r'\bnot\s*\([^()]*\)', '', inner.group(1))):
+        return set(range(1, masked.count('\n') + 2))   # #![cfg(test)]: the whole file is test code
+    for mt in re.finditer(r'#\[', masked):
+        a_end = _balanced(masked, mt.start() + 1, '[', ']')
+        attr = masked[mt.start():a_end]
+        cm = re.match(r'#\[\s*cfg\s*\((.*)\)\s*\]$', attr, re.S)
+        is_test = bool(TEST_ATTR.match(attr))
+        if cm:
+            expr = cm.group(1)
+            while re.search(r'\bnot\s*\([^()]*\)', expr):
+                expr = re.sub(r'\bnot\s*\([^()]*\)', '', expr)
+            is_test = bool(re.search(r'\btest\b', expr))
+        if not is_test:
+            continue
+        # the item: skip further attributes, then up to its `;` or its balanced `{...}`
+        k, depth = a_end, 0
+        end = len(masked)
+        while k < len(masked):
+            ch = masked[k]
+            if ch == '#' and masked.startswith('#[', k) and depth == 0:
+                k = _balanced(masked, k + 1, '[', ']')
+                continue
+            if ch in '([':
+                depth += 1
+            elif ch in ')]':
+                depth -= 1
+            elif ch == ';' and depth == 0:
+                end = k
+                break
+            elif ch == '{' and depth == 0:
+                end = _balanced(masked, k, '{', '}') - 1
+                break
+            k += 1
+        out.update(range(_line_of(masked, mt.start()), _line_of(masked, end) + 1))
+    return out
 
 
 def scan_file(path: Path, rel: str) -> dict:
@@ -387,6 +581,16 @@ def _safety(olines: list[str], i: int, attrs: list[str]) -> bool:
 def full_scan(orig: str, masked: str, res: dict) -> None:
     clap_cmd = bool(re.search(r'\buse\s+clap::(?:\{[^}]*\bCommand\b|Command\b)|\bclap::Command\b', orig))
     proc_cmd = bool(re.search(r'\buse\s+(?:std|tokio|async_std)::process::(?:\{[^}]*\bCommand\b|Command\b)', orig))
+    bindings = _path_bindings(orig, masked)
+
+    def relpath(ln, idx, expr, used_for):
+        first = _first_arg(expr)
+        if _relative_literal(first):
+            res['relpaths'].append({'line': ln, 'expr': expr, 'used_for': used_for})
+            return
+        hit = _resolve_path(first, idx, bindings)
+        if hit:
+            res['relpaths'].append({'line': ln, 'expr': expr, 'used_for': used_for, 'via': hit[1], 'literals': hit[0]})
     for mt in PROCESS_CALL.finditer(masked):
         open_idx = mt.end() - 1
         expr = _arg_text(orig, masked, open_idx)
@@ -399,9 +603,7 @@ def full_scan(orig: str, masked: str, res: dict) -> None:
         ln = _line_of(orig, mt.start())
         if is_proc:
             res['process'].append({'line': ln, 'program_expr': expr})
-            rel = _relative_literal(expr)
-            if rel:
-                res['relpaths'].append({'line': ln, 'expr': expr, 'used_for': 'executable'})
+            relpath(ln, mt.start(), expr, 'executable')
         elif clap_cmd or chain_clap:
             res['builder'].append({'kind': 'command', 'line': ln, 'name': re.sub(r'^"|"$', '', expr), 'idx': mt.start()})
     if clap_cmd or re.search(r'\bclap::', orig):
@@ -418,8 +620,8 @@ def full_scan(orig: str, masked: str, res: dict) -> None:
         expr = _arg_text(orig, masked, mt.end() - 1)
         ln = _line_of(orig, mt.start())
         res['libload'].append({'line': ln, 'call': mt.group(1), 'path_expr': expr})
-        if _relative_literal(expr):
-            res['relpaths'].append({'line': ln, 'expr': expr, 'used_for': 'library'})
+        relpath(ln, mt.start(), expr, 'library')
+    _nest(masked, res['builder'])
     for mt in ENV_READ.finditer(orig):
         if masked[mt.start()] == ' ':     # inside a comment or string
             continue
@@ -437,6 +639,48 @@ def full_scan(orig: str, masked: str, res: dict) -> None:
                 if re.search(r'Library::|dlopen|\.(dll|so|dylib)\b', window) else 'path')
         res['relpaths'].append({'line': ln, 'expr': lines[ln - 1].strip()[:160], 'used_for': used,
                                 'base': 'current_dir()'})
+
+
+def _nest(masked: str, items: list[dict]) -> None:
+    """Give each clap builder item `nest`: the positions of the brackets open where it starts, so an item inside
+    `.subcommand(Command::new("x").arg(...))` is known to sit inside that call and one chained after it is not."""
+    want = sorted({x['idx'] for x in items})
+    at: dict[int, list[int]] = {}
+    stack: list[int] = []
+    w = 0
+    for k, ch in enumerate(masked):
+        while w < len(want) and want[w] == k:
+            at[k] = list(stack)
+            w += 1
+        if w >= len(want):
+            break
+        if ch in '([':
+            stack.append(k)
+        elif ch in ')]' and stack:
+            stack.pop()
+    for x in items:
+        x['nest'] = at.get(x['idx'], [])
+
+
+def _builder_owner(x: dict, commands: list[dict]):
+    """The command an item belongs to: of the commands before it whose open brackets enclose it too, the most deeply
+    nested, then the latest."""
+    nest = x.get('nest') or []
+    best = None
+    for c in commands:
+        cn = c.get('nest') or []
+        if c is x or c['idx'] > x['idx'] or nest[:len(cn)] != cn:
+            continue
+        if best is None or (len(cn), c['idx']) > (len(best.get('nest') or []), best['idx']):
+            best = c
+    return best
+
+
+def _builder_items(text: str) -> list[dict]:
+    """The clap builder items of one Rust source text (for tests)."""
+    res = {'process': [], 'relpaths': [], 'builder': [], 'libload': [], 'env': []}
+    full_scan(text, mask(text), res)
+    return res['builder']
 
 
 def _doctests(olines: list[str]) -> list[dict]:
@@ -732,14 +976,17 @@ def _clis(sc: dict, frel: str, bin_t, lib_t) -> list[dict]:
     b = sorted(sc.get('builder', []), key=lambda x: x['idx'])
     if b and any(x['kind'] == 'command' for x in b):
         root = next(x for x in b if x['kind'] == 'command')
-        cmds, args, current = [], [], root['name']
+        commands = [x for x in b if x['kind'] == 'command']
+        cmds, args = [], []
         for x in b:
+            # the owner follows the builder's nesting: an .arg chained on the root after a .subcommand(...) stays on
+            # the root, and a command built inside .subcommand(...) of another is that one's child
+            own = _builder_owner(x, commands) or root
             if x['kind'] == 'command' and x is not root:
-                cmds.append({'name': x['name'], 'line': x['line'], 'parent': root['name'], 'file': frel})
-                current = x['name']
+                cmds.append({'name': x['name'], 'line': x['line'], 'parent': own['name'], 'file': frel})
             elif x['kind'] == 'arg':
                 args.append({'name': x['name'], 'long': x['long'], 'short': x['short'], 'env': x['env'],
-                             'line': x['line'], 'positional': not (x['long'] or x['short']), 'parent': current,
+                             'line': x['line'], 'positional': not (x['long'] or x['short']), 'parent': own['name'],
                              'file': frel})
         out.append({'bin': owner, 'target': (bin_t or lib_t or {}).get('name'), 'file': frel, 'line': root['line'],
                     'style': 'builder', 'name': root['name'], 'struct': None, 'parent': None, 'commands': cmds,
@@ -782,7 +1029,10 @@ def read_cargo(repo, metadata: dict | None = None) -> dict:
                process_launches: [{file, line, program_expr}],
                library_loads: [{file, line, call, path_expr}],
                env_reads: [{file, line, name (None when not a literal, then expr), kind runtime|compile_time}],
-               relative_paths: [{file, line, expr, used_for executable|library|path, base?}],
+               relative_paths: [{file, line, expr, used_for executable|library|path, base?,
+                                 via?: how the literal reaches the call ('const NAME', 'let p = PathBuf::from',
+                                       'Path::new', 'w!', 'let list = vec! (iterated as p)', ...),
+                                 literals?: [the relative literals behind via]}],
                modules: [{file, line, name, module, cfg}],   # `mod x;` declarations
                uses: [{file, line, path}],
                unreached_files: [.rs files no target's module tree reaches]}]}
@@ -915,6 +1165,46 @@ FIXTURE = {
         '    #[cfg(feature = "chart")]\n'
         '    #[test]\n'
         '    fn draws_chart() { let s = "fn fake() { #[test] }"; let _ = s; }\n'
+        '}\n'
+        'mod native;\n'),
+    'crates/tides-core/src/native.rs': (
+        'use std::path::{Path, PathBuf};\n'
+        'use std::process::Command;\n'
+        '\n'
+        'const GAUGE_DRIVER: &str = "drivers/gauge.dll";\n'
+        'static HELPER: &str = "./tools/tide-helper";\n'
+        'const SEARCH: [&str; 2] = ["lib/libgauge.so", "../shared/libgauge.so"];\n'
+        '\n'
+        'pub fn open_windows() {\n'
+        '    unsafe { let _ = LoadLibraryExW(w!("drivers\\\\gauge.dll"), None, 0); }\n'
+        '    unsafe { let _ = LoadLibraryW(w!("gauge.dll")); }\n'
+        '    unsafe { let _ = libc::dlopen(c"libgauge.so".as_ptr(), 1); }\n'
+        '}\n'
+        '\n'
+        'pub fn open_const() { let _ = unsafe { libloading::Library::new(GAUGE_DRIVER) }; }\n'
+        'pub fn helper() { let _ = Command::new(HELPER).status(); }\n'
+        'pub fn helper_path() { let p = PathBuf::from("bin/tide-helper"); let _ = Command::new(&p).output(); }\n'
+        'pub fn inline_path() { let _ = Command::new(Path::new("bin/other")).spawn(); }\n'
+        'pub fn search() {\n'
+        '    for cand in SEARCH.iter() {\n'
+        '        let _ = unsafe { libloading::Library::new(cand) };\n'
+        '    }\n'
+        '    let paths = vec![PathBuf::from("plugins/a.so"), PathBuf::from("/usr/lib/a.so")];\n'
+        '    let _ = paths.iter().find_map(|p| unsafe { libloading::Library::new(p) }.ok());\n'
+        '}\n'
+        'pub fn load_engine() {\n'
+        '    let candidates: Vec<PathBuf> = if let Some(p) = std::env::var_os("GAUGE_ENGINE") {\n'
+        '        vec![p.into()]\n'
+        '    } else if cfg!(windows) {\n'
+        '        let mut found = vec![PathBuf::from("engine/gauge.dll")];\n'
+        '        if let Ok(exe) = std::env::current_exe() { found.push(exe.with_file_name("data/gauge.dll")); }\n'
+        '        found\n'
+        '    } else {\n'
+        '        vec!["libgauge.so.1".into()]\n'
+        '    };\n'
+        '    for path in candidates {\n'
+        '        let _ = unsafe { libloading::Library::new(&path) };\n'
+        '    }\n'
         '}\n'),
     'crates/tides-core/src/height.rs': (
         'pub fn metres(ft: f64) -> f64 { ft * 0.3048 }\n'
@@ -1087,6 +1377,24 @@ def self_test() -> int:
           bc.get('style') == 'builder' and bc.get('bin') == 'tidectl'
           and [c['name'] for c in bc.get('commands', [])] == ['sync']
           and bargs.get('force', {}).get('short') == 'f' and bargs.get('config', {}).get('env') == 'TIDECTL_CONFIG', bc)
+    check('clap builder: an .arg chained on the root after a .subcommand stays on the root; the nested one on its '
+          'subcommand', bargs.get('config', {}).get('parent') == 'tidectl' and bargs.get('force', {}).get('parent') == 'sync'
+          and [c['parent'] for c in bc.get('commands', [])] == ['tidectl'], bc.get('args'))
+    nb = {c['name']: c for c in _clis({'builder': _builder_items(
+        'use clap::{Arg, Command};\n'
+        'fn cli() -> Command {\n'
+        '    Command::new("gauge")\n'
+        '        .subcommand(Command::new("remote").subcommand(Command::new("add").arg(Arg::new("url")))\n'
+        '                    .arg(Arg::new("verbose").long("verbose")))\n'
+        '        .arg(Arg::new("quiet").long("quiet"))\n'
+        '}\n'
+        'fn extra() -> Command { Command::new("prune").arg(Arg::new("dry").long("dry-run")) }\n')},
+        'x.rs', None, None)}.get('gauge', {})
+    na = {a['name']: a['parent'] for a in nb.get('args', [])}
+    check('clap builder nesting: a sub-subcommand\'s parent is its subcommand; args follow their own command',
+          na == {'url': 'add', 'verbose': 'remote', 'quiet': 'gauge', 'dry': 'prune'}
+          and {c['name']: c['parent'] for c in nb.get('commands', [])} == {'remote': 'gauge', 'add': 'remote',
+                                                                             'prune': 'gauge'}, nb)
     us = {(u['file'].rsplit('/', 1)[-1], u['line']): u for u in core.get('unsafe', [])}
     check('unsafe sites: a block with a SAFETY comment, an unsafe fn without one, the block inside it',
           us.get(('plugin.rs', 7), {}).get('safety_comment') is True and us.get(('plugin.rs', 10), {}).get('kind') == 'fn'
@@ -1097,7 +1405,45 @@ def self_test() -> int:
           == {('main.rs', '"./bin/plotter"'), ('cli.rs', 'exe')}, pl)
     ll = core.get('library_loads', [])
     check('libloading Library::new is a dynamic library load with its path expression',
-          len(ll) == 1 and ll[0]['path_expr'] == '"plugins/libtides_extra.so"', ll)
+          [x['path_expr'] for x in ll if x['file'].endswith('plugin.rs')] == ['"plugins/libtides_extra.so"'], ll)
+    calls = {x['call'] for x in ll if x['file'].endswith('native.rs')}
+    check('LoadLibraryExW, LoadLibraryW (windows crates) and dlopen are library loads',
+          {'LoadLibraryExW', 'LoadLibraryW', 'dlopen'} <= calls, calls)
+    via = {(r['used_for'], tuple(r.get('literals') or []), r.get('via')) for r in core.get('relative_paths', [])
+           if r['file'].endswith('native.rs')}
+    check('relative paths reaching Library::new / Command::new through a const, a static, PathBuf::from, Path::new, '
+          'a w! literal and an iterated array of candidates are recorded with `via`',
+          {('library', ('drivers/gauge.dll',), 'const GAUGE_DRIVER'),
+           ('executable', ('./tools/tide-helper',), 'static HELPER'),
+           ('executable', ('bin/tide-helper',), 'let p = PathBuf::from'),
+           ('executable', ('bin/other',), 'Path::new'),
+           ('library', ('drivers\\\\gauge.dll',), 'w!'),
+           ('library', ('lib/libgauge.so', '../shared/libgauge.so'), 'const SEARCH (iterated as cand)'),
+           ('library', ('plugins/a.so',), 'let paths = vec! (iterated as p)')} <= via, sorted(via, key=str))
+    check('a candidate list chosen by if/else branches (one a vec! of PathBuf::from) reaches the call it is iterated '
+          'into; a literal joined onto another base does not count',
+          ('library', ('engine/gauge.dll',), 'let candidates = if (iterated as path)') in via
+          and not any('data/gauge.dll' in v[1] for v in via), sorted(via, key=str))
+    tl = globals().get('test_lines')
+    sample = ('pub fn a() {}\n'                       # 1
+              '#[cfg(not(test))]\n'                   # 2
+              'fn real() {}\n'                        # 3
+              '#[cfg(test)]\n'                        # 4
+              'mod unit;\n'                           # 5
+              '#[cfg(all(test, feature = "x"))]\n'    # 6
+              'mod tests {\n'                         # 7
+              '    fn helper(a: [u8; 2]) {}\n'        # 8
+              '}\n'                                   # 9
+              'fn b() {}\n'                           # 10
+              '#[test]\n'                             # 11
+              '#[ignore]\n'                           # 12
+              'fn top_level() {\n'                    # 13
+              '    let s = "}";\n'                    # 14
+              '}\n'                                   # 15
+              'fn c() {}\n')                          # 16
+    got = tl(sample) if tl else None
+    check('test_lines(text): the lines of #[cfg(test)] items and #[test] functions (not cfg(not(test)))',
+          got == {4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15}, got)
     ev = {(e['name'], e['kind']) for c in m.get('crates', []) for e in c['env_reads']}
     check('env reads: env::var at run time, env! at compile time', {('TIDES_PLUGIN_DIR', 'runtime'),
                                                                      ('CARGO_BIN_EXE_tides', 'compile_time')} <= ev, ev)
