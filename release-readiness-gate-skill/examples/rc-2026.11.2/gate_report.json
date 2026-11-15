@@ -4,7 +4,7 @@
   "name": "release-readiness-gate",
   "version": "1.0.0"
  },
- "generated_at": "2026-11-12T07:02:17Z",
+ "generated_at": "2026-11-15T08:14:48Z",
  "as_of": "2026-11-12",
  "candidate": {
   "commit": "a7c23dea801abfc544a0eebeaa71587787fc47ca",
@@ -22,7 +22,7 @@
   "repo": "(outside the working directory; HEAD a7c23dea801abfc544a0eebeaa71587787fc47ca)",
   "repo_used": true,
   "candidate_commit_time": "2026-11-09T06:00:00+00:00",
-  "collected_at": "2026-11-12T07:02:17Z"
+  "collected_at": "2026-11-15T08:14:47Z"
  },
  "policy": {
   "path": "release-readiness-gate-skill/examples/rc-2026.11.2/release_policy.json",
@@ -210,10 +210,10 @@
   },
   {
    "path": "ui-crash-hunter-skill/examples/crash_report.example.json",
-   "sha256": "2671e1e63b9d52999455e572d2586ed2bdaddfa038fb2b36aabf794a163d9d4c",
+   "sha256": "4bd2f3d99bb1de3d16253d4b0bf668e3967d97224e4baea0d905b7402cbfcb88",
    "type": "ui-crash-hunter",
    "skill": "ui-crash-hunter",
-   "skill_version": "1.2.0",
+   "skill_version": "1.8.0",
    "required": true,
    "requirement_ids": [
     "crashes"

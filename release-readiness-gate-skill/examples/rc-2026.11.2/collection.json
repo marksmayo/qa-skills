@@ -1,5 +1,5 @@
 {
- "collected_at": "2026-11-12T07:02:17Z",
+ "collected_at": "2026-11-15T08:14:47Z",
  "candidate": {
   "commit": "a7c23dea801abfc544a0eebeaa71587787fc47ca",
   "build_id": "ci-4821",
@@ -1073,10 +1073,10 @@
   },
   {
    "path": "ui-crash-hunter-skill/examples/crash_report.example.json",
-   "sha256": "2671e1e63b9d52999455e572d2586ed2bdaddfa038fb2b36aabf794a163d9d4c",
+   "sha256": "4bd2f3d99bb1de3d16253d4b0bf668e3967d97224e4baea0d905b7402cbfcb88",
    "type": "ui-crash-hunter",
    "skill": "ui-crash-hunter",
-   "skill_version": "1.2.0",
+   "skill_version": "1.8.0",
    "provenance": {
     "schema_version": "1.0.0",
     "commit": "a35dba359ea303b64f995e609e3b88a23482e98b",
@@ -1108,7 +1108,7 @@
    "facts": {
     "type": "ui-crash-hunter",
     "skill": "ui-crash-hunter",
-    "skill_version": "1.2.0",
+    "skill_version": "1.8.0",
     "generated_at": "2026-11-10T09:30:00Z",
     "verdict": null,
     "evidence_completeness": 0.71,
