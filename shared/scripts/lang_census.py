@@ -62,9 +62,10 @@ the warning.
 The dominant language is the one with the most non-blank lines of PRODUCT code (`dominant_by: 'lines'`). Test code
 (is_test_file: test_x.py, x_test.go, x.test.ts, XTest.java, tests.rs, or anything under tests/, test/, __tests__/,
 spec/, e2e/, testdata/, benches/, benchmarks/ ... unless that folder holds its own package manifest) is counted apart
-under `test_files` and `test_lines` and never decides it. Helper scripts under tooling folders (is_tooling_file:
-scripts/, tools/, docs/, hack/, ci/ ...) are counted apart under `tooling_files` and `tooling_lines` and decide only
-when the repository holds no other product line. `languages` keeps every counted file (product and test) per
+under `test_files` and `test_lines` and decides only a repository with no product line (a standalone test
+repository). Helper scripts under tooling folders (is_tooling_file: scripts/, tools/, docs/, hack/, ci/ ...) are
+counted apart under `tooling_files` and `tooling_lines` and decide only when neither product nor test code holds a
+line. `dominant_basis` says which lines decided ('product', 'test' or 'tooling') and `dominant_lines` counts them. `languages` keeps every counted file (product and test) per
 language; `product_files` and `lines` are the product part. With no product line at all the most product files decide
 (`dominant_by: 'files'`). In-source test modules (a Rust #[cfg(test)] module) are product lines here.
 
@@ -722,11 +723,17 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
                 if mk == 'Templates':
                     template_files.append(frel)
     ordered = dict(sorted(langs.items(), key=lambda kv: (-kv[1], kv[0])))
-    # the dominant language: the most non-blank lines of product code (test code never decides it; tooling folders only
-    # when nothing else holds a line); with no line at all (empty files), the most product files, then the most files
-    deciding_lines, deciding_files = (lines, product_files) if sum(lines.values()) else (tooling_lines, tooling_files)
+    # the dominant language: the most non-blank lines of product code; with no product code (a standalone test
+    # repository) the most lines of test code, and tooling folders only when neither holds a line; with no line at all
+    # (empty files), the most product files, then the most files
+    if sum(lines.values()):
+        basis, deciding_lines, deciding_files = 'product', lines, product_files
+    elif sum(test_lines.values()):
+        basis, deciding_lines, deciding_files = 'test', test_lines, test_files
+    else:
+        basis, deciding_lines, deciding_files = 'tooling', tooling_lines, tooling_files
     if not sum(product_files.values()):
-        deciding_files = tooling_files
+        deciding_files = test_files if basis == 'test' else tooling_files
     if sum(deciding_lines.values()):
         dominant = max(deciding_lines, key=lambda k: (deciding_lines[k], deciding_files[k], k))
         dominant_by = 'lines'
@@ -742,7 +749,8 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
     py_files.sort(key=lambda r: (r.count('/'), not re.search(r'(^|/)(app|main|server|wsgi|asgi|views|urls|routes)\.py$', r), r))
     return {'root': root.name, 'languages': ordered, 'total_source_files': sum(langs.values()),
             'dominant': dominant, 'dominant_files': ordered.get(dominant, 0) if dominant else 0,
-            'dominant_by': dominant_by, 'dominant_lines': lines.get(dominant, 0) if dominant else 0,
+            'dominant_by': dominant_by, 'dominant_lines': deciding_lines.get(dominant, 0) if dominant else 0,
+            'dominant_basis': basis if dominant_by == 'lines' else None,
             'lines': _sorted(lines), 'product_files': _sorted(product_files),
             'test_files': _sorted(test_files), 'test_lines': _sorted(test_lines),
             'tooling_files': _sorted(tooling_files), 'tooling_lines': _sorted(tooling_lines),
@@ -870,8 +878,12 @@ def language_coverage(c: dict, supported, tool: str = 'this script', what: str =
         tests = c.get('test_files') or {}
         prod = c.get('product_files') or {}
         tooling = c.get('tooling_files') or {}
-        if not sum(lines.values()):   # tooling decides only when nothing else holds a line (as in census)
-            lines, prod = c.get('tooling_lines') or {}, tooling
+        basis = 'product code'
+        if not sum(lines.values()):   # as in census: test code decides a repository with no product code, tooling
+            if sum((c.get('test_lines') or {}).values()):   # folders only when nothing else holds a line
+                lines, prod, basis = c.get('test_lines') or {}, tests, 'test code (there is no product code)'
+            else:
+                lines, prod, basis = c.get('tooling_lines') or {}, tooling, 'tooling code (nothing else has a line)'
         # lines decide when the census counted them and nobody merged other counts into `languages` since
         by_lines = (c.get('dominant_by') == 'lines' and sum(lines.values()) > 0
                     and sum((c.get('product_files') or {}).values()) + sum(tests.values()) + sum(tooling.values())
@@ -883,8 +895,9 @@ def language_coverage(c: dict, supported, tool: str = 'this script', what: str =
             n_l, n = uns_l[lang], prod.get(lang, 0)
             dominates = n_l > sup_l and (langs.get(lang, 0) >= min_files or n_l >= LINE_RULE_MIN_LINES)
             out.update({'decided_by': 'lines', 'supported_lines': sup_l, 'unsupported_lines': sum(uns_l.values())})
-            size = (f'{n_l} lines of product code in {n} file(s), against {sup_l} line(s) in the supported '
-                    f'language(s); test code and tooling folders counted apart')
+            size = (f'{n_l} lines of {basis} in {n} file(s), against {sup_l} line(s) in the supported '
+                    f'language(s); ' + ('test code and tooling folders counted apart' if basis == 'product code'
+                                        else 'other code counted apart'))
         else:
             lang, n = max(uns.items(), key=lambda kv: (kv[1], kv[0]))
             dominates = n > n_sup and n >= min_files
@@ -1096,6 +1109,19 @@ def _line_checks(tree) -> list:
     only = census(tree({f'scripts/s{i}.py': py_body for i in range(4)}))
     checks.append(('a repository of tooling scripts alone is still decided by them',
                    only.get('dominant') == 'Python' and only.get('dominant_by') == 'lines', only.get('dominant_by')))
+    # a standalone Playwright test repository: TypeScript specs, no product code, three Python helper scripts
+    spec = "import { test, expect } from '@playwright/test';\n" + "test('x', async ({ page }) => {\n  await page.goto('/');\n});\n" * 20
+    pw = {'package.json': '{"devDependencies": {"@playwright/test": "1.48.0"}}\n',
+          'e2e/playwright.config.ts': 'export default {};\n'}
+    pw.update({f'e2e/recipe{i}.spec.ts': spec for i in range(6)})
+    pw.update({f'scripts/seed{i}.py': py_body * 10 for i in range(3)})
+    tr = census(tree(pw))
+    checks.append(('a standalone test repository (no product code): its test lines decide before tooling lines',
+                   tr.get('dominant') == 'TypeScript' and tr.get('dominant_by') == 'lines',
+                   (tr.get('dominant'), tr.get('lines'), tr.get('test_lines'), tr.get('tooling_lines'))))
+    cov = language_coverage(tr, {'JavaScript', 'TypeScript'}, tool='scan_ts.py') if tr.get('languages') else {}
+    checks.append(('a TypeScript tool on that test repository gets no loud warning from the helper scripts',
+                   cov.get('status') != 'unsupported_dominant' and not cov.get('warning'), cov))
     cov = language_coverage(c, {'Python'}, tool='scan_py.py') if c.get('languages') else {}
     checks.append(('a Python-only tool is warned loudly when Rust has the most product lines, though Python has more files',
                    cov.get('status') == 'unsupported_dominant' and cov.get('dominant_unsupported_language') == 'Rust'
