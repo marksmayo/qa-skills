@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1.0",
+  "schema_version": "1.3.0",
   "metadata": {
     "repo": "fare-calc",
     "commit": null,
@@ -95,7 +95,8 @@
           "survived": 8,
           "timeout": 1,
           "no_coverage": 4
-        }
+        },
+        "run_by": "skill"
       },
       {
         "name": "mutmut",
@@ -117,7 +118,8 @@
           "timeout": 1,
           "survived": 8,
           "no_coverage": 8
-        }
+        },
+        "run_by": "skill"
       }
     ],
     "coverage": {
@@ -128,7 +130,21 @@
     "write_tests": false,
     "critical_paths": [],
     "platform": "Windows 11, Python 3.14.10 (baseline, builtin engine, proofs); WSL Ubuntu, Python 3.12.3 (mutmut)",
-    "generated_at": "2026-11-11T09:30:00Z"
+    "generated_at": "2026-11-11T09:30:00Z",
+    "language_coverage": {
+      "dominant": "Python",
+      "dominant_by": "lines",
+      "product_lines": {
+        "Python": 47
+      },
+      "mutated_languages": [
+        "Python"
+      ],
+      "status": "ok",
+      "unmutated_dominant": null,
+      "tooling_scope_files": [],
+      "warning": null
+    }
   },
   "tools": [
     {
@@ -1657,7 +1673,7 @@
     }
   ],
   "summary": {
-    "headline": "In the 3 changed files, total() is never checked for the right amount (P0), the 65+ concession boundary is untested (P1), the goodwill credit can change unnoticed (P2), and no test reaches the new operator-cancellation refund. The builtin engine killed 18 of 29 mutants (62.1%) and mutmut 17 of 33 (51.5%); the two use different operators, so the scores are not comparable.",
+    "headline": "In the 3 changed files, total() is never checked for the right amount (F1, P0), the 65+ concession boundary is untested (F2, P1), the goodwill credit can change unnoticed (F3, P2), and no test reaches the new operator-cancellation refund (G1). The builtin engine killed 18 of 29 mutants (62.1%) and mutmut 17 of 33 (51.5%); the two use different operators, so the scores are not comparable.",
     "by_engine": [
       {
         "engine": "builtin",

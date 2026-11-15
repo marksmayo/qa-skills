@@ -71,7 +71,9 @@ def main() -> int:
         return 2
     mutants = {m['id']: m for m in d['mutants']}
     sc = md['scope']
-    src = sc.get('diff_file') or (f'changes since {sc["base_ref"]}' if sc.get('base_ref') else sc['mode'])
+    src = sc.get('diff_file') or (f'changes since {sc["base_ref"]}' if sc.get('base_ref') else
+                                  ', '.join(sc.get('paths') or [f['path'] for f in sc['files']][:5]) if sc['mode'] == 'path'
+                                  else 'the whole repository' if sc['mode'] == 'all' else sc['mode'])
     print(P(f'# Mutation testing: {md["repo"]}', BOLD))
     print(f'Scope: {sc["mode"]} ({src}), {len(sc["files"])} file(s); ' +
           ', '.join(f'{e["name"]} {e["version"] or ""} ({e["config_source"]})'.replace(' (', ' (', 1) for e in md['engines']))
