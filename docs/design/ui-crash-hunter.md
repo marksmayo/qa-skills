@@ -462,3 +462,44 @@ ui-crash-hunter-skill/
   storage hits, a `partially_reproduced` probe outcome, Cache Storage assertions in probes, a hint naming the
   element that intercepted a timed-out click, PHP front controllers, and FastAPI proxy routes connected to the
   pages they serve.
+
+### v1.8.0: after a run on a Next.js App Router content site with a service worker
+
+- **Service worker unreachable**: `ui_graph.py` now follows `navigator.serviceWorker.register('/sw.js')` and
+  workbox-window's `new Workbox('/sw.js')`, resolved against `public/` or `static/` of the projects above the
+  registering file, so the worker is UI scope (`injected_scripts`, and `service_workers` with its registrations).
+- **Metadata routes**: `robots.ts`, `sitemap.ts`, `manifest.ts`, `opengraph-image.tsx` and `icon.tsx` under `app/`
+  are a file class of their own (`metadata_route`) and are excluded from the scan as `metadata_routes` (server
+  code), not `unreachable`. Recon lists them under `nextjs.metadata_routes`.
+- **Recon on the App Router**, through the shared `next_app.py`: `nextjs.global_error` (null with a note when
+  missing: the built-in "Application error" page replaces the document), `root_special`, `third_party_scripts`
+  (next/script and `<script>` loaders with host, strategy and crossorigin), `service_workers`, and per dynamic
+  route `params` and `static_params` (generateStaticParams / dynamicParams, own or inherited from a layout). A
+  rendered class boundary records `scope` (app in the root layout or the app's root component), `wraps` and
+  `outside`, from a small JSX tag walk starting at the nearest `return`.
+- **Persisted state and data layer**: Cache Storage (`caches.open`, `cache.put`) is a store. The data layer is
+  read from code with strings and comments blanked (`mask_code`) and from import specifiers, so a URL in a
+  string no longer reports a library.
+- **Census cost**: `langs.census()` wraps the shared census so dependency trees (`node_modules`,
+  `bower_components`, `jspm_packages`) are listed without being walked to count them
+  (`source_files_counted: false`). The shared `lang_census.count_sources` should gain this itself; until then the
+  skill patches it around the call.
+- **Probes**: requests are recorded on the browser context, so a service worker's own script fetch and its requests
+  are seen (`service_worker: true` in Chromium). New assertions: `document_status` (an asserted 404 also marks the
+  document's "Failed to load resource" console error as expected, `expected_console_errors`, so a not-found
+  baseline can be clean), `service_worker` (registration and state) and `cache_entries`; a `forward` step. Console
+  errors from the probe's own third-party block are recognised in every engine by matching the blocked URLs
+  (Firefox reports them as CORS failures), so a Firefox baseline can be clean; the validator applies the same rule
+  to evidence. Several scenarios per call share one browser launch and shutdown per browser type, each in a fresh
+  context (`timing.shared_browser`); routes are dropped without waiting for running handlers before the page and
+  context close (`context_close_s`, `browser_close_s`).
+- **strict_overlay**: repeated "'x' is possibly 'undefined'" hits on one variable in one file are one candidate
+  with `also_lines`.
+- **Validator**: group `match.path` globs treat brackets literally (and accept the fnmatch escape `[[]`), a repro
+  spec in `files_written` for a baseline probe is an error, and a `skill_version` other than SKILL.md's a warning.
+  The example drops its stale `repro/repro_baseline.py`.
+- **SKILL.md**: guidance for static and server-rendered sites, when to use `--all-files`, the bfcache limit
+  (Playwright disables it, so `back` is never a bfcache restore), and that a `baseline_not_clean` caused by the app
+  on a healthy target does not make the run `partial`.
+- **Not done**: a hard kill of a browser whose shutdown hangs (the Python API offers no process handle; batching
+  amortises the cost instead), true bfcache testing, and reading Django `urls.py`.

@@ -73,6 +73,8 @@
               "line": {"type": "integer"},
               "scope": {"enum": ["app", "route", "screen", "component", "global"]},
               "covers": {"type": "array", "items": {"type": "string"}, "description": "Route/screen ids or component names it wraps"},
+              "wraps": {"type": "array", "items": {"type": "string"}, "description": "Usages (recon): the direct children the boundary element wraps"},
+              "outside": {"type": "array", "items": {"type": "string"}, "description": "Usages (recon): sibling elements beside the boundary in the same parent, which it does not catch"},
               "used": {"type": "boolean", "description": "Definitions: whether anything renders it; an unused boundary catches nothing"}
             }
           }

@@ -1,7 +1,7 @@
 ---
 name: ui-crash-hunter
 description: Hunt for code paths in web and mobile UI code that are likely to crash the app (B1, app-fatal) or a whole screen (B2, screen-fatal), rank them by real-world severity, and write reproduction steps for each. Uses static analysis, an API-contract diff and the error-boundary map, then confirms crashes in the running app where possible. Every finding has a file and line, a concrete trigger and a confidence level (reproduced, traced or pattern); degradations are listed separately and never ranked as crashes.
-version: 1.7.0
+version: 1.8.0
 ---
 
 # UI Crash Hunter
@@ -161,7 +161,19 @@ Read the output, then confirm and complete it by reading the code:
   rate limits change what a probe sees), `next/dynamic` imports (`ssr: false` runs only in the browser,
   after hydration), and the route handlers with their HTTP methods. Route handlers are API code: they
   are not UI routes and never count as analysed routes. Server components run during SSR; their
-  triggers are server data (a seeded test database), not browser mocks.
+  triggers are server data (a seeded test database), not browser mocks. From the shared Next.js reader
+  (`next_app.py`) recon also records `global_error` (null when the app has no `global-error` file:
+  then Next.js's built-in "Application error: a client-side exception has occurred" page replaces the
+  whole document after a throw in the root layout, and `global_error_note` says so), `root_special`
+  (which of layout, not-found, error, global-error and loading the root has), `metadata_routes`
+  (robots, sitemap, manifest, generated icons and Open Graph images: server code answering its own
+  URL, out of UI scope like route handlers), `third_party_scripts` (`next/script` and `<script>`
+  loaders with their host, strategy and `crossorigin`: what a probe blocks, so name them in the
+  limitations from this list) and `service_workers` (the worker file, who registers it, its caches and
+  fetch strategies). A dynamic route carries `params` and `static_params`: with `generateStaticParams`
+  and `dynamicParams = false` an unknown value is answered with the not-found page (404) before the
+  page code runs, so a lookup in the page cannot miss for it; probe an unknown value as a not-found
+  baseline (`document_status: 404`).
   The Next.js file conventions apply only when the project's `package.json` depends on `next`, and only
   to `app/` and `pages/` at its root or under `src/`: a `pages/` folder inside a plain React app is
   just a folder, not routes. A directory holding `next.config.*` is the project root even without a
@@ -182,7 +194,12 @@ Read the output, then confirm and complete it by reading the code:
   boundaries too (`kind: route_prop`/`route_module`): a route's `errorElement` or `ErrorBoundary`
   (React Router 6.4+ data routers and 7, Remix), a route module's exported `ErrorBoundary`, TanStack
   Router's `errorComponent`, and `withErrorBoundary` from `react-error-boundary`. A throw under a
-  route's `errorElement` (render, loader or a failed `lazy()` import) is B2, not B1.
+  route's `errorElement` (render, loader or a failed `lazy()` import) is B2, not B1. A custom class
+  boundary rendered in the root layout or the app's root component is a `usage` with `scope: app`
+  (`route` in a page or nested layout, `component` elsewhere), the direct children it `wraps` and the
+  siblings it leaves `outside` (a service-worker registrar or focus manager beside `<main>` in the
+  root layout is outside it: only `global-error`, or nothing, catches a throw there). Check `outside`
+  before rating a throw B3.
 - **Module-scope configuration** (`module_scope_config`): modules that read `import.meta.env` (Vite)
   or `process.env` and throw at module scope fail on import, before any boundary renders, so a
   missing or invalid value blanks the app (B1). This is the Vite analogue of configuration read in a
@@ -190,11 +207,15 @@ Read the output, then confirm and complete it by reading the code:
   Framework specifics are in `RUBRIC.md` (React, Next.js, Vue, Angular, React Native, Flutter,
   Android, iOS).
 - **The data layer** (fetch, axios, React Query, Apollo, Retrofit, URLSession, Dio) and whether
-  responses are validated at the boundary (zod, kotlinx.serialization, Codable).
+  responses are validated at the boundary (zod, kotlinx.serialization, Codable). Recon reads it from
+  code with string contents blanked and from import specifiers, so a URL in a string (a link to a site
+  that shares a library's name) is not a library.
 - **API contracts** (OpenAPI, GraphQL, generated types and models).
-- **Persisted state** (localStorage, IndexedDB, AsyncStorage, SharedPreferences, DataStore,
-  UserDefaults, Core Data, Room, Hive) and how its format changed over versions. A format change
-  without migration is the classic crash loop.
+- **Persisted state** (localStorage, IndexedDB, Cache Storage, AsyncStorage, SharedPreferences,
+  DataStore, UserDefaults, Core Data, Room, Hive) and how its format changed over versions. A format
+  change without migration is the classic crash loop. Cache Storage (`caches.open`, `cache.put`, usually
+  in a service worker) is the other one: a bad or stale response cached once is replayed on every
+  later visit until site data is cleared.
 - **Reach** for each route or screen: `critical_path` (entry, auth, checkout, onboarding, the shell),
   `high_traffic`, `rare`, or `unknown`. Use journey priorities or analytics when given; otherwise
   say it is your reading of the app.
@@ -245,8 +266,14 @@ configs stay out either way. Read `scope.warnings`: imports that did not resolve
 graph doesn't know), or 30% or less of the UI files reachable, mean the scope is wrong, not that the app
 is small; fix the alias or use `--all-files`, and say so in the coverage. The graph follows scripts a
 script loads at run time: string literals naming `.js` files in a loader that creates a `<script>` and
-sets its `src` (a literal module array), `importScripts(...)` and `new Worker('x.js')` (listed in
-`injected_scripts`); recon also reads scripts written with `document.write('<script src=...>')`. Files
+sets its `src` (a literal module array), `importScripts(...)`, `new Worker('x.js')` and a service
+worker registration (`navigator.serviceWorker.register('/sw.js')` or workbox-window's `new
+Workbox('/sw.js')`, resolved against `public/` or `static/`; listed in `injected_scripts` and
+`service_workers`), so a registered worker is UI scope; recon also reads scripts written with
+`document.write('<script src=...>')`. Next.js metadata routes (`robots.ts`, `sitemap.ts`,
+`opengraph-image.tsx`, `icon.tsx`, `manifest.ts`) are excluded as `metadata_routes` (reachable server
+code), not `unreachable`. Use `--all-files` only when the scope warnings say the graph missed UI code,
+or when an unreachable example you read is in fact loaded (a computed import); say so in the coverage. Files
 that look generated (Emscripten glue: `wasmExports`, `createWasm`, `FS_createPath`; `@generated`,
 "Generated by", "DO NOT EDIT") are excluded as `generated` and counted in `scope.excluded`, even with
 `--all-files`; `--include-generated` scans them with the rest. Triage them apart from hand-written code.
@@ -263,7 +290,10 @@ Every candidate ends up in `triage.promoted`, `triage.dismissed` or `triage.dism
 validator checks the count against `candidates.json`. On a large app, dismiss a class of candidates
 that one checkable rule covers as a group: `rule_id`, a `match` (`pitfall_id`, `path` glob, `tool`,
 source `rule`, `snippet` regex), the specific reason, and the ids; the validator checks every listed
-candidate matches. Don't paste one sentence onto many individual dismissals: more than three
+candidate matches. The `path` glob knows `**`, `*` and `?`; square brackets are literal, so write an
+App Router path as it is (`src/app/[slug]/page.tsx`, or `src/app/**/page.tsx`); the fnmatch escape
+`[[]slug]` is accepted too. The strict `tsc` overlay already merges repeated "'x' is possibly
+'undefined'" hits on one variable in one file into one candidate (`also_lines`). Don't paste one sentence onto many individual dismissals: more than three
 identical reasons are rejected. Then read the code for crash classes no tool finds (unsupported APIs in
 the declared targets, render loops, stale responses, lifecycle misuse, deep links, permission
 denial, process death, configuration read at module scope in the root layout or, in a Vite app, from
@@ -293,8 +323,11 @@ python scripts/probe_web.py <out_dir>/probes/C-1.json --out-dir <out_dir>/eviden
 
 A scenario mocks API responses, seeds storage once (so reloads see what the app itself wrote), sets
 locale, time zone and viewport, and runs steps (`goto`, `click`, `fill`, `type` (key by key),
-`press`, `reload`, `back`, `offline`, `unroute` (stop a mock, so the next request reaches the real
-server), `expect`, `wait_for`, `wait_ms`). Each step is an object with one action:
+`press`, `reload`, `back`, `forward`, `offline`, `unroute` (stop a mock, so the next request reaches
+the real server), `expect`, `wait_for`, `wait_ms`). Playwright disables the back/forward cache, so
+`back` is a history navigation, never a bfcache restore: a bfcache-only defect (a page restored with
+stale state, `pageshow` with `persisted`) cannot be reproduced here; say so in the limitations. Each
+step is an object with one action:
 
 ```json
 "steps": [
@@ -314,9 +347,13 @@ cross-browser skills use). `probe_web.py` validates every step and assertion bef
 and exits 2 naming the bad one; `--check` validates only. If a step still fails at run time, the
 evidence has `step_error` and `expectations_skipped: true`: the final assertions were never evaluated,
 which is neither a reproduction nor a clean baseline. The evidence also records each step's `ms` and a
-`timing` block (launch, steps, screenshot, close, other and total), so a slow probe can be explained:
-on a busy machine closing the browser after aborted third-party requests can take longer than the
-probe itself (`close_s`). `--emit-spec` writes nothing
+`timing` block (launch, steps, screenshot, close with `context_close_s` and `browser_close_s`, other
+and total), so a slow probe can be explained. Shutting a browser down after aborted third-party
+requests can take longer than the probe itself, so the probe drops its routes without waiting for
+running handlers before closing, and several scenarios run in one call (`probe_web.py a.json b.json
+--out-dir <dir>`, each written to `<dir>/<file stem>/evidence.json`) share one browser launch and
+shutdown per browser type, each in a fresh context (`timing.shared_browser`). `--emit-spec` takes one
+scenario and writes nothing
 for a baseline probe (a baseline never reproduces). The evidence file records uncaught page errors with
 stacks, console errors (a boundary that catches an error usually logs it), every request with its
 status, failed requests, whether the root is empty (white screen) and which fallback texts are
@@ -383,7 +420,9 @@ say in the limitations which routes went unprobed because they need a session.
 **Third parties are blocked.** Every request to a host that isn't loopback, the base URL's host or
 in `allowed_hosts` is aborted and listed in `blocked_requests`, GETs included, so a probe never
 sends analytics hits or ad requests. Console errors caused by that blocking go to
-`blocked_console_errors`, and page errors it caused (an unhandled `Failed to fetch` raised while a
+`blocked_console_errors` in every engine: Chromium says `ERR_BLOCKED_BY_CLIENT`, while Firefox reports
+an aborted `crossorigin` script as "Cross-Origin Request Blocked ... CORS request did not succeed", which
+is matched against the blocked URLs, so a Firefox baseline can be clean. Page errors it caused (an unhandled `Failed to fetch` raised while a
 request was blocked and none of the app's own requests failed) go to `blocked_page_errors`; neither
 counts towards a reproduction or against a baseline.
 `third_party: "allow"` lifts the block (only with the user's agreement), and
@@ -411,8 +450,11 @@ the headline and summary. Describe the defect's observable effect in `expect` (a
 | `{"text_visible": t}` / `{"text_absent": t}` | the text is visible / not visible |
 | `{"count": sel, "equals"\|"min"\|"max": n}` | the number of matching elements |
 | `{"style": sel, "property": p, "equals"\|"contains"\|"not_equals"\|"not_contains": v}` | a computed style |
-| `{"request": glob, "made": true\|false, "status": n}` | a request was (not) made, optionally with that status |
+| `{"request": glob, "made": true\|false, "status": n}` | a request was (not) made, optionally with that status (requests are recorded for the whole browser context, so a service worker's own script fetch and the requests it makes count; Chromium marks them `service_worker`) |
 | `{"page_error": s}` / `{"console_error": s}` | an error containing the text was raised / logged |
+| `{"document_status": n}` | the latest main-frame document had that HTTP status; asserting it also marks the browser's "Failed to load resource ... 404" for that document as expected (`expected_console_errors`), so a not-found page can be a clean baseline |
+| `{"service_worker": glob, "state": s, "registered": true\|false}` | a service worker whose script URL matches is (not) registered, optionally in that state (`activated`); the evidence lists `service_workers` |
+| `{"cache_entries": glob, "equals"\|"min"\|"max": n}` | requests stored in Cache Storage in caches whose name matches (at least 1 by default) |
 
 When every assertion holds and no step failed, `effect_observed` is true and the probe reproduces
 (`reproduced_by: ["effect"]`), with or without an error. Assert the defect precisely, so that nothing
@@ -429,12 +471,24 @@ of the failed baseline, record the defect with that probe as its reproduction (a
 expectation it broke as the defect's `expect`), and take a clean baseline elsewhere (another
 viewport or route) for the comparison. If the
 target itself is degraded (its own API returns 500s), mock the failing requests in the browser, or
-record the probe as `baseline_not_clean` with a note and set `run_status` to `partial`. A probe that
+record the probe as `baseline_not_clean` with a note and set `run_status` to `partial`. A
+`baseline_not_clean` caused by the app's own behaviour on a healthy target is not a degraded run: it
+is a finding (or a scenario to fix), and `run_status` can stay `complete`. A not-found baseline (an
+unknown slug, a removed page) asserts `{"document_status": 404}` and the not-found text, and is clean
+when nothing else errors. A probe that
 couldn't run at all is `errored`, with a note. A probe whose page ended off the app (the browser's
 own error page after following a link to a blocked host, a redirect to an identity provider, or the
 `observe.root_selector` missing) is `inconclusive`: its evidence says `inconclusive` with the reason,
 `baseline_ok` is false and nothing is reproduced, because none of its checks ran on the app. Record
 the outcome `inconclusive` with a note.
+
+**Static and server-rendered sites** (a site generated at build time, mostly server components,
+no API of its own and little stored state): the API-mock and contract-diff steps have little to work
+on. The triggers are build data (a bad record fails the build, which is a build failure, not a UI
+crash; say so rather than probing it), the browser environment (blocked storage, another locale or
+time zone, an old browser in the targets), unknown URLs (the not-found page), the service worker and
+what it caches, the client components in the root layout (outside every `error.tsx`), and the
+third-party scripts (blocked by the probe: name them in the limitations). Scope probes to those.
 
 Triggers worth forcing: null fields, `[]`, missing keys, 10,000-character strings, emoji and
 right-to-left text, HTTP 401/404/500, slow responses, offline, another locale or time zone, stored
@@ -544,7 +598,8 @@ worst finding plainly ("5 likely crashes, 4 reproduced; a P0 crash loop for user
   with another finding), or the probe's observed effect with `repro.observed_effect` (B1/B2 crashes
   also need the probe to show the app blanked or the app-wide fallback).
 - `baseline_clean` probes: no page errors and no console errors of the app's own (errors from the
-  probe's third-party blocking are ignored), and any healthy-behaviour assertions held.
+  probe's third-party blocking are ignored, in any engine: a Firefox CORS report naming a URL in
+  `blocked_requests` is the block's), and any healthy-behaviour assertions held.
   `baseline_not_clean` and `errored` probes have a note.
 - Every probe ran against `app_run.target`'s host; a non-loopback target has `authorised_by`.
 - `run_status` agrees with the probes, and a `not_run` report claims nothing that needs the app.
@@ -562,7 +617,9 @@ worst finding plainly ("5 likely crashes, 4 reproduced; a P0 crash loop for user
 - A `native` site model with browser probes (or `web` in `metadata.platforms`) draws a warning: recon
   may have read a bundled mobile fixture; correct `site_model` and `blast_radius`.
 - Every tool that didn't run says why; at least one tool ran.
-- Nothing listed in `files_written` is inside the repository.
+- Nothing listed in `files_written` is inside the repository, and no repro spec in it belongs to a
+  baseline probe (baselines never get one). A `metadata.skill_version` other than this file's draws a
+  warning.
 - Summary counts are recomputed, and overclaiming headlines are rejected. Numbers the headline states
   ("162 of 163 dismissed", "1 promoted", "2 traced B2 crashes", "4 of them reproduced", "3 degradations")
   are compared with the report.
