@@ -175,6 +175,19 @@ def annotations_of(raw: Path, job_id) -> tuple[list[dict], dict | None]:
     return [], (json.loads(err.read_text(encoding='utf-8')) if err.exists() else None)
 
 
+def fetch_job_evidence(api: str, repo: str, j: dict, h: dict, raw: Path) -> None:
+    """The log and check-run annotations of one failed GitHub job. A job that never started on a runner (no steps, no
+    runner name) never wrote a log, so none is requested: asking would only give a 404 that reads like an expired log."""
+    if j.get('conclusion') in ('success', 'skipped'):
+        return
+    if never_started(j):
+        print(f'note: job {j["id"]} ({j.get("name") or "unnamed"}) never started on a runner: no log exists; reading its annotations',
+              file=sys.stderr)
+    else:
+        fetch_log(f'{api}/repos/{repo}/actions/jobs/{j["id"]}/logs', h, raw, j['id'])
+    fetch_annotations(api, repo, j['id'], h, raw)
+
+
 def fetch_artifact(url: str, h: dict, dest: Path, raw: Path, name: str, size: int | None, max_mb: int) -> None:
     if size and size > max_mb * 1024 * 1024:
         d = {'status': 'skipped', 'http_status': None, 'error': f'{size // (1024 * 1024)} MB, over --max-artifact-mb {max_mb}'}
@@ -203,9 +216,7 @@ def fetch_github(repo: str, run_id: int, raw: Path, history: int, max_mb: int):
         jobs = _get(f'{GH_API}/repos/{repo}/actions/runs/{run_id}/attempts/{n}/jobs?per_page=100', h)
         save(ad / 'jobs.json', jobs)
         for j in jobs['jobs']:
-            if j.get('conclusion') not in ('success', 'skipped'):
-                fetch_log(f'{GH_API}/repos/{repo}/actions/jobs/{j["id"]}/logs', h, raw, j['id'])
-                fetch_annotations(GH_API, repo, j['id'], h, raw)
+            fetch_job_evidence(GH_API, repo, j, h, raw)
     arts = _get(f'{GH_API}/repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100', h)
     save(raw / 'attempts' / str(last) / 'artifacts.json', arts)
     for a in arts.get('artifacts', []):
@@ -550,6 +561,16 @@ def self_test() -> int:
                   f'check-run annotations of a job should be saved and read back, got {got}')
             got, err = annotations_of(raw, 8)
             check(got == [] and err and err['status'] == 'unavailable', 'a failed annotations download should be recorded')
+            # a job that never started (no steps, no runner) has no log to download: no request, no "404 expired" warning
+            import contextlib
+            err, before = io.StringIO(), len(seen.get('api', []))
+            with contextlib.redirect_stderr(err):
+                fetch_job_evidence(base, 'acme/x', {'id': 7, 'conclusion': 'failure', 'steps': [], 'runner_name': ''}, h, raw)
+            asked = [p for p, _ in seen.get('api', [])[before:]]
+            check('not downloaded' not in err.getvalue() and not (raw / 'logs' / '7.error.json').exists()
+                  and not any('/logs' in p for p in asked) and any('annotations' in p for p in asked),
+                  f'a never-started job: its log should not be requested or warned about, its annotations should (asked {asked}, '
+                  f'stderr {err.getvalue().strip()!r})')
             fetch_artifact(f'{base}/artifacts/404/zip', h, raw / 'attempts' / '1' / 'artifacts' / 'gone', raw, 'gone', None, 50)
             check(any((raw / 'artifact_errors').glob('*.json')), 'a failed artifact download should be recorded, not crash')
             fetch_artifact(f'{base}/artifacts/1/zip', h, raw / 'attempts' / '1' / 'artifacts' / 'junit-a', raw, 'junit-a', 10, 50)
