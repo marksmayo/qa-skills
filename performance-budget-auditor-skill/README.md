@@ -74,9 +74,22 @@ python scripts/render_report.py run/perf_report.json [--brief]
 ```
 
 On a machine you know is idle, run `measure.py` once with `--record-reference` to store its idle CPU
-calibration; later runs are flagged busy against it (a steady load looks calm without one). Warm runs
-check that the second load really used the HTTP cache (`warm_cache`), runs record compression and
-cache headers (`delivery`), and what an interaction downloads is the budgetable `transfer_interaction`.
+calibration; later runs are flagged busy (or loaded, from 1.2x) against it (a steady load looks calm
+without one), and `--no-reference-update` measures without ever writing it. Warm runs keep the HTTP
+cache (`"http_cache": "keep"`, the default for Chromium warm runs) and check that the second load
+really used it (`warm_cache`); responses a service worker answered are counted apart, and what the
+worker fetched itself is the budgetable `transfer_sw` (`service_workers`). Runs record compression and
+cache headers and oversized images (`delivery`), the mobile profile emulates a device pixel ratio of
+2.625, image, font, stylesheet and document weight can be budgeted, and what an interaction downloads
+is the budgetable `transfer_interaction`. In Git Bash pass `--only about`, not `--only /about` (MSYS
+rewrites a leading `/` into a Windows path; a filter that matches nothing exits 2).
+
+`build_report.py` seeds the report from the run, the candidates and your triage (decisions, titles,
+remediations, limitations), so only the judgement is written by hand:
+
+```bash
+python scripts/build_report.py --measurements run/measurements.json --candidates run/candidates.json --triage triage.json --out run/perf_report.json
+```
 
 ## Example
 
@@ -90,7 +103,7 @@ report; `examples/README.md` has the answer key.
 ```bash
 python scripts/validate_report.py examples/perf_report.example.json --measurements examples/run/measurements.json --candidates examples/run/candidates.json --budget examples/budget.json --regressions examples/run/regressions.json
 python scripts/render_report.py examples/perf_report.example.json
-python scripts/self_test.py   # calibration, warm cache, headers, interaction transfer, INP and LCP cause checks on synthetic data
+python scripts/self_test.py   # calibration, warm cache, service workers, headers, DPR, image budgets, ties, seeder, INP and LCP checks
 ```
 
 ## Files
@@ -105,6 +118,7 @@ python scripts/self_test.py   # calibration, warm cache, headers, interaction tr
   long animation frames, DevTools Network bytes, Server-Timing, traces, filmstrips and coverage
 - `scripts/attribute.py`: statistics, statuses, Server-Timing, candidates and ratings (stdlib)
 - `scripts/compare.py`: baseline comparison (stdlib)
+- `scripts/build_report.py`: seed the report from the run, the candidates and the agent's triage
 - `scripts/validate_report.py`, `scripts/render_report.py`, `scripts/schema_check.py`
 - `scripts/browser_harness.py`: shared copy (edit it in `shared/`)
 - `examples/`: the site, the plan, the budget, the run and the report
