@@ -63,7 +63,7 @@ Other helpers: next_url(folder_parts) -> (url, info), parse_csp(text) -> {direct
 find_next_roots(repo) -> [folder].
 """
 from __future__ import annotations
-import argparse, json, os, re, sys
+import argparse, contextvars, json, os, re, sys
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
@@ -399,7 +399,14 @@ def walk_files(root: Path, max_files: int) -> tuple[list[str], bool]:
     return files, truncated
 
 
+# texts a caller has already read (repo-relative path -> text), set for the length of one read_next_app call
+_GIVEN_TEXTS: contextvars.ContextVar[dict | None] = contextvars.ContextVar('next_app_texts', default=None)
+
+
 def read(root: Path, rel: str) -> str:
+    given = _GIVEN_TEXTS.get()
+    if given is not None and rel in given:
+        return given[rel]
     try:
         return (root / rel).read_text(encoding='utf-8', errors='replace')
     except OSError:
@@ -1268,9 +1275,17 @@ def read_service_workers(root: Path, files: list[str], nroot: str, cache: dict, 
 
 
 # ---------------------------------------------------------------- entry point
-def read_next_app(repo, max_files: int = 50_000) -> dict:
-    """The static model of every Next.js project under repo (see the module docstring for the shape)."""
-    root = Path(repo)
+def read_next_app(repo, max_files: int = 50_000, texts: dict | None = None) -> dict:
+    """The static model of every Next.js project under repo (see the module docstring for the shape). texts maps
+    repo-relative '/'-separated paths to the text a caller has already read, so those files are not read again."""
+    token = _GIVEN_TEXTS.set(texts)
+    try:
+        return _read_next_app(Path(repo), repo, max_files)
+    finally:
+        _GIVEN_TEXTS.reset(token)
+
+
+def _read_next_app(root: Path, repo, max_files: int) -> dict:
     files, truncated = walk_files(root, max_files)
     notes = []
     if truncated:
@@ -1468,6 +1483,10 @@ def self_test() -> int:
             (root / rel).write_text(body, encoding='utf-8')
         model = read_next_app(root)
         json.dumps(model)   # JSON-able
+        # a caller that has already read the files passes their texts and the reader uses them instead of the disk
+        given = {'app/api/stock/route.ts': FIXTURE['app/api/stock/route.ts']
+                 + '\nexport async function POST() {\n  return Response.json({});\n}\n'}
+        reused = read_next_app(root, texts=given)
         (root / 'empty').mkdir()
         empty = read_next_app(root / 'empty')
     checks = []
@@ -1477,6 +1496,9 @@ def self_test() -> int:
         checks.append((name, bool(ok), extra))
     check('a Next.js project is found at the root', model.get('is_next') and proj.get('root') == ''
           and proj.get('next_version') == '15.1.0', {k: proj.get(k) for k in ('root', 'next_version')})
+    stock = next((r for r in (reused.get('projects') or [{}])[0].get('routes') or [] if r.get('url') == '/api/stock'), {})
+    check("texts= the caller already read are used instead of the files (a POST only the given text has is listed)",
+          'POST' in {m.get('method') for m in stock.get('methods') or []}, stock.get('methods'))
     routes = proj.get('routes') or []
     by = {(r.get('kind'), r.get('url')): r for r in routes}
     check('pages: the home page and a route-group page, groups stripped',

@@ -247,6 +247,7 @@ class Extractor:
         self.skipped_data_dirs: list[dict] = []
         self.skipped_data_files = 0              # .json files not opened: only manifests and configs matter by name
         self.template_files: dict[str, str] = {}  # server-side templates (Jinja/Django), read after the walk
+        self.texts: dict[str, str] = {}   # every file the walk read, handed to the Next.js reader so it reads none again
         self.rendered_by: dict[str, list[str]] = {}   # template path -> page routes whose view renders it
         self.py_trees: dict[str, object] = {}
         self.view_paths: dict[str, list[str]] = {}
@@ -1236,7 +1237,7 @@ class Extractor:
         Graph and Twitter images), segment config of pages and handlers, not-found/error/loading files, script loaders,
         service workers and files served from public/ (read with the shared next_app reader)."""
         try:
-            model = next_app.read_next_app(self.root, max_files=self.max_files)
+            model = next_app.read_next_app(self.root, max_files=self.max_files, texts=self.texts)
         except Exception as exc:  # noqa: BLE001 - a reader failure must not lose the rest of the surface
             self.extra_limitations.append(f'The Next.js reader failed ({type(exc).__name__}: {exc}); metadata routes, '
                                           'route states, script loaders and service workers were not listed.')
@@ -1337,6 +1338,7 @@ class Extractor:
                 text = path.read_text(encoding='utf-8', errors='replace')
             except OSError:
                 continue
+            self.texts[self.rel(path)] = text
             rel_parts = Path(self.rel(path)).parts
             if self.is_template(path):
                 self.template_files[self.rel(path)] = text   # read after the walk, with the views that render them
