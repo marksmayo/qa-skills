@@ -294,8 +294,14 @@ def skipped(rel_parts: list[str]) -> bool:
 
 def git_files(root: Path) -> list[str] | None:
     """Files git would track under root (tracked plus untracked-but-not-ignored), relative POSIX paths; None outside
-    a work tree, when git is missing, or when git lists nothing (root itself ignored)."""
+    a work tree, when git is missing, or when git lists nothing (root itself ignored). No git process is started when
+    no .git (a directory, or a worktree's .git file) exists in root or above it and GIT_DIR is not set."""
     try:
+        here = Path(root).resolve()
+        if not os.environ.get('GIT_DIR') and not any((p / '.git').exists() for p in (here, *here.parents)):
+            return None
+    except OSError:
+        pass
         res = subprocess.run(['git', '-C', str(root), '-c', 'core.quotepath=off', 'ls-files', '-co', '--exclude-standard', '-z'],
                              capture_output=True, timeout=120)
     except (OSError, subprocess.SubprocessError):
@@ -2071,6 +2077,17 @@ def self_test() -> int:
     """Check id patterns, npm script chains and workspace delegation, and (with node on PATH) a node-test run with
     --repo-root on a small synthetic workspace."""
     checks = []
+    with tempfile.TemporaryDirectory() as d:
+        calls = []
+        real_run = subprocess.run
+        subprocess.run = lambda *a, **k: calls.append(a) or real_run(*a, **k)
+        try:
+            got = git_files(Path(d))
+        finally:
+            subprocess.run = real_run
+        no_git_above = not any((p / '.git').exists() for p in [Path(d).resolve(), *Path(d).resolve().parents])
+        checks.append(('git_files starts no git process when no .git exists above the path',
+                       not no_git_above or (got is None and not calls), (no_git_above, got, calls)))
     checks += pytest_self_checks()
     checks += unittest_self_checks()
     _, pat = vitest_ids(['tests/a.test.ts::cart > totals > adds tax'])
