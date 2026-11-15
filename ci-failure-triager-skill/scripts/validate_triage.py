@@ -45,7 +45,7 @@ def expected_priority(f: dict, run: dict) -> str | None:
 
 
 def completeness(run: dict, run_dir: Path, changes: dict | None, failures: list[dict] | None = None) -> float:
-    """Five checks: logs for every failed job; test results (JUnit, or a test runner's console summary)
+    """Five checks: logs for every failed job (or, for a job that never started on a runner, the CI's annotation on it); test results (JUnit, or a test runner's console summary)
     for every failed job with a test step; a re-run; a last green run; the repository for the owning change."""
     first = run['attempts'][0]
     failed = [j for j in first['jobs'] if j['conclusion'] not in ('success', 'skipped', None)]
@@ -56,7 +56,10 @@ def completeness(run: dict, run_dir: Path, changes: dict | None, failures: list[
                  or any(f['job_id'] == j['id'] and f.get('step_kind') == 'test' for f in failures)]
     # a check over nothing earns nothing: a run with no failed job has no log to read, and one with no test job (a job
     # that never started, a lint-only failure) no test result
-    checks = [bool(failed) and all(j.get('log') and (run_dir / j['log']).exists() for j in failed),
+    # a job that never started on a runner wrote no log; the CI's check-run annotation on it is its only record, and when
+    # there is one it stands in for the log (it says why the job did not run)
+    checks = [bool(failed) and all((j.get('log') and (run_dir / j['log']).exists()) or (j.get('never_started') and j.get('annotations'))
+                                   for j in failed),
               bool(test_jobs) and all(j.get('junit') or j['id'] in with_tests for j in test_jobs),
               len(run['attempts']) > 1, bool(run.get('last_green')), bool(changes and changes.get('commits') is not None)]
     return round(sum(checks) / len(checks), 2)

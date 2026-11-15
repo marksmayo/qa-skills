@@ -265,8 +265,22 @@ def never_started_checks(fails: list) -> None:
                          f'(job queued_for_s {job.get("queued_for_s")}, signals {cands[0]["signals"].get("queued_for_s")}, '
                          f'message {cands[0]["failure"]["message"]!r})')
         got = [(c['classification'], c['confidence'], [h['id'] for h in c['signals']['signatures']]) for c in cands]
-        if got != [('environment', 'indicated', ['ENV-NOT-STARTED'])]:
-            fails.append(f'never started: the failure is environment, indicated, by ENV-NOT-STARTED (got {got})')
+        if got != [('environment', 'indicated', ['ENV-BILLING', 'ENV-NOT-STARTED'])] or 'ENV-BILLING' not in cands[0]['rule']:
+            fails.append(f'never started: a spending-limit annotation is an environment failure caused by the CI account\'s billing '
+                         f'(ENV-BILLING first, then ENV-NOT-STARTED; got {got}, rule {cands[0]["rule"]!r})')
+        for text, want in (('The job was not started because recent account payments have failed or your spending limit needs to be '
+                            'increased. Please check the Billing & plans section of your settings.', ['ENV-BILLING', 'ENV-NOT-STARTED']),
+                           ('No runner matching the specified labels was found: self-hosted, gpu', ['ENV-NOT-STARTED'])):
+            ids = [h['id'] for h in signals({'message': 'job concluded failure', 'annotations': [text], 'log_excerpt': {'lines': []},
+                                             'job': 'refresh', 'kind': 'step', 'step_kind': 'other'}, run, RUN)['signatures']]
+            if ids != want:
+                fails.append(f'never started: annotation {text[:50]!r} matched {ids}, expected {want}')
+        from validate_triage import completeness
+        bare = copy.deepcopy(run)
+        bare['attempts'][0]['jobs'][0].pop('annotations')
+        if completeness(run, RUN, None) != 0.2 or completeness(bare, RUN, None) != 0.0:
+            fails.append(f'never started: the CI\'s annotation stands in for the log of a job that never started (logs check 1 of 5: 0.2; '
+                         f'without the annotation 0.0); got {completeness(run, RUN, None)} and {completeness(bare, RUN, None)}')
         t = triage_from(run, cands)
         t['run_status'], t['run_status_reason'] = 'not_run', f'No job started on a runner: "{NOT_STARTED}"'
         t['summary']['headline'] = 'Nothing to triage: no job started on a runner (the account hit its spending limit).'
@@ -275,9 +289,9 @@ def never_started_checks(fails: list) -> None:
             f['next_action'] = 'Check the billing settings and spending limit of the CI account, then re-run the workflow.'
         rc, out = finish(t, td)
         done = json.loads((td / 'triage.json').read_text(encoding='utf-8'))
-        if rc or done['summary'].get('evidence_completeness') != 0.0:
-            fails.append(f'never started: a not_run triage quoting the annotation, with completeness 0.0 (no check over '
-                         f'nothing scores), should validate (completeness {done["summary"].get("evidence_completeness")}):\n{out}')
+        if rc or done['summary'].get('evidence_completeness') != 0.2:
+            fails.append(f'never started: a not_run triage quoting the annotation, with completeness 0.2 (the annotation, the CI\'s '
+                         f'only record of the job, stands in for its log), should validate (completeness {done["summary"].get("evidence_completeness")}):\n{out}')
         bad = copy.deepcopy(done)
         bad['run_status'] = 'partial'
         rc, out = validate(bad, td)
