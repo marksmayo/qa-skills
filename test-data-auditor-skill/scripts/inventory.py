@@ -2,7 +2,13 @@
 """Inventory the data tests depend on, and map each source to the tests that load it (stdlib only).
 
     python inventory.py <repo> --out inventory.json [--paths tests db ...] [--markers markers.json]
-                        [--data-dir DIR ...] [--max-files-per-dir N]
+                        [--data-dir DIR ...] [--max-files-per-dir N] [--no-fixture-dirs]
+
+Fixture folders (examples/, samples/, testdata/ ... holding data files: sample projects and recorded runs, named by
+repo_layout.py) are read as data trees by default and listed under fixture_dirs (--no-fixture-dirs leaves them out).
+A file that a documented command (Markdown shell blocks, shell scripts, Makefiles, CI files, package.json scripts)
+names, or a folder of it, or that a used data file names, is used_by_commands rather than unused; a script's own
+self-test that builds a path to it (or to its sample project) loads it as <script>::*.
 
 A directory outside the test areas holding 50+ data files that test code names, but not inventoried, is listed under
 unlisted_data_dirs (and warned about); --max-files-per-dir samples a big directory evenly and records the rest as
@@ -39,10 +45,16 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import datafiles, detect_conventions, jsparse  # noqa: E402
+import datafiles, detect_conventions, jsparse, repo_layout  # noqa: E402
 
 SKIP_DIRS = detect_conventions.SKIP_DIRS | {'.git', '.turbo', '.cache', '.venv', 'venv', '__pycache__'}
-DATA_EXT = {'.json', '.yaml', '.yml', '.csv', '.tsv', '.sql', '.xml', '.har', '.snap', '.ambr', '.txt', '.ndjson', '.jsonl', '.svg'}
+# text formats read line by line (no records): pages, tickets and notes, patches, settings and styles keep invented people
+# in their prose as often as JSON does
+TEXT_DATA_EXT = {'.html', '.htm', '.md', '.markdown', '.diff', '.patch', '.toml', '.css'}
+DATA_EXT = {'.json', '.yaml', '.yml', '.csv', '.tsv', '.sql', '.xml', '.har', '.snap', '.ambr', '.txt', '.ndjson', '.jsonl',
+            '.svg'} | TEXT_DATA_EXT
+# documentation beside test data (a fixture tree's README) is not test data
+DOC_NAME = re.compile(r'^(README|CHANGELOG|CHANGES|CONTRIBUTING|LICEN[CS]E|SECURITY|CODE_OF_CONDUCT|AUTHORS|NOTICE)([.-].*)?$', re.I)
 # images, fonts and media in a test area are test data too; their contents are not read, so they are listed as not_assessed
 MEDIA_EXT = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.bmp', '.ico', '.tif', '.tiff', '.heic', '.otf', '.ttf', '.woff',
              '.woff2', '.eot', '.mp3', '.mp4', '.wav', '.ogg', '.webm', '.mov', '.m4a', '.flac'}
@@ -255,6 +267,22 @@ def is_support(path: str) -> bool:
     return bool(set(dirs) & SUPPORT_DIRS) and bool(test_dirs_of(path)) and not re.search(r'\.(test|spec)\.', p.name)
 
 
+SEED_SCRIPT_STEM = re.compile(r'^seeds?([-_](data|db|database|dev|demo|test|users?|rows|records|fixtures?))?$', re.I)
+
+
+def product_script_named_seed(path: str) -> bool:
+    """A code file that matched the seed pattern only by its name (seed_report.py, seeder_utils.ts) outside a test area,
+    a seeds/ or db/ folder and a migrations tree: "seed" is a verb there, not seed rows. A script named seed.py,
+    seeds.ts or seed_data.py still is one."""
+    p = PurePosixPath(path)
+    if p.suffix.lower() not in CODE_EXT:
+        return False
+    dirs = {d.lower() for d in p.parts[:-1]}
+    if dirs & {'seeds', 'seed', 'db', 'database', 'migrations', 'versions'} or in_test_area(path):
+        return False
+    return not SEED_SCRIPT_STEM.match(p.stem)
+
+
 def kind_of(path: str) -> str | None:
     p = PurePosixPath(path)
     ext = p.suffix.lower()
@@ -265,7 +293,9 @@ def kind_of(path: str) -> str | None:
         return 'snapshot'
     if parts & RECORDING_DIRS or ext == '.har' or (p.name.startswith('handlers.') and 'mocks' in parts):
         return 'recording'
-    if SEED_RX.search(path):
+    if DOC_NAME.match(p.name) and ext in ('.md', '.markdown', '.txt', ''):
+        return None                        # a README beside the data documents it
+    if SEED_RX.search(path) and not product_script_named_seed(path):
         return 'seed'
     # a factory by file name counts only in a test area: product code has reader and formatter factories too
     if FACTORY_RX.search(path) and ext in ('.py', '.ts', '.js', '.rb', '.kt', '.swift', '.dart') and in_test_area(path):
@@ -391,7 +421,9 @@ def _node_strings(node: ast.AST) -> tuple[ast.AST, list[str], str, list[str]]:
     out = [n.value.replace('\\', '/') for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
     # the strings joined (one substring search per data file instead of one per string) and the glob patterns alone,
     # each glob's last segment compiled once (fnmatch.fnmatch semantics: case folded as the OS does)
-    tails = sorted({s.rsplit('/', 1)[-1] for s in out if '*' in s or '?' in s})
+    # a bare wildcard ("*", "*.*") names no file: listing a temporary folder is not a loader of every fixture; a loader of
+    # a whole directory is found by the directory it names (FileRef.dir_named)
+    tails = sorted({t for t in (s.rsplit('/', 1)[-1] for s in out if '*' in s or '?' in s) if t.strip('*?.')})
     hit = (node, out, '\n'.join(out), [re.compile(fnmatch.translate(os.path.normcase(t))) for t in tails])
     _STRINGS[id(node)] = hit
     return hit
@@ -496,7 +528,8 @@ class FileRef:
         if not rel:
             return False
         bare = bool(self.name_rx.search(t) or re.search(r'''['"/]''' + re.escape(self.stem) + r'''['"]''', t))
-        globbed = any(('*' in s or '?' in s) and fnmatch.fnmatch(self.name, s.rsplit('/', 1)[-1]) for s in strs)
+        globbed = any(('*' in s or '?' in s) and s.rsplit('/', 1)[-1].strip('*?.')
+                      and fnmatch.fnmatch(self.name, s.rsplit('/', 1)[-1]) for s in strs)
         return self.decide(bare, globbed, self.dir_named(strs), self.parent_named(strs), rel)
 
 
@@ -563,6 +596,10 @@ def loaded_by(rel: str, py: PyTests, js_tests: list[str], root: Path, ref: FileR
     for p, tree in py.modules.items():
         if p == rel or not ref.named_in(tree, p, tree):
             continue
+        if p in SELF_TEST_FILES and p not in py.tests:
+            # a script with its own self-test reads a file only by a path that resolves from where the script sits
+            # (UseIndex): a bare file name in a tool repository is shared by every sample project's run folder
+            continue
         if p in py.tests:
             for fn in py.tests[p]:
                 if ref.named_in(fn, p, tree):
@@ -586,6 +623,259 @@ def loaded_by(rel: str, py: PyTests, js_tests: list[str], root: Path, ref: FileR
         if view is not None and t != rel and ref.named_in_text(view, t):
             out.add(f'{t}::*')
     return sorted(out)
+
+
+# ---------------------------------------------------------------- data files that commands and self-tests read
+# A tool repository's fixtures are often read by commands (the README's or the repository guide's validator commands, a
+# commands.sh that regenerates an example) and by scripts' own self-tests, not by test functions that name the file.
+CMD_WORDS = {'python', 'python3', 'py', 'node', 'npx', 'npm', 'pnpm', 'yarn', 'bash', 'sh', 'go', 'cargo', 'pytest', 'uv',
+             'make', 'deno', 'bun', 'pwsh', 'ruby', 'php', 'java', 'dotnet', 'jq', 'diff', 'cat', 'cp'}
+SHELL_FENCES = {'', 'bash', 'sh', 'shell', 'console', 'zsh', 'powershell', 'ps1', 'pwsh', 'cmd', 'bat', 'shell-session',
+                'sh-session', 'text'}
+CI_FILES = re.compile(r'(^|/)(\.github/workflows/[^/]+\.ya?ml|azure-pipelines[\w.-]*\.ya?ml|\.gitlab-ci\.ya?ml|'
+                      r'\.circleci/config\.ya?ml|Makefile|[\w.-]+\.mk|justfile|Justfile|tox\.ini|noxfile\.py)$')
+SH_ASSIGN = re.compile(r'^\s*(?:export\s+)?([A-Za-z_]\w*)=(\S*)\s*$')
+SH_VAR = re.compile(r'\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)')
+SELF_TEST_FILES: set[str] = set()      # scripts with their own self-test (filled by build())
+
+
+def _shell_tokens(cmd: str) -> list[str]:
+    import shlex
+    try:
+        toks = shlex.split(cmd, comments=True, posix=True)
+    except ValueError:
+        toks = cmd.split()
+    out = []
+    for t in toks:
+        if t.startswith('-'):
+            if '=' not in t:
+                continue
+            t = t.split('=', 1)[1]
+        t = t.strip('\'"`').rstrip(',;:)').lstrip('(')
+        if t.startswith('./'):
+            t = t[2:]
+        t = t.replace('\\', '/')
+        if not t or re.search(r'[<>*?{}$|&()\[\]]', t) or '://' in t or t.startswith(('/', '~')):
+            continue
+        if '/' in t or re.search(r'\.\w{1,6}$', t):
+            out.append(t.rstrip('/'))
+    return out
+
+
+def command_sources(root: Path, files: list[str]) -> list[tuple[str, int, str]]:
+    """(file, line, command) for every command a repository documents or scripts: shell fences and inline command spans
+    in Markdown, shell scripts (with their simple VAR=value assignments expanded), Makefiles, CI workflows and
+    package.json scripts."""
+    out: list[tuple[str, int, str]] = []
+    for rel in files:
+        p = PurePosixPath(rel)
+        ext = p.suffix.lower()
+        is_md, is_sh = ext in ('.md', '.markdown'), ext in ('.sh', '.bash')
+        is_ci, is_pkg = bool(CI_FILES.search(rel)), p.name == 'package.json'
+        if not (is_md or is_sh or is_ci or is_pkg):
+            continue
+        try:
+            if (root / rel).stat().st_size > 2_000_000:
+                continue
+            text = (root / rel).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        if is_pkg:
+            try:
+                scripts = (json.loads(text) or {}).get('scripts') or {}
+            except (ValueError, AttributeError):
+                scripts = {}
+            for v in scripts.values() if isinstance(scripts, dict) else []:
+                if isinstance(v, str):
+                    out.append((rel, 1, v))
+            continue
+        lines = text.replace('\\\r\n', ' ').replace('\\\n', ' ').split('\n')
+        if is_sh:
+            env: dict[str, str] = {}
+            for n, ln in enumerate(lines, 1):
+                ln = SH_VAR.sub(lambda m: env.get(m.group(1) or m.group(2), m.group(0)), ln)
+                a = SH_ASSIGN.match(ln)
+                if a:
+                    if '$(' not in a.group(2) and '`' not in a.group(2):
+                        env[a.group(1)] = a.group(2).strip('\'"')
+                    continue
+                out.append((rel, n, ln))
+            continue
+        if is_ci:
+            for n, ln in enumerate(lines, 1):
+                s = re.sub(r'^\s*(?:-\s*)?(?:run|script|command|cmd)?\s*:?\s*\|?\s*', '', ln.lstrip('\t'))
+                if s.split(' ', 1)[0] in CMD_WORDS:
+                    out.append((rel, n, s))
+            continue
+        fence = None
+        for n, ln in enumerate(lines, 1):
+            m = re.match(r'^\s*(```+|~~~+)\s*([\w+-]*)', ln)
+            if m:
+                fence = None if fence is not None else m.group(2).lower()
+                continue
+            if fence is not None:
+                if fence in SHELL_FENCES:
+                    out.append((rel, n, re.sub(r'^\s*(?:\$|>|PS[^>]*>)\s+', '', ln)))
+                continue
+            for span in re.findall(r'`([^`\n]+)`', ln):
+                if span.split(' ', 1)[0] in CMD_WORDS:
+                    out.append((rel, n, span))
+    return out
+
+
+def _path_refs(tree: ast.AST) -> list[tuple[str, int]]:
+    """Paths a Python script builds from string literals: Path(x) / "examples" / "shop", os.path.join(x, "a", "b.json"),
+    and literals holding a relative path ("examples/run/x.json"). The part after the last non-literal is returned."""
+    out: list[tuple[str, int]] = []
+    seen: set[int] = set()
+    for n in ast.walk(tree):
+        parts = None
+        if isinstance(n, ast.BinOp) and isinstance(n.op, ast.Div) and id(n) not in seen:
+            flat, x = [], n
+            while isinstance(x, ast.BinOp) and isinstance(x.op, ast.Div):
+                seen.add(id(x))
+                flat.insert(0, x.right)
+                x = x.left
+            flat.insert(0, x)
+            parts = flat
+        elif isinstance(n, ast.Call) and getattr(n.func, 'attr', getattr(n.func, 'id', '')) == 'join' and len(n.args) >= 2:
+            parts = list(n.args)
+        elif isinstance(n, ast.Constant) and isinstance(n.value, str) and '/' in n.value and ' ' not in n.value \
+                and '\n' not in n.value and len(n.value) < 300:
+            out.append((n.value, n.lineno))
+            continue
+        if not parts:
+            continue
+        tail: list[str] = []
+        for x in parts:
+            if isinstance(x, ast.Constant) and isinstance(x.value, str):
+                tail.append(x.value)
+            else:
+                tail = []
+        if tail:
+            out.append(('/'.join(s.strip('/') for s in tail if s.strip('/')), n.lineno))
+    return out
+
+
+class UseIndex:
+    """Which data files the repository's commands and self-test scripts name, by file or by a directory holding them.
+    A reference is resolved against the folder of the file it is written in and each folder above it (a commands.sh in
+    <skill>/examples/run/ runs from <skill>/; the repository guide's commands run from the root). A directory counts only
+    when the reference names two or more segments of it and it is not a bare fixture parent (examples/)."""
+
+    def __init__(self, root: Path, files: list[str], self_tests: list[str]):
+        self.files = set(files)
+        self.dirs: set[str] = set()
+        for f in files:
+            parts = PurePosixPath(f).parts[:-1]
+            for i in range(1, len(parts) + 1):
+                self.dirs.add('/'.join(parts[:i]))
+        self.cmd_files: dict[str, set[str]] = {}
+        self.cmd_dirs: dict[str, set[str]] = {}
+        self.test_files: dict[str, set[str]] = {}
+        self.test_dirs: dict[str, set[str]] = {}
+        self.commands = 0
+        for origin, line, cmd in command_sources(root, files):
+            self.commands += 1
+            for t in _shell_tokens(cmd):
+                self._add(t, origin, f'{origin}:{line}', self.cmd_files, self.cmd_dirs)
+        for st in self_tests:
+            try:
+                tree = ast.parse((root / st).read_text(encoding='utf-8', errors='replace'))
+            except (SyntaxError, ValueError, OSError):
+                continue
+            for t, _line in _path_refs(tree):
+                self._add(t.replace('\\', '/').strip('/'), st, f'{st}::*', self.test_files, self.test_dirs)
+
+    def _add(self, token: str, origin: str, label: str, files: dict, dirs: dict):
+        if not token or token.startswith('../') or '/../' in token:
+            return
+        base = PurePosixPath(origin).parent
+        while True:
+            cand = (base / token).as_posix() if base.as_posix() not in ('.', '') else token
+            cand = cand[2:] if cand.startswith('./') else cand
+            if cand in self.files:
+                files.setdefault(cand, set()).add(label)
+                return
+            if cand in self.dirs and token.count('/') >= 1 and PurePosixPath(cand).name not in repo_layout.FIXTURE_PARENTS:
+                dirs.setdefault(cand, set()).add(label)
+                return
+            if base.as_posix() in ('.', ''):
+                return
+            base = base.parent
+
+    def _hits(self, rel: str, files: dict, dirs: dict) -> list[str]:
+        out = list(files.get(rel, []))
+        parts = PurePosixPath(rel).parts[:-1]
+        for i in range(len(parts), 0, -1):
+            out += list(dirs.get('/'.join(parts[:i]), []))
+        return out
+
+    def commands_for(self, rel: str) -> list[str]:
+        return sorted(set(self._hits(rel, self.cmd_files, self.cmd_dirs)))
+
+    def self_tests_for(self, rel: str) -> list[str]:
+        return sorted(set(self._hits(rel, self.test_files, self.test_dirs)))
+
+
+PATH_TAIL = re.compile(r'([\w.@+-]+)/([\w.@+-]+\.[A-Za-z]\w{0,5})\b')
+
+
+def named_by_used_data(root: Path, items: list[dict], rounds: int = 3) -> None:
+    """A data file that no test or command names, but that a data file in use names by its folder and file name
+    (run.json listing exchanges/get-001.json, history.json listing H01/api.xml), is used through it: marked in
+    used_by_commands as 'via <file>'. Each used text file is read once for its path tails; only a file in the same data
+    tree (or the same folder) as the one naming it counts."""
+    def tree(i):
+        return data_dir_of(i['path']) or PurePosixPath(i['path']).parent.as_posix()
+    read: set[str] = set()
+    for _ in range(rounds):
+        pending: dict[str, list[dict]] = {}
+        for i in items:
+            if i['kind'] != 'inline' and not i['loaded_by'] and not i.get('used_by_commands'):
+                p = PurePosixPath(i['path'])
+                pending.setdefault(f'{p.parent.name}/{p.name}', []).append(i)
+        if not pending:
+            return
+        hit = False
+        for src in items:
+            if src['path'] in read or not (src['loaded_by'] or src.get('used_by_commands')) or src['status'] != 'scanned' \
+                    or src.get('bytes', 0) > 5_000_000:
+                continue
+            read.add(src['path'])
+            try:
+                text = (root / src['path']).read_text(encoding='utf-8', errors='replace').replace('\\', '/')
+            except OSError:
+                continue
+            for m in PATH_TAIL.finditer(text):
+                for i in pending.get(f'{m.group(1)}/{m.group(2)}', []):
+                    if i is not src and not i.get('used_by_commands') and tree(i) == tree(src):
+                        i['used_by_commands'] = [f'via {src["path"]}']
+                        hit = True
+        if not hit:
+            return
+
+
+def fixture_data_dirs(root: Path, files: list[str], projects: list[dict]) -> list[dict]:
+    """The fixture trees to read as test data by default: the outermost folder named examples/, fixtures/, testdata/,
+    samples/ (repo_layout.FIXTURE_PARENTS) holding data files, outside the test areas the inventory already reads.
+    Each records why and the sample projects in it."""
+    parents: dict[str, int] = {}
+    for f in files:
+        parts = PurePosixPath(f).parts[:-1]
+        i = next((k for k, seg in enumerate(parts) if seg in repo_layout.FIXTURE_PARENTS), None)
+        if i is None:
+            continue
+        d = '/'.join(parts[:i + 1])
+        if PurePosixPath(f).suffix.lower() in DATA_EXT and not test_dirs_of(d + '/x'):
+            parents[d] = parents.get(d, 0) + 1
+    out = []
+    for d, n in sorted(parents.items()):
+        projs = [p['dir'] for p in projects if p['dir'].startswith(d + '/')]
+        why = (f'a fixture folder ({PurePosixPath(d).name}/) holding {n} data file(s)'
+               + (f' and {len(projs)} sample project(s) with their own manifest or app' if projs else ''))
+        out.append({'dir': d, 'reason': why, 'data_files': n, 'projects': projs})
+    return out
 
 
 UNLISTED_MIN_FILES = 50     # a directory outside the test areas with this many data files, named by test code, is reported
@@ -631,16 +921,25 @@ def sample_of(n: int, cap: int) -> set[int]:
 
 
 def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[str] | None = None,
-          max_files_per_dir: int = 0, progress: bool = False) -> dict:
+          max_files_per_dir: int = 0, progress: bool = False, fixture_dirs: bool = True) -> dict:
     """max_files_per_dir: above this many data files in one directory, only an evenly spaced sample of that many is
     scanned; the rest stay listed as not_assessed ('not sampled'), and sampled_dirs records the directory. 0 = all.
-    progress: print a line to stderr every few seconds, so a long run is never mistaken for a hung one."""
+    progress: print a line to stderr every few seconds, so a long run is never mistaken for a hung one.
+    fixture_dirs: also read the fixture trees (examples/, samples/, ... holding data files, repo_layout's fixture
+    parents) as data trees, recorded under fixture_dirs; False leaves them out unless named with data_dirs."""
     import time
     DATA_DIRS.clear()
     DATA_DIRS.update(d.replace('\\', '/').strip('/') for d in data_dirs or [] if d.strip('/'))
     _VIEWS.clear()
     all_files = walk(root)
     set_product_dirs(root, all_files)
+    projects = repo_layout.fixture_projects(root)
+    fdirs = [f for f in fixture_data_dirs(root, all_files, projects)
+             if f['dir'] not in DATA_DIRS] if fixture_dirs else []
+    DATA_DIRS.update(f['dir'] for f in fdirs)
+    SELF_TEST_FILES.clear()
+    SELF_TEST_FILES.update(s['file'] for s in detect_conventions.find_self_tests(root, all_files))
+    uses = UseIndex(root, all_files, sorted(SELF_TEST_FILES))
     files = all_files
     if paths:
         files = [f for f in files if any(f == p or f.startswith(p.rstrip('/') + '/') for p in paths)]
@@ -657,6 +956,12 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
     anonymised = markers.get('anonymised_by', {})
     kinds = {rel: kind_of(rel) for rel in files}
     kinds = {rel: k for rel, k in kinds.items() if k}
+    # a module named like a test (test_paths.py, path_test.py) outside every test area, with no test functions and no
+    # self-test, is product code
+    for rel in [r for r, k in kinds.items() if k == 'inline' and r.endswith('.py')]:
+        if not test_dirs_of(rel) and PurePosixPath(rel).name != 'conftest.py' and not py.tests.get(rel) \
+                and rel not in SELF_TEST_FILES:
+            del kinds[rel]
     # source code under a --data-dir tree: a data module is listed as a fixture; the rest is recorded, never dropped silently
     module_notes: dict[str, str] = {}
     code_under: dict[str, list[str]] = {}
@@ -741,6 +1046,8 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
             entry['loaded_by'] = sorted(py.requesting(rel, set(py.fixtures.get(rel, {}))))
         elif k == 'inline':
             entry['loaded_by'] = ([py.test_id(rel, fn) for fn in py.tests.get(rel, [])] if rel.endswith('.py') else [f'{rel}::*'])
+            if rel in SELF_TEST_FILES:
+                entry['loaded_by'].append(f'{rel}::*')
         elif k == 'support' and GLOBAL_SETUP.match(PurePosixPath(rel).name):
             # a runner's setup file runs before every test file in its package
             pkg = PurePosixPath(rel).parent.as_posix()
@@ -771,8 +1078,19 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
             entry['loaded_by'] = sorted(importers(py, rel) | set(loaded_by(rel, py, js_tests, root, FileRef(rel, roots, name_counts, by_dir.get(PurePosixPath(rel).parent.as_posix())))))
         else:
             entry['loaded_by'] = loaded_by(rel, py, js_tests, root, FileRef(rel, roots, name_counts, by_dir.get(PurePosixPath(rel).parent.as_posix())))
+        if k != 'inline':
+            # a self-test that builds the file's path (or its sample project's) reads it; a documented command that names
+            # it (or a folder holding it) uses it, though no test function does
+            st = [t for t in uses.self_tests_for(rel) if t != f'{rel}::*']
+            if st:
+                entry['loaded_by'] = sorted(set(entry['loaded_by']) | set(st))
+            cmds = uses.commands_for(rel)
+            if cmds:
+                entry['used_by_commands'] = cmds[:5] + ([f'... {len(cmds) - 5} more'] if len(cmds) > 5 else [])
         items.append(entry)
-    tests = sorted({py.test_id(p, fn) for p, fn in py.all_tests()} | {f'{t}::*' for t in js_tests})
+    named_by_used_data(root, items)
+    tests = sorted({py.test_id(p, fn) for p, fn in py.all_tests()} | {f'{t}::*' for t in js_tests}
+                   | {f'{t}::*' for t in SELF_TEST_FILES})
     warnings: list[str] = []
     # a served folder named with --data-dir: its files are the site's assets; only those a test loads are test data
     served: dict[str, dict] = {}
@@ -806,6 +1124,17 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
         extra['unlisted_data_dirs'] = unlisted
     if sampled:
         extra['sampled_dirs'] = sampled
+    if fdirs:
+        extra['fixture_dirs'] = fdirs
+        warnings.append(f'{len(fdirs)} fixture folder(s) read as test data by default ('
+                        + ', '.join(f['dir'] + '/' for f in fdirs[:5]) + (', ...' if len(fdirs) > 5 else '')
+                        + '): sample projects and recorded runs there are test data; their code is listed under '
+                          'data_dir_code. Pass --no-fixture-dirs to leave them out')
+    if projects:
+        extra['fixture_projects'] = projects
+    if SELF_TEST_FILES:
+        extra['self_tests'] = sorted(SELF_TEST_FILES)
+    extra['commands_read'] = uses.commands
     if not tests:
         # loud, like language_coverage: an empty inventory is not a clean one
         extra['no_tests'] = True
@@ -818,7 +1147,11 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
                                                             for k in sorted({i['kind'] for i in items})},
                         'not_assessed': len([i for i in items if i['status'] == 'not_assessed']),
                         # with no tests, "no test loads it" says nothing about a file
-                        'unused': [i['path'] for i in items if not i['loaded_by'] and i['kind'] != 'inline'] if tests else []}}
+                        'unused': [i['path'] for i in items if not i['loaded_by'] and i['kind'] != 'inline'
+                                   and not i.get('used_by_commands')] if tests else [],
+                        # read by a documented command or script only: used, but by commands, not tests
+                        'used_by_commands': [i['path'] for i in items if not i['loaded_by'] and i['kind'] != 'inline'
+                                             and i.get('used_by_commands')]}}
 
 
 def main(argv=None) -> int:
@@ -831,10 +1164,13 @@ def main(argv=None) -> int:
     ap.add_argument('--max-files-per-dir', type=int, default=0, metavar='N',
                     help='scan only an evenly spaced sample of N data files in any directory holding more (the rest are '
                          'listed as not_assessed, "not sampled"); 0, the default, scans every file')
+    ap.add_argument('--no-fixture-dirs', action='store_true',
+                    help='do not read fixture folders (examples/, samples/, ... with data files) as test data by default')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args(argv)
     markers = json.loads(args.markers.read_text(encoding='utf-8')) if args.markers else {}
-    res = build(args.repo.resolve(), args.paths, markers, args.data_dir, args.max_files_per_dir, progress=True)
+    res = build(args.repo.resolve(), args.paths, markers, args.data_dir, args.max_files_per_dir, progress=True,
+                fixture_dirs=not args.no_fixture_dirs)
     for u in res.get('unlisted_data_dirs', []):
         print(f"WARNING: {u['dir']}/ holds {u['files']} data files ({u['bytes'] / 1e6:.1f} MB) that test code names "
               f"({', '.join(u['named_in'][:3])}{', ...' if len(u['named_in']) > 3 else ''}) but the inventory does not cover: "
@@ -850,7 +1186,8 @@ def main(argv=None) -> int:
         args.out.write_text(text, encoding='utf-8')
         s = res['summary']
         print(f'{s["sources"]} data sources ({", ".join(f"{v} {k}" for k, v in s["by_kind"].items())}), '
-              f'{s["not_assessed"]} not assessed, {len(s["unused"])} unused -> {args.out}')
+              f'{s["not_assessed"]} not assessed, {len(s["unused"])} unused, {len(s["used_by_commands"])} used by commands '
+              f'only -> {args.out}')
     else:
         sys.stdout.write(text)
     return 0
