@@ -7,9 +7,12 @@
 // On Windows write the path with forward slashes (C:/scratch/net_guard.cjs): NODE_OPTIONS reads a backslash
 // inside quotes as an escape.
 //
-// It wraps net.Socket.prototype.connect (which http, https, tls, undici's fetch and database drivers all reach)
-// and dns.lookup / dns.promises.lookup, so anything other than 127.0.0.0/8, ::1 and localhost fails with
-// ECONNREFUSED. NODE_OPTIONS reaches child processes and Vitest's and Jest's fork and thread pools.
+// It wraps net.Socket.prototype.connect (which http, https, tls, undici's fetch and database drivers all reach),
+// dgram send and connect (UDP), dns.lookup / dns.promises.lookup and the c-ares resolvers (dns.resolve*,
+// dns.reverse, dns.Resolver, dns.promises.Resolver), so anything other than 127.0.0.0/8, ::1 and localhost
+// fails with ECONNREFUSED. NODE_OPTIONS reaches child processes and Vitest's and Jest's fork and thread pools.
+// Not covered: named pipes and Unix sockets (a {path} is passed through; on Windows a pipe path can name
+// another machine over SMB), native addons, and child processes that drop NODE_OPTIONS.
 //
 // The log proves the guard was on: every process writes `net_guard: loaded pid=<pid>` when the guard loads,
 // and every refusal adds `net_guard: refused <host>:<port>`. Before claiming "zero refused connections",
@@ -100,6 +103,59 @@ if (!net.Socket.prototype[MARK]) {
       return realP.call(this, hostname, ...rest);
     };
   }
+  // UDP (dgram): send(msg[, offset, length][, port][, address][, callback]) and connect(port[, address][, callback]).
+  // A send with no port goes to the connected peer, which connect already checked; no address means localhost.
+  const dgram = require('node:dgram');
+  const realSend = dgram.Socket.prototype.send;
+  dgram.Socket.prototype.send = function (...args) {
+    const rest = args.slice(1);
+    const cb = typeof rest[rest.length - 1] === 'function' ? rest[rest.length - 1] : null;
+    const address = rest.find(a => typeof a === 'string');
+    const nums = rest.filter(a => typeof a === 'number');
+    const port = nums.length ? nums[nums.length - 1] : undefined;
+    if (address !== undefined && !loopback(address)) {
+      const err = refused(address, port);
+      if (cb) { process.nextTick(() => cb(err)); return; }
+      process.nextTick(() => this.emit('error', err));
+      return;
+    }
+    return realSend.apply(this, args);
+  };
+  const realUdpConnect = dgram.Socket.prototype.connect;
+  dgram.Socket.prototype.connect = function (port, address, cb) {
+    if (typeof address === 'string' && !loopback(address)) {
+      const err = refused(address, port);
+      process.nextTick(() => (typeof cb === 'function' ? cb(err) : this.emit('error', err)));
+      return;
+    }
+    return realUdpConnect.apply(this, arguments);
+  };
+  // DNS through c-ares: dns.resolve*, dns.reverse, dns.Resolver and dns.promises (lookup is wrapped above). These
+  // send queries to the configured DNS servers for any name, so every name that is not loopback is refused.
+  const RESOLVE = ['resolve', 'resolve4', 'resolve6', 'resolveAny', 'resolveCaa', 'resolveCname', 'resolveMx', 'resolveNaptr',
+    'resolveNs', 'resolvePtr', 'resolveSoa', 'resolveSrv', 'resolveTlsa', 'resolveTxt', 'reverse'];
+  const guardResolvers = (obj, promises) => {
+    for (const name of RESOLVE) {
+      const real = obj && obj[name];
+      if (typeof real !== 'function') continue;
+      obj[name] = function (hostname, ...rest) {
+        if (!loopback(hostname)) {
+          const err = refused(hostname, 'dns');
+          if (promises) return Promise.reject(err);
+          const cb = rest[rest.length - 1];
+          if (typeof cb === 'function') { process.nextTick(() => cb(err)); return {}; }
+          throw err;
+        }
+        return real.call(this, hostname, ...rest);
+      };
+    }
+  };
+  guardResolvers(dns, false);
+  if (dns.Resolver) guardResolvers(dns.Resolver.prototype, false);
+  if (dns.promises) {
+    guardResolvers(dns.promises, true);
+    if (dns.promises.Resolver) guardResolvers(dns.promises.Resolver.prototype, true);
+  }
   Object.defineProperty(net.Socket.prototype, MARK, { value: true });
   say(`net_guard: loaded pid=${process.pid}`);
 }
@@ -120,8 +176,34 @@ async function selfTest() {
       try { await fetch('http://198.51.100.7/'); f = 'OUT'; } catch (e) { f = String(e.cause && e.cause.code || e.code || e.message); }
       const { Worker } = require('node:worker_threads');
       const w = await new Promise(r => new Worker("require('node:net').connect(443, '203.0.113.9').on('error', e => require('node:worker_threads').parentPort.postMessage(e.code)).on('connect', () => require('node:worker_threads').parentPort.postMessage('OUT'))", { eval: true }).on('message', r));
-      console.log(JSON.stringify({ ok, out, f, w }));
-      srv.close();
+      // UDP: dgram send and connect to a TEST-NET address must be refused
+      const dgram = require('node:dgram');
+      const u = dgram.createSocket('udp4');
+      const us = await new Promise(r => u.send('x', 9, '192.0.2.1', e => r(e ? e.code : 'OUT')));
+      u.close();
+      const c = dgram.createSocket('udp4');
+      const uc = await new Promise(r => { c.on('error', e => r(e.code)); c.connect(9, '198.51.100.1', e => r(e ? e.code : 'OUT')); });
+      c.close();
+      // DNS through c-ares (dns.resolve*, dns.Resolver, dns.promises): pointed at a loopback "DNS server" that counts
+      // the queries it receives, so a lookup that skips the guard is seen without leaving the machine
+      const dns = require('node:dns');
+      const fake = dgram.createSocket('udp4');
+      let queries = 0;
+      fake.on('message', () => { queries++; });
+      await new Promise(r => fake.bind(0, '127.0.0.1', r));
+      const server = '127.0.0.1:' + fake.address().port;
+      const res = new dns.Resolver({ timeout: 300, tries: 1 }); res.setServers([server]);
+      const pres = new dns.promises.Resolver({ timeout: 300, tries: 1 }); pres.setServers([server]);
+      dns.setServers([server]);
+      const race = p => Promise.race([p, new Promise(r => setTimeout(() => r('SENT'), 1000))]);   // a query on its way
+      const r1 = await race(new Promise(r => res.resolve4('cdn.example.com', e => r(e ? e.code : 'OUT'))));
+      const r2 = await race(pres.resolveTxt('tiles.example.org').then(() => 'OUT', e => e.code));
+      const r3 = await race(new Promise(r => dns.resolve('api.example.net', 'A', e => r(e ? e.code : 'OUT'))));
+      const r4 = await race(dns.promises.resolveAny('cdn.example.com').then(() => 'OUT', e => e.code));
+      const r5 = await race(new Promise(r => dns.reverse('192.0.2.5', e => r(e ? e.code : 'OUT'))));
+      await new Promise(r => setTimeout(r, 200));
+      console.log(JSON.stringify({ ok, out, f, w, us, uc, dnsr: [r1, r2, r3, r4, r5], queries }));
+      process.exit(0);   // pending c-ares queries (an unguarded run) would otherwise keep the process alive
     });`;
   const r = spawnSync(process.execPath, ['-e', code], {
     env: { ...process.env, QA_NET_GUARD_LOG: log, NODE_OPTIONS: `--require "${__filename.replace(/\\/g, '/')}"` },   // NODE_OPTIONS reads \ as an escape
@@ -139,6 +221,11 @@ async function selfTest() {
     ['a non-loopback socket is refused', res.out === 'ECONNREFUSED', String(res.out)],
     ['fetch to a non-loopback host is refused', res.f === 'ECONNREFUSED', String(res.f)],
     ['a worker thread is guarded too', res.w === 'ECONNREFUSED', String(res.w)],
+    ['dgram send to a TEST-NET address is refused', res.us === 'ECONNREFUSED', String(res.us)],
+    ['dgram connect to a TEST-NET address is refused', res.uc === 'ECONNREFUSED', String(res.uc)],
+    ['dns.resolve*, dns.Resolver, dns.promises and dns.reverse are refused before a query is sent',
+     Array.isArray(res.dnsr) && res.dnsr.every(c => c === 'ECONNREFUSED') && res.queries === 0, JSON.stringify([res.dnsr, res.queries])],
+    ['the log names refused UDP and DNS targets', text.includes('192.0.2.1:9') && text.includes('cdn.example.com:dns'), text],
     ['the log has the loaded line', /net_guard: loaded pid=\d+/.test(text), text],
     ['the log names refused hosts', text.includes('192.0.2.1:80'), text],
     ['a refusal names the calling script', /refused 192\.0\.2\.1:80 from \S+:\d+/.test(text), text],
