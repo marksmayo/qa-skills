@@ -1,7 +1,7 @@
 ---
 name: risk-based-test-planner
 description: Write a test plan for a release, sprint or change with effort spread by risk = likelihood x impact. Likelihood comes from git history (churn, fix commits, Jira bugs), complexity, the change in scope and test weakness; impact from journey criticality, money, access, personal-data, credential, destructive and public-API surfaces, and reach. Reads a changesets monorepo's release base and pending changesets, and flags breaking changes. Every factor cites its evidence and missing evidence is not_assessed, never low risk. It reads other skills' reports (journey maps, security, crash, WCAG and flaky reports) as far as their own confidence goes, allocates 90-minute sessions against a budget, names the skill or test type for each risk, and lists every area it does not test with the reason and residual risk. Never claims a release is safe.
-version: 1.9.0
+version: 1.10.0
 ---
 
 # Risk-based test planner
@@ -190,10 +190,30 @@ Desktop and mobile UI definitions (Slint, QML, XAML, Qt Designer, GTK, Kivy, Int
 are named in a warning with the areas holding them: nothing reads them, so judge those areas'
 impact by hand.
 
+**Sample projects and copies are not the repository's own code, counted once.** Tool and library
+repositories carry deliberately broken sample projects and files kept identical in several folders.
+- *Fixture projects* (the shared `repo_layout.py`: a nested project with its own manifest, an
+  `expected*.json` beside sample sources, or an app of its own, under `examples/`, `fixtures/`,
+  `testdata/`, `samples/`, `__fixtures__/` and the like, or a directory named by `--fixture-dir`)
+  are never an area, never area code or runtime configuration (a sample's `next.config.ts` with
+  headers is not the repository's), never a test of an area, and their changed lines are named in
+  `scope_outside_areas` as a sample project. They are listed in `fixtures_excluded` with a warning.
+  An explicit `--areas` entry inside one keeps it; `--include-fixtures` keeps all. A test kept with
+  the examples or docs (`examples/regression/test_x.py`) counts only for the areas whose code it
+  imports, never for sitting inside an area, and an import of sample code links nothing.
+- *Copies* (`repo_layout.copy_groups`: a `tools/check_shared.py`-style mapping, or identical
+  content, line endings normalised) are scored once, in the area of the canonical copy (or of the
+  first copy an area holds when none holds the canonical one). The other copies are listed in
+  `excluded` with the canonical path; their changes count once and are not named in
+  `scope_outside_areas`; a test that imports a copy is a test of the scored copy's area.
+  `copy_groups` lists each group (canonical, how, number of copies, the area that scores it,
+  undeclared or drifted copies). `--keep-copies` scores every copy.
+
 **A second language is never root tooling.** When a language other than the areas' own holds 30%
 or more of the code's lines and most of it sits outside the default areas (Python helper scripts
 beside a Cargo workspace or a Go module), its directories become areas (`area_basis` says
-"second language: ..."). With `--areas` that leave such a language out (or only in
+"second language: ..."), one per top-level directory (`tool/`, the same shape as a workspace
+package beside it, never `tool/scripts`) unless the directory is large enough to split. With `--areas` that leave such a language out (or only in
 `unassigned`), `risk.json` warns loudly ("a language with a large share of the code is outside
 every area") and the validator requires the plan to name the language and say why it is not
 scored.
@@ -249,6 +269,11 @@ as `diff_scope.py`'s classification across the skills.)
   `--areas` when the release depends on them. A root module that runs the app is never in this
   list (see above). Files the history window didn't touch are still in
   every list (`mine_history.py` adds every tracked file with zero counts).
+- **CI workflows** (`.github/workflows/*.yml`, `.gitlab-ci.yml`, `azure-pipelines.yml` ...) are
+  configuration in the default layout. When an explicit `--areas` entry covers them (the
+  repository's only pipeline is product behaviour), they are scored like templates: churn,
+  defects and change in scope count, while complexity, surface and test weakness are
+  `not_assessed` (impact is judged by hand).
 - **Tests** count for an area when they import one of its files (imports are resolved to files,
   through relative paths and tsconfig/jsconfig/vite/webpack aliases; a top-level `src/*` area
   matches only files directly in `src/`), import a package directory inside it, or sit inside it.
@@ -261,7 +286,17 @@ as `diff_scope.py`'s classification across the skills.)
   the journey map is where end-to-end coverage shows. Live tests (under a `live/` directory)
   need real credentials or services and don't run in a routine CI run, and helpers or fixtures in
   a test tree (`tests/helpers/`, `tests/fixtures/`, not named as tests) are not tests; neither
-  counts, and `risk.json` lists them in `tests_not_counted` with the reason. Specs that need a
+  counts, and `risk.json` lists them in `tests_not_counted` with the reason.
+- **Tests that are not a test framework.** A script's own self-test (a module-level `self_test()`,
+  `selftest()` or `_self_test()`, run by `--self-test`, and every function or constant only it
+  uses: fixture builders, case tables, sample pages) is test code: the script counts as a test of
+  its own area, those lines are test lines (not code) for the test-weakness ratio, and they are
+  never a surface. `risk.json` `self_tests` lists them with their command (from the shared
+  `detect_conventions.find_self_tests`). A `self_test.py` is a test file. Python files a pytest
+  configuration collects through its own `python_files` (pytest.ini, pyproject, tox.ini,
+  setup.cfg) are tests too, except benchmarks (`bench_*.py`, or files in a `benchmarks/`
+  directory): they measure speed, so they are neither product code nor counted tests (listed in
+  `pytest_collected`, `excluded` and `tests_not_counted`). Specs that need a
   model provider or other credentials outside `live/` still count: judge test weakness for that
   area and say why.
 - **XCTest bundles and XCUITest runners.** Swift and Objective-C files under a `*Tests` /
@@ -304,9 +339,12 @@ commits by their subject, along with any issue keys:
 - a conventional-commit type decides on its own: `fix:`, `fix(scope):`, `hotfix:`, `bugfix:`
   and `revert:` are fixes; `feat:`, `chore:`, `docs:` and the other types are not, even when the
   text says "fix";
-- otherwise the subject must start with fix/fixes/fixed/bugfix/hotfix/revert/regression, name a
-  bug or regression, or close an issue (`fixes #12`). "Redesign the UI, fix the hero video" is a
-  feature;
+- otherwise the subject must start with fix/fixes/fixed/bugfix/hotfix/revert (or `bug:` /
+  `regression:`), or close an issue (`fixes #12`, `closes PROJ-7`). "Redesign the UI, fix the hero
+  video" is a feature, and "bug" or "regression" as a noun elsewhere in the subject ("Add a bug
+  reporter", "Add visual regression checks") never makes a fix (`fix_basis` is `conventional`,
+  `subject` or `closes_issue`). Where fixes are rarely named this way, defect history is sparse:
+  say so rather than reading few fixes as few defects;
 - merge commits are never fixes, and the same fix landing twice (same subject, same files) counts
   once (`duplicate_fix_of`);
 - a merge tool's prefix is stripped first, so an Azure DevOps squash merge `Merged PR 123:
@@ -350,6 +388,11 @@ catalogue that shows a price doesn't move money.
   `'use server'` directive are matched as written, so SQL inside a Python string counts:
   `op.execute("ALTER TABLE x DROP COLUMN y")`, an f-string `TRUNCATE {table} ... CASCADE`
   (the bare `TRUNCATE`/`DROP` forms are upper-case only, so prose doesn't match).
+- Strings that describe code are not read as code. In Python, docstrings and the strings of
+  module-level tables and multi-line constants (a scanner's pattern table, a fixture page held as
+  text) have their contents blanked (the shared `code_mask.py`) before the raw patterns run, and a
+  script's self-test code is skipped whole: a `gtag(` in a self-test fixture or a `"DROP TABLE"` in
+  a rule table is not a surface; the same SQL passed to `execute(` still is.
 - Entry points include decorated Python handlers (Flask/FastAPI `@app.get`, `@router.post`,
   Azure Functions `@app.route`, `@app.blob_trigger`, `@app.timer_trigger`, DRF views); external
   integrations include calls through an API client wrapper (`apiClient.postJson(`,
