@@ -74,6 +74,25 @@ def git(repo: Path, *args: str, binary: bool = False):
     return res.stdout if binary else res.stdout.decode('utf-8', 'replace')
 
 
+REV_RX = re.compile(r'[0-9A-Za-z][0-9A-Za-z._/@{}~^+-]*')
+
+
+def checked_rev(repo: Path | None, value, what: str) -> str:
+    """A history file's commit or base as a revision git can never read as an option: it must look like a
+    hash or a ref name (no leading '-', no spaces, no '..'), and with a repository it must resolve to a
+    commit (`git rev-parse --verify --end-of-options <rev>^{commit}`); the full commit id is returned then."""
+    v = str(value or '')
+    if not REV_RX.fullmatch(v) or '..' in v:
+        raise SystemExit(f'{what}: {v!r} is not a commit id or ref name (refused before it reached git)')
+    if repo is None:
+        return v
+    res = subprocess.run(['git', '-C', str(repo), 'rev-parse', '--verify', '--quiet', '--end-of-options', f'{v}^{{commit}}'],
+                         capture_output=True, text=True)
+    if res.returncode:
+        raise SystemExit(f'{what}: {v!r} is not a commit in {repo}')
+    return res.stdout.strip()
+
+
 def extract(tar_bytes: bytes, dest: Path) -> None:
     with tarfile.open(fileobj=io.BytesIO(tar_bytes)) as tf:
         try:
@@ -98,12 +117,15 @@ def load_history(path: Path | None, repo: Path | None = None) -> list[dict]:
     out = []
     for ch in data.get('changes', []):
         ref = ch.get('base')
+        if ref is not None:
+            checked_rev(None, ref, f'history {ch.get("id")} base')   # resolved when replay.py checks it out
         if ch.get('diff'):
             diff_text = (base / ch['diff']).read_text(encoding='utf-8', errors='replace')
         elif ch.get('commit'):
             if repo is None:
                 raise SystemExit(f'history {ch["id"]}: names a commit, which needs --repo (a git checkout)')
-            diff_text = git(repo, 'diff', '-M', '--no-color', '--no-ext-diff', f'{ch["commit"]}^', ch['commit'])
+            sha = checked_rev(repo, ch['commit'], f'history {ch.get("id")} commit')
+            diff_text = git(repo, 'diff', '-M', '--no-color', '--no-ext-diff', '--end-of-options', f'{sha}^', sha, '--')
             ref = ref or f'{ch["commit"]}^'
         else:
             raise SystemExit(f'history {ch["id"]}: needs a diff file or a commit')
