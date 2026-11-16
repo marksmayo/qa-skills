@@ -1520,6 +1520,25 @@ def nextest_profile(runner_args: list[str], env: dict) -> str:
     return env.get('NEXTEST_PROFILE') or 'default'
 
 
+def cargo_usable(env: dict | None = None) -> tuple[bool, str]:
+    """(True, '') when `cargo --version` and `rustc --version` both run; else (False, the reason). cargo on PATH is not
+    enough: a rustup proxy with no default toolchain, or one that cannot find ~/.rustup because HOME/USERPROFILE point
+    at a scratch home (keep RUSTUP_HOME and CARGO_HOME), fails every cargo command for the environment, not the code."""
+    env = dict(os.environ if env is None else env)
+    for tool in ('cargo', 'rustc'):
+        exe = shutil.which(tool, path=env.get('PATH'))
+        if not exe:
+            return False, f'{tool} is not on PATH'
+        try:
+            res = subprocess.run([exe, '--version'], env=env, capture_output=True, text=True, timeout=120)
+        except (OSError, subprocess.SubprocessError) as e:
+            return False, f'`{tool} --version` could not run: {e}'
+        if res.returncode != 0:
+            first = next((ln.strip() for ln in (res.stderr or res.stdout or '').splitlines() if ln.strip()), '')
+            return False, f'`{tool} --version` failed (exit {res.returncode}): {first[:200]}'
+    return True, ''
+
+
 def cargo_target_dir(cwd: Path, env: dict) -> Path:
     """Where cargo builds: CARGO_TARGET_DIR, else build.target-dir in .cargo/config.toml (cwd and its parents),
     else <workspace root>/target."""
@@ -1948,7 +1967,22 @@ def cargo_self_checks() -> list:
         got = repr(e)
     checks.append(('nextest (model known): a binary id of a target name two crates share carries the crate',
                    got == ['tidectl/cli', 'tide-log/cli', 'tide_log', 'tide-log', 'gauge'], got))
-    if shutil.which('cargo'):
+    # a rustup proxy on PATH is not a toolchain: with no default toolchain (or a scratch USERPROFILE/HOME hiding
+    # ~/.rustup) `cargo --version` fails, and the real-run cases must skip with that reason, not fail
+    if shutil.which('rustup'):
+        with tempfile.TemporaryDirectory() as empty:
+            try:
+                ok, why = cargo_usable(dict(os.environ, RUSTUP_HOME=empty))
+                got = (ok, why)
+            except Exception as e:   # noqa: BLE001
+                ok, why, got = True, '', repr(e)
+        checks.append(('cargo_usable: a rustup proxy whose RUSTUP_HOME holds no toolchain is not usable, with the reason',
+                       ok is False and 'cargo --version' in why, got))
+    try:
+        usable, why = cargo_usable()
+    except Exception as e:   # noqa: BLE001
+        usable, why = bool(shutil.which('cargo')), repr(e)
+    if usable:
         tgt = Path(os.environ.get('QA_SKILLS_CARGO_TARGET_DIR') or tempfile.mkdtemp(prefix='qa-cargo-target-'))
         out_dir = Path(tempfile.mkdtemp(prefix='qa-cargo-runs-'))
         old = {k: os.environ.get(k) for k in ('CARGO_TARGET_DIR', 'CARGO_BUILD_JOBS')}
@@ -1991,7 +2025,7 @@ def cargo_self_checks() -> list:
             shutil.rmtree(tgt, ignore_errors=True)
             shutil.rmtree(out_dir, ignore_errors=True)
     else:
-        print('SKIP cargo real-run cases: cargo is not on PATH')
+        print(f'SKIP cargo real-run cases: {why}')
     shutil.rmtree(d, ignore_errors=True)
     return checks + cargo_split_checks()
 

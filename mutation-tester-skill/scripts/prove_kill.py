@@ -508,8 +508,9 @@ def main(argv=None) -> int:
         ut = builtin_mutator.parse_unittest_args(args.unittest_args)
         test_id = unittest_id(args.test_file, args.test_name)
     elif runner == 'cargo':
-        if shutil.which('cargo') is None:
-            raise SystemExit('a Rust proof needs cargo on PATH')
+        usable, why = run_tests.cargo_usable()
+        if not usable:
+            raise SystemExit(f'a Rust proof needs a working cargo: {why}')
         cid = cargo_test_id(work, args.test_file, args.test_name)
         if cid is None:
             js_workspace.remove_tree(scratch)

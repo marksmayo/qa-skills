@@ -920,8 +920,10 @@ def case_run_engine_cargo_mutants(tmp: Path) -> None:
 def case_prove_kill_rust(tmp: Path) -> None:
     """prove_kill.py proves a Rust test with cargo test (run_tests.py's cargo preset ids) in a scratch copy: it
     passes on the original and fails on the mutant; the repository is untouched."""
-    if shutil.which('cargo') is None:
-        raise Skip('cargo is not on PATH')
+    import run_tests
+    usable, why = run_tests.cargo_usable()   # a rustup proxy with no usable toolchain is not cargo
+    if not usable:
+        raise Skip(why)
     repo = tmp / 'tide-cli'
     shutil.copytree(CARGO_EXAMPLE / 'tide-cli', repo)
     muts = write_json(tmp / 'mutants.json', {'mutants': [
