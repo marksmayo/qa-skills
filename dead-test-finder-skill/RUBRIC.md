@@ -31,7 +31,9 @@ skip files.
 test, a name cut at a quote) may be dismissed with `scanner_error: true` and a `basis` citing the
 lines that show the misreading: each `{file, line, excerpt}` must match the repo line **(checked
 with `--repo`, required for these)**. A stale skip whose ticket is done can't be dismissed this
-way.
+way. A candidate whose test passed with its code neutralised can't be dismissed on source lines
+alone: the basis must hold the counter-evidence as an evidence file (a run of the suite's own runner
+failing with the same neutral body) **(checked)**.
 
 **Findings found by review** (`source: "agent"`): an issue no candidate covers, for example an
 assertion that is commented out in a test the rules didn't parse. Such a finding has `candidates:
