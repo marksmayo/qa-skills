@@ -616,10 +616,14 @@ def exclusion_reason(rel_dir: str, name: str, files: list[str], subs: set[str]) 
     return None
 
 
-def census(root: Path | str, extra_exclude: list[str] | None = None, include: list[str] | None = None) -> dict:
+def census(root: Path | str, extra_exclude: list[str] | None = None, include: list[str] | None = None,
+           exclude_fixtures: bool = False, fixture_dirs=()) -> dict:
     """Source files per language under root, with vendored and third-party trees left out (see the module doc).
     extra_exclude: repo-relative directories the caller also knows are not product code. include: repo-relative
     directories to count even though a rule would leave them out (recorded under `included`).
+    exclude_fixtures: also leave out the nested sample and fixture projects repo_layout.fixture_projects() finds
+    (fixture_dirs: further fixture parent names or paths); they are listed under `fixtures_excluded` ({dir, reason,
+    markers}) and in `excluded` with kind 'fixture'. Off by default (the result then has no fixtures_excluded key).
 
     Folders named like build output (dist/, build/, out/, obj/) are decided by evidence (BuildEvidence) and every
     decision is listed under `build_output` ({path, decision: source|build_output, reason}). JavaScript and
@@ -630,6 +634,18 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
     extra = {e.replace('\\', '/').strip('/') for e in (extra_exclude or [])}
     inc = {e.replace('\\', '/').strip('/') for e in (include or [])}
     evidence = BuildEvidence(root, inc)
+    fixtures: list[dict] = []
+    fixture_note = None
+    if exclude_fixtures:
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import repo_layout   # noqa: E402  (shipped beside this script)
+            fixtures = repo_layout.fixture_projects(root, fixture_dirs)
+        except ImportError:
+            fixture_note = 'fixture projects were not excluded: repo_layout.py is not available beside lang_census.py'
+        finally:
+            sys.path.pop(0)
+    fixture_why = {f['dir']: f['reason'] for f in fixtures}
     langs: Counter = Counter()
     markup: Counter = Counter()
     ui_markup_examples: dict[str, list[str]] = {}
@@ -668,6 +684,8 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
                 continue
             why = 'excluded by the caller' if sub in extra else exclusion_reason(sub, d, files, subs)
             kind = None
+            if not why and sub in fixture_why:
+                why, kind = 'fixture project: ' + fixture_why[sub], 'fixture'
             if not why and d in BUILD_NAMES and not _go_package(Path(dp) / d, d):
                 is_b, reason = evidence.decide(sub)
                 build_output.append({'path': sub, 'decision': 'build_output' if is_b else 'source', 'reason': reason})
@@ -772,7 +790,9 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
             'ui_markup': {k: v for k, v in sorted(markup.items()) if k in UI_MARKUP_KINDS},
             'ui_markup_examples': ui_markup_examples,
             'data_trees': data_trees,
-            'server_rendered': server_rendered(root, py_files, template_files)}
+            'server_rendered': server_rendered(root, py_files, template_files),
+            **({'fixtures_excluded': fixtures} if exclude_fixtures else {}),
+            **({'fixtures_note': fixture_note} if fixture_note else {})}
 
 
 def count_sources_by_language(d: Path, cap: int = 200000) -> dict[str, int]:
@@ -1291,6 +1311,23 @@ def self_test() -> int:
     checks.append(('prune_data_dirs drops the data directory from a walk and says why',
                    'recipes' not in dns and 'templates' in dns and pruned and pruned[0]['path'] == 'recipes'
                    and 'data' in pruned[0]['reason'], (dns, pruned)))
+    # a Python tool repository whose examples/ holds a planted TypeScript sample project with its own manifest
+    fx = {'pyproject.toml': '[project]\nname = "tool"\n', 'tool/scan.py': 'def scan():\n    return 1\n' * 20,
+          'examples/shop/package.json': '{"name": "shop"}'}
+    fx.update({f'examples/shop/src/m{i}.ts': 'export const a = 1;\n' * 30 for i in range(12)})
+    root5 = tree(fx)
+    c5 = census(root5)
+    try:
+        c6 = census(root5, exclude_fixtures=True)
+    except TypeError as e:   # no such option yet
+        c6 = {'error': str(e), 'languages': {}}
+    checks.append(('by default a fixture project is counted as before (no fixtures_excluded key)',
+                   c5['languages'].get('TypeScript') == 12 and 'fixtures_excluded' not in c5, c5['languages']))
+    checks.append(('exclude_fixtures leaves a nested sample project out, listed with its reason',
+                   'TypeScript' not in c6.get('languages', {}) and c6.get('dominant') == 'Python'
+                   and [f['dir'] for f in c6.get('fixtures_excluded', [])] == ['examples/shop']
+                   and any(e.get('kind') == 'fixture' and e['path'] == 'examples/shop' for e in c6.get('excluded', [])),
+                   c6.get('fixtures_excluded', c6.get('error'))))
     checks += _build_output_checks(tree)
     checks += _line_checks(tree)
     failed = 0
@@ -1312,9 +1349,13 @@ def main(argv=None) -> int:
     ap.add_argument('--exclude', action='append', default=[], metavar='DIR', help='also leave out this directory')
     ap.add_argument('--include', action='append', default=[], metavar='DIR',
                     help='count this directory even if a rule would leave it out (e.g. a hand-written dist/)')
+    ap.add_argument('--exclude-fixtures', action='store_true',
+                    help='leave out nested sample and fixture projects (repo_layout.py); listed under fixtures_excluded')
+    ap.add_argument('--fixture-dir', action='append', default=[], metavar='NAME|PATH',
+                    help='with --exclude-fixtures: also treat this directory as a fixture parent')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args(argv)
-    c = census(args.repo, args.exclude, args.include)
+    c = census(args.repo, args.exclude, args.include, args.exclude_fixtures, args.fixture_dir)
     if args.supported is not None:
         c['language_coverage'] = language_coverage(c, [s.strip() for s in args.supported.split(',') if s.strip()],
                                                    tool=args.tool)
