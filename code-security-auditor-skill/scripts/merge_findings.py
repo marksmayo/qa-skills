@@ -121,7 +121,7 @@ def layout_of(root: Path, include_fixtures: bool = False, fixture_dirs=()) -> di
     """The sample and fixture projects to leave out (none with include_fixtures) and, for every file kept identical
     in several places outside them, its representative copy."""
     fixtures = [] if include_fixtures else audit_scope.fixture_projects(root, fixture_dirs)
-    files = [f for f in audit_scope.repo_layout._walk_files(root) if not (fixtures and audit_scope.fixture_of(f, fixtures))]
+    files = [f for f in audit_scope.repo_layout.walk_files(root) if not (fixtures and audit_scope.fixture_of(f, fixtures))]
     rep, groups = audit_scope.representatives(root, files)
     return {'fixtures': fixtures, 'rep': rep, 'copy_groups': groups}
 
