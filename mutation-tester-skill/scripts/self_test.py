@@ -1156,7 +1156,9 @@ def case_builtin_restores_on_interrupt(tmp: Path) -> None:
     def watch():
         end = __import__('time').monotonic() + 240
         while __import__('time').monotonic() < end:
-            if target.read_text(encoding='utf-8') != SLOW_PY:
+            if target.read_text(encoding='utf-8') != SLOW_PY and builtin_mutator.LIVE.get('proc') is not None:
+                # interrupt only once the engine holds the test run: an interrupt that lands inside Popen() itself
+                # orphans the child before anyone can kill it (a real Ctrl-C reaches the child too)
                 seen['mutated'] = True
                 __import__('time').sleep(1)
                 _thread.interrupt_main()
@@ -1167,11 +1169,28 @@ def case_builtin_restores_on_interrupt(tmp: Path) -> None:
     t.start()
     argv = ['--repo', str(repo), '--scope', str(scope), '--run-dir', str(tmp / 'run'), '--minutes', '5',
             '--min-timeout', '60']
+    started = []
+    real_popen = subprocess.Popen
+
+    class Recorded(real_popen):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            started.append(self)
+
+    subprocess.Popen = Recorded
     try:
         code = builtin_mutator.main(argv)
     except KeyboardInterrupt:
         code = 'raised'
+    finally:
+        subprocess.Popen = real_popen
     t.join(5)
+    alive = [p.args for p in started if p.poll() is None]
+    for p in started:
+        if p.poll() is None:
+            p.kill()
+            p.wait(30)
+    assert not alive, f'the interrupted test run was left running: {alive}'
     assert seen.get('mutated'), 'no mutant was ever written'
     assert target.read_text(encoding='utf-8') == SLOW_PY, 'the mutant was left in the source file'
     assert code == 130, code
@@ -1213,6 +1232,44 @@ if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
 '''
 FMT_TEST = 'from tools.fmt import pct\n\n\ndef test_pct():\n    assert pct(1, 4) == 25\n'
+
+
+def case_builtin_interrupt_kills_test_run(tmp: Path) -> None:
+    """Ctrl-C arriving while a mutant's pytest run is still going kills that run and waits for it, so no test process
+    is left working in the repository (on Windows it would also keep the folder from being deleted)."""
+    import builtin_mutator
+    repo = slow_repo(tmp / 'repo')
+    target = repo / 'tools' / 'slow.py'
+    scope = write_json(tmp / 'scope.json', scope_for({'tools/slow.py': [[1, 4]]}))
+    started = []
+    real_popen = subprocess.Popen
+
+    class Interrupted(real_popen):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            started.append(self)
+
+        def communicate(self, *a, **kw):
+            if any('_junit_builtin' in str(x) for x in self.args) and not getattr(Interrupted, 'fired', False):
+                Interrupted.fired = True
+                raise KeyboardInterrupt
+            return super().communicate(*a, **kw)
+
+    subprocess.Popen = Interrupted
+    try:
+        code = builtin_mutator.main(['--repo', str(repo), '--scope', str(scope), '--run-dir', str(tmp / 'run'),
+                                     '--minutes', '5', '--min-timeout', '60'])
+    finally:
+        subprocess.Popen = real_popen
+    alive = [p.args for p in started if p.poll() is None]
+    for p in started:
+        if p.poll() is None:
+            p.kill()
+            p.wait(30)
+    assert getattr(Interrupted, 'fired', False), 'no mutant run was started'
+    assert not alive, f'the interrupted test run was left running: {alive}'
+    assert code == 130, code
+    assert target.read_text(encoding='utf-8') == SLOW_PY, 'the mutant was left in the source file'
 
 
 def case_builtin_main_guard(tmp: Path) -> None:
@@ -1388,7 +1445,8 @@ CASES = [case_builtin_go_engine, case_builtin_scope_outside_repo, case_builtin_u
          case_operator_keys_and_defaults, case_builtin_budget_estimate_measured, case_builtin_unittest_runner,
          case_prove_kill_unittest, case_builtin_subprocess_only_coverage, case_cargo_mutants_normalise,
          case_run_engine_cargo_mutants, case_prove_kill_rust, case_builtin_rootdir_of_ids,
-         case_builtin_tree_checked_per_mutant, case_builtin_restores_on_interrupt, case_builtin_main_guard,
+         case_builtin_tree_checked_per_mutant, case_builtin_restores_on_interrupt, case_builtin_interrupt_kills_test_run,
+         case_builtin_main_guard,
          case_builtin_selftest_runner, case_detect_tools_leaves_out_fixtures, case_report_declared_product,
          case_report_names_engine_stop]
 
