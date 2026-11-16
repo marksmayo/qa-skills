@@ -28,6 +28,14 @@ It is strict about what it shows:
 - Personal data is never echoed. A finding gives file, line, field and type, and the validator
   re-reads every flagged location (a review finding's basis lines too) to check that no value
   leaked into the report or the evidence.
+- Fixture folders (`examples/`, `samples/`, `testdata/` holding sample projects and recorded
+  runs) are read as test data by default and listed under `fixture_dirs` (`--no-fixture-dirs`
+  leaves them out). A file that only documented commands, a `commands.sh` or a script's own
+  self-test reads is `used_by_commands`, not unused. HTML, Markdown, diffs, TOML and CSS are read
+  as text. The near-duplicate check compares files within one project by MinHash sketches, with
+  a cap on the pairs it confirms, so a repository of thousands of fixtures scans in minutes.
+  A time-bomb date is linked only to a comparison with now in the same sample project (or the
+  host's own code), and the validator rejects a placeholder headline.
 - Large product data trees are never skipped silently: a tree of data files that test code
   names but the inventory does not cover is listed as `unlisted_data_dirs` and warned about;
   `--data-dir` inventories it quickly, and `--max-files-per-dir N` samples it, recording the rest
