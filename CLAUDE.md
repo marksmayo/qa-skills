@@ -470,9 +470,10 @@ QA orchestrator (`data/orchestrator.json` is the default seven gates; `examples/
 python qa-orchestrator-skill/scripts/validate_run.py qa-orchestrator-skill/examples/state [--rerun]
 python qa-orchestrator-skill/scripts/render_report.py qa-orchestrator-skill/examples/state [--brief | --markdown summary.md]
 python qa-orchestrator-skill/scripts/orchestrate.py status --state qa-orchestrator-skill/examples/state
+python qa-orchestrator-skill/scripts/validate_run.py --self-test
 ```
 
-Run these and `commands.sh` from the repo root: the run records report paths and validator commands relative to it. The run hashes the readiness, test case, CI suite, triage and release gate example reports, so editing any of them makes the validator report the change until `commands.sh` is rerun. A real run keeps its state in a temporary folder; the example uses `--state-dir` so it can be committed.
+Run these and `commands.sh` from the repo root: the run records report paths and validator commands relative to it. The run hashes the readiness, test case, CI suite, triage and release gate example reports, so editing any of them makes the validator report the change until `commands.sh` is rerun. A real run keeps its state in a temporary folder; the example uses `--state-dir` so it can be committed. `record` and `--rerun` rebuild each validator command from the config file, which must have its recorded hash, and run only `python <skill>/scripts/validate_*.py` inside the trusted skills folder (`--skills-root`); `--rerun` refuses with exit 2, running nothing, on any config, report or command mismatch, and `validate_run.py --self-test` checks that crafted states never run a command.
 
 Shared files:
 

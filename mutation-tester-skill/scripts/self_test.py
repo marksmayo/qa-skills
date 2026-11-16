@@ -386,6 +386,37 @@ def case_prove_kill_unsupported(tmp: Path) -> None:
     assert not (tmp / 'run').exists() or not any((tmp / 'run').iterdir()), 'wrote a scratch copy before refusing'
 
 
+def cmd_shim_fixture(tmp: Path) -> tuple[Path, Path, Path, str]:
+    """A folder for PATH holding a stand-in npx.cmd (it only echoes its arguments) and qa_marker.cmd (which writes
+    marker.txt beside itself when cmd.exe runs it), a package folder, and a test file name that would make cmd.exe
+    run the marker: a&qa_marker&.test.ts."""
+    shim = tmp / 'shim'
+    shim.mkdir()
+    (shim / 'npx.cmd').write_text('@echo off\r\necho shim got: %*\r\n', encoding='ascii')
+    (shim / 'qa_marker.cmd').write_text('@echo ran> "%~dp0marker.txt"\r\n', encoding='ascii')
+    pkg = tmp / 'pkg'
+    pkg.mkdir()
+    return shim, pkg, shim / 'marker.txt', 'a&qa_marker&.test.ts'
+
+
+def case_prove_kill_cmd_shim_metacharacters(tmp: Path) -> None:
+    """A test file name with cmd.exe metacharacters never reaches cmd.exe through the npx .cmd shim (Windows only)."""
+    if os.name != 'nt':
+        raise Skip('the .cmd shim re-parsing only happens on Windows (cmd.exe)')
+    import prove_kill
+    shim, pkg, marker, name = cmd_shim_fixture(tmp)
+    (pkg / name).write_text('test("x", () => {})\n', encoding='utf-8')
+    old = os.environ.get('PATH', '')
+    os.environ['PATH'] = str(shim) + os.pathsep + old
+    try:
+        env = {**os.environ}
+        rec = prove_kill.run_test(pkg, 'vitest', name, 'x', tmp / 'junit.xml', env, 30, [])
+    finally:
+        os.environ['PATH'] = old
+    assert not marker.exists(), 'cmd.exe ran a second command taken from the test file name'
+    assert rec['test_status'] == 'not_run', rec
+
+
 # A tiny Python package ("tea shop prices") whose rate table is loaded once, while conftest is imported:
 # the table's lines run only during collection, never inside a test (a cached loader, data built in conftest).
 PY_PRICES = '''_CACHE = {}
@@ -954,7 +985,7 @@ def case_prove_kill_rust(tmp: Path) -> None:
 
 CASES = [case_builtin_go_engine, case_builtin_unsupported_language, case_ranges_go_only, case_mte_engine_label,
          case_gremlins_operators, case_duplicate_mutants_merged, case_proximity_go, case_proximity_unparsed,
-         case_completeness_external_engine, case_prove_kill_go, case_prove_kill_unsupported,
+         case_completeness_external_engine, case_prove_kill_go, case_prove_kill_unsupported, case_prove_kill_cmd_shim_metacharacters,
          case_builtin_import_time_coverage, case_builtin_budget_uses_covering_tests, case_prove_kill_original_timeout,
          case_prove_kill_default_timeout, case_prove_kill_collection_error,
          case_detect_tools_unscripted_dominant, case_report_language_limitation, case_headline_names_p0,

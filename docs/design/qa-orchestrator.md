@@ -164,6 +164,18 @@ Where the build differs from the design above, and what the example showed.
 - **A step can set its validator's working directory** (`cwd`), because some skills' validators resolve
   their inputs relative to the skill folder (the CI suite runner's records name its catalogue that way).
   `{report}` and `{skills}` are then given relative to it.
+- **Validator commands come from the configuration, never from the state** (v1.1.0, after a security
+  review showed `validate_run.py --rerun` ran any `validator.command` written in a state file, even when the
+  config hash check had failed, and `record` ran the template from the config copy inside the state).
+  `orchestrate.validator_command()` rebuilds each command from the config file (refused unless its SHA-256
+  is the one recorded and it equals the state's copy) and runs it only when it is `python
+  <skill>/scripts/validate_*.py ...` with the script and any `cwd` inside the trusted skills folder (the
+  folder holding the orchestrator, or `--skills-root`), using the running interpreter. `--rerun` refuses
+  the whole rerun (exit 2, nothing run) when the config or a report changed or a recorded command differs
+  from the rebuilt one. `validate_run.py --self-test` plants a marker-file write in six crafted states
+  (command, config copy, a config beside the state, an untrusted skills root; `--rerun` and `record`) and
+  checks none runs. The committed example's commands equal the rebuilt ones, so it still validates with
+  `--rerun`.
 - **Criteria paths** take `[n]`, `[field=value]` filters and `.length`.
 - **The script refuses rather than warns**: approving before evaluating, approving failed criteria without an
   override reason, recording or evaluating a gate that isn't current, and rejecting without a reason all
