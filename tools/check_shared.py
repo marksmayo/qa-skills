@@ -17,6 +17,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+REPO_AWARE = ['code-security-auditor-skill', 'privacy-flow-auditor-skill', 'test-suite-evaluator-skill',
+              'flaky-test-hunter-skill', 'dead-test-finder-skill', 'risk-based-test-planner-skill',
+              'test-impact-selector-skill', 'mutation-tester-skill', 'test-data-auditor-skill',
+              # their detect_conventions.py or lang_census.py imports the two
+              'journey-to-tests-skill', 'ticket-to-tdd-skill', 'bug-reproducer-skill', 'ui-crash-hunter-skill',
+              'cross-browser-checker-skill', 'ci-failure-triager-skill', 'db-migration-reviewer-skill',
+              'api-contract-tester-skill']
+
 # canonical file (relative to shared/) -> skills that must carry a copy at the same relative path
 # ('skill:other/path' when the skill keeps it elsewhere)
 SHARED = {
@@ -111,6 +119,10 @@ SHARED = {
                                 'exploratory-charter-writer-skill', 'i18n-checker-skill', 'performance-budget-auditor-skill',
                                 'post-deploy-validator-skill', 'resilience-prober-skill', 'visual-regression-reviewer-skill'],
     'scripts/py_extras.py': ['test-suite-evaluator-skill', 'journey-mapper-skill'],
+    # repo_layout.py (fixture projects, copy groups) and code_mask.py (strings and comments blanked): the skills that
+    # audit a host repository, plus every skill whose detect_conventions.py or lang_census.py imports them
+    'scripts/repo_layout.py': REPO_AWARE,
+    'scripts/code_mask.py': REPO_AWARE,
     'data/wcag-sc.json': ['wcag-auditor-skill', 'mobile-app-auditor-skill'],
     'data/en301549-map.json': ['wcag-auditor-skill', 'mobile-app-auditor-skill'],
     'data/ambiguity-lexicon.json': ['ticket-readiness-reviewer-skill', 'test-case-designer-skill'],
