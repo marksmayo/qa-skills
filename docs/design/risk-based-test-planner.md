@@ -1,6 +1,6 @@
 # Design: `risk-based-test-planner-skill`
 
-Status: Built (v1.8.0), see "As built" at the end. Build order: 13.
+Status: Built (v1.9.0), see "As built" at the end. Build order: 13.
 
 ## Mission
 
@@ -549,3 +549,11 @@ Where the build differs from the design above, and what the example showed.
     the plan; `--write-summary` checks the schema before writing and writes nothing when it fails.
   - Not changed: a per-run random credential for a loopback service still matches the secrets class
     (SKILL.md says judging it down is fair). The sample repository's scores are unchanged.
+
+### v1.9.0: commit author names are no longer kept
+
+- `mine_history.py` wrote every commit's author name (`commits[].author`) and each file's author names into
+  `history.json`, though only the number of distinct authors per area is used. Commits no longer carry an author,
+  and `files[].authors` holds pseudonyms for the run (`author-1` is the newest commit's author), so the count is
+  unchanged. History files from earlier versions, with names, are still read. The sample's `history.json` is
+  regenerated; its scores are unchanged.

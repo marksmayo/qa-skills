@@ -1,7 +1,7 @@
 ---
 name: risk-based-test-planner
 description: Write a test plan for a release, sprint or change with effort spread by risk = likelihood x impact. Likelihood comes from git history (churn, fix commits, Jira bugs), complexity, the change in scope and test weakness; impact from journey criticality, money, access, personal-data, credential, destructive and public-API surfaces, and reach. Reads a changesets monorepo's release base and pending changesets, and flags breaking changes. Every factor cites its evidence and missing evidence is not_assessed, never low risk. It reads other skills' reports (journey maps, security, crash, WCAG and flaky reports) as far as their own confidence goes, allocates 90-minute sessions against a budget, names the skill or test type for each risk, and lists every area it does not test with the reason and residual risk. Never claims a release is safe.
-version: 1.8.0
+version: 1.9.0
 ---
 
 # Risk-based test planner
@@ -298,7 +298,8 @@ journey reaches and none of whose files are in the mapped part of the map gets j
 criticality and reach `not_assessed` (not 1), which lowers its confidence. Map the missing
 domains and re-score to assess them.
 
-**History.** `mine_history.py` counts lines changed, commits and authors per file, and finds fix
+**History.** `mine_history.py` counts lines changed, commits and authors per file (authors are recorded as
+pseudonyms for the run, `author-1`, `author-2`, and never by name), and finds fix
 commits by their subject, along with any issue keys:
 - a conventional-commit type decides on its own: `fix:`, `fix(scope):`, `hotfix:`, `bugfix:`
   and `revert:` are fixes; `feat:`, `chore:`, `docs:` and the other types are not, even when the

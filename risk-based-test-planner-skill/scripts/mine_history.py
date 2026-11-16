@@ -5,7 +5,8 @@
 
 Runs `git log --numstat` over the window ending at --as-of (default: the date of HEAD's commit,
 so the same repository always gives the same window). For every file: commits, lines added and
-deleted, distinct authors, fix commits and the first commit that touched it. A commit is a fix
+deleted, distinct authors (as pseudonyms for the run, author-1, author-2, ...: names are not kept,
+only counted), fix commits and the first commit that touched it. A commit is a fix
 when its conventional-commit type is fix, bugfix, hotfix or revert; or, without a conventional
 type, when its subject starts with fix/fixes/fixed/bugfix/hotfix/revert/regression, names a bug
 or regression, or closes an issue (fixes #12). feat:, chore: and other types are never fixes,
@@ -106,6 +107,7 @@ def mine(repo: Path, days: int, as_of: date | None) -> dict:
         elif line.strip():
             first_touch.setdefault(line.strip(), when)
     commits, files = [], {}
+    pseudonyms: dict[str, str] = {}
     seen_fixes: dict[tuple, str] = {}
     for chunk in out.split(SEP)[1:]:
         head, _, body = chunk.partition('\n')
@@ -132,7 +134,10 @@ def mine(repo: Path, days: int, as_of: date | None) -> dict:
         if docs_only:                      # "fix typo in README": not a defect in any code area
             is_fix = False
         formatting = bool(FORMAT.search(strip_merge_prefix(subject)[0])) and bool(stats) and all(abs(a - d) <= 2 for _, a, d in stats)
-        c = {'sha': sha[:12], 'date': when[:10], 'author': author, 'subject': subject[:200], 'fix': is_fix,
+        # Authors are only counted (distinct authors per file), so names are not kept: each person gets a pseudonym
+        # for this run (author-1 is the newest commit's author), stable across files and commits within the run.
+        author = pseudonyms.setdefault(author, f'author-{len(pseudonyms) + 1}')
+        c = {'sha': sha[:12], 'date': when[:10], 'subject': subject[:200], 'fix': is_fix,
              'keys': sorted(set(KEY.findall(subject + ' ' + msg))), 'formatting': formatting,
              'files': [{'path': p, 'added': a, 'deleted': d} for p, a, d in stats]}
         if merge:
@@ -160,7 +165,7 @@ def mine(repo: Path, days: int, as_of: date | None) -> dict:
             if is_fix:
                 f['fix_commits'].append(c['sha'])
     for p, f in files.items():
-        f['authors'] = sorted(f['authors'])
+        f['authors'] = sorted(f['authors'], key=lambda x: int(x.rsplit('-', 1)[1]))
     later = [c for c in commits if c['date'] > head_date.isoformat()]
     if later:
         notes.append(f'{len(later)} commit(s) of HEAD\'s ancestry are dated after HEAD ({head_date}): '
@@ -191,21 +196,29 @@ def self_test() -> int:
     tmp = Path(tempfile.mkdtemp(prefix='mh-self-'))
     fails = []
     try:
-        def commit(msg: str, when: str, files: dict) -> None:
+        def commit(msg: str, when: str, files: dict, author: str = 'Sample Person') -> None:
             for rel, text in files.items():
                 (tmp / rel).parent.mkdir(parents=True, exist_ok=True)
                 (tmp / rel).write_text(text, encoding='utf-8')
-            env = {**os.environ, 'GIT_AUTHOR_DATE': when, 'GIT_COMMITTER_DATE': when, 'GIT_AUTHOR_NAME': 'Sample',
-                   'GIT_AUTHOR_EMAIL': 'sample@example.test', 'GIT_COMMITTER_NAME': 'Sample',
+            env = {**os.environ, 'GIT_AUTHOR_DATE': when, 'GIT_COMMITTER_DATE': when, 'GIT_AUTHOR_NAME': author,
+                   'GIT_AUTHOR_EMAIL': 'sample@example.test', 'GIT_COMMITTER_NAME': 'Sample Person',
                    'GIT_COMMITTER_EMAIL': 'sample@example.test'}
             subprocess.run(['git', '-C', str(tmp), 'add', '-A'], check=True, capture_output=True, env=env)
             subprocess.run(['git', '-C', str(tmp), 'commit', '-q', '-m', msg], check=True, capture_output=True, env=env)
         subprocess.run(['git', 'init', '-q', str(tmp)], check=True, capture_output=True)
         commit('Add the timer', '2026-03-01T10:00:00Z', {'app/timer.js': 'let a = 1;\n'})
-        commit('fix the expiry date check', '2026-12-31T10:00:00Z', {'app/timer.js': 'let a = 2;\n'})
+        commit('fix the expiry date check', '2026-12-31T10:00:00Z', {'app/timer.js': 'let a = 2;\n'}, author='Other Person')
         commit('fix typo in README', '2026-04-01T10:00:00Z', {'README.md': 'Timer\n'})
         commit('Add the menu', '2026-05-29T10:00:00Z', {'app/menu.js': 'let m = 1;\n'})
         res = mine(tmp, 180, None)
+        text = json.dumps(res)
+        if 'Sample Person' in text or 'Other Person' in text:
+            fails.append('commit author names are not written to the history (only distinct-author counts are used)')
+        if len(res['files'].get('app/timer.js', {}).get('authors') or []) != 2:
+            fails.append(f'two people changed app/timer.js: two distinct authors '
+                         f'(got {res["files"].get("app/timer.js", {}).get("authors")})')
+        if len(res['files'].get('app/menu.js', {}).get('authors') or []) != 1:
+            fails.append('one person changed app/menu.js: one distinct author')
         subjects = {c['subject']: c for c in res['commits']}
         if 'fix the expiry date check' not in subjects:
             fails.append(f'an ancestor of HEAD dated after it is in the window (got {sorted(subjects)})')
