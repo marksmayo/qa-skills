@@ -294,6 +294,33 @@ Found by running the skills on a FastAPI server that serves a committed, hand-wr
   records the effective viewport against the planned one (`viewports`, `matches_planned`), so a page
   that went fullscreen is visible to layout comparisons.
 
+### Security hardening (2026-11-16)
+
+Found by running the code security auditor on this repository (findings F-3, F-5, F-6 and observations O-5,
+O-8). Each fix has a loopback-only test written to fail first.
+
+- **`safe_http.py`** (new; ci-suite-runner, ci-failure-triager, hypercare-anomaly-watcher and every skill
+  that carries `fetch_ticket.py`): `fetch_run.py`'s `SafeRedirect` moved here. On a redirect to another
+  origin (scheme, host or port) it drops Authorization, Cookie, Proxy-Authorization and any header whose
+  name says key, token, secret, session, signature, auth, password or credential (Datadog's `DD-API-KEY`);
+  https is never followed to http except on loopback. `run_suite.py`, `fetch_ticket.py`, the hypercare
+  `sources.py` and `rerun.py` now send through it. `--self-test` uses two loopback ports.
+- **`term_safe.py`** (new; every skill with a `render_report.py`): `load_json()` removes C0 and C1 control
+  characters (except newline and tab) from every string of a report before it is rendered, so an escape
+  sequence quoted from a CI log, a ticket or a page (OSC 8 links, title changes, cursor moves) never reaches
+  the terminal. The renderers' own colours are added afterwards.
+- **`net_guard.py`** also guards `sendto`/`sendmsg` (UDP), replaces the C type `_socket.socket` with a
+  guarded subclass, and on Windows guards the asyncio Proactor's own `connect` (ConnectEx) and `sendto`
+  (WSASendTo). **`net_guard.cjs`** also guards dgram `send`/`connect` and the c-ares resolvers
+  (`dns.resolve*`, `dns.reverse`, `dns.Resolver`, `dns.promises`). Left as stated limits: named pipes and
+  Unix sockets in Node (a Windows pipe path can name another machine over SMB), native code calling the OS.
+- **`browser_harness.py`** routes WebSockets (`context.route_web_socket`, Playwright 1.48+) through
+  `decide()`: a third-party socket is closed before it connects; under `read_only` a socket opens only to
+  the site under test, and the messages the page sends over it are passed through and counted, because
+  read_only cannot tell a read from a write in WebSocket messages. `metadata()['websockets']` records
+  `{guarded, seen, blocked, messages_sent, note}`, and upgrades count under `by_method` `WEBSOCKET`.
+  Sockets opened by workers are not routed.
+
 ---
 
 # Journey Markdown format (`JOURNEY_FORMAT.md`)

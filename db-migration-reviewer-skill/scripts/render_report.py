@@ -9,6 +9,8 @@ reading the code (source "agent", with a basis) rather than by a rule match are 
 from __future__ import annotations
 import argparse, json, os, re, sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 COL = {'P0': '31;1', 'P1': '31', 'P2': '33', 'P3': '36', 'dim': '2', 'bold': '1', 'green': '32'}
 
@@ -26,7 +28,7 @@ def main() -> int:
     def c(text, key):
         return f'\033[{COL[key]}m{text}\033[0m' if use else str(text)
 
-    r = json.loads(a.review.read_text(encoding='utf-8'))
+    r = load_json(a.review)
     s, h = r['scope'], r['headline']
     eng = s['engine']
     out = [c('# Migration review', 'bold'), '',

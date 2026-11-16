@@ -13,6 +13,8 @@ listed by risk, highest first, after any judged factors (not in risk.json's orde
 from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 RESET = "\033[0m"; BOLD = "\033[1m"; DIM = "\033[2m"
 RED = "\033[31m"; GREEN = "\033[32m"; YELLOW = "\033[33m"; CYAN = "\033[36m"
@@ -127,7 +129,7 @@ def lines(d: dict, P, brief: bool, md: bool) -> list[str]:
 def self_test() -> int:
     """A plan with no release tag (release.base null) renders "no release tag", never Python's None."""
     import copy
-    ex = json.loads((Path(__file__).resolve().parent.parent / 'examples' / 'test_plan.example.json').read_text(encoding='utf-8'))
+    ex = load_json((Path(__file__).resolve().parent.parent / 'examples' / 'test_plan.example.json'))
     fails = []
     plan = copy.deepcopy(ex)
     plan['metadata']['release'] = {'base': None, 'changesets': 0, 'packages': {}, 'breaking_commits': 0}
@@ -158,7 +160,7 @@ def main() -> int:
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(errors='replace')
     try:
-        d = json.loads(args.json_file.read_text(encoding='utf-8'))
+        d = load_json(args.json_file)
     except Exception as exc:
         print(f"Unable to read plan: {exc}", file=sys.stderr)
         return 2

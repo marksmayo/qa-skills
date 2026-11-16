@@ -6,6 +6,8 @@
 from __future__ import annotations
 import argparse, json, sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 
 def one(d: dict, brief: bool) -> list[str]:
@@ -51,7 +53,7 @@ def main() -> int:
         sys.stdout.reconfigure(encoding='utf-8')
     out = ['# CI suite runs', '']
     for p in a.records:
-        out += one(json.loads(p.read_text(encoding='utf-8')), a.brief) + ['']
+        out += one(load_json(p), a.brief) + ['']
     print('\n'.join(out))
     return 0
 
