@@ -58,6 +58,10 @@ python scripts/validate_privacy_audit.py run/privacy_audit.json --candidates run
 python scripts/render_report.py run/privacy_audit.json [--brief]
 ```
 
+Auditing a repository that holds sample projects (a tool's `examples/` with planted problems), the scan
+leaves those out and lists them (`fixtures_excluded`); `--include-fixtures` scans them. A repository of
+command-line tools rather than an app may name "the tool" (or the code, the repository) in the disclaimer.
+
 When the browser capture can't run, the audit is still delivered from the static scan alone, marked
 `run_status: not_run`, with no consent state claimed:
 

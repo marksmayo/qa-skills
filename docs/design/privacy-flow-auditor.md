@@ -1,6 +1,6 @@
 # Design: `privacy-flow-auditor-skill`
 
-Status: Built (v1.9.0), see the "As built" sections. Build order: 23.
+Status: Built (v1.10.0), see the "As built" sections. Build order: 23.
 
 ## Mission
 
@@ -621,3 +621,44 @@ scripts and their tests found no candidates and stayed quiet about the Rust it n
   unverified bytes there. It now checks first and writes through a `.partial` file and an atomic rename; a
   mismatch writes nothing. Tested in `self_test.py` (`fetch_lists_checks_before_write`, written to fail first,
   with a stubbed download; no network).
+
+### A repository of command-line tools (v1.10.0)
+
+Run on this repository itself (a tool repository whose `examples/` hold sample apps with planted flows, with
+shared helpers copied into many skills), the static scan gave 101 candidates, every product one a false match,
+and missed the one real identifier.
+
+- **Generic names.** `name`, `title` and `reason` in `print()` and log calls were identity and health (`reason`
+  matched the health category) although `data/categories.json` lists them as `generic_property_names`. A
+  generic name now counts on a sink only with personal-data context: the same file collects the field, the
+  line also names a non-generic personal field, or the value is read from a person-like object
+  (`patient['reason']`, `user.name`, `req.body`). A `"profile"` key in a subscript is no longer a whole profile
+  object.
+- **Text read as code.** Docstrings, comments and self-test fixture strings gave sinks, loaders and
+  `server_side_send` candidates. The shared `code_mask.py` masks Python, JavaScript, TypeScript and Go: sink,
+  collection, machine-identifier, loader and URL matches that start inside a string, docstring or comment are
+  dropped (a string-text pattern such as `Set-Cookie` still counts in an ordinary string), and so are
+  assignments inside them. A keyword argument (`subprocess.run(cmd, env=env).returncode`) no longer carries an
+  account-name taint to the call's result.
+- **Misses.** Committed text and data files are read for home-directory paths with an account name
+  (`identifier_in_artifact`, subtype `home_path_in_artifact`, one per account, never quoting it; git-tracked
+  files only in a work tree; CI accounts and placeholders ignored). `OPENER.open(...)` is an HTTP sink,
+  variables on a call are followed two steps, and an API base-URL constant in a file that sends is an
+  outbound host (`via: url_constant`): api.github.com and dev.azure.com are now listed. TEST-NET addresses
+  are not recipients. Not done: hosts in lock files (the package manager's, not the code's), Playwright
+  navigation targets, and comment or commit author names copied into run files (still review).
+- **Fixtures and copies.** Sample projects found by the shared `repo_layout.py` are left out by default and
+  listed (`fixtures`, `fixtures_excluded`; `--include-fixtures`, `--fixture-dir`); their candidates carry
+  `fixture` when scanned, and `fixture` is a dismissal code (schema 1.6.0; a special-category candidate may be
+  dismissed as `false_match` or `fixture`). Collection points in identical copies are listed once
+  (`also_at`, `copies_folded`).
+- **Validator.** The disclaimer may name the site, service, tool(s), library, code, repository or project
+  instead of "the app" (`data/provisions.json` `disclaimer_subjects`). `--recompute` finds recorded inputs
+  from the current directory or above the candidates file, and a missing one is a clear error, not a
+  traceback. "--write-summary --fix-ratings needs a second pass" did not reproduce: one pass reports valid.
+- **Numbers** (the review clone at dfc689a, whole repository): 101 candidates (92 outside examples/) before,
+  2 after (the committed home path, and jsDelivr called from a download script); `machine_identifier`
+  collection points 46 to 9; outbound hosts: only a TEST-NET address before, api.github.com, dev.azure.com and
+  cdn.jsdelivr.net after. With `--include-fixtures` 11 candidates.
+- **Examples.** Re-validated unchanged; `run/static.json` regenerated (new keys, `language_coverage.dominant`
+  from the shared census), same candidates.

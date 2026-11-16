@@ -1,7 +1,7 @@
 ---
 name: privacy-flow-auditor
 description: Map where personal data goes in a web app - what it collects, where it stores it, what it logs, and which third parties receive it, and whether that happens before the user consents or after they reject. Combines a static scan of the code (collection points, logging, analytics, session replay, storage, SDKs, mobile permissions) with a live browser capture in three consent states (before a choice, after "Reject all", after "Accept all"), typing synthetic canary values and searching every request, cookie and storage entry for them raw, URL-encoded, Base64 and hashed. Produces a data inventory, recipients, a consent matrix and ranked findings with GDPR, UK GDPR and Australian Privacy Principles references for a privacy professional. Never types or stores real personal data, and never says an app is compliant.
-version: 1.9.0
+version: 1.10.0
 ---
 
 # Privacy flow auditor
@@ -83,7 +83,7 @@ The capture needs Playwright with Chromium (`pip install -r requirements.txt`; a
 python scripts/fetch_lists.py                       # download the lists at their pinned commits, verify (before caching) -> ~/.cache/qa-skills/privacy-lists/domains.json
 python scripts/fetch_lists.py --update --write-lock <run>/lists.lock.json   # newer lists: pin the latest commits in a scratch lock
 python scripts/match_canaries.py new --out <run>/canaries.json [--key-length 5]
-python scripts/scan_privacy.py <repo> --out <run>/static.json [--exclude vendor] [--include dist] [--semgrep semgrep.sarif]
+python scripts/scan_privacy.py <repo> --out <run>/static.json [--exclude vendor] [--include dist] [--include-fixtures] [--fixture-dir DIR] [--semgrep semgrep.sarif]
 python scripts/capture_flows.py flows.json --canaries <run>/canaries.json --out <run>/capture.json [--server-log app.log] --screenshots <run>/screenshots
 python scripts/merge_candidates.py --capture <run>/capture.json --static <run>/static.json --flows flows.json --lists domains.json --declared declared.json --regions AU,EU --out <run>/candidates.json
 python scripts/merge_candidates.py --static <run>/static.json --run-status-reason "why the capture couldn't run" --out <run>/candidates.json   # static only
@@ -169,10 +169,14 @@ vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), ev
      credential words (key, token) making it an online identifier; a field typed in hex (`0x...`) or in a
      memory or debug panel is never contact data, whatever "address" it mentions;
    - lists every host that browser or server code sends to with a literal URL (`fetch`, XMLHttpRequest,
-     `requests`/`httpx`, an httpx `AsyncClient`'s `build_request`/`send`/`stream`, or a variable assigned a
-     URL literal in the same file, a module-level constant included; `urlretrieve` counts) under
-     `outbound_hosts` with its `side` (client or server), vendor or not; each is a recipient to account for
-     in the inventory. A server or tool call whose host the code does not spell out (read from a file, a
+     `requests`/`httpx`, an httpx `AsyncClient`'s `build_request`/`send`/`stream`, `urlopen`/`urlretrieve`,
+     an opener's `open` (`OPENER.open(req)`), or a variable assigned a URL literal in the same file, followed
+     two steps: `req = Request(url)`, `url = f'{BASE}/runs'`) under `outbound_hosts` with its `side` (client
+     or server), vendor or not; each is a recipient to account for in the inventory. In a file that sends, a
+     constant holding an API's base URL (`GH_API = 'https://api.github.com'`, `base = f'https://dev.azure.com/{org}'`)
+     is listed too (`via: url_constant`), since a helper the scan does not follow makes the call. Loopback,
+     `.test`/`.example` hosts and the documentation address blocks (192.0.2.x, 198.51.100.x, 203.0.113.x: a
+     network guard's self-test) are not recipients. A server or tool call whose host the code does not spell out (read from a file, a
      setting or an argument) is listed under `outbound_unresolved` for the review to trace. A proxy that copies the visitor's request headers
      into an outbound call (`dict(request.headers)`, `request.headers.items()`, `{...req.headers}`) is a
      `header_passthrough` candidate (`side: server`): cookies, Authorization and Referer reach the upstream;
@@ -192,6 +196,15 @@ vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), ev
      as server code). Sends from command-line tools are recognised in JavaScript, TypeScript, Python and Go
      only; Rust, Java, C# and other compiled tools are not scanned for sends (see the language coverage
      below);
+   - never reads a sink, loader, URL or collection point inside a string, docstring or comment of Python,
+     JavaScript, TypeScript or Go (the shared `code_mask.py`): a docstring showing usage, a self-test's
+     fixture source and a pattern table describe code, they don't run it. A pattern meant to match string
+     text (a `Set-Cookie` header name) still counts in an ordinary string;
+   - counts the everyday property names `data/categories.json` lists as `generic_property_names` (`name`,
+     `title`, `reason`, `type`, ...) on a sink line only with personal-data context: the same file collects
+     the field (a form field, a request read), the line also names a personal field that is not generic, or
+     the value is read from an object that holds a person (`patient['reason']`, `user.name`, `req.body`). A
+     tool printing a check's name or a skip reason is not logging a person;
    - records what identifies the machine or the person using it as `machine_identifier` collection points:
      the host name (`platform.node()`, `socket.gethostname()`, `os.hostname()`, `COMPUTERNAME`/`HOSTNAME`;
      category `device_identifier`) and the OS account name or a home path holding it (`getpass.getuser()`,
@@ -202,7 +215,26 @@ vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), ev
      file, so a log line naming it is a `personal_data_in_logs` candidate and a file write naming it
      (`json.dump`, `write_text`, `.write`, `fs.writeFileSync`) is an `identifier_in_artifact` candidate
      (`identifier_written`, with `machine_identifiers`): check whether that output file is committed or
-     published (results, scoreboards, logs kept in the repository);
+     published (results, scoreboards, logs kept in the repository). A value handed to a call as a keyword
+     argument (`subprocess.run(cmd, env=env).returncode`) does not make the call's result stand for it;
+   - reads committed text and data files (`.json`, `.txt`, `.md`, `.log`, `.csv`, `.yaml`, `.sarif`, `.html`
+     and the like; only files git tracks when the repository is a git work tree) for home-directory paths
+     that hold an account name (`C:/Users/<name>/`, `/Users/<name>/`, `/home/<name>/`): an
+     `identifier_in_artifact` candidate (subtype `home_path_in_artifact`, one per account, other places under
+     `also_at`), whoever wrote the file, so an example report that kept the maintainer's temp-folder paths is
+     found even when the code that wrote it is out of sight. CI and container accounts (`runner`, `vsts`,
+     `node`, `jenkins`...), placeholders (`<you>`, `$USER`, `%USERNAME%`) and paths inside URLs don't count;
+     the account name is never written to the output (`<account>` in the excerpt);
+   - leaves out sample and fixture projects nested in the repository (a project with its own manifest or
+     app under `examples/`, `fixtures/`, `testdata/`, `samples/`, `__fixtures__/` and the like, found by the
+     shared `repo_layout.py`; `--fixture-dir DIR` names another folder) when auditing the repository that
+     holds them: their planted flows are not the repository's own. They are printed and listed under
+     `fixtures_excluded` (all found ones under `fixtures`); `--include-fixtures` scans them, and their
+     candidates then carry `fixture: <dir>` (dismissable as `fixture`). Scanning a sample project directly
+     (its folder as the repository) scans it as an app;
+   - lists a collection point in a file kept identical in several folders (a shared helper copied into
+     each package) once, on the canonical copy, with the copies under `also_at` (`copies_folded` counts
+     them); candidates on the same line are already grouped under `also_at`;
    - reads Go: `log.*`, `slog`, `logrus`, `zap` and `fmt.Fprintf(os.Stderr, ...)` are log sinks and
      `http.Post`/`Get`/`NewRequest` HTTP sinks; command-line flags (`flag.String("email", ...)`, cobra
      `Flags().StringVar`) are collection points (`cli_flag`), so logging one is a candidate. A Go package
@@ -297,7 +329,9 @@ vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), ev
    .tsx, .jsx, .mjs, .mts and more are searched), `random_per_load_id` (hex values that differ on every
    request and never recur in another consent state: a session or trace id, not a hashed identifier),
    `pii_disabled` (error tracker with default PII off, or replay masked by the SDK default), `duplicate`,
-   `false_match`, `not_personal_data`. Special categories and tracking after rejection are never inventory-only.
+   `false_match`, `not_personal_data`, `fixture` (a candidate inside a sample or fixture project the scan lists: a flow
+   planted on purpose). Special categories and tracking after rejection are never inventory-only, and a
+   special-category candidate is dismissed only as `false_match` or `fixture`.
 6. **Rate** with `RUBRIC.md`; write for each finding the evidence summary, a fix, and a verification step
    (usually: re-run the capture and show the canary no longer reaches that recipient). Build the data
    inventory per field: collected at, stored, logged, in URLs, recipients with encodings and states.
@@ -395,13 +429,17 @@ flows, `recipients_in_findings` (domains the findings name, from code or runtime
 ## What the validator enforces
 
 No personal data, unredacted canary or secret in the report or any evidence file. Recipients and the
-consent matrix equal the merge output, and `--recompute` re-runs the merge. Findings match their
+consent matrix equal the merge output, and `--recompute` re-runs the merge (its recorded inputs are found
+from the current directory or from the candidates file's folder and the folders above it, so it works from
+the repository root; an input found nowhere is a clear error naming it). Findings match their
 candidates (type, fields, categories, states, recipient kind), cite requests that exist in the capture
 and code lines that exist in the repo, and carry the references `data/provisions.json` gives for the
 regions. Ratings, floors and caps are recomputed; `observed` needs a live candidate and `traced` a code
 path; agent judgment stays `pattern`, and `pattern` is never P0. Every candidate is triaged once, and each
-dismissal code is checked against the candidate's facts. Headline counts are recomputed, the disclaimer
-is present, and no text calls the app compliant. A state that wasn't tested must be `null` in the headline,
+dismissal code is checked against the candidate's facts (`fixture` needs a candidate inside a listed sample
+or fixture project). Headline counts are recomputed, the disclaimer is present (it may name what was audited
+instead of "the app": the site, service, tool or tools, library, code, repository or project,
+`data/provisions.json` `disclaimer_subjects`; nothing else in it may change), and no text calls the app compliant. A state that wasn't tested must be `null` in the headline,
 listed in `states_not_tested`, and described as not tested in the statement (never "none"); when requests were
 blocked in the browser, a limitation must say that third parties were blocked. `run_status` equals the
 merge's; a `not_run` audit has no observed finding, captured request, consent state, live candidate or
