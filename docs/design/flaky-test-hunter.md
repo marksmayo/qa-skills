@@ -1,6 +1,6 @@
 # Design: `flaky-test-hunter-skill`
 
-Status: Built (v1.6.0), see "As built" at the end. Build order: 8.
+Status: Built (v1.7.0), see "As built" at the end. Build order: 8.
 
 ## Mission
 
@@ -470,3 +470,34 @@ Agreed with the user before the build.
   - **Left to the shared files:** nothing new; this round uses phase 1's `run_tests.py` cargo and
     nextest presets, `parse_results.parse_libtest`, `cargo_project.py` and `detect_conventions.py`'s
     `ci_gates` and `languages`. Not changed: a Rust order variation without nightly stays `not_run`.
+- **Found on a tool repository that tests itself with script self-tests (v1.7.0)** (this
+  repository: about 56 scripts that print `ok`/`FAIL` lines, deliberately broken sample projects
+  under `examples/`, helper files copied into many skill folders, a `benchmarks/pytest.ini` with
+  `python_files = bench_*.py`):
+  - **Self-tests are a suite.** The skill now drives them with the shared `run_tests.py --preset
+    selftest` (ids `<script>::<check>`, measurements stripped from names). `scan_pitfalls.py` reads
+    self-test scripts and a script's own `self_test()` body as test code, lists them under
+    `self_tests`, and adds a `self-test` suite (preset `selftest`, `tests: null`). The validator
+    counts a ran suite with no static count by the distinct checks its runs recorded, so evidence
+    completeness is measured against the checks instead of the sample projects' tests (it was 8%),
+    and a smell in a self-test script is `not_observed` when any check of the script ran. A script
+    runs whole: a check is repeated by naming its script.
+  - **Fixtures and copies.** Nested sample projects (`repo_layout.fixture_projects`) are left out
+    by default and listed under `fixtures_excluded` (`--include-fixtures`, `--fixture-dir`,
+    `--exclude`); a file kept identical in several folders is scanned once on its canonical copy,
+    its smells listing `copies`. Python module state counts only in modules a test imports (or in
+    a script that tests itself). Patterns match code only (`code_mask.py`): a network call inside a
+    fixture string is no longer `real-network`. A nested pytest configuration's `python_files`
+    makes `bench_*.py` test files.
+  - **Smells.** `wall-time-assertion` also matches helper assertions (`check(took < 2.0, ...)`,
+    `expect(...)`) and two-sided ratio bounds (`0.7 <= est / actual <= 1.6`), the shapes of the two
+    flakes the review confirmed or indicated; `pytest-collects-helper` fires for `test_*` helpers a
+    loop runs; `module-reload` no longer matches `def reload(self, ...)`. `data/pitfalls.json` is
+    1.8.0. On the review clone the scan went from 165 smells (37 in sample projects, the same three
+    `diff_scope.py` smells in six copies, one false `real-network`, both real timing flakes missed)
+    to 84, none in sample projects, each copied file once, with both timing flakes found.
+  - **Guidance.** SKILL.md documents the self-test workflow, keeping toolchain homes
+    (`RUSTUP_HOME`, `CARGO_HOME`, `GOPATH`) when tests run with a scratch home, spelling out
+    suspect-only repeats beside the normal rate, and the schema values that cost validation rounds
+    (`schema_version` 1.3.0, `skill` as an object, `tools[].status`, a required `quarantine`); the
+    validator's self-test checks SKILL.md names them.

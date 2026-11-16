@@ -48,8 +48,9 @@ or
 > These three tests failed on CI last week and passed on rerun: find out why.
 
 ```bash
-python scripts/scan_pitfalls.py <repo> --out smells.json
+python scripts/scan_pitfalls.py <repo> --out smells.json [--include-fixtures] [--exclude DIR]
 python scripts/run_tests.py --preset pytest --cwd <repo> --out runs.json --repeat 20 --label repeat
+python scripts/run_tests.py --preset selftest --cwd <repo> --out runs.json --tests scripts/a.py scripts/self_test.py --repeat 3 --label repeat
 python scripts/run_tests.py --preset pytest --cwd <repo> --out runs.json --order shuffle --seed 11 --label order_shuffle
 python scripts/run_tests.py --preset pytest --cwd <repo> --out runs.json --tests <ids> --label clock_back_1d \
     --env PYTHONPATH=<plugins/, relative to the repo> "PYTEST_ADDOPTS=-p clock_shift" TDA_CLOCK_SHIFT=-1d
@@ -81,7 +82,12 @@ report records each in `metadata.suites`, a suite not run lowers evidence comple
 whose test never ran is `not_run`. Runs of one code hash on two platforms
 pool when each run records `platform`: an all-pass/all-fail split is `platform_dependent`, not a
 flake. A flake seen only in CI history is reported with `history_only` and its `history_evidence`
-(capped at P2). `python scripts/validate_flaky_report.py --self-test` and `python
+(capped at P2). Scripts that test themselves (`--self-test`, `self_test.py`) run with
+`--preset selftest`, one case per printed check; they are a `self-test` suite whose checks are
+counted from the runs. The scan leaves sample and fixture projects out by default
+(`fixtures_excluded`, `--include-fixtures`, `--exclude`), scans a file kept identical in several
+folders once (its smells list `copies`), ignores matches inside strings and comments, and reads
+helper assertions on elapsed time (`check(took < 2.0, ...)`). `python scripts/validate_flaky_report.py --self-test` and `python
 scripts/scan_pitfalls.py --self-test` check these rules on synthetic fixtures.
 
 The worst rate that ranks a flake comes from a label with at least 3 runs, or from all runs
