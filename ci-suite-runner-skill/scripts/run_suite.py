@@ -2,7 +2,7 @@
 """Run a catalogued test suite in CI: plan, trigger (only with authority), poll to completion, collect (stdlib only).
 
     python run_suite.py plan --catalogue suites.json --suite NAME --environment ENV [--tags EXPR] [--ref REF] --out run/
-    python run_suite.py trigger --run run/ (--preauth preauth.json | --confirmed-by "who, how, when")
+    python run_suite.py trigger --run run/ (--preauth preauth.json [--as-of YYYY-MM-DD] | --confirmed-by "who, how, when")
     python run_suite.py poll --run run/ [--timeout-minutes 60] [--poll-seconds 20]
     python run_suite.py collect --run run/ [--download PATTERN ...]
     (all take --api-base to point at another API host, such as the example's loopback stub)
@@ -12,7 +12,9 @@ catalogue's markers with and/or/not and parentheses) and writes the exact reques
 trigger sends it once, and only with authority: a pre-authorisation grant that covers the suite and the
 environment and hasn't expired, or a confirmation of this request. A protected environment always needs
 --confirmed-by. Without authority it records the refusal, prints the request, and exits 2. A run that was
-already triggered is never triggered again.
+already triggered is never triggered again. A grant's expiry is judged on today's date; --as-of judges it on
+another date, recorded in the authorisation, and is accepted only when the CI is a loopback stub (so a
+committed example can be regenerated after its grant has expired, and a real CI never can be).
 GitHub dispatches return no run id: the run is the newest workflow_dispatch run on the ref created at or
 after the trigger. Azure DevOps returns the run id.
 poll follows the run with backoff (x1.5 up to 120 s) until it completes or the timeout passes (timed_out;
@@ -21,7 +23,7 @@ totals the results with the shared parse_results.py, and fetches failed jobs' lo
 Tokens come from GITHUB_TOKEN / GH_TOKEN or AZURE_DEVOPS_EXT_PAT and are never written.
 """
 from __future__ import annotations
-import argparse, base64, fnmatch, io, json, os, re, shutil, subprocess, sys, time, urllib.error, urllib.request, zipfile
+import argparse, base64, fnmatch, io, ipaddress, json, os, re, shutil, subprocess, sys, time, urllib.error, urllib.parse, urllib.request, zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -98,7 +100,7 @@ def cmd_plan(a) -> int:
         plan = {'method': 'POST', 'url': f'{api}/{s["org"]}/{s["project"]}/_apis/pipelines/{s["pipeline_id"]}/runs?api-version=7.1',
                 'body': {'resources': {'repositories': {'self': {'refName': ref}}}, 'templateParameters': inputs}}
         pipeline = f'{s["org"]}/{s["project"]} pipeline {s["pipeline_id"]}'
-    d = {'schema_version': '1.0.0', 'skill': {'name': 'ci-suite-runner', 'version': '1.0.0'}, 'catalogue': a.catalogue.as_posix(),
+    d = {'schema_version': '1.0.0', 'skill': {'name': 'ci-suite-runner', 'version': '1.1.0'}, 'catalogue': a.catalogue.as_posix(),
          'request': {'suite': a.suite, 'system': s['system'], 'pipeline': pipeline, 'environment': a.environment, 'protected': a.environment in s.get('protected', []),
                      'tags': tags, 'ref': ref, 'inputs': {k: ('[redacted]' if k in s.get('secret_inputs', []) else v) for k, v in inputs.items()}},
          'api_base': api, 'plan': plan, 'authorisations': [], 'trigger': None, 'run': None, 'polling': [], 'outcome': {'status': 'not_started', 'conclusion': None},
@@ -106,6 +108,17 @@ def cmd_plan(a) -> int:
     save(a.out, d)
     print(f'plan: {plan["method"]} {plan["url"]}\n      {json.dumps(plan["body"])}' + ('\n      environment is protected: needs --confirmed-by' if d['request']['protected'] else ''))
     return 0
+
+
+def is_loopback(url: str) -> bool:
+    """True when the URL's host is localhost or a loopback address (the example's CI stub)."""
+    host = (urllib.parse.urlsplit(url).hostname or '').lower()
+    if host == 'localhost':
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def covering(grants: list[dict], suite: str, env: str, on: date) -> dict | None:
@@ -121,6 +134,16 @@ def cmd_trigger(a) -> int:
     if d.get('trigger') and d['trigger'].get('sent'):
         raise SystemExit(f'already triggered at {d["trigger"]["at"]} (run {(d.get("run") or {}).get("id")}); poll it instead of triggering again')
     today = datetime.now(timezone.utc).date()
+    as_of = None
+    if a.as_of:
+        if not a.preauth or a.confirmed_by:
+            raise SystemExit("--as-of judges a grant's expiry: it goes with --preauth only")
+        if not (is_loopback(d['api_base']) and is_loopback(d['plan']['url'])):
+            raise SystemExit(f'--as-of is accepted only for a loopback CI stub, not {d["api_base"]}: a real CI is judged on the real date')
+        try:
+            as_of = today = date.fromisoformat(a.as_of)
+        except ValueError:
+            raise SystemExit(f'--as-of takes a date (YYYY-MM-DD), not {a.as_of!r}')
     auth, reason = None, None
     if a.confirmed_by:
         auth = {'kind': 'confirmation', 'by': a.confirmed_by, 'at': now()}
@@ -132,6 +155,8 @@ def cmd_trigger(a) -> int:
         elif g:
             auth = {'kind': 'preauth', 'by': g['granted_by'], 'at': now(), 'grant_id': g['id'], 'scope': {'suites': g['suites'], 'environments': g['environments']},
                     'expires': g['expires'], 'preauth_file': a.preauth.as_posix()}
+            if as_of:
+                auth['as_of'] = as_of.isoformat()
         else:
             reason = f'no grant in {a.preauth.as_posix()} covers {r["suite"]} on {r["environment"]} on {today}'
     else:
@@ -284,6 +309,7 @@ def main() -> int:
     p = sub.add_parser('plan'); p.add_argument('--catalogue', type=Path, required=True); p.add_argument('--suite', required=True)
     p.add_argument('--environment', required=True); p.add_argument('--tags'); p.add_argument('--ref'); p.add_argument('--out', type=Path, required=True); p.add_argument('--api-base')
     t = sub.add_parser('trigger'); t.add_argument('--run', type=Path, required=True); t.add_argument('--preauth', type=Path); t.add_argument('--confirmed-by')
+    t.add_argument('--as-of', help="judge the grant's expiry on this date (YYYY-MM-DD) instead of today; loopback stubs only")
     o = sub.add_parser('poll'); o.add_argument('--run', type=Path, required=True); o.add_argument('--timeout-minutes', type=float, default=60); o.add_argument('--poll-seconds', type=float, default=20)
     c = sub.add_parser('collect'); c.add_argument('--run', type=Path, required=True); c.add_argument('--download', action='append')
     a = ap.parse_args()
