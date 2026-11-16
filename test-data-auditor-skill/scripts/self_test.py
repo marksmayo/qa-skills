@@ -363,26 +363,28 @@ def big_data_tree() -> None:
               f'(got {sorted(un)})')
 
         # with --data-dir the whole tree is inventoried quickly, every file mapped to the tests that glob it (timed warm: the
-        # first read of freshly written files is slow on hosts with an on-access virus scanner, which is not the walker's cost)
+        # first read of freshly written files is slow on hosts with an on-access virus scanner, which is not the walker's cost).
+        # The budgets are CPU time of this process (time.process_time), not wall-clock time: a loaded machine stretches the
+        # wall clock several-fold, but a walker that turns quadratic (the per-node string cache lost, say) still blows them.
         for p in sorted((root / 'places').iterdir()):
             p.read_bytes()
-        t0 = time.perf_counter()
+        t0 = time.process_time()
         invd = inv.build(root, None, {}, ['places'])
-        took = time.perf_counter() - t0
+        took = time.process_time() - t0
         places = [i for i in invd['inventory'] if i['path'].startswith('places/')]
         check(len(places) == N_PLACES, f'inventory: --data-dir lists all {N_PLACES} data files (got {len(places)})')
-        check(took < 2.0, f'inventory: {N_PLACES} templated data files inventory in under 2 s (took {took:.1f} s)')
+        check(took < 2.0, f'inventory: {N_PLACES} templated data files inventory in under 2 s of CPU time (took {took:.1f} s)')
         check(bool(places) and all('tests/test_places.py::test_has_code' in i['loaded_by'] for i in places),
               'inventory: each data file is loaded by the parametrised tests that glob its directory')
 
         # the scan finds the address embedded in one record, and the pairwise duplicate check stays bounded
-        t0 = time.perf_counter()
+        t0 = time.process_time()
         res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
-        took = time.perf_counter() - t0
+        took = time.process_time() - t0
         emails = [c for c in res['candidates'] if c['rule'] == 'email' and not c['auto_dismiss']]
         check(any(c['file'] == 'places/p123.json' and c['line'] == PLACE_EMAIL_LINE for c in emails),
               'scan: an email address inside a record of a --data-dir JSON tree is a personal-data candidate')
-        check(took < 20.0, f'scan: {N_PLACES} templated data files scan in under 20 s (took {took:.1f} s)')
+        check(took < 20.0, f'scan: {N_PLACES} templated data files scan in under 20 s of CPU time (took {took:.1f} s)')
         check(any('near-duplicate' in n and 'places' in n for n in res['notes']),
               'scan: a directory too large for the pairwise near-duplicate check is named in the notes as not compared')
 
@@ -632,14 +634,14 @@ def drift_nothing_to_check() -> None:
         del files['samples/sightings.json']
         write(root, files)
         invd = inv.build(root, None, {})
-        t0 = time.perf_counter()
+        t0 = time.process_time()
         out = schema_drift.drift(root, invd)
-        took = time.perf_counter() - t0
+        took = time.process_time() - t0
         lc = out.get('language_coverage') or {}
         check(out.get('status') == 'nothing_to_check' and not lc.get('warning'),
               f'schema_drift: an inventory with no data records is nothing_to_check, with no language warning '
               f'(got {out.get("status")}, {lc.get("warning")})')
-        check(took < 0.5, f'schema_drift: nothing to check returns at once (took {took:.2f} s)')
+        check(took < 0.5, f'schema_drift: nothing to check returns at once (took {took:.2f} s of CPU time)')
         res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
         check(not any(n.startswith('schema drift:') for n in res['notes']), 'scan: no schema-drift language warning when there was nothing to compare')
         ip = Path(d) / 'inv.json'

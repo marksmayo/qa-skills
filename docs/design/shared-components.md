@@ -153,6 +153,21 @@ files.
 It was written for the test impact selector, which applies each change to a scratch copy. The
 dead test finder applies its proposal patches with it, to prove them.
 
+**Self-tests for `stats.py` and `unified_diff.py`** (added after the mutation tester's run on this
+repository, where their only direct tests were two benchmarks that checked a list was truthy and a
+file count): `stats.py --self-test` checks interval values, the `n = 0`, `k = 0` and `k = n` edges,
+every band threshold on both sides, `fmt` and the command line; `unified_diff.py --self-test` checks
+several hunks and files, new, deleted and renamed files, plain diffs, CRLF, offsets, refusals, both
+directions of "\ No newline at end of file", and that `check` never writes to the tree. Writing it
+found that a patch adding the missing newline at the end of a file (or deleting an unterminated last
+line) kept the file unterminated; the end of the file now follows the new side's last line.
+
+**`schema_check.py` and `py_extras.py`** were copied by hand (nine and two skills) and two
+`schema_check.py` copies had drifted; both are now canonical in `shared/scripts/` (the copy with
+`if`/`then`, `const` and `exclusiveMinimum`), and `tools/check_shared.py` reports any script that two
+or more skills carry under the same name with the same or nearly the same lines (80%) but that is
+not registered (`UNREGISTERED`, with `--self-test` for the detector).
+
 **`fetch_ticket.py`** gained `status_category` with skill 12: Jira's `new`, `indeterminate` or
 `done`. A skip's ticket can then be checked without guessing from workflow status names. The
 content fingerprint doesn't include status, so existing examples are unaffected.
