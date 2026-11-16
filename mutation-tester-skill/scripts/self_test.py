@@ -719,8 +719,13 @@ def case_operator_keys_and_defaults(tmp: Path) -> None:
 
 
 def case_builtin_budget_estimate_measured(tmp: Path) -> None:
-    """The plan's estimate counts the measured start-up of a test run (collection, conftest), not a fixed second:
-    on a suite whose start-up dominates, it is within reach of the measured per-mutant times."""
+    """The plan's estimate counts the measured start-up of a test run (collection, conftest), not a fixed second.
+
+    The conftest sleeps 2 s, so every run's start-up takes at least 2 s of wall time whatever the machine's load (load
+    only lengthens it): a measured start-up, and so the estimate per mutant, is at least that floor, while a fixed or
+    missing start-up is not. The estimate is not compared with the measured per-mutant times: those are wall-clock
+    times taken later, and a machine whose load changes between the estimate and the runs moves their ratio anywhere
+    (0.26 when a CPU load started after the plan was printed), which made this check flaky."""
     conftest = 'import time\n\ntime.sleep(2)\n' + PY_CONFTEST
     repo = py_shop(tmp / 'repo', conftest=conftest)
     (repo / 'tests' / 'test_other.py').write_text(
@@ -733,13 +738,15 @@ def case_builtin_budget_estimate_measured(tmp: Path) -> None:
     assert res.returncode == 0, res.stdout[-800:] + res.stderr[-800:]
     out = json.loads((tmp / 'run' / 'builtin.json').read_text(encoding='utf-8'))
     ran = [m for m in out['mutants'] if 'duration_s' in m]
-    actual = sum(m['duration_s'] for m in ran)
-    est = (out.get('estimate') or {}).get('planned_s')
-    if est is None:
-        import re
-        mm = re.search(r'est\. ([\d.]+) min', res.stdout)
-        est = float(mm.group(1)) * 60 if mm else 0.0
-    assert ran and 0.7 <= est / actual <= 1.6, f'estimate {est:.1f}s for {len(ran)} mutants that took {actual:.1f}s'
+    assert len(ran) == 4, [(m['id'], m['status']) for m in out['mutants']]
+    floor = 2.0   # the conftest's sleep: a lower bound on any run's start-up, under any load
+    assert all(m['duration_s'] >= floor for m in ran), [m['duration_s'] for m in ran]
+    estimate = out.get('estimate') or {}
+    startup, per, est = estimate.get('startup_s'), estimate.get('per_mutant_planned_s'), estimate.get('planned_s')
+    assert startup is not None and startup >= floor, f'measured start-up {startup}s is under the {floor}s conftest sleep'
+    assert per is not None and per >= startup - 0.05, f'estimate {per}s per mutant is under the measured start-up {startup}s'
+    assert est is not None and abs(est - per * len(ran)) <= 0.1 * len(ran), (est, per, len(ran))
+    assert f'start-up {startup:.1f}s' in res.stdout, res.stdout[-800:]
 
 
 def ut_repo(root: Path) -> Path:
