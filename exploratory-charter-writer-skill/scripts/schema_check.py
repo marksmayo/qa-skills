@@ -1,16 +1,31 @@
-"""A subset of JSON Schema (local $ref, type, enum, required, properties, additionalProperties, items, minItems,
-minLength, minimum, maximum, pattern) for this skill's two validators (stdlib only)."""
+"""A subset of JSON Schema (local $ref, oneOf, if/then, const, type, enum, required, properties, additionalProperties,
+items, minItems, minLength, minimum, exclusiveMinimum, maximum, pattern) for the skills' validators (stdlib only).
+
+Canonical copy in shared/scripts/; tools/check_shared.py copies it into each skill that uses it."""
 from __future__ import annotations
 import re
 
 
 def errors(value, schema: dict, path: str = '$', root: dict | None = None) -> list[str]:
     root = root if root is not None else schema
+    if 'if' in schema and not errors(value, schema['if'], path, root) and 'then' in schema:
+        rest = {k: v for k, v in schema.items() if k not in ('if', 'then')}
+        return errors(value, schema['then'], path, root) + errors(value, rest, path, root)
+    if 'const' in schema and value != schema['const']:
+        return [f'{path}: {value!r} should be {schema["const"]!r}']
     if '$ref' in schema:
         node = root
         for part in schema['$ref'].lstrip('#/').split('/'):
             node = node[part]
         return errors(value, node, path, root)
+    if 'oneOf' in schema:
+        results = [errors(value, s, path, root) for s in schema['oneOf']]
+        passing = [r for r in results if not r]
+        if len(passing) == 1:
+            return []
+        if not passing:
+            return min(results, key=len)
+        return [f'{path}: matches more than one oneOf branch']
     errs = []
     if 'enum' in schema and value not in schema['enum']:
         return [f'{path}: {value!r} is not one of {schema["enum"]}']
@@ -32,6 +47,8 @@ def errors(value, schema: dict, path: str = '$', root: dict | None = None) -> li
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         if 'minimum' in schema and value < schema['minimum']:
             errs.append(f'{path}: below {schema["minimum"]}')
+        if 'exclusiveMinimum' in schema and value <= schema['exclusiveMinimum']:
+            errs.append(f'{path}: must be above {schema["exclusiveMinimum"]}')
         if 'maximum' in schema and value > schema['maximum']:
             errs.append(f'{path}: above {schema["maximum"]}')
     if isinstance(value, list):
