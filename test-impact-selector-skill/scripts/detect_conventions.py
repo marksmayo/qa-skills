@@ -37,7 +37,12 @@ Tests that are not a framework: `self_tests` lists Python scripts that carry the
 run it from the repository root ({file, command, kind, line, area}): kind `flag` for an argparse `--self-test`
 option or a literal `'--self-test' in sys.argv` check (`python <file> --self-test`), `function` for a module-level
 self_test() called under `if __name__ == '__main__'` (`python <file>`), `script` for a self_test.py run as a
-script. find_self_tests(root, files) is the helper; it reads files with ast, so '--self-test' in prose is not a flag.
+script. find_self_tests(root, files) is the helper; it reads files with ast, so '--self-test' in prose is not a flag,
+and reads each file once per root (a repeated call only checks sizes and modification times).
+
+is_test_file(path, root=None): by name or directory; with root, a test_*.py or *_test.py outside every test directory
+that defines no test function or class (a product module such as test_paths.py) is not a test file. The Detector
+passes its root.
 
 pytest configuration: every pytest.ini, pyproject.toml [tool.pytest.ini_options], tox.ini [pytest] or setup.cfg
 [tool:pytest] decides the Python test files below it by its testpaths (`.` means its own folder) and python_files;
@@ -421,47 +426,115 @@ def find_self_tests(root: Path, files) -> list[dict]:
     kind 'flag' (an argparse --self-test option or a literal '--self-test' check: `python <file> --self-test`),
     'function' (a module-level self_test() called under `if __name__ == '__main__'`: `python <file>`) or 'script'
     (a self_test.py run as a script). Read with ast: '--self-test' inside a longer string (prose, a docstring) is
-    not a flag. Only scripts with a __main__ block count."""
+    not a flag. Only scripts with a __main__ block count. Each file is read once per root: a later call (the Detector,
+    then a skill's own scanner) only checks each file's size and modification time."""
     out = []
+    base = str(Path(root).resolve())
     for f in files:
         if not f.endswith('.py'):
             continue
-        name = PurePosixPath(f).name
-        text = read(root / f, 2_000_000)
-        if name not in SELF_TEST_NAMES and not SELF_TEST_HINT.search(text):
-            continue
-        try:
-            tree = ast.parse(text)
-        except (SyntaxError, ValueError):
-            continue
-        mains = [n for n in tree.body if isinstance(n, ast.If) and _is_main_guard(n)]
-        flag, argv_check = None, False
-        if '--self-test' in text:
-            for n in ast.walk(tree):
-                if isinstance(n, ast.Constant) and n.value == '--self-test' and flag is None:
-                    flag = n.lineno
-                elif isinstance(n, ast.Compare) and any(isinstance(x, ast.Constant) and x.value == '--self-test'
-                                                        for x in [n.left, *n.comparators]):
-                    argv_check = True
-        if not mains and not argv_check:   # not run as a script: a module that only mentions the flag
-            continue
-        defs = {n.name: n.lineno for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
-        calls = 'self_test' in defs and any(isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
-                                            and c.func.id == 'self_test' for m in mains for c in ast.walk(m))
-        if flag:
-            out.append({'file': f, 'command': f'python {f} --self-test', 'kind': 'flag', 'line': flag})
-        elif 'self_test' in defs and calls:
-            out.append({'file': f, 'command': f'python {f}', 'kind': 'function', 'line': defs['self_test']})
-        elif name in SELF_TEST_NAMES:
-            out.append({'file': f, 'command': f'python {f}', 'kind': 'script', 'line': mains[0].lineno})
+        sig = _file_sig(root / f)
+        hit = _SELF_TEST_CACHE.get((base, f))
+        if hit is None or hit[0] != sig:
+            hit = (sig, _self_test_entry(root, f))
+            _SELF_TEST_CACHE[(base, f)] = hit
+        if hit[1]:
+            out.append(dict(hit[1]))
     return out
 
 
-def is_test_file(path: str) -> bool:
+# (resolved root, file) -> ((size, mtime_ns), entry or None): find_self_tests reads each file once
+_SELF_TEST_CACHE: dict = {}
+
+
+def _file_sig(p: Path):
+    try:
+        st = p.stat()
+        return st.st_size, st.st_mtime_ns
+    except OSError:
+        return None
+
+
+def _self_test_entry(root: Path, f: str) -> dict | None:
+    """find_self_tests' entry for one file, or None."""
+    name = PurePosixPath(f).name
+    text = read(root / f, 2_000_000)
+    if name not in SELF_TEST_NAMES and not SELF_TEST_HINT.search(text):
+        return None
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return None
+    mains = [n for n in tree.body if isinstance(n, ast.If) and _is_main_guard(n)]
+    flag, argv_check = None, False
+    if '--self-test' in text:
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Constant) and n.value == '--self-test' and flag is None:
+                flag = n.lineno
+            elif isinstance(n, ast.Compare) and any(isinstance(x, ast.Constant) and x.value == '--self-test'
+                                                    for x in [n.left, *n.comparators]):
+                argv_check = True
+    if not mains and not argv_check:   # not run as a script: a module that only mentions the flag
+        return None
+    defs = {n.name: n.lineno for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    calls = 'self_test' in defs and any(isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+                                        and c.func.id == 'self_test' for m in mains for c in ast.walk(m))
+    if flag:
+        return {'file': f, 'command': f'python {f} --self-test', 'kind': 'flag', 'line': flag}
+    if 'self_test' in defs and calls:
+        return {'file': f, 'command': f'python {f}', 'kind': 'function', 'line': defs['self_test']}
+    if name in SELF_TEST_NAMES:
+        return {'file': f, 'command': f'python {f}', 'kind': 'script', 'line': mains[0].lineno}
+    return None
+
+
+# (resolved root, file) -> ((size, mtime_ns), defines a test): is_test_file(path, root) reads each file once
+_DEFINES_TESTS_CACHE: dict = {}
+
+
+def defines_python_tests(root: Path, path: str) -> bool | None:
+    """Does the Python file define a test: a module-level `def test*`/`async def test*`, or a class named Test* or
+    deriving from a *TestCase? None when it cannot be read or parsed (unknown)."""
+    p = Path(root) / path
+    key, sig = (str(Path(root).resolve()), path), _file_sig(p)
+    hit = _DEFINES_TESTS_CACHE.get(key)
+    if hit is not None and hit[0] == sig:
+        return hit[1]
+    try:
+        tree = ast.parse(read(p, 2_000_000))
+        found = False
+        for n in tree.body:
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name.startswith('test'):
+                found = True
+            elif isinstance(n, ast.ClassDef) and (n.name.startswith('Test') or any(
+                    (getattr(b, 'attr', None) or getattr(b, 'id', '') or '').endswith('TestCase') for b in n.bases)):
+                found = True
+            if found:
+                break
+    except (SyntaxError, ValueError):
+        found = None
+    if sig is None:
+        found = None
+    _DEFINES_TESTS_CACHE[key] = (sig, found)
+    return found
+
+
+def _in_test_dir(p: PurePosixPath) -> bool:
+    lower = {x.lower() for x in TEST_DIR_PARTS}
+    return any(x.lower() in lower or x.endswith('Tests') for x in p.parts[:-1])
+
+
+def is_test_file(path: str, root=None) -> bool:
+    """Is path (repository-relative) a test file, by its name or its directory? With root, a Python file named like a
+    test (test_*.py, *_test.py) outside every test directory that defines no test function or class is product code
+    (a module such as test_paths.py that product code imports), not a test file; a self_test.py stays a test file."""
     p = PurePosixPath(path)
     if p.suffix not in LANG_EXT and p.suffix not in ('.yaml', '.yml'):
         return False
     if naming_of(p.name):
+        if root is not None and p.suffix == '.py' and p.name not in SELF_TEST_NAMES and not _in_test_dir(p) \
+                and defines_python_tests(root, path) is False:
+            return False
         return True
     parts = set(p.parts[:-1])
     if p.suffix in ('.yaml', '.yml'):
@@ -836,7 +909,7 @@ class Detector:
                 rl['files'] += 1
                 rl['lines'] += n_lines
                 cname = (_lc.LANG_BY_EXT.get(p.suffix) if _lc else None) or lang
-                if (_lc.is_test_file(f, manifest_dirs) if _lc else is_test_file(f)):
+                if (_lc.is_test_file(f, manifest_dirs) if _lc else is_test_file(f, self.root)):
                     rl['test_files'] += 1
                     rl['test_lines'] += n_lines
                 elif _lc and _lc.is_tooling_file(f):
@@ -906,7 +979,7 @@ class Detector:
                 if rx.search(f) and p.suffix in LANG_EXT and not naming_of(name):
                     if len(a['e2e_blocks'][block]) < 15:
                         a['e2e_blocks'][block].append(f)
-            if is_test_file(f):
+            if is_test_file(f, self.root):
                 a['test_files'].append(f)
 
         for f in pw_configs:   # a Playwright config that no package.json script runs still has a command
@@ -1107,7 +1180,7 @@ class Detector:
         if sources is None:
             sources = self._sources = {}
             for f in self.files:
-                if not is_test_file(f):
+                if not is_test_file(f, self.root):
                     sources.setdefault(PurePosixPath(f).stem.lower(), []).append(f)
         hits = considered = 0
         for t in tests:
@@ -1405,6 +1478,13 @@ def self_test() -> int:
         'tool/self_test.py': ('"""Checks for the scanner."""\nGO = """\nfunc TestAdd(t *testing.T) {}\n"""\n'
                               'JS = "import { test } from \'node:test\'"\n\n\ndef main():\n    return 0\n\n\n'
                               'if __name__ == "__main__":\n    raise SystemExit(main())\n'),
+        # a product module named like a test (outside every test directory, no test in it, imported by the tool), a
+        # real test beside it, and a test-support module inside tests/
+        'tool/test_paths.py': 'def is_test_path(p):\n    return p.startswith("tests/")\n',
+        'tool/report.py': 'from test_paths import is_test_path\n',
+        'tool/test_report.py': 'import unittest\n\n\nclass TestReport(unittest.TestCase):\n    def test_a(self):\n'
+                               '        self.assertTrue(1)\n',
+        'lib/tests/test_helpers.py': 'def make_row():\n    return {}\n',
         # a planted sample project under examples/
         'examples/shop/package.json': json.dumps({'name': 'shop', 'devDependencies': {'vitest': '5.0.0'}}),
         'examples/shop/tests/cart.test.ts': "import { test } from 'vitest';\ntest('cart', () => {});\n",
@@ -1420,6 +1500,27 @@ def self_test() -> int:
             res_fx = Detector(root, 10_000, exclude_fixtures=True).run(None)
         except TypeError as e:   # an older Detector without the option
             res_fx = {'error': str(e)}
+        # find_self_tests reads each file once: a second call (same root, unchanged files) reads nothing, and a changed
+        # file is read again
+        g = globals()
+        real_read, reads = g['read'], []
+        g['read'] = lambda p, *a, **k: reads.append(p) or real_read(p, *a, **k)
+        try:
+            find_self_tests(root, det.files)
+            first = len(reads)
+            find_self_tests(root, det.files)
+            second = len(reads) - first
+            with open(root / 'tool' / 'notes.py', 'a', encoding='utf-8') as fh:
+                fh.write('\n\nif __name__ == "__main__":\n    import sys\n    print("--self-test" in sys.argv)\n')
+            again = find_self_tests(root, det.files)
+            third = len(reads) - first - second
+        finally:
+            g['read'] = real_read
+        try:
+            named = (is_test_file('tool/test_paths.py', root), is_test_file('tool/test_paths.py'),
+                     is_test_file('tool/test_report.py', root), is_test_file('lib/tests/test_helpers.py', root))
+        except TypeError as e:
+            named = str(e)
     areas = {a['root']: a for a in res['areas']}
     fws = lambda r: {n for cat in areas[r]['frameworks'].values() for n in cat}  # noqa: E731
     cmds = lambda r: [c['command'] for c in areas[r]['run_commands']]  # noqa: E731
@@ -1473,6 +1574,15 @@ def self_test() -> int:
          'examples/shop' in areas and 'examples/shop' not in {a['root'] for a in res_fx.get('areas', [])}
          and [f['dir'] for f in res_fx.get('fixtures_excluded', [])] == ['examples/shop']
          and 'fixtures_excluded' not in res, res_fx.get('fixtures_excluded', res_fx.get('error'))),
+    ]
+    checks += [
+        ('find_self_tests reads a file once per root: a repeated call reads nothing, a changed file is read again',
+         second == 0 and third == 1 and 'tool/notes.py' in {s['file'] for s in again}, (first, second, third)),
+        ('a test_*.py outside every test directory with no test in it is product code (given the root); a real test '
+         'beside it and a support module in tests/ stay test files',
+         named == (False, True, True, True), named),
+        ('the Detector lists that module as source, not as a test file',
+         areas['tool']['test_files_count'] == 2, areas['tool']['test_files_count']),   # test_report.py, self_test.py
     ]
     checks += _rust_unittest_checks()
     failed = 0
