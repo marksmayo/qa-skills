@@ -9,6 +9,8 @@ stays in its temporary folder.
 from __future__ import annotations
 import argparse, json, sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 
 def page(d: dict, brief: bool) -> list[str]:
@@ -56,7 +58,7 @@ def main() -> int:
     a = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
-    d = json.loads((a.state / 'state.json').read_text(encoding='utf-8'))
+    d = load_json((a.state / 'state.json'))
     text = '\n'.join(page(d, a.brief)) + '\n'
     if a.markdown:
         a.markdown.write_text(text, encoding='utf-8', newline='\n')

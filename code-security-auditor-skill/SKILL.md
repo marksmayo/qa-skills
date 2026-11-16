@@ -1,7 +1,7 @@
 ---
 name: code-security-auditor
 description: Audit a codebase for security weaknesses with open-source scanners (Semgrep OSS, Bandit, gosec, Brakeman, gitleaks, osv-scanner, pip-audit, npm audit, zizmor, Trivy, Checkov and more) plus a deep manual review, trace each finding from attacker-controlled input to the dangerous operation, rate it with CVSS v4.0, and write safe reproduction steps, a fix and a regression test. Optionally confirms findings with canary-only proofs of concept against localhost or a test environment the user names. Every candidate is triaged, every tool's status is recorded, and the report never calls the code secure.
-version: 1.7.0
+version: 1.8.0
 ---
 
 # Code Security Auditor
@@ -521,8 +521,13 @@ the same PoCs against a copy with your recommended fixes applied: each proof sho
 
 For a CLI, a library or a stdio MCP server there is no HTTP target. Use a command PoC
 (`"kind": "command"`): files to write into the copy (the attacker's config file, input file or
-fixture), then steps that are argument lists (never a shell string or `sh -c`), and a proof:
-`marker_in_output`, `exit_code` or `file_created`. A regression test that fails on the vulnerable
+fixture), then steps that are argument lists (never a shell string or `sh -c`), and a proof.
+`--check` refuses a launcher in front of the program (`env`, `wsl`, `busybox`, `sudo`, `xargs`, ...) and an
+interpreter given inline code (`python -c`, `node -e`/`--eval`/`-p`, `ruby -e`, `perl -e`, `php -r`,
+`deno eval`, `npx -c`, awk without `-f`), even harmless code: the lint is a denylist and cannot judge
+code, so put the code in `files` and run it by path, where it is linted (destructive file operations
+such as `shutil.rmtree`, `os.remove`, `fs.rmSync`/`unlinkSync`, `Remove-Item` are refused) and kept.
+The proof is one of `marker_in_output`, `exit_code` or `file_created`. A regression test that fails on the vulnerable
 code is a command PoC too (run the test runner, prove the failure with `exit_code` and a marker from
 the assertion message).
 

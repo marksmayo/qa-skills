@@ -1,6 +1,6 @@
 # Design: `mutation-tester-skill`
 
-Status: Built (v1.5.0), see "As built" at the end. Build order: 9.
+Status: Built (v1.7.0), see "As built" at the end. Build order: 9.
 
 ## Mission
 
@@ -458,3 +458,10 @@ Agreed with the user before the build.
   shared `run_tests.resolve_exe()`, which starts the runner's JS entry with node or refuses; a refused
   proof is `not_run` with the reason as `first_error`. Tested by `case_prove_kill_cmd_shim_metacharacters`
   (a stand-in `npx.cmd` and a marker script on PATH; skipped off Windows).
+
+### Scope stays inside the repository (v1.8.0)
+
+- `builtin_mutator.py` writes mutants into the scoped files (and restores them), but did not check that a
+  scope's paths were inside `--repo`: `../x.py` or an absolute path would have been mutated in place. It now
+  refuses such a scope before anything runs (Python and Go). Tested in `self_test.py`
+  (`builtin_scope_outside_repo`, written to fail first).

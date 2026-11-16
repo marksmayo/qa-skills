@@ -1,6 +1,6 @@
 # Design: `dead-test-finder-skill`
 
-Status: Built (v1.4.0), see "As built" at the end. Build order: 12.
+Status: Built (v1.6.0), see "As built" at the end. Build order: 12.
 
 ## Mission
 
@@ -517,3 +517,10 @@ Where the build differs from the design above, and what the example showed.
   starts the runner's JS entry with node, or refuses (exit 126, the reason in the listing). Tested in
   `scripts/self_test.py` (`cmd_shim_checks`) with a stand-in `npx.cmd` and a marker script on PATH, for
   Vitest, Jest and Playwright; skipped off Windows, where no shell re-parses the arguments.
+
+### Honest guard message (v1.7.0)
+
+- `tree_guard.py` compared `git status` too, but could only put back the guarded test files, and still said
+  every change was "restored byte for byte". A tracked file outside the guarded set is now named in
+  `GuardError.not_restored`, `restored` is false, and the message says it was NOT put back (check it with git
+  diff). Tested in `tree_guard.py --self-test` (written to fail first, on a scratch git repository).

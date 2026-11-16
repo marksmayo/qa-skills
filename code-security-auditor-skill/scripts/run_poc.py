@@ -40,7 +40,9 @@ Local command PoCs (a CLI, a library or an MCP stdio server with no network list
      "steps": [{"name": "run", "argv": ["node", "{workdir}/app/dist/cli.js", "check"], "cwd": "proj", "stdin": null}],
      "proof": {"type": "marker_in_output", "step": "run", "marker": "CANARY-1337"}}
 
-  Steps run with an argument list (never a shell string, and never `sh -c`/`cmd /c`), in the
+  Steps run with an argument list (never a shell string, and never `sh -c`/`cmd /c`; no launcher such as
+  `env`/`wsl`/`sudo` in front, and no inline interpreter code such as `python -c` or `node -e`: put the code in
+  `files` and run it by path, where it is linted), in the
   --workdir copy, which must be outside the repository; `files` are written inside it first (the
   attacker-controlled config, input file or fixture). HOME, USERPROFILE, TMP and XDG folders point
   inside the copy, HTTP(S)_PROXY points at a closed loopback port so stray network calls fail, and
@@ -77,7 +79,11 @@ BANNED = [
     ('reverse shell or exfiltration', r'(?i)/dev/(tcp|udp)/|\bnc(at)?\s+-\w*[elc]|\bbash\s+-i\b|\bpowershell\b.*-e(nc|ncodedcommand)?\b|Invoke-WebRequest|\bcurl\s|\bwget\s|\bscp\s|\bftp\s|\bsocat\b'),
     ('persistence', r'(?i)crontab|authorized_keys|\.bashrc|\.profile\b|useradd|net\s+user\s|schtasks|/etc/(passwd|shadow|sudoers)\s*>'),
     ('cloud metadata address', r'(?i)169\.254\.169\.254|metadata\.google\.internal|100\.100\.100\.200|fd00:ec2::254|metadata\.azure\.com|\[::ffff:a9fe:a9fe\]'),
-    ('code-execution primitive', r'(?i)__import__|\bos\.(system|popen)|\bsubprocess\b|__globals__|__subclasses__|__builtins__|Runtime\.getRuntime|ProcessBuilder|child_process|\beval\s*\(|\bexec\s*\(|!!python/|java\.lang\.Runtime|System\.Diagnostics\.Process'),
+    ('destructive file operation', r'(?i)\bshutil\.(rmtree|move)\b|\bos\.(remove|unlink|rmdir|removedirs|truncate)\s*\(|\.(unlink|rmdir|rm|rmSync|unlinkSync|rmdirSync|truncateSync)\s*\(|'
+                                   r'\bfs(\.promises)?\.(rm|rmSync|unlink|unlinkSync|rmdir|rmdirSync|truncate|truncateSync)\b|'
+                                   r'\b(rimraf|del-cli|fs-extra)\b|\b(emptyDir|removeSync|emptyDirSync)\s*\(|Remove-Item|'
+                                   r'\b(File|Directory)\.Delete\b|\bos\.RemoveAll\b|\bFileUtils\.(rm|rm_r|rm_rf|remove_dir)\b|\bunlink\s*\(\s*\$'),
+    ('code-execution primitive',r'(?i)__import__|\bos\.(system|popen)|\bsubprocess\b|__globals__|__subclasses__|__builtins__|Runtime\.getRuntime|ProcessBuilder|child_process|\beval\s*\(|\bexec\s*\(|!!python/|java\.lang\.Runtime|System\.Diagnostics\.Process'),
 ]
 SAFE_HOST = re.compile(r'(?i)^(localhost|127(\.\d{1,3}){3}|\[?::1\]?|[\w.-]+\.(example|test|invalid|localhost)|example\.(com|org|net)|[\w.-]+\.example\.(com|org|net))$')
 
@@ -117,6 +123,55 @@ MAX_COMMAND_STEPS = 10
 STEP_TIMEOUT, MAX_STEP_TIMEOUT = 60, 600  # a step may ask for more (a cold `go test` compile), never above 600 s
 SHELLS = re.compile(r'(?i)(^|[\\/])(sh|bash|zsh|dash|ksh|fish|cmd|cmd\.exe|powershell|powershell\.exe|pwsh|pwsh\.exe)$')
 COMMAND_PROOFS = ('marker_in_output', 'exit_code', 'file_created')
+# Programs that only start another program: the lint would judge the wrapper, not what it runs.
+LAUNCHERS = {'env', 'wsl', 'busybox', 'sudo', 'doas', 'su', 'runas', 'nohup', 'xargs', 'nice', 'ionice', 'timeout',
+             'stdbuf', 'setsid', 'time', 'start', 'script', 'chroot', 'unshare', 'flatpak-spawn', 'conhost', 'wt'}
+# Interpreters and the flags that hand them a program as an argument. A denylist cannot judge arbitrary code, so
+# inline code is refused outright: write the code into `files` and run it by path, where it is linted and kept.
+INLINE_CODE = {
+    'python': ('-c',), 'pythonw': ('-c',), 'py': ('-c',), 'pypy': ('-c',), 'pypy3': ('-c',),
+    'node': ('-e', '--eval', '-p', '--print'), 'nodejs': ('-e', '--eval', '-p', '--print'), 'bun': ('-e', '--eval', '-p', '--print'),
+    'deno': ('eval',), 'ruby': ('-e',), 'perl': ('-e', '-E'), 'php': ('-r',), 'rscript': ('-e',), 'lua': ('-e',),
+    'osascript': ('-e',), 'npx': ('-c', '--call'), 'npm': ('-c', '--call'), 'pnpm': ('-c',), 'tclsh': (),
+}
+AWK = {'awk', 'gawk', 'mawk', 'nawk', 'busybox-awk'}
+VALUE_OPTIONS = {'-W', '-X', '-r', '--require', '--import', '--loader', '--experimental-loader', '-I', '--conditions', '-C'}
+
+
+def program_name(arg0: str) -> str:
+    """argv[0] as a bare lower-case program name: no directory, no .exe/.cmd/.bat, no version suffix (python3.12)."""
+    name = re.split(r'[\\/]', arg0)[-1].lower()
+    name = re.sub(r'\.(exe|cmd|bat|com)$', '', name)
+    return re.sub(r'[\d.]+$', '', name) or name
+
+
+def inline_code_issue(argv: list[str]) -> str | None:
+    """Why a step's argv runs code the lint cannot see (a launcher, or an interpreter given inline code), or None."""
+    prog = program_name(argv[0])
+    if prog in LAUNCHERS:
+        return f'runs a launcher ({argv[0]}) that starts another program: call the program directly'
+    if prog in AWK and '-f' not in argv[1:]:
+        return f'gives {argv[0]} an inline program: write it into `files` and run it with -f'
+    flags = INLINE_CODE.get(prog)
+    if flags is None:
+        return None
+    short = {f[1] for f in flags if len(f) == 2 and f[0] == '-'}
+    args, i = argv[1:], 0
+    while i < len(args):
+        a = args[i]
+        if a in flags or any(a.startswith(f + '=') for f in flags if f.startswith('--')) or \
+                (re.fullmatch(r'-[A-Za-z]+', a) and short & set(a[1:])) or (a[:2] in flags and not a.startswith('--')):
+            return (f'gives {argv[0]} inline code ({a[:20]}): write the code into `files` and run it by path, so it is '
+                    'linted and kept with the evidence')
+        if a == '-m' and prog.startswith(('python', 'py')):
+            return None                      # python -m module: the rest are the module's own arguments
+        if a in VALUE_OPTIONS:
+            i += 2
+            continue
+        if not a.startswith('-'):
+            return None                      # the script path: the rest are the script's own arguments
+        i += 1
+    return None
 
 def lint_command(poc: dict) -> list[str]:
     """Safety problems in a local command PoC; empty means it may run."""
@@ -133,6 +188,8 @@ def lint_command(poc: dict) -> list[str]:
             continue
         if SHELLS.search(argv[0]):
             issues.append(f"step {s.get('name')!r} runs a shell ({argv[0]}): call the program directly with an argument list")
+        elif inline_code_issue(argv):
+            issues.append(f"step {s.get('name')!r} {inline_code_issue(argv)}")
         cwd = s.get('cwd') or ''
         if Path(cwd).is_absolute() or '..' in Path(cwd).parts:
             issues.append(f"step {s.get('name')!r}: cwd must be a relative path inside the working copy")

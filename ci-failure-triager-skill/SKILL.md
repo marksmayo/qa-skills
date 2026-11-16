@@ -1,7 +1,7 @@
 ---
 name: ci-failure-triager
 description: Triage a failed CI run on GitHub Actions or Azure DevOps - classify every failing job and test as real, flaky, environment, data, consequence (an aggregate gate job failing because another job failed) or unclassified from its log lines, JUnit results, a re-run of the failed jobs on the same commit, the run history and known failure signatures; find the owning change (the commit since the last green run that touched what failed); and draft a defect or a test-data issue for each real or data failure in the result log. Flaky needs a pass and a fail on the same commit; real needs a repeatable failure; every log excerpt is quoted with its line numbers and secrets redacted. Re-runs only failed jobs, once, and only with permission. Never files anything and never calls a build green.
-version: 1.4.0
+version: 1.5.0
 ---
 
 # CI failure triager
@@ -80,7 +80,8 @@ python scripts/classify.py --run run/ --out run/candidates.json
    new pull request branch, the newest on the default branch before this one, which then starts the range,
    with `last_green.branch` and a basis that says so). Every history query is bounded and recorded
    (`history_query`: runs per branch, the default branch, runs of the same commit, before or after this one). Redirects to log and artifact
-   storage are followed without the API token.
+   storage are followed without the API token (`safe_http.py`, shared); `rerun.py`'s requests use the same
+   handler.
 2. **Extract** the failures of the first attempt: one per failing JUnit case; without JUnit, one per
    failing test in a Vitest, Jest or node:test console summary or in `go test` output (plain or `-json`:
    `--- FAIL: TestX/sub`, the tests a `panic: test timed out` names, a `[build failed]` package; ids are

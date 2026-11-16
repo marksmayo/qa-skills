@@ -1,6 +1,6 @@
 # Design: `privacy-flow-auditor-skill`
 
-Status: Built (v1.8.0), see the "As built" sections. Build order: 23.
+Status: Built (v1.9.0), see the "As built" sections. Build order: 23.
 
 ## Mission
 
@@ -614,3 +614,10 @@ scripts and their tests found no candidates and stayed quiet about the Rust it n
 - **Examples.** Re-validated unchanged. A rescan of the clinic sample gives the same candidates, collection
   points and sinks; only `language_coverage.dominant` (now chosen by lines) and the new empty
   `outbound_unresolved` differ, so `run/static.json` was left as it was.
+
+### Verified before cached (v1.9.0)
+
+- `fetch_lists.py` wrote each download into the cache before checking its pinned SHA-256, so a mismatch left
+  unverified bytes there. It now checks first and writes through a `.partial` file and an atomic rename; a
+  mismatch writes nothing. Tested in `self_test.py` (`fetch_lists_checks_before_write`, written to fail first,
+  with a stubbed download; no network).

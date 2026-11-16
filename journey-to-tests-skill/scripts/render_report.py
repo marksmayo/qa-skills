@@ -7,6 +7,8 @@ run and any bootstrapped framework.
 from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 RESET="\033[0m"; BOLD="\033[1m"; DIM="\033[2m"
 RED="\033[31m"; GREEN="\033[32m"; YELLOW="\033[33m"; MAGENTA="\033[35m"; CYAN="\033[36m"
@@ -28,7 +30,7 @@ def bar(fraction, width=20):
 def self_test():
     """Who approved the run, and a bootstrapped framework, are shown under the target line."""
     import contextlib, io, tempfile
-    d=json.loads((Path(__file__).resolve().parent.parent/'examples'/'journey_tests_report.example.json').read_text(encoding='utf-8'))
+    d=load_json((Path(__file__).resolve().parent.parent/'examples'/'journey_tests_report.example.json'))
     d['metadata']['approval'].update(approved_by='delegated',note='The brief that started the run allowed it.')
     d['metadata']['bootstrap']={'framework':'playwright','version':'1.50.0','config':'web/playwright.config.ts','approved_by':'delegated'}
     with tempfile.TemporaryDirectory() as tmp:
@@ -55,7 +57,7 @@ def main():
     ap.add_argument('--color', choices=['auto','always','never'], default='auto')
     args=ap.parse_args()
     try:
-        data=json.loads(args.json_file.read_text(encoding='utf-8'))
+        data=load_json(args.json_file)
     except Exception as exc:
         print(f"Unable to read report: {exc}", file=sys.stderr); return 2
     color=supports_color(args.color)

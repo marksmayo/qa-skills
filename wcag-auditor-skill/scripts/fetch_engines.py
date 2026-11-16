@@ -23,6 +23,10 @@ LOCK = SKILL / 'data' / 'engines.lock.json'
 UA = 'qa-skills-wcag-auditor/1.0 (+fetch_engines.py)'
 
 
+UNPINNED_NOTE = ('tarball integrity verified; the file SHA-256 is not pinned in engines.lock.json, so the pinned npm '
+                 'tarball is cached and every check re-reads the file from it')
+
+
 def load_lock() -> dict:
     return json.loads(LOCK.read_text(encoding='utf-8'))
 
@@ -74,9 +78,24 @@ def verify_cached(cache: Path, eng: dict) -> tuple[Path | None, str]:
     if not f.exists():
         return None, 'not in cache'
     got = sha256(f.read_bytes())
-    want = eng.get('sha256') or _manifest(d).get('sha256')
+    want = eng.get('sha256')
     if not want:
-        return None, 'no recorded SHA-256 to check against'
+        # The file's SHA-256 is not pinned in the lock (vnu.jar). verified.json sits in the same cache folder, so it
+        # cannot vouch for the file: check it against the cached npm tarball and the lock's pinned integrity instead.
+        tgz = d / eng['tarball'].rsplit('/', 1)[-1]
+        if not tgz.exists():
+            return None, ('its SHA-256 is not pinned in engines.lock.json and the pinned npm tarball is not cached, so the '
+                          'cached file cannot be verified; run fetch_engines.py again')
+        raw = tgz.read_bytes()
+        if not integrity_ok(raw, eng['tarball_integrity']):
+            return None, 'its SHA-256 is not pinned, and the cached npm tarball fails the pinned integrity check'
+        try:
+            inner = _member(raw, eng['member'])
+        except (KeyError, ValueError, tarfile.TarError) as e:
+            return None, f'its SHA-256 is not pinned, and the cached tarball cannot be read ({e})'
+        if sha256(inner) != got:
+            return None, 'its SHA-256 is not pinned, and the cached file differs from the one in the pinned tarball'
+        return f, ''
     if got != want:
         return None, f'SHA-256 mismatch (cache {got[:12]}, expected {want[:12]})'
     return f, ''
@@ -87,9 +106,10 @@ def fetch(cache: Path, eng: dict, from_dir: Path | None = None) -> dict:
               'required': eng['required'], 'file': None, 'sha256': None, 'status': 'not_run', 'reason': ''}
     path, why = verify_cached(cache, eng)
     if path:
-        status.update(file=str(path), sha256=sha256(path.read_bytes()), status='ready', reason='cached and verified')
+        status.update(file=str(path), sha256=sha256(path.read_bytes()), status='ready',
+                      reason='cached and verified' if eng.get('sha256') else UNPINNED_NOTE)
         return status
-    data = None
+    data = raw_ok = None
     errors = []
     tar_name = eng['tarball'].rsplit('/', 1)[-1]
     sources = [('local', from_dir / tar_name)] if from_dir else [('registry', eng['tarball'])]
@@ -100,6 +120,7 @@ def fetch(cache: Path, eng: dict, from_dir: Path | None = None) -> dict:
                 errors.append(f'{kind}: tarball integrity check failed')
                 continue
             data = _member(raw, eng['member'])
+            raw_ok = raw
             break
         except Exception as e:  # network, missing file, bad tarball
             errors.append(f'{kind}: {type(e).__name__}: {e}')
@@ -115,11 +136,18 @@ def fetch(cache: Path, eng: dict, from_dir: Path | None = None) -> dict:
     if eng.get('sha256') and got != eng['sha256']:
         status.update(status='unavailable', reason=f'SHA-256 mismatch ({got[:12]} != {eng["sha256"][:12]}); not cached')
         return status
+    if not eng.get('sha256') and raw_ok is None:
+        status.update(status='unavailable', reason='its SHA-256 is not pinned and no tarball passed the pinned integrity '
+                                                   'check; not cached')
+        return status
     d = engine_dir(cache, eng)
     d.mkdir(parents=True, exist_ok=True)
     (d / eng['file']).write_bytes(data)
-    note = 'tarball integrity and SHA-256 verified' if eng.get('sha256') else \
-        'tarball integrity verified; SHA-256 recorded on first fetch'
+    if eng.get('sha256'):
+        note = 'tarball integrity and SHA-256 verified'
+    else:   # keep the pinned tarball: later checks re-read the file from it, never trust verified.json
+        (d / eng['tarball'].rsplit('/', 1)[-1]).write_bytes(raw_ok)
+        note = UNPINNED_NOTE
     (d / 'verified.json').write_text(json.dumps({'sha256': got, 'fetched_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
                                                  'source': eng['tarball'], 'check': note}, indent=1), encoding='utf-8')
     status.update(file=str(d / eng['file']), sha256=got, status='ready', reason=note)

@@ -8,6 +8,8 @@ Steps a run observed (steps[].observed) are listed apart from the inferred journ
 from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 RESET="\033[0m"; BOLD="\033[1m"; DIM="\033[2m"
 RED="\033[31m"; GREEN="\033[32m"; YELLOW="\033[33m"; MAGENTA="\033[35m"; CYAN="\033[36m"
@@ -55,7 +57,7 @@ def self_test():
     """Observed step results are shown apart from the inferred journeys, in the full report and counted in --brief."""
     import contextlib, io, tempfile
     example=Path(__file__).resolve().parent.parent/'examples'/'journeys'/'journey_map.json'
-    d=json.loads(example.read_text(encoding='utf-8'))
+    d=load_json(example)
     d['journeys'][0]['steps'][0]['observed']={'result':'the page answered 200 and showed the form',
                                               'run':'run/probe/home.txt','at':'2026-11-15'}
     problems=[]
@@ -90,7 +92,7 @@ def main():
     ap.add_argument('--brief', action='store_true', help='coverage headline, untested P1 journeys and counts only')
     args=ap.parse_args()
     try:
-        data=json.loads(args.json_file.read_text(encoding='utf-8'))
+        data=load_json(args.json_file)
     except Exception as exc:
         print(f"Unable to read journey map: {exc}", file=sys.stderr); return 2
     color=supports_color(args.color)

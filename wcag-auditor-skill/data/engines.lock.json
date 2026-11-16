@@ -55,7 +55,7 @@
    "member": "package/build/dist/vnu.jar",
    "file": "vnu.jar",
    "sha256": null,
-   "note": "Optional; needs Java 11+. Verified by the npm tarball integrity only; fetch_engines.py records the jar SHA-256 on first fetch and checks it afterwards. Runs locally on saved page HTML; never sent to the hosted W3C service."
+   "note": "Optional; needs Java 11+. The jar SHA-256 is not pinned (no copy was at hand to compute it from): fetch_engines.py caches the npm tarball, whose integrity is pinned here, and every check re-reads the jar from it; it never trusts a hash recorded in the cache. Runs locally on saved page HTML; never sent to the hosted W3C service."
   }
  ]
 }

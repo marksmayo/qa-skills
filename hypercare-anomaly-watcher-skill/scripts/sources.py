@@ -7,11 +7,15 @@ Live:
 Recorded (--from-dir): datadog/<query id>.json is one query response covering the whole period, sliced to
 the requested window; sentry/<YYYY-MM-DDTHHMM>.json is the issues list as it read at that tick.
 Only GET requests are made, and every request is logged (method, host, path, status; never keys or tokens).
+A redirect to another origin drops the keys and the token (safe_http.py); `python sources.py --self-test` checks it.
 """
 from __future__ import annotations
-import json, os, urllib.parse, urllib.request
+import json, os, sys, urllib.error, urllib.parse, urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from safe_http import open_url  # noqa: E402  (keys and tokens never follow a redirect to another origin)
 
 
 class Sources:
@@ -24,7 +28,7 @@ class Sources:
         req = urllib.request.Request(url, headers=headers, method='GET')
         u = urllib.parse.urlparse(url)
         try:
-            with urllib.request.urlopen(req, timeout=60) as r:
+            with open_url(req, timeout=60) as r:
                 body = r.read()
                 self.log.append({'method': 'GET', 'host': u.netloc, 'path': u.path, 'status': r.status})
         except urllib.error.HTTPError as e:
@@ -76,3 +80,45 @@ class Sources:
 def parse(t: str) -> datetime:
     d = datetime.fromisoformat(t.replace('Z', '+00:00'))
     return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+def self_test() -> int:
+    """Sources._get through a redirect to another loopback port (another origin): the Datadog keys and the
+    Sentry token must not follow. Fake keys; nothing leaves the machine."""
+    import http.server, threading
+    seen: list = []
+
+    class Other(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+
+        def do_GET(self):
+            seen.append({k.lower() for k in self.headers.keys()} & {'authorization', 'dd-api-key', 'dd-application-key'})
+            self.send_response(200); self.end_headers(); self.wfile.write(b'{"series": []}')
+
+    other = http.server.HTTPServer(('127.0.0.1', 0), Other)
+
+    class Api(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+
+        def do_GET(self):
+            self.send_response(302); self.send_header('Location', f'http://127.0.0.1:{other.server_address[1]}/x'); self.end_headers()
+
+    api = http.server.HTTPServer(('127.0.0.1', 0), Api)
+    for s in (other, api):
+        threading.Thread(target=s.serve_forever, daemon=True).start()
+    src = Sources({})
+    try:
+        src._get(f'http://127.0.0.1:{api.server_address[1]}/api/v1/query', {'DD-API-KEY': 'fake-key-0000', 'DD-APPLICATION-KEY': 'fake-app-0000'})
+        src._get(f'http://127.0.0.1:{api.server_address[1]}/api/0/issues/', {'Authorization': 'Bearer fake-token-0000'})
+    finally:
+        for s in (other, api):
+            s.shutdown(); s.server_close()
+    if seen != [set(), set()]:
+        print(f'sources self-test: FAILED (cross-origin redirect: the other origin received {seen})')
+        return 1
+    print('sources self-test: ok (Datadog keys and the Sentry token are not sent to another origin on a redirect)')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(self_test() if sys.argv[1:] == ['--self-test'] else (print(__doc__) or 2))

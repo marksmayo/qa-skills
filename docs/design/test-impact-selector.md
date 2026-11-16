@@ -1,6 +1,6 @@
 # Design: `test-impact-selector-skill`
 
-Status: Built (v1.5.0), see "As built" at the end. Build order: 10.
+Status: Built (v1.6.0), see "As built" at the end. Build order: 10.
 
 ## Mission
 
@@ -438,3 +438,14 @@ Where the build differs from the design above, and what the example showed.
   - **cfg per target** (`rust_cfg_keyed_by_target`): a test's gating cfg comes from its own target's
     module tree.
   - The examples have no Rust and are unchanged.
+
+### History revisions are never options (v1.6.0)
+
+- A history change's `commit` and `base` reached `git diff` and `git archive` as given, so a commit of
+  `--output=<file>` made git write that file. `select_tests.checked_rev` now refuses anything that is not
+  a commit id or ref name, resolves a commit with `git rev-parse --verify --end-of-options <rev>^{commit}`,
+  and `git diff` gets the resolved ids after `--end-of-options` (and a closing `--`); replay resolves a
+  base the same way before `git archive`.
+- **Tested** (written to fail first): `self_test.py` case `history_commit_is_never_an_option` (a commit
+  and a base of `--output=<marker>` are refused and no marker is written; full, short and symbolic
+  commits still work). The examples are unchanged.

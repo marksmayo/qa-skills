@@ -804,8 +804,55 @@ def state_focus_checks() -> tuple[list[str], str]:
     return fails, 'ran'
 
 
+def unpinned_engine_checks() -> list[str]:
+    """An engine whose file SHA-256 is not pinned in the lock (vnu.jar) is never trusted from the cache's own
+    verified.json: the cached copy is accepted only when the cached npm tarball still matches the lock's pinned
+    integrity and holds exactly that file. No network: the tarball is built here and read with --from-dir."""
+    import base64, hashlib, io, tarfile
+    import fetch_engines
+    fails = []
+    jar = b'qa-marker fake jar\n'
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode='w:gz') as tf:
+        info = tarfile.TarInfo('package/build/dist/vnu.jar')
+        info.size = len(jar)
+        tf.addfile(info, io.BytesIO(jar))
+    tgz = buf.getvalue()
+    eng = {'name': 'vnu', 'version': '0.0.1', 'license': 'MIT', 'required': False, 'sha256': None,
+           'tarball': 'https://registry.example.test/vnu-jar/-/vnu-jar-0.0.1.tgz',
+           'tarball_integrity': 'sha512-' + base64.b64encode(hashlib.sha512(tgz).digest()).decode(),
+           'member': 'package/build/dist/vnu.jar', 'file': 'vnu.jar'}
+    swapped = b'qa-marker swapped jar\n'
+    with tempfile.TemporaryDirectory() as d:
+        cache = Path(d)
+        ed = fetch_engines.engine_dir(cache, eng)
+        ed.mkdir(parents=True)
+        (ed / 'vnu.jar').write_bytes(swapped)   # a jar swapped in the cache, with a manifest that vouches for it
+        (ed / 'verified.json').write_text(json.dumps({'sha256': hashlib.sha256(swapped).hexdigest()}), encoding='utf-8')
+        path, why = fetch_engines.verify_cached(cache, eng)
+        if path:
+            fails.append("an unpinned jar was trusted because the cache's own verified.json vouched for it")
+        elif 'not pinned' not in why:
+            fails.append(f'the refusal should say the SHA-256 is not pinned, said {why!r}')
+        (cache / 'tarballs').mkdir()
+        (cache / 'tarballs' / 'vnu-jar-0.0.1.tgz').write_bytes(tgz)
+        st = fetch_engines.fetch(cache, eng, from_dir=cache / 'tarballs')
+        path, why = fetch_engines.verify_cached(cache, eng)
+        if st.get('status') != 'ready' or not path or path.read_bytes() != jar or 'not pinned' not in (st.get('reason') or ''):
+            fails.append(f'a jar from a tarball matching the pinned integrity should verify, and say its SHA-256 is not '
+                         f'pinned ({st.get("status")}, {st.get("reason")!r}, {why!r})')
+        (ed / 'vnu.jar').write_bytes(swapped)
+        if fetch_engines.verify_cached(cache, eng)[0]:
+            fails.append('a jar changed after the fetch should fail against the cached pinned tarball')
+    return fails
+
+
 def main() -> int:
     ok = merge_findings.self_test() == 0
+    fails = unpinned_engine_checks()
+    ok &= not fails
+    print(f"self-test {'passed' if not fails else 'FAILED'}: fetch_engines.py: an unpinned jar is checked against the "
+          'pinned tarball' + ''.join(f'\n  - {f}' for f in fails))
     for name, fn in (('render_report.py: --color never', render_checks),
                      ('run_audit.py: named states in the check matrix', state_matrix_checks),
                      ('validate_audit.py: critical-path priority, affects_step and untestable surfaces', rating_checks),

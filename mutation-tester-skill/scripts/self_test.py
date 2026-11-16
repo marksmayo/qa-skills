@@ -166,6 +166,20 @@ def case_builtin_go_engine(tmp: Path) -> None:
     assert (repo / 'rates' / 'rates.go').read_text(encoding='utf-8') == GO_SRC
 
 
+def case_builtin_scope_outside_repo(tmp: Path) -> None:
+    """A scope naming a file outside --repo (../ or an absolute path) is refused before anything is mutated, so the
+    mutator never writes a mutant into a file it was not asked to test."""
+    repo = py_shop(tmp / 'repo')
+    outside = tmp / 'outside.py'
+    outside.write_text('def f(a, b):\n    return a + b\n', encoding='utf-8')
+    for name in ('../outside.py', outside.as_posix()):
+        scope = write_json(tmp / 'scope.json', scope_for({name: [[1, 2]]}))
+        res = run('builtin_mutator.py', '--repo', repo, '--scope', scope, '--run-dir', tmp / 'run', '--minutes', '1')
+        text = res.stderr + res.stdout
+        assert res.returncode != 0 and 'outside --repo' in text and not (tmp / 'run' / 'coverage.json').exists(), \
+            f'{name}: exit {res.returncode}, {text[-400:]}'
+
+
 def case_builtin_unsupported_language(tmp: Path) -> None:
     """A scope with only Rust source fails loudly and names the files it could not mutate."""
     repo = tmp / 'repo'
@@ -983,7 +997,7 @@ def case_prove_kill_rust(tmp: Path) -> None:
         shutil.rmtree(shared, ignore_errors=True)
 
 
-CASES = [case_builtin_go_engine, case_builtin_unsupported_language, case_ranges_go_only, case_mte_engine_label,
+CASES = [case_builtin_go_engine, case_builtin_scope_outside_repo, case_builtin_unsupported_language, case_ranges_go_only, case_mte_engine_label,
          case_gremlins_operators, case_duplicate_mutants_merged, case_proximity_go, case_proximity_unparsed,
          case_completeness_external_engine, case_prove_kill_go, case_prove_kill_unsupported, case_prove_kill_cmd_shim_metacharacters,
          case_builtin_import_time_coverage, case_builtin_budget_uses_covering_tests, case_prove_kill_original_timeout,

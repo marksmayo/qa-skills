@@ -1,7 +1,7 @@
 ---
 name: hypercare-anomaly-watcher
 description: Watch production for the hypercare window after a release - Datadog metrics and Sentry issues, read-only, on a schedule (one tick per run) - and flag what changed against a statistical baseline (the same hour on the days before the release; robust z-scores for rates and latencies, Poisson tails for counts, a minimum change, persistence across ticks), correlate each anomaly with the release, and draft incidents for a named person to raise. Never pages, never creates incidents, monitors, issues or comments anywhere. Seasonal spikes in the baseline are normal; too little baseline is not_assessed, never normal; a quiet tick is never "all clear".
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Hypercare anomaly watcher
@@ -22,7 +22,8 @@ draft can become a bug-reproducer's input.
 ## Non-negotiable rules
 
 1. **Read-only**: GET requests to the monitoring APIs only, with `DD_API_KEY`/`DD_APP_KEY` and
-   `SENTRY_AUTH_TOKEN` from the environment. Keys and tokens are never printed or written.
+   `SENTRY_AUTH_TOKEN` from the environment. Keys and tokens are never printed or written, and never sent to
+   another origin on a redirect (`safe_http.py`; `python scripts/sources.py --self-test`).
 2. **Every anomaly carries its statistics**: value, baseline samples, median and MAD (or expected count),
    score, threshold and the query.
 3. **Not enough baseline is `not_assessed`** (fewer than 7 samples, no points, a failed fetch), never normal.

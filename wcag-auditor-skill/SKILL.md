@@ -1,7 +1,7 @@
 ---
 name: wcag-auditor
 description: Audit live web pages against WCAG (2.2 AA by default) without needing the source code. Runs three open-source engines inside a real browser (axe-core, IBM Equal Access, HTML_CodeSniffer), adds keyboard, focus, reflow, text-spacing, zoom, target-size, hover, motion, language and media probes, merges and de-duplicates the results by component, maps every issue to a success criterion, rates severity with a published rubric, and gives every SC at the target level an EARL outcome. Untested criteria become a manual test plan. The report never says the site conforms.
-version: 1.6.0
+version: 1.7.0
 ---
 
 # WCAG Auditor
@@ -108,7 +108,7 @@ accordions, form errors), and reference them from critical-path steps.
 ```bash
 pip install -r requirements.txt && python -m playwright install chromium   # ask first
 python scripts/fetch_engines.py                       # pinned engines, SHA-512 and SHA-256 verified
-python scripts/fetch_engines.py --include-optional    # also the Nu HTML Checker (needs Java)
+python scripts/fetch_engines.py --include-optional    # also the Nu HTML Checker (needs Java; its jar SHA-256 is not pinned, so the pinned tarball is cached and re-checked)
 ```
 
 Each engine is verified against `data/engines.lock.json` before it is cached, and again before it

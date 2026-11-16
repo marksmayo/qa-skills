@@ -114,7 +114,7 @@ def cmd_init(a) -> int:
             raise SystemExit(f'config: missing {k}')
     dep = parse(cfg['release']['deployed_at'])
     tm = cfg['tick_minutes']
-    st = {'schema_version': '1.0.0', 'skill': {'name': 'hypercare-anomaly-watcher', 'version': '1.0.0'},
+    st = {'schema_version': '1.0.0', 'skill': {'name': 'hypercare-anomaly-watcher', 'version': '1.1.0'},
           'config': cfg, 'config_sha256': hashlib.sha256(a.config.read_bytes()).hexdigest(),
           'window': {'from': iso(dep), 'to': iso(dep + timedelta(hours=cfg['window_hours']))},
           'schedule': {'every_minutes': tm, 'cron': f'*/{tm} * * * *' if tm < 60 else f'{dep.minute} */{tm // 60} * * *',

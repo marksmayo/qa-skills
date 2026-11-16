@@ -29,7 +29,9 @@ tags.
 5. **Results come from JUnit**: no JUnit artifact is `not_collected`, never "passed"; the totals are
    counted from the files.
 6. **Tokens stay out of files** (`GITHUB_TOKEN`/`GH_TOKEN`, `AZURE_DEVOPS_EXT_PAT`); secret inputs are
-   redacted.
+   redacted. Tokens are never sent to another origin: artifact and log downloads redirect to storage hosts,
+   and `safe_http.py` drops credential headers on any cross-origin redirect. Job and artifact names from the
+   CI become plain file names (`safe_name`) and every write is checked to stay inside the run folder.
 7. **No "all green"**: say "N of M tests passed in run R".
 8. **Never approve** a pipeline's environment gate or a deployment on someone's behalf.
 

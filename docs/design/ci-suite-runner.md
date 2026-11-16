@@ -1,6 +1,6 @@
 # Design: `ci-suite-runner-skill`
 
-Status: Built (v1.0.0); see "As built" at the end. Build order: 31.
+Status: Built (v1.1.0); see "As built" at the end. Build order: 31.
 
 ## Mission
 
@@ -169,3 +169,13 @@ Where the build differs from the design above, and what the example showed.
 - **Testing:** 19 of 19 seeded violations are caught, including an expired or non-covering grant, a
   production run under a grant, a second trigger, a refused request that still reached the CI, edited
   totals, and a token in the record.
+
+### Security hardening (v1.1.0)
+
+- **Redirects keep tokens home.** `collect` downloads artifacts and logs through `safe_http.py` (shared), so
+  a 302 to blob storage no longer carries the GitHub or Azure DevOps token to the storage host.
+- **CI-supplied names are file names.** Job and artifact names (and zip entry names) go through `safe_name`
+  (no separators, no `..`, no Windows device names; a clash gets the job id) and every write is checked to
+  resolve inside the run folder. A job named `../../escape` used to write two folders above the run.
+- **Tested** (written to fail first): `python scripts/run_suite.py --self-test` runs `collect` against a
+  loopback API that redirects to a second loopback port and names a job and an artifact with `../../`.

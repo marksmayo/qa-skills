@@ -9,6 +9,8 @@ test-data issue as Markdown, ready to paste into a tracker by a person (the skil
 from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 COL = {'real': '31;1', 'data': '35', 'flaky': '33', 'environment': '36', 'consequence': '34', 'unclassified': '2', 'bold': '1', 'dim': '2'}
 
@@ -34,7 +36,7 @@ def main() -> int:
     a = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
-    d = json.loads(a.triage.read_text(encoding='utf-8'))
+    d = load_json(a.triage)
     if a.defects_md:
         drafted = [f for f in d['failures'] if f.get('draft_defect')]
         if not drafted:

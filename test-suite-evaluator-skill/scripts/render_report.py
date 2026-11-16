@@ -13,6 +13,8 @@ inspected artefacts.
 from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 RESET = "\033[0m"; BOLD = "\033[1m"; DIM = "\033[2m"
 RED = "\033[31m"; GREEN = "\033[32m"; YELLOW = "\033[33m"; MAGENTA = "\033[35m"; CYAN = "\033[36m"
@@ -381,7 +383,7 @@ def brief(data: dict, color: bool) -> str:
 def self_test() -> int:
     """The brief score card says when no cap applies and carries the decimal warning (SKILL.md Step 7 and 10)."""
     import copy
-    ex = json.loads((Path(__file__).resolve().parent.parent / 'examples' / 'evaluation.example.json').read_text(encoding='utf-8'))
+    ex = load_json((Path(__file__).resolve().parent.parent / 'examples' / 'evaluation.example.json'))
     fails = []
     capped = brief(ex, color=False)
     if 'No caps applied' in capped or DECIMALS_NOTE not in capped:
@@ -424,7 +426,7 @@ def main(argv=None):
     ap.add_argument('--brief', action='store_true', help='print only the headline, caps, findings, dimensions and next steps')
     args = ap.parse_args(argv)
     try:
-        data = json.loads(args.json_file.read_text(encoding='utf-8-sig'))
+        data = load_json(args.json_file)
     except Exception as exc:
         print(f'Unable to read evaluation: {exc}', file=sys.stderr)
         return 2
