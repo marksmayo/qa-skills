@@ -1011,8 +1011,245 @@ def fetch_lists_checks_before_write() -> None:
                                     f'(rc {rc}, cache holds {left})')
 
 
+# ------------------------------------------------------------------ a tool repository: generic names, text, artifacts
+TOOL_PRINTS_PY = '''import sys
+
+def report(checks, skipped):
+    for name, ok in checks:
+        print(f"{'PASS' if ok else 'FAIL'} {name}")
+    for s in skipped:
+        print(f"skipped {s['dir']}: {s['reason']}", file=sys.stderr)
+    title = 'Summary'
+    print(title)
+'''
+VISIT_FORM_PY = '''from flask import request
+import logging
+log = logging.getLogger(__name__)
+
+def book():
+    name = request.form['name']
+    reason = request.form['reason']
+    log.info('booking for %s', reason)
+'''
+NOTES_PY = '''import logging
+log = logging.getLogger(__name__)
+
+def note(patient):
+    log.info('visit: %s', patient['reason'])
+'''
+
+
+def generic_names_need_context() -> None:
+    st, _ = scan({'tools/report.py': TOOL_PRINTS_PY, 'clinic/visit.py': VISIT_FORM_PY, 'clinic/notes.py': NOTES_PY})
+    tool = [(c['line'], c.get('fields')) for c in st['candidates'] if c['file'] == 'tools/report.py']
+    check(not tool, f'scan: name, title and reason printed by a tool are not personal data (data/categories.json generic_property_names) '
+                    f'without personal-data context (got {tool})')
+    visit = [c for c in st['candidates'] if c['file'] == 'clinic/visit.py']
+    check(bool(visit) and 'reason' in visit[0]['fields'] and visit[0]['type'] == 'sensitive_category_flow',
+          'scan: a generic name collected from a form in the same file and logged is still a candidate')
+    notes = [c for c in st['candidates'] if c['file'] == 'clinic/notes.py']
+    check(bool(notes) and 'reason' in notes[0]['fields'], 'scan: a generic name read from a person-like object (patient) is still a candidate')
+
+
+SCANNER_PY = '''"""Scanner for sends.
+
+A sink's code view covers Sentry.setUser({email, name}) and el.src = "https://cdn.vendor-x.io/a.js".
+"""
+import re, urllib.request
+
+PATTERNS = [r"fetch\\\\(", "logger.info("]
+FIXTURE = \'\'\'
+        <Script src="https://plausible.io/js/script.js" strategy="afterInteractive" />
+        requests.post("https://api.segment.io/v1/track", json={"email": email})
+\'\'\'
+
+
+def run(url):
+    # localStorage.setItem("email", email) and fetch( are only described here
+    return urllib.request.urlopen(url)
+'''
+SCANNER_JS = '''// Sentry.setUser({ email: user.email }) is shown in this comment only
+/* localStorage.setItem("email", email) */
+const sample = `<script src="https://www.googletagmanager.com/gtag/js?id=G-TEST000"></script>`;
+export function render() { return sample; }
+'''
+
+
+def strings_not_sinks() -> None:
+    st, _ = scan({'scripts/scanner.py': SCANNER_PY, 'scripts/sample.mjs': SCANNER_JS})
+    bad = [(c['file'], c['line'], c['type'], c.get('subtype')) for c in st['candidates']]
+    check(not bad, f'scan: docstrings, comments and fixture strings are not sinks, loaders or sends (got {bad})')
+    sinks = sorted((s['file'], s['line']) for s in st['sinks'])
+    check(sinks == [('scripts/scanner.py', 16)], f'scan: only the real urlopen call is a sink (got {sinks})')
+
+
+ARTIFACT_JSON = '{\n "runs": [\n  {"cwd": "C:/Users/jdoe/AppData/Local/Temp/qa-run", "ok": true},\n  {"cwd": "C:/Users/jdoe/src/x"}\n ]\n}\n'
+CI_LOG = 'cwd /home/runner/work/tool/tool\nsee https://docs.example-host.io/home/alice/guide\n'
+
+
+def home_path_in_artifact() -> None:
+    st, _ = scan({'tool.py': 'print("hi")\n', 'examples/report.example.json': ARTIFACT_JSON, 'results/ci.log': CI_LOG,
+                  'docs/notes.md': 'Run it from `/Users/<you>/src` or `C:\\\\Users\\\\%USERNAME%`.\n'})
+    arts = [c for c in st['candidates'] if c['type'] == 'identifier_in_artifact']
+    check(len(arts) == 1 and arts[0]['file'] == 'examples/report.example.json' and arts[0]['line'] == 3
+          and arts[0].get('subtype') == 'home_path_in_artifact',
+          f'scan: an account home path in a committed JSON artifact is an identifier_in_artifact candidate '
+          f'(got {[(c["file"], c["line"], c.get("subtype")) for c in arts]})')
+    check(bool(arts) and (arts[0].get('also_at') or []) == ['examples/report.example.json:4'], 'scan: other places with the same account are under also_at')
+    check('jdoe' not in json.dumps(st), 'scan: the account name itself is never written to the output')
+
+
+OPENER_PY = '''import json, urllib.request
+
+CI_API = 'https://api.shipci-example.io'
+OPENER = urllib.request.build_opener()
+
+
+def _get(url):
+    req = urllib.request.Request(url)
+    with OPENER.open(req, timeout=60) as r:
+        return json.loads(r.read())
+
+
+def runs(repo):
+    return _get(f'{CI_API}/repos/{repo}/runs')
+
+
+def builds(org):
+    base = f'https://boards.devhub-example.io/{org}/_apis/build'
+    return urllib.request.urlopen(urllib.request.Request(f'{base}/builds'))
+'''
+GUARD_CJS = '''// a self-test: the guard must refuse this
+async function selfTest() {
+  try { await fetch('http://198.51.100.7/'); } catch (e) { return 'refused'; }
+}
+module.exports = { selfTest };
+'''
+
+
+def outbound_opener_constants() -> None:
+    st, _ = scan({'scripts/fetch_run.py': OPENER_PY, 'scripts/net_guard.cjs': GUARD_CJS})
+    hosts = sorted({h['host'] for h in st['outbound_hosts']})
+    check({'api.shipci-example.io', 'boards.devhub-example.io'} <= set(hosts),
+          f'scan: hosts reached through OPENER.open and urlopen(Request(...)) with a base URL constant are outbound hosts (got {hosts})')
+    check('198.51.100.7' not in hosts, 'scan: a TEST-NET address (a guard self-test) is not an outbound host')
+
+
+SHOP_SERVER = '''const express = require('express');
+const app = express();
+app.post('/signup', (req, res) => {
+  const email = req.body['email'];
+  console.log('signup', email);
+  res.send('ok');
+});
+'''
+
+
+def fixtures_excluded() -> None:
+    files = {'tool.py': 'print("hi")\n', 'examples/shop/package.json': '{"name": "shop", "dependencies": {"express": "4"}}\n',
+             'examples/shop/server.js': SHOP_SERVER}
+    st, out = scan(files)
+    fx = [x.get('dir') for x in st.get('fixtures_excluded') or []]
+    check(fx == ['examples/shop'] and not any(c['file'].startswith('examples/') for c in st['candidates']),
+          f'scan: a sample project under examples/ is left out by default and listed (got {fx})')
+    check('examples/shop' in out, 'scan: the excluded fixture is printed')
+    st, _ = scan_args(files, ['--include-fixtures'])
+    shop = [c for c in st['candidates'] if c['file'].startswith('examples/shop/')]
+    check(bool(shop) and all(c.get('fixture') == 'examples/shop' for c in shop),
+          'scan: --include-fixtures scans it, and its candidates name the fixture')
+    st, _ = scan_args({'tool.py': 'print("hi")\n', 'samples-x/app/server.js': SHOP_SERVER}, ['--fixture-dir', 'samples-x'])
+    check(not any(c['file'].startswith('samples-x/') for c in st['candidates']), 'scan: --fixture-dir names another fixture folder')
+
+
+def fixture_dismissal() -> None:
+    cands = json.loads(CANDS.read_text(encoding='utf-8'))
+    planted = {'id': 'S900', 'source': 'static', 'type': 'sensitive_category_flow', 'file': 'examples/shop/server.js', 'line': 5,
+               'fields': ['reason'], 'categories': ['health'], 'confidence': 'pattern', 'fixture': 'examples/shop'}
+    cands['candidates'].append(planted)
+    rep = base()
+    rep['triage'].append({'candidate': 'S900', 'decision': 'dismissed', 'reason_code': 'fixture',
+                          'reason': 'a planted flow in the sample project the tool is tested on'})
+    out = run_validator(rep, cands=cands)
+    check('S900' not in out, f'validator: a candidate in a fixture project can be dismissed as fixture, special category or not ({out.strip()[-300:]})')
+    cands['candidates'][-1] = dict(planted, fixture=None, file='app/server.js')
+    out = run_validator(rep, cands=cands)
+    check('S900: fixture' in out, 'validator: the fixture dismissal needs a candidate inside a fixture project')
+
+
+def disclaimer_subject() -> None:
+    rep = base()
+    rep['headline']['disclaimer'] = vpa.PROV['disclaimer'].replace('the app', 'the tool')
+    out = run_validator(rep)
+    check('disclaimer' not in out, f'validator: the disclaimer may name the tool (or code, repository, library) instead of the app ({out.strip()[-200:]})')
+    rep['headline']['disclaimer'] = vpa.PROV['disclaimer'].replace('the app', 'the weather')
+    check('disclaimer' in run_validator(rep), 'validator: any other change to the disclaimer still fails')
+
+
+def recompute_elsewhere() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        proj = Path(d) / 'proj'
+        (proj / 'run').mkdir(parents=True)
+        (proj / 'run' / 'static.json').write_text((SKILL / 'examples' / 'run' / 'static.json').read_text(encoding='utf-8'), encoding='utf-8')
+        (proj / 'declared.json').write_text((REPO / 'declared_processors.json').read_text(encoding='utf-8'), encoding='utf-8')
+        reason = json.loads(CANDS.read_text(encoding='utf-8'))['run_status_reason']
+        r = subprocess.run([sys.executable, str(HERE / 'merge_candidates.py'), '--static', 'run/static.json', '--declared', 'declared.json',
+                            '--regions', 'AU,EU', '--run-status-reason', reason, '--out', 'run/candidates.json'],
+                           capture_output=True, text=True, cwd=proj)
+        if r.returncode:
+            raise AssertionError(r.stderr[-300:])
+        audit = Path(d) / 'audit.json'
+        audit.write_text(BASE.read_text(encoding='utf-8'), encoding='utf-8')
+        args = [sys.executable, str(HERE / 'validate_privacy_audit.py'), str(audit), '--candidates', str(proj / 'run' / 'candidates.json'),
+                '--repo', str(REPO), '--recompute']
+        r = subprocess.run(args, capture_output=True, text=True, cwd=SKILL)
+        out = r.stdout + r.stderr
+        check(': valid (' in out, f'validator: --recompute finds inputs recorded relative to where the merge ran ({out.strip()[-300:]})')
+        c = json.loads((proj / 'run' / 'candidates.json').read_text(encoding='utf-8'))
+        c['static'] = 'gone/static.json'
+        (proj / 'run' / 'candidates.json').write_text(json.dumps(c), encoding='utf-8')
+        r = subprocess.run(args, capture_output=True, text=True, cwd=SKILL)
+        out = r.stdout + r.stderr
+        check('Traceback' not in out and 'gone/static.json' in out and 'not found' in out,
+              f'validator: a recorded input that cannot be found is a clear error, not a traceback ({out.strip()[-300:]})')
+
+
+COPY_PY = ('from pathlib import Path\n\nCACHE = Path.home() / ".cache" / "tool"\n\n\ndef cache_dir(name: str) -> Path:\n'
+           '    return CACHE / name\n')
+
+
+def copies_grouped() -> None:
+    st, _ = scan({'shared/scripts/cache.py': COPY_PY, 'skill-a/scripts/cache.py': COPY_PY, 'skill-b/scripts/cache.py': COPY_PY})
+    pts = [c for c in st['collection'] if c['kind'] == 'machine_identifier']
+    check(len(pts) == 1 and sorted(pts[0].get('also_at') or []) == ['skill-a/scripts/cache.py:3', 'skill-b/scripts/cache.py:3'],
+          f'scan: identical copies of a file give one collection point, the copies under also_at (got {[(p["file"], p.get("also_at")) for p in pts]})')
+
+
+SANDBOX_PY = '''import json, os, subprocess
+from pathlib import Path
+
+
+def run(cmd, summary, real_home=None):
+    real_home = Path(real_home) if real_home else Path.home()
+    env = dict(os.environ, HOME=str(real_home / 'sandbox'))
+    code = subprocess.run(cmd, env=env).returncode
+    Path(summary).write_text(json.dumps({'exit_code': code}))
+
+
+def warn(w):
+    print(f'warning: warm runs of {w["url"]} ({w["profile"]}) did not use the cache')
+'''
+
+
+def tool_values_not_identifiers() -> None:
+    st, _ = scan({'scripts/sandbox.py': SANDBOX_PY})
+    got = [(c['line'], c['type'], c.get('fields')) for c in st['candidates']]
+    check(not got, f'scan: an exit code from a run given the home as env=, and a "profile" key, are not identifiers or a profile object (got {got})')
+
+
 def main() -> int:
-    for t in (fetch_lists_checks_before_write, rust_dominant_by_lines, host_and_account_names, outbound_constant, subtitles_not_title, regex_literal_not_sink,
+    for t in (tool_values_not_identifiers, generic_names_need_context,strings_not_sinks, home_path_in_artifact, outbound_opener_constants, fixtures_excluded,
+              fixture_dismissal, disclaimer_subject, recompute_elsewhere, copies_grouped,
+              fetch_lists_checks_before_write,rust_dominant_by_lines, host_and_account_names, outbound_constant, subtitles_not_title, regex_literal_not_sink,
               minified_speed, by_the_code_statement, artifact_finding, go_scan, unanalysed_language, template_loaders, fonts_not_tracker, undeclared_without_canary, telemetry_before_consent, declared_must_name, inventory_and_headline,
               observed_with_runtime_evidence, url_credentials_message, language_limitation, committed_dist, static_front_end_flows,
               agent_undeclared_third_party, console_and_key_canaries, next_script_loaders, csp_compared, vendors_added, policy_mismatch,

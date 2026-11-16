@@ -135,5 +135,6 @@ special categories or tracking after rejection), or `dismissed` with a code the 
 csrf/xsrf and whose reason says it is the readable half of a double-submit check),
 `functional_no_identifier`, `constant_in_source`, `random_per_load_id` (hex values that change on every
 request and never recur across consent states), `pii_disabled` (default PII off, or replay masked by the
-SDK default), `duplicate`, `false_match`, `not_personal_data`. A special-category candidate can only be
-dismissed as `false_match`.
+SDK default), `duplicate`, `false_match`, `not_personal_data`, `fixture` (the candidate lies inside a
+sample or fixture project the static scan lists: a flow planted on purpose in a tool's examples, not the
+repository's own). A special-category candidate can only be dismissed as `false_match` or `fixture`.
