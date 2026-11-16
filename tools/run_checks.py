@@ -473,7 +473,12 @@ def run_command(c: Command, scratch: Path, root: Path, base: dict, opts) -> dict
         res.update(status='passed', reason=None)
     if res['status'] == 'failed':
         res['tail'] = lines[-60:]
+        # the lines that say what failed, wherever they are (a self-test lists them before its summary)
+        res['failures'] = [l for l in lines if FAILURE_LINE.search(l)][:40]
     return res
+
+
+FAILURE_LINE = re.compile(r'^\s*(FAIL\b|FAILED\b|ERROR\b|Traceback \(most recent call last\)|AssertionError|\w+Error:)')
 
 
 def block_skill(cmds: list, block: int) -> str:
@@ -511,6 +516,8 @@ def markdown(summary: dict) -> str:
         out += ['### Failed', '']
         for r in fails:
             out += [f"- `{r['command']}` ({r['cwd']}): {r['reason']}"]
+            if r.get('failures'):
+                out += ['', '  Failures:', '', '  ```', *['  ' + t for t in r['failures']], '  ```']
             if r.get('tail'):
                 out += ['', '  ```', *['  ' + t for t in r['tail'][-25:]], '  ```', '']
     skips = {}
@@ -553,6 +560,8 @@ def run_all(cmds: list, root: Path, opts) -> dict:
                 extra = f" {r.get('seconds', 0):6.1f}s" if r['status'] != 'skipped' else ' ' * 8
                 why = f" :: {r['reason']}" if r.get('reason') else ''
                 print(f"{r['status'].upper():8}{extra} [{r['cwd']}] {c.line}{why}", flush=True)
+                if r['status'] == 'failed' and r.get('failures'):
+                    print('\n'.join('    ! ' + t for t in r['failures']), flush=True)
                 if r['status'] == 'failed' and r.get('tail'):
                     print('\n'.join('    | ' + t for t in r['tail'][-15:]), flush=True)
         restore(scratch, root, base)
@@ -635,6 +644,11 @@ if '--sleep' in args:
     import time; time.sleep(30)
 if '--fail' in args:
     print('boom'); sys.exit(1)
+if '--fail-early' in args:
+    print('FAIL  early-check: the value was wrong')
+    for i in range(100):
+        print(f'ok    later check {i}')
+    print('1 failure(s)'); sys.exit(1)
 print('SKIP the Go checks (go not installed)')
 '''
 READER = '''import sys, pathlib
@@ -650,6 +664,7 @@ python a-skill/scripts/w.py --touch a-skill/data.txt
 python a-skill/scripts/w.py --same a-skill/data.txt
 python a-skill/scripts/w.py --need-skill-cwd
 python a-skill/scripts/w.py --fail
+python a-skill/scripts/w.py --fail-early
 python a-skill/scripts/w.py --sleep
 node a-skill/scripts/n.mjs
 ```
@@ -762,6 +777,10 @@ def self_test() -> int:
               and r['python a-skill/scripts/w.py --need-skill-cwd'].get('ran_from') == 'a-skill')
         check('a failing command fails with its output', st('python a-skill/scripts/w.py --fail') == 'failed'
               and 'boom' in '\n'.join(r['python a-skill/scripts/w.py --fail'].get('tail') or []))
+        early = r['python a-skill/scripts/w.py --fail-early']
+        check('a failing command names its FAIL lines even when they scrolled out of the tail',
+              st('python a-skill/scripts/w.py --fail-early') == 'failed'
+              and any('early-check' in f for f in early.get('failures') or []))
         check('a command over the timeout fails as timed out', st('python a-skill/scripts/w.py --sleep') == 'failed'
               and 'timed out' in (r['python a-skill/scripts/w.py --sleep'].get('reason') or ''))
         check('a missing toolchain is a skip with its reason', st('node a-skill/scripts/n.mjs') == 'skipped'
