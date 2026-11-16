@@ -24,6 +24,17 @@ never replaced by a missing-file error. --env K=V [K=V ...], --npm-script and --
 passed to run_tests.py (a fake DATABASE_URL for a setup file, the repo's `npm test` flags);
 --package-env PACKAGE:K=V adds variables for one package's runs only.
 
+Python tests run with the suite's own runner, the `runner` scan_tests.py recorded (--runner
+overrides it for the invocation): pytest, or a script's own self-test (run_tests.py --preset
+selftest with the script's command), never pytest for a self-test whose check() records failures
+pytest never sees. A self-test runs one test at a time: the script's other tests are silenced
+(`return None`, listed in `silenced`) for its runs, its status is failed when any check line failed
+or the script exited non-zero (a crash before any check line too), errored when it could not start
+or timed out. A test no known runner runs (`runner: unknown`) is not_run with not_run_reason.
+Python targets are looked up from the package directory, then from the directories the test file
+puts on sys.path, its own directory and each parent (a self-test importing a sibling module); a
+target may also be a file, `scripts/pricing.py:fare`.
+
 The outcome is `passed_neutralised` or `failed_neutralised` only when the unchanged test passed
 and at least one neutralised (`return`) run ran it. When the unchanged test did not run (not
 found, no run recorded) or failed, or no neutralised run ran it, the outcome is `errored`, with
@@ -36,7 +47,8 @@ code is neutralised. Test ids may then name tests that only exist after the patc
 
 Python packages are copied once per invocation to a temporary directory outside the repo (a
 root-level package too), leaving out VCS data, caches, virtualenvs and node_modules, the run
-directory, and anything matching --copy-ignore (for example large images the tests never open).
+directory, and anything matching --copy-ignore (for example large images the tests never open;
+several globs per flag, or repeat it).
 Every test in the invocation shares that copy. A --cwd directory is used as given (it must be a
 scratch copy, and can be reused across invocations). Every file patched in either is restored
 byte for byte (line endings included) straight after its run and checked against its original
@@ -117,15 +129,82 @@ def tree_hash(root: Path, skip: Path) -> str:
     return h.hexdigest()
 
 
-def py_target_file(pkg_dir: Path, dotted: str) -> tuple[Path, str] | None:
-    """'ledger.tax.gst' -> (pkg_dir/ledger/tax.py, 'gst'); 'ledger.rows.Grouper.number' -> (.../rows.py, 'Grouper.number')."""
+def py_target_file(pkg_dir: Path, dotted: str, bases: list[Path] | None = None) -> tuple[Path, str] | None:
+    """'ledger.tax.gst' -> (pkg_dir/ledger/tax.py, 'gst'); 'ledger.rows.Grouper.number' -> (.../rows.py, 'Grouper.number').
+    The module is looked up from the package directory, then from each of bases (the test file's directory and its
+    parents, and directories the test file adds to sys.path), the way the test itself imports it. A target may also
+    name a file: 'scripts/pricing.py:fare' (relative to the package)."""
+    if ':' in dotted and dotted.split(':', 1)[0].endswith('.py'):
+        file, _, func = dotted.partition(':')
+        p = pkg_dir / file
+        return (p, func) if p.is_file() and func else None
     parts = dotted.split('.')
-    for cut in range(len(parts) - 1, 0, -1):
-        base = pkg_dir.joinpath(*parts[:cut])
-        for cand in (base.with_suffix('.py'), base / '__init__.py', pkg_dir / 'src' / Path(*parts[:cut]).with_suffix('.py')):
-            if cand.is_file():
-                return cand, '.'.join(parts[cut:])
+    for top in [pkg_dir] + [b for b in bases or [] if b != pkg_dir]:
+        for cut in range(len(parts) - 1, 0, -1):
+            base = top.joinpath(*parts[:cut])
+            for cand in (base.with_suffix('.py'), base / '__init__.py', top / 'src' / Path(*parts[:cut]).with_suffix('.py')):
+                if cand.is_file():
+                    return cand, '.'.join(parts[cut:])
     return None
+
+
+def _path_value(node: ast.AST, names: dict, file: Path):
+    """The directory a sys.path expression names, for the shapes test files use: Path(__file__).resolve().parent,
+    .parent chains, / 'sub', os.path.dirname/abspath/join, str(...) and module-level names bound to those. None
+    when it is anything else."""
+    if isinstance(node, ast.Name):
+        if node.id == '__file__':
+            return file
+        return _path_value(names[node.id], names, file) if node.id in names else None
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.Attribute):
+        v = _path_value(node.value, names, file)
+        if isinstance(v, Path):
+            return v.parent if node.attr == 'parent' else v if node.attr in ('absolute',) else None
+        return None
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+        a, b = _path_value(node.left, names, file), _path_value(node.right, names, file)
+        return a / b if isinstance(a, Path) and isinstance(b, str) else None
+    if isinstance(node, ast.Call):
+        fname = scan_tests.call_name(node)
+        if isinstance(node.func, ast.Attribute) and fname in ('resolve', 'absolute'):
+            return _path_value(node.func.value, names, file)
+        args = [_path_value(a, names, file) for a in node.args]
+        if fname in ('Path', 'PurePath', 'str', 'abspath', 'realpath', 'fspath') and len(args) == 1:
+            return Path(args[0]) if isinstance(args[0], (str, Path)) else None
+        if fname == 'dirname' and len(args) == 1 and isinstance(args[0], Path):
+            return args[0].parent
+        if fname == 'join' and args and isinstance(args[0], Path) and all(isinstance(a, str) for a in args[1:]):
+            return args[0].joinpath(*args[1:])
+    return None
+
+
+def py_search_bases(work: Path, test_file: Path) -> list[Path]:
+    """Where a test file's imports are found: the directories it puts on sys.path (sys.path.insert(0, str(HERE)),
+    HERE.parent / 'scripts'), its own directory (Python adds a script's directory; pytest's rootdir import mode its
+    first directory without __init__.py) and each parent up to the package directory."""
+    out: list[Path] = []
+    try:
+        tree = ast.parse(test_file.read_text(encoding='utf-8', errors='replace'))
+    except (OSError, SyntaxError, ValueError):
+        tree = None
+    if tree is not None:
+        names = {t.id: st.value for st in tree.body if isinstance(st, ast.Assign) for t in st.targets if isinstance(t, ast.Name)}
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in ('insert', 'append') and \
+                    scan_tests.call_name(n.func.value) == 'path' and n.args:
+                v = _path_value(n.args[-1], names, test_file)
+                if isinstance(v, Path) and v.is_dir():
+                    out.append(v.resolve())
+    d = test_file.parent.resolve()
+    w = work.resolve()
+    while True:
+        out.append(d)
+        if d == w or w not in d.parents:
+            break
+        d = d.parent
+    return list(dict.fromkeys(out))
 
 
 def py_find(tree: ast.Module, qual: str) -> ast.AST | None:
@@ -342,6 +421,23 @@ def case_status(cases: list[dict], run_id: str, want: str, python: bool, pattern
     return 'not_found'
 
 
+def selftest_crashed(run: dict) -> bool:
+    """A selftest-preset run that started, printed no check and exited non-zero (run_tests.py records it as errored
+    with 'no check found'), as opposed to one that could not start or timed out."""
+    return bool(run.get('errored')) and str(run.get('error') or '').startswith('no check found') and \
+        not run.get('timed_out')
+
+
+def script_status(cases: list[dict], run_id: str) -> str:
+    """A script self-test run's status: failed when any check failed (or the script exited non-zero, an
+    `(exit status)` case), error when one errored, passed when every check passed. The other tests of the script are
+    silenced for the run, so its checks are the test's own."""
+    mine = [c['status'] for c in cases if c['run_id'] == run_id]
+    if not mine:
+        return 'not_found'
+    return merged([s for s in mine if s != 'skipped'] or ['skipped'])
+
+
 def pattern_definition(defs: dict, tid: str) -> dict | None:
     """The parametrised JavaScript definition (it.each, template name) whose name pattern matches an expanded id."""
     file, _, name = tid.partition('::')
@@ -373,7 +469,14 @@ def run_test(defn: dict, work: Path, run_dir: Path, label: str, prefix: str, ext
             return run['id'], 'errored', None
         data = json.loads((run_dir / 'runs.json').read_text(encoding='utf-8'))
         return run['id'], case_status(data['cases'], run['id'], name, False), None
-    if defn['lang'] == 'python':
+    selftest = defn['lang'] == 'python' and defn.get('runner') == 'selftest'
+    if selftest:
+        # the script's own runner: its command, run from the package directory with the script path made relative
+        cmd = defn.get('selftest_command') or f'python {defn["file"]}'
+        prefix_pkg = defn['package'] + '/' if defn['package'] != '.' else ''
+        cmd = ' '.join(t[len(prefix_pkg):] if prefix_pkg and t.startswith(prefix_pkg) else t for t in cmd.split(' '))
+        args = ['--preset', 'selftest', '--selftest-cmd', cmd]
+    elif defn['lang'] == 'python':
         args = ['--preset', 'pytest', '--tests', rel + '::' + defn['run_id'].split('::', 1)[1]]
     else:
         args = ['--preset', 'node-test' if defn.get('framework') == 'node-test' else 'vitest', '--tests', rel]
@@ -390,8 +493,14 @@ def run_test(defn: dict, work: Path, run_dir: Path, label: str, prefix: str, ext
         print(f'run_tests.py recorded no run (exit {res.returncode}):\n{err}', file=sys.stderr)
         return 'none', 'not_run', err
     rid = new[-1]['id']
+    if selftest and new[-1].get('errored') and selftest_crashed(new[-1]):
+        # the script started and exited non-zero before printing a check (a traceback from the neutralised code): an
+        # uncaught exception fails a script self-test, so the test failed; could-not-start and timeouts stay errored
+        return rid, 'failed', None
     if new[-1].get('errored'):           # crashed or errored: whatever cases it wrote, it is no pass or fail
         return rid, 'errored', None
+    if selftest:
+        return rid, script_status(data['cases'], rid), None
     pattern = defn.get('name_pattern') if defn['run_id'] == defn['id'] else None
     return rid, case_status(data['cases'], rid, defn['run_id'].split('::', 1)[1], defn['lang'] == 'python', pattern), None
 
@@ -448,9 +557,12 @@ def main(argv=None) -> int:
     ap.add_argument('--run-dir', type=Path, required=True)
     ap.add_argument('--cwd', action='append', default=[], help='PACKAGE=DIR scratch copy to patch in place (JS with node_modules)')
     ap.add_argument('--patch', type=Path, help='unified diff (repo-relative paths) applied to the scratch copy first')
-    ap.add_argument('--copy-ignore', action='append', default=[], metavar='GLOB',
+    ap.add_argument('--copy-ignore', nargs='+', action='append', default=[], metavar='GLOB',
                     help='leave matching files or directories out of the scratch copy ("*.jpg", "images", "data/raw/*"); '
-                         'only what the tests never read')
+                         'only what the tests never read (several globs per flag, or repeat the flag)')
+    ap.add_argument('--runner', choices=['auto', 'pytest', 'selftest'], default='auto',
+                    help='Python tests: run them with pytest or with their script\'s own self-test runner. auto (the '
+                         'default) takes the runner scan_tests.py recorded, and refuses a test no known runner runs')
     ap.add_argument('--env', nargs='+', action='append', default=[], metavar='K=V',
                     help='passed to run_tests.py (several pairs per flag, or repeat the flag)')
     ap.add_argument('--package-env', action='append', default=[], metavar='PACKAGE:K=V',
@@ -489,9 +601,10 @@ def main(argv=None) -> int:
     restore: dict[Path, bytes | None] = {}
     scratch = tempfile.mkdtemp(prefix='dtf-')
     patch_name = args.patch.as_posix() if args.patch else None
-    ignore = DEFAULT_IGNORE + args.copy_ignore
+    ignore = DEFAULT_IGNORE + [g for group in args.copy_ignore for g in group]
     works: dict[str, Path] = {}                              # one copy per package for the whole invocation
     copies = []
+    active_silence: tuple[Path, bytes] | None = None         # a self-test script whose other tests are silenced
     try:
         for tid in tests:
             d = defs.get(tid) or defs.get(base_id(tid)) or pattern_definition(defs, tid)
@@ -511,6 +624,25 @@ def main(argv=None) -> int:
                 results = [r for r in results if not (r['test_id'] == tid and r.get('patch') == patch_name)] + [entry]
                 print(f'{tid}: not run (Playwright)')
                 continue
+            if d['lang'] == 'python':
+                # the suite's own runner: pytest never sees a failure a script's check() records, so a self-test run
+                # under pytest would pass with any neutral body
+                py_runner = args.runner if args.runner != 'auto' else (d.get('runner') or 'pytest')
+                d = {**d, 'runner': py_runner}
+                entry['runner'] = py_runner
+                if py_runner == 'unknown':
+                    entry.update(original={'run_id': 'none', 'test_status': 'not_run'}, outcome='not_run',
+                                 checks_no_exception=False, not_run_reason=(
+                                     'no known runner runs this test: its file matches no pytest configuration\'s '
+                                     'python_files and it is no script self-test, so a neutralised result would not say '
+                                     'how the suite behaves; give --runner pytest or --runner selftest if you know how '
+                                     'it runs'))
+                    results = [r for r in results if not (r['test_id'] == tid and r.get('patch') == patch_name)] + [entry]
+                    print(f'{tid}: not run (no known runner)')
+                    continue
+            if active_silence:
+                write_back(*active_silence)
+                active_silence = None
             work = works.get(d['package'])
             if work is None:
                 if d['package'] in overrides:
@@ -534,6 +666,23 @@ def main(argv=None) -> int:
                     sorted({work / x['file'][len(prefix):] for x in defs.values() if x['package'] == d['package']
                             and (work / x['file'][len(prefix):]).is_file()}))
             extra = extra_for(d['package'])
+            if d.get('runner') == 'selftest':
+                # one test at a time: the script's other tests are silenced (return None) for this test's runs, so a
+                # failed check is this test's own
+                siblings = [x['name'] for x in defs.values() if x['file'] == d['file'] and x.get('framework') == 'selftest'
+                            and x['id'] != d['id']]
+                sp = work / d['file'][len(prefix):]
+                if siblings and sp.is_file():
+                    before_bytes = sp.read_bytes()
+                    txt, silenced = before_bytes.decode('utf-8'), []
+                    for name in siblings:
+                        new = py_patch(txt, name, 'return')
+                        if new is not None:
+                            txt = new
+                            silenced.append(name)
+                    active_silence = (sp, before_bytes)
+                    sp.write_bytes(txt.encode('utf-8'))
+                    entry['silenced'] = silenced
             n += 1
             rid, status, err = run_test(d, work, args.run_dir, 'original' + (' (patched)' if args.patch else ''), f'N{n}', extra)
             entry['original'] = {'run_id': rid, 'test_status': status}
@@ -555,7 +704,7 @@ def main(argv=None) -> int:
                     local = gdir[len(prefix):] if prefix and gdir.startswith(prefix) else gdir
                     loc, patcher = go_tests.find_target(work, f'{local}:{gfn}'), go_tests.patch
                 elif d['lang'] == 'python':
-                    loc, patcher = py_target_file(work, tgt), py_patch
+                    loc, patcher = py_target_file(work, tgt, py_search_bases(work, work / d['file'][len(prefix):])), py_patch
                     if loc and is_support(loc[0], work):
                         entry['targets'].append({'target': tgt, 'file': None, 'variants': [], 'note': (
                             f'{tgt} is defined in test code ({Path(os.path.relpath(loc[0], work)).as_posix()}): a test '
@@ -623,6 +772,8 @@ def main(argv=None) -> int:
         tree_guard.report(exc)
         return 3
     finally:
+        if active_silence:
+            write_back(*active_silence)
         for p, data in restore.items():
             write_back(p, data)
         shutil.rmtree(scratch, ignore_errors=True)

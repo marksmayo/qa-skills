@@ -49,9 +49,9 @@ repository's own test runners (pytest, Vitest, Jest or Playwright for listing). 
 > Find the dead tests in this repo and show me which ones matter.
 
 ```bash
-python scripts/scan_tests.py <repo> --out run/candidates.json [--test-files "*.e2e.ts"]
+python scripts/scan_tests.py <repo> --out run/candidates.json [--test-files "*.e2e.ts"] [--include-fixtures] [--fixture-dir DIR]
 python scripts/collect_check.py <repo> --candidates run/candidates.json --run-dir run [--env DATABASE_URL=<fake> ...] [--package-env api:PYTHONPATH=<dir>] [--scope candidates] [--reuse] [--split-on-error]
-python scripts/neutralise.py --repo <repo> --candidates run/candidates.json --run-dir run --test <test id> [--test <id>[case] ...] [--tests-file ids.txt] [--copy-ignore "*.mp4"] [--env K=V ...] [--package-env <package>:K=V]
+python scripts/neutralise.py --repo <repo> --candidates run/candidates.json --run-dir run --test <test id> [--test <id>[case] ...] [--tests-file ids.txt] [--copy-ignore "*.mp4" "*.apk"] [--runner auto|pytest|selftest] [--env K=V ...] [--package-env <package>:K=V]
 python scripts/neutralise.py --repo <repo> --candidates run/candidates.json --run-dir run --patch proposals/fix.diff --test <test id>
 python scripts/similarity.py --repo <repo> --candidates run/candidates.json --run-dir run [--env K=V ...] [--package-env <package>:K=V]
 python scripts/check_skips.py --repo <repo> --candidates run/candidates.json --tickets run/tickets.json --out run/skips.json
@@ -86,13 +86,13 @@ python scripts/render_report.py examples/dead_test_report.example.json --brief
 - `RUBRIC.md`: triage, confidence, ranking, proposals, honesty rules
 - `data/rules.json`: patterns, collect defaults, skip markers, thresholds
 - `schemas/dead_test_report.schema.json`: output contract
-- `scripts/scan_tests.py`: test definitions and candidates (Python `ast`; JS/TS through a lexer for strings, templates, regex literals and comments, with Playwright idioms; Go through `go_tests.py`). Vendored and embedded third-party trees are left out (`lang_census.py`); when the dominant language is not read it warns and exits 3 (`--allow-minority` exits 0)
+- `scripts/scan_tests.py`: test definitions and candidates (Python `ast`; JS/TS through a lexer for strings, templates, regex literals and comments, with Playwright idioms; Go through `go_tests.py`). Configured pytest suites (`python_files` of every pytest config, `benchmarks/pytest.ini` too) and script self-tests (`--self-test`, `self_test.py`, run by their own runner, `check()` helpers that record failures read as checks) are definitions; product code named `test_*.py` and fixture projects under `examples/` (`--include-fixtures`) are left out and listed. Vendored and embedded third-party trees are left out (`lang_census.py`); when the dominant language is not read it warns and exits 3 (`--allow-minority` exits 0)
 - `scripts/go_tests.py`: the Go scanner rules, Go neutralisation (zero values, unused imports blanked) and `go test -json` runs recorded in `runs.json` (`record` for output you saved, `run` for one package)
 - `scripts/collect_check.py`: defined vs collected, from the frameworks' own list commands (pytest, Vitest, Jest, Playwright), optionally scoped, cached and split around a file that can't be listed
 - `scripts/net_guard.cjs`, `scripts/net_guard.py`: network guards for the runs (Node via `NODE_OPTIONS=--require`, pytest via `-p net_guard`); with `QA_NET_GUARD_LOG` set they write `loaded`/`refused` lines to that log only
 - `scripts/tree_guard.py`: keeps the target's test files byte for byte around every command the scripts run, puts them back and stops if one changed
 - `scripts/self_test.py`: the scanner's head, assertion and cleanup rules and collect_check's guard on a synthetic repository
-- `scripts/neutralise.py`: neutral and raising bodies in a scratch copy (JS targets through aliases, default imports and re-exports; byte-exact restores), and patch proofs
+- `scripts/neutralise.py`: neutral and raising bodies in a scratch copy, run with the suite's own runner (pytest, or a script's self-test runner one test at a time; a test no known runner runs is not run) (JS targets through aliases, default imports and re-exports; byte-exact restores), and patch proofs
 - `scripts/similarity.py`: per-test line coverage, outcome and hashed literal values for duplicate candidates
 - `scripts/check_skips.py`: ticket status and `git blame` age for every skip
 - `scripts/validate_dead_test_report.py`: checks the report against the evidence files
