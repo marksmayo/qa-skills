@@ -326,7 +326,7 @@ def tool_output_errors(d: dict, base: Path) -> list[str]:
         if not out:
             errors.append(f"tools[{t['name']}]: a dependency tool that ran must name its output file (the advisories it found)")
             continue
-        p = Path(out) if Path(out).is_absolute() else base / out
+        p = Path(out).expanduser() if Path(out).expanduser().is_absolute() else base / out  # ~ from the seed's redaction
         if not p.is_file():
             errors.append(f"tools[{t['name']}]: output {out} does not exist; dependency_advisories cannot rest on it")
             continue
@@ -361,6 +361,49 @@ def fill_computed(d: dict) -> None:
         f['priority'] = priority(ps, f.get('confidence'), f.get('business_impact'))
     if isinstance(d.get('summary'), dict):
         d['summary']['counts'] = compute_summary(d)
+
+NUM_WORDS = {'no': 0, 'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8,
+             'nine': 9, 'ten': 10}
+HEADLINE_ALL = re.compile(r'(?i)\b(?:all|only|every(?: finding is)?)\s+(?:findings?\s+(?:are|is)\s+)?(P[0-3])\b|\b(P[0-3])\s+only\b')
+HEADLINE_COUNT = re.compile(r'(?i)(?<![\w.])(\d+|no|zero|one|two|three|four|five|six|seven|eight|nine|ten)\s+(P[0-3])\b')
+
+def headline_count_errors(headline: str, counts: dict) -> list[str]:
+    """Priority claims in the headline must agree with the computed counts: "all P3" / "only P3" means no finding
+    of another priority, "no P1" means none, "3 P0" means three."""
+    errors: list[str] = []
+    by = counts.get('by_priority') or {}
+    for m in HEADLINE_ALL.finditer(headline or ''):
+        p = (m.group(1) or m.group(2)).upper()
+        other = {k: v for k, v in by.items() if k != p and v}
+        if other:
+            errors.append(f"summary.headline says all findings are {p}, but the counts have "
+                          + ', '.join(f'{v} {k}' for k, v in sorted(other.items())))
+    for m in HEADLINE_COUNT.finditer(headline or ''):
+        n, p = NUM_WORDS.get(m.group(1).lower(), None), m.group(2).upper()
+        n = int(m.group(1)) if n is None else n
+        if p in by and by[p] != n:
+            errors.append(f"summary.headline says {m.group(0)!r}, but the counts have {by[p]} {p}")
+    return errors
+
+def home_path_errors(d: dict) -> list[str]:
+    """A path under a home directory carries the account name (and the layout of someone's machine) into a report
+    that gets shared; seed_report.py writes ~ instead."""
+    import audit_scope  # noqa: E402
+    return [f'{where} holds a home-directory path ({p}); replace the home directory with ~ or use a relative path'
+            for where, text in json_strings(d) for p in audit_scope.home_paths(text)[:1]
+            if not where.startswith(MACHINE_PATH_FIELDS)]
+
+# Fields that name where the agent worked on this machine (a scratch copy, files it wrote): a temporary folder under
+# the home directory is expected there, so they are not checked
+MACHINE_PATH_FIELDS = ('$.verification.local_copy', '$.files_written')
+
+def fixture_scope_errors(d: dict, recon: dict) -> list[str]:
+    """Every sample or fixture project recon left out is named in target.excluded or the limitations, so a reader
+    knows its code was not audited."""
+    said = ' '.join(d['target'].get('excluded') or []) + ' ' + ' '.join(d.get('limitations') or [])
+    return [f"recon left out the fixture project {f['dir']}/ ({f.get('reason')}); name it in target.excluded or the "
+            'limitations (or rerun recon with --include-fixtures)'
+            for f in recon.get('fixtures_excluded') or [] if f['dir'].rstrip('/') not in said]
 
 def recon_errors(d: dict, recon: dict) -> list[str]:
     """Every entry point recon.py found is in the report, or listed in recon.removed_entry_points with a reason.
@@ -782,11 +825,14 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None, recon
     errors += tool_output_errors(d, base)
     if recon is not None:
         errors += recon_errors(d, recon)
+        errors += fixture_scope_errors(d, recon)
+    errors += home_path_errors(d)
 
     # coverage
     cov = d['coverage']
     if cov['entry_points_total'] != len(eps):
-        E(f"coverage: entry_points_total {cov['entry_points_total']} but recon lists {len(eps)}")
+        E(f"coverage: entry_points_total {cov['entry_points_total']} but the report keeps {len(eps)} in recon.entry_points "
+          '(entry points listed under recon.removed_entry_points do not count)')
     reviewed = sum(1 for e in eps.values() if e['reviewed'])
     if cov['entry_points_reviewed'] != reviewed:
         E(f"coverage: entry_points_reviewed {cov['entry_points_reviewed']} but {reviewed} are marked reviewed")
@@ -843,6 +889,7 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None, recon
         E(f"summary.counts differ from the report: expected {json.dumps(want)}")
     if BANNED_HEADLINE.search(d['summary']['headline']):
         E('summary.headline claims the code is secure or free of issues; state what was found and covered instead')
+    errors += headline_count_errors(d['summary']['headline'], want)
     return errors, warnings
 
 def main() -> int:

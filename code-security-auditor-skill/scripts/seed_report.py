@@ -11,6 +11,9 @@ time) plus the built-in scanners, one triage row per code and secret candidate, 
 row per advisory (installed version, range, dev flag, via chain), coverage totals and the summary
 counts.
 
+Fixture projects recon left out are named in target.excluded and the limitations; copies of a file are named in
+each entry point's note and triage reason; the home directory in every copied path or command becomes ~.
+
 Everything that needs judgement is left as a TODO(seed) placeholder: each triage decision and
 reason, each dependency's reachability and basis, the trust boundaries, the auth model, the
 headline, coverage notes and limitations. validate_security_audit.py rejects a report that still
@@ -27,6 +30,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(HERE))
+import audit_scope  # noqa: E402
 import validate_security_audit as validator  # noqa: E402
 
 TODO = validator.SEED_TODO
@@ -76,6 +80,9 @@ def entry_point(e: dict) -> dict:
         notes.append(f"bind {e['bind']}")
     if e.get('segment_note'):  # Next.js: prerendered at build, ids bounded by generateStaticParams
         notes.append(e['segment_note'])
+    if e.get('copies'):  # a file kept identical in several places: one entry point, reviewed once
+        notes.append(f"the same code is kept in {len(e['copies'])} more place(s): {', '.join(e['copies'][:5])}"
+                     + (' ...' if len(e['copies']) > 5 else ''))
     if e.get('example'):
         out['example'] = True
         notes.append('example or fixture code (not part of the shipped product unless it is deployed)')
@@ -194,7 +201,8 @@ def seed(recon: dict, cands: dict, scanners: dict | None, repo: Path | None) -> 
         'notice': NOTICE,
         'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'target': {'repository': recon.get('repository') or (repo.name if repo else 'unknown'), 'commit': git_commit(repo),
-                   'scope': ['.'], 'excluded': []},
+                   'scope': ['.'], 'excluded': [f"{f['dir']}/ (sample or fixture project: {f['reason']})"
+                                                for f in recon.get('fixtures_excluded') or []]},
         'recon': {
             'stack': sorted(recon.get('languages') or {}) + (recon.get('frameworks') or []) or [f'{TODO}: languages and frameworks'],
             'entry_points': eps,
@@ -211,7 +219,9 @@ def seed(recon: dict, cands: dict, scanners: dict | None, repo: Path | None) -> 
         'triage': [{'candidate': c['id'], 'decision': 'dismissed',
                     'reason': f"{TODO}: promote, observe or dismiss {c.get('file')}:{c.get('line')} ({', '.join(c.get('pitfall_ids') or c.get('cwe') or [c.get('message') or 'candidate'])[:80]})"
                               + (f"; grouped with lines {', '.join(str(x) for x in c['grouped_lines'][1:])}, confidence {c.get('confidence')}"
-                                 if len(c.get('grouped_lines') or []) > 1 else '')}
+                                 if len(c.get('grouped_lines') or []) > 1 else '')
+                              + (f"; the same line is in {len(c['copies'])} identical copy(ies): {', '.join(c['copies'][:4])}"
+                                 + (' ...' if len(c['copies']) > 4 else '') if c.get('copies') else '')}
                    for c in cands.get('candidates', [])]
                   + [{'candidate': s['id'], 'decision': 'dismissed',
                       'reason': f"{TODO}: {s['type']} at {s.get('file')}:{s.get('line') or 'history ' + ','.join(s.get('history_commits') or [])}; "
@@ -239,6 +249,17 @@ def seed(recon: dict, cands: dict, scanners: dict | None, repo: Path | None) -> 
         if t.get('advisory_db') and t.get('status') == 'ran':
             d['limitations'].append(f"{t['name']} read a local RustSec database (last updated "
                                     f"{t['advisory_db'].get('last_updated') or 'unknown'}); advisories published since are not covered.")
+    fx = recon.get('fixtures_excluded') or []
+    if fx:  # sample projects left out of recon and the scans: their planted defects are not the repository's findings
+        d['limitations'].append(f"{len(fx)} sample or fixture project(s) were left out of recon, the pattern scan and the "
+                                f"scanners ({', '.join(f['dir'] + '/' for f in fx[:8])}{' ...' if len(fx) > 8 else ''}); a "
+                                'deliberately vulnerable sample is not a finding of this repository. Their secrets were '
+                                'still read (low-entropy literals set aside). Rerun with --include-fixtures to audit them.')
+    groups = recon.get('copy_groups') or []
+    if groups:
+        d['coverage']['not_reviewed'].append({'area': 'copies', 'reason': (
+            f"{sum(len(g['copies']) for g in groups)} identical copies of {len(groups)} file(s) were read once, on the "
+            'canonical copy; each finding and entry point on a canonical copy applies to its copies too')})
     for s in recon.get('skipped_data_dirs') or []:  # data trees pruned by recon, the pattern scan and the secret scan
         d['limitations'].append(f"{s['dir']}/ was not read by recon, the pattern scan or the secret scan ({s['reason']}); "
                                 'a secret or code placed there was not checked.')
@@ -247,7 +268,18 @@ def seed(recon: dict, cands: dict, scanners: dict | None, repo: Path | None) -> 
                                     f"protects {', '.join(m['protected_prefixes']) or 'every matched path'}; "
                                     f"{'covers' if m['covers_api'] else 'does not cover'} /api/*" for m in recon['middleware']]
     d['summary']['counts'] = validator.compute_summary(d)
-    return d
+    return redact_tree(d)
+
+def redact_tree(value):
+    """Every string with the home directory replaced by ~ (tool commands, output paths and database paths would
+    otherwise carry the account name into the report)."""
+    if isinstance(value, str):
+        return audit_scope.redact_home(value)
+    if isinstance(value, list):
+        return [redact_tree(v) for v in value]
+    if isinstance(value, dict):
+        return {k: redact_tree(v) for k, v in value.items()}
+    return value
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)

@@ -30,6 +30,12 @@ not credential files. HTTP header names under a *Header key or starting X- (cons
 files and no code, see data_dirs.py) and --exclude-dir paths are not read; they are listed under
 skipped_data_dirs so the report can say what was not checked (--scan-data-dirs reads them).
 
+Sample and fixture projects are read (a real key committed there is exposed), but low-entropy literals in them,
+and in any file under examples/, fixtures/, testdata/ or samples/, are set aside with the test-file literals
+(in_fixture names where); --include-fixtures treats them as the repository's own files. A detection rule's own
+regular expression in a rule catalogue is not a secret. A secret at the same line of an identical copy of a file is
+reported once, with `copies`.
+
 --history scans the lines added in each commit, but only file changes that touch a secret keyword
 or token prefix (git log -G), leaving out binary, lock, vendored and minified files and any
 --history-exclude globs (for example '*.html' on a site with thousands of generated pages). Commits
@@ -46,6 +52,7 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import audit_scope  # noqa: E402
 import data_dirs as data_dir_rule  # noqa: E402
 import test_paths  # noqa: E402
 
@@ -90,7 +97,7 @@ GENERIC = re.compile(
     r'["\']([^"\'\s]{8,})["\']')
 DOTENV = re.compile(r'^\s*(?:export\s+)?(' + SECRET_NAME + r')\s*=\s*["\']?([^"\'\s#]{8,})', re.I)
 PLACEHOLDER = re.compile(r'(?i)^(changeme|change_me|change-me|password|secret|example|placeholder|dummy|sample|redacted|none|null|'
-                         r'undefined|todo|xxx+|\*+|\.+|<.*>|\$\{.*\}|\{\{.*\}\}|%\(.*\)s|your[-_].*|.*[-_]here|test|testing)$|'
+                         r'undefined|todo|xxx+|\*+|\.+|<.*>|\$\{.*\}|\{\{.*\}\}|%\(.*\)s|your[-_].*|.*[-_]here|test|testing|fake)$|'
                          r'example\.(com|org)|\$\{|\{\{|^process\.env|^os\.environ|'
                          # a reference to another variable, not a value: $NAME, $(NAME) (also an Azure DevOps macro),
                          # $env:NAME (PowerShell), %NAME% (cmd), $[variables.NAME]
@@ -166,6 +173,14 @@ def is_placeholder(value: str, path_name: str = '', fallback: bool = False) -> b
     doc = path_name.lower().endswith(DOC_EXT) or (path_name.startswith('.env') and path_name.endswith(TEMPLATE_ENV))
     return bool(doc and HYPHEN_WORDS.match(value))
 
+# A detection rule's own pattern in a rule catalogue ("live_token": "\\b(sk|rk)_live_[A-Za-z0-9]{16,}\\b"): two or more
+# kinds of regex syntax in the value mean it describes secrets, it is not one
+REGEX_PARTS = [re.compile(r'\\{1,2}[bdswBDSW](?![a-z]{2})'), re.compile(r'\[[^\]\s]*\w-\w[^\]\s]*\]'),
+               re.compile(r'\{\d+,?\d*\}'), re.compile(r'\(\?(?:[:=!]|<[=!]|P<|[aiLmsux]+\))'), re.compile(r'[^\\][+*?]\)|\)[+*?]')]
+
+def looks_like_regex(value: str) -> bool:
+    return sum(1 for rx in REGEX_PARTS if rx.search(value)) >= 2
+
 def real_looking(s: dict) -> bool:
     """A provider-format token, or a long high-entropy value: worth triage even in a test file."""
     weak_kinds = ('generic_secret', 'dotenv_secret', 'connection_string_password')
@@ -220,6 +235,8 @@ def find_in_line(line: str, path_name: str = '', refs: list | None = None) -> li
             continue
         if entropy(value) < 3.0 or is_public_field(key, value):
             continue
+        if looks_like_regex(value):
+            continue  # a detection pattern in a rule catalogue, not a secret
         if not env_style and re.fullmatch(r'[A-Z_]+|[a-z_.]+\(?\)?', value):
             continue  # an identifier or constant name, not a literal secret
         if not env_style and HEADER_NAME.fullmatch(value) and (re.search(r'(?i)header', key) or value[:2].lower() == 'x-'):
@@ -257,14 +274,25 @@ def header_only(lines: list[str], i: int, column: int) -> bool:
 
 LAST_SKIPPED: list[dict] = []  # the directories the last scan_tree() left unread (data directories, --exclude-dir)
 
-def scan_tree(root: Path, exclude_dirs: list[str] | None = None, data_dirs: bool = True) -> tuple[list[dict], list[dict]]:
+LAST_FIXTURES: list[dict] = []  # the sample and fixture projects the last scan_tree() found
+LAST_COPY_GROUPS: list[dict] = []  # files kept identical in several places, whose secrets were reported once
+
+def scan_tree(root: Path, exclude_dirs: list[str] | None = None, data_dirs: bool = True, include_fixtures: bool = False,
+              fixture_dirs=()) -> tuple[list[dict], list[dict]]:
     """(secrets, credential files and references to them) in the working tree. The directories left unread are in
-    LAST_SKIPPED (and the output's skipped_data_dirs): a secret in them would be missed, so a report says so."""
-    global LAST_SKIPPED
+    LAST_SKIPPED (and the output's skipped_data_dirs): a secret in them would be missed, so a report says so.
+
+    Sample and fixture projects are still read (a real key committed in a sample is still exposed), but each secret
+    in one carries `in_fixture` (the project) unless include_fixtures: split_found() then sets its low-entropy literals
+    aside like test-file literals. A file kept identical in several places reports its secrets once, on the
+    representative copy, with `copies`."""
+    global LAST_SKIPPED, LAST_FIXTURES, LAST_COPY_GROUPS
     found, creds = [], []
     tests = test_paths.Classifier(root)
     data = data_dir_rule.DataDirs(root, exclude_dirs, auto=data_dirs)
     LAST_SKIPPED = data.skipped
+    fixtures = [] if include_fixtures else audit_scope.fixture_projects(root, fixture_dirs)
+    LAST_FIXTURES = fixtures
     for p in files(root, data):
         rel = p.relative_to(root).as_posix()
         try:
@@ -289,6 +317,10 @@ def scan_tree(root: Path, exclude_dirs: list[str] | None = None, data_dirs: bool
                               'length': len(s['value']), 'entropy': entropy(s['value']),
                               'fingerprint': fingerprint(s['value']), 'hardcoded_fallback': s['fallback'],
                               'in_test_path': tests.is_test(rel)})
+                fx = (audit_scope.fixture_of(rel, fixtures) if fixtures else None) or \
+                    (None if include_fixtures else audit_scope.fixture_parent(rel))
+                if fx:
+                    found[-1]['in_fixture'] = fx
             for r in refs:
                 target = Path(r['path'].replace('\\', '/')).expanduser()
                 resolved = target if target.is_absolute() else root / target
@@ -298,7 +330,27 @@ def scan_tree(root: Path, exclude_dirs: list[str] | None = None, data_dirs: bool
                     in_repo = None
                 creds.append({'kind': 'reference', 'path': r['path'], 'referenced_from': f'{rel}:{i}', 'key': r['key'],
                               'exists': resolved.exists(), 'repo_path': in_repo})
+    rep, groups = audit_scope.representatives(root, sorted({s['file'] for s in found}))
+    LAST_COPY_GROUPS = groups
+    if rep:  # the same literal at the same line of an identical copy: reported once
+        keep = {(s['file'], s['line'], s['fingerprint']): s for s in found if rep.get(s['file']) == s['file']}
+        out = []
+        for s in found:
+            r = rep.get(s['file'])
+            hit = keep.get((r, s['line'], s['fingerprint'])) if r and r != s['file'] else None
+            if hit is not None:
+                hit['copies'] = sorted(set(hit.get('copies') or []) | {s['file']})
+                continue
+            out.append(s)
+        found = out
     return found, creds
+
+def split_found(found: list[dict]) -> tuple[list[dict], list[dict]]:
+    """(secrets to triage, literals set aside): low-entropy literals with no provider format in test files or in a
+    sample or fixture project are set aside (counted, not triaged); real-looking ones stay secrets wherever they are."""
+    aside = [s for s in found if (s['in_test_path'] or s.get('in_fixture')) and not real_looking(s)]
+    ids = {id(s) for s in aside}
+    return [s for s in found if id(s) not in ids], aside
 
 def git(root: Path, args: list[str], timeout: float = 60, stdin: str | None = None) -> subprocess.CompletedProcess | None:
     try:
@@ -466,6 +518,7 @@ def main() -> int:
     ap.add_argument('--history-max-file-kb', type=int, default=256,
                     help='stop reading one file\'s added lines in one commit after this many KB (default 256)')
     data_dir_rule.add_arguments(ap)
+    audit_scope.add_arguments(ap)
     ap.add_argument('--out', type=Path)
     args = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
@@ -476,12 +529,11 @@ def main() -> int:
         return 2
     t0 = time.monotonic()
     tests = test_paths.Classifier(root)
-    found, creds = scan_tree(root, args.exclude_dir, not args.scan_data_dirs)
+    found, creds = scan_tree(root, args.exclude_dir, not args.scan_data_dirs, args.include_fixtures, args.fixture_dir)
     skipped = sorted(LAST_SKIPPED, key=lambda s: s['dir'])
     t_tree = time.monotonic()
-    # Low-entropy literals in test files are fixtures: counted and listed apart, not triaged one by one.
-    head = [s for s in found if not s['in_test_path'] or real_looking(s)]
-    fixtures = [s for s in found if s['in_test_path'] and not real_looking(s)]
+    # Low-entropy literals in test files and sample projects are fixtures: counted and listed apart, not triaged one by one.
+    head, fixtures = split_found(found)
 
     # git facts for every file that holds a secret or is a credential file
     paths = {s['file'] for s in head} | {c['path'] for c in creds if c['kind'] != 'reference'} \
@@ -541,6 +593,11 @@ def main() -> int:
                                    'history': round(time.monotonic() - t_git, 1)},
            'history': {'status': history_status, 'note': note, 'coverage': coverage, 'removed_from_head': removed,
                        'removed_test_fixtures': len(removed_fixtures)},
+           # sample and fixture projects (read: a real key there is still exposed; their low-entropy literals are set
+           # aside with the test-file ones); --include-fixtures treats them as the repository's own files
+           'fixtures': LAST_FIXTURES,
+           # files kept identical in several places: each secret in them is reported once, with `copies`
+           'copy_groups': LAST_COPY_GROUPS,
            'note': 'Values are never written. Rotate any real secret found here, including ones only in history. '
                    "in_git_history 'no' with history_basis 'path' means never committed at that path; "
                    "with 'full' it means not found in any scanned commit. test_fixtures are low-entropy literals in "
@@ -551,7 +608,8 @@ def main() -> int:
            'secrets': head,
            'test_fixtures': {'count': len(fixtures),
                              'files': sorted({s['file'] for s in fixtures}),
-                             'items': [{k: s[k] for k in ('type', 'file', 'line', 'key', 'length', 'entropy', 'fingerprint')}
+                             'items': [{**{k: s[k] for k in ('type', 'file', 'line', 'key', 'length', 'entropy', 'fingerprint')},
+                                        **({'in_fixture': s['in_fixture']} if s.get('in_fixture') else {})}
                                        for s in fixtures]},
            'credential_files': creds}
     text = json.dumps(out, indent=2)

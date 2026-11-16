@@ -1,0 +1,41 @@
+{
+  "fixtures": ["examples/shop", "examples/site"],
+  "patterns": [
+    ["shared/scripts/jobfile.py", 13, "PY-YAML-LOAD"],
+    ["pkg-a/scripts/runner.py", 13, "PY-CMD-SPLIT"],
+    ["pkg-a/scripts/runner.py", 22, "PY-WIN-CMD-SHIM"],
+    ["pkg-a/scripts/runner.py", 26, "PY-AUTH-REDIRECT"],
+    ["pkg-a/scripts/runner.py", 32, "PY-PATH-JOIN-INPUT"],
+    ["pkg-a/scripts/runner.py", 38, "PY-GIT-REV-ARG"]
+  ],
+  "pattern_copies": {
+    "shared/scripts/jobfile.py:13": ["pkg-a/scripts/jobfile.py", "pkg-b/scripts/jobfile.py"]
+  },
+  "patterns_with_fixtures": [
+    ["shared/scripts/jobfile.py", 13, "PY-YAML-LOAD"],
+    ["pkg-a/scripts/runner.py", 13, "PY-CMD-SPLIT"],
+    ["pkg-a/scripts/runner.py", 22, "PY-WIN-CMD-SHIM"],
+    ["pkg-a/scripts/runner.py", 26, "PY-AUTH-REDIRECT"],
+    ["pkg-a/scripts/runner.py", 32, "PY-PATH-JOIN-INPUT"],
+    ["pkg-a/scripts/runner.py", 38, "PY-GIT-REV-ARG"],
+    ["examples/shop/app.py", 12, "PY-FILE-SEND"],
+    ["examples/shop/app.py", 18, "PY-SSRF"],
+    ["examples/shop/app.py", 23, "PY-XXE"],
+    ["examples/shop/app.py", 29, "PY-MARKSAFE"],
+    ["examples/shop/app.py", 29, "PY-SSTI"]
+  ],
+  "entry_points": [
+    {"kind": "cli", "handler": "pkg-a/scripts/lint.py:67"},
+    {"kind": "cli", "handler": "shared/scripts/jobfile.py:17", "copies": ["pkg-a/scripts/jobfile.py:17", "pkg-b/scripts/jobfile.py:17"]}
+  ],
+  "entry_point_count": 2,
+  "entry_points_with_fixtures": [
+    {"kind": "http_route", "handler": "examples/shop/app.py:15", "path": "/preview"}
+  ],
+  "frameworks": [],
+  "no_lead_mentions": ["MCP tool", "agent permission", "frame-ancestors", "Strict-Transport-Security", "Content-Security-Policy"],
+  "secrets": [],
+  "secret_fixture_literals": [["examples/login-request.json", 3], ["examples/shop/app.py", 7]],
+  "requirements": {"file": "requirements.txt", "ecosystem": "PyPI", "packages": 3, "unpinned": 2},
+  "fixture_lockfiles": ["examples/shop/requirements.txt"]
+}

@@ -26,7 +26,9 @@
     ".github/workflows/release.yml": {"triggers": ["push", "workflow_dispatch"]},
     ".github/actions/setup/action.yml": {"system": "github_actions_composite", "inputs_in_run": ["label"]}
   },
-  "frameworks": ["MCP server", "Next.js (examples only: examples)", "commander"],
+  "frameworks": ["MCP server", "commander"],
+  "fixtures_excluded": ["examples/with-next"],
+  "frameworks_with_fixtures": ["MCP server", "Next.js (examples only: examples)", "commander"],
   "lead_mentions": ["agent.ts", "action.yml expands input(s) label"],
   "secrets": [],
   "credential_files": [],
