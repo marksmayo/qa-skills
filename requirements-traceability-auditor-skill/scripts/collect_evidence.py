@@ -127,7 +127,7 @@ def main() -> int:
         for i, c in enumerate(r.get('comments', [])):
             names = sorted({t for t in test_ids if t.split('::')[-1] in c['text']} | {f for f in test_files if f in c['text']})
             if names:
-                ev['comments'].append({'index': i, 'author': c.get('author'), 'created': c.get('created'), 'mentions': names})
+                ev['comments'].append({'index': i, 'created': c.get('created'), 'mentions': names})
         tickets.append(ev)
     # results ---------------------------------------------------------------------------------------------
     results, runs = {}, []
