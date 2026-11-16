@@ -992,8 +992,27 @@ def artifact_finding() -> None:
     check('F06: flow_basis committed' in run_validator(rep), 'validator: flow_basis committed is for identifier_in_artifact only')
 
 
+def fetch_lists_checks_before_write() -> None:
+    """A download whose hash differs from the pin is refused before anything reaches the cache."""
+    import contextlib, io
+    import fetch_lists
+    with tempfile.TemporaryDirectory() as d:
+        cache = Path(d) / 'cache'
+        saved_get, saved_argv = fetch_lists.get, sys.argv
+        fetch_lists.get = lambda url, accept=None: b'qa-marker: not the pinned list\n'
+        sys.argv = ['fetch_lists.py', '--cache', str(cache)]
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = fetch_lists.main()
+        finally:
+            fetch_lists.get, sys.argv = saved_get, saved_argv
+        left = sorted(p.name for p in cache.rglob('*') if p.is_file()) if cache.exists() else []
+        check(rc == 1 and not left, f'fetch_lists: a download whose sha256 differs from the pin is never written to the cache '
+                                    f'(rc {rc}, cache holds {left})')
+
+
 def main() -> int:
-    for t in (rust_dominant_by_lines, host_and_account_names, outbound_constant, subtitles_not_title, regex_literal_not_sink,
+    for t in (fetch_lists_checks_before_write, rust_dominant_by_lines, host_and_account_names, outbound_constant, subtitles_not_title, regex_literal_not_sink,
               minified_speed, by_the_code_statement, artifact_finding, go_scan, unanalysed_language, template_loaders, fonts_not_tracker, undeclared_without_canary, telemetry_before_consent, declared_must_name, inventory_and_headline,
               observed_with_runtime_evidence, url_credentials_message, language_limitation, committed_dist, static_front_end_flows,
               agent_undeclared_third_party, console_and_key_canaries, next_script_loaders, csp_compared, vendors_added, policy_mismatch,

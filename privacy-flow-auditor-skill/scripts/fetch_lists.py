@@ -33,7 +33,7 @@ a vendor name, and the Open Cookie Database names cookies only. Neither list has
 region supplied by the user (an extra domains file merged with --extra).
 """
 from __future__ import annotations
-import argparse, csv, hashlib, io, json, re, sys, urllib.request
+import argparse, csv, hashlib, io, json, os, re, sys, urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -171,8 +171,6 @@ def main() -> int:
             if a.update:
                 spec['ref'] = latest_commit(spec)
             data = get(pinned_url(spec))
-            a.cache.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(data)
         digest = hashlib.sha256(data).hexdigest()
         if a.update:
             spec.update(url=pinned_url(spec), sha256=digest, version=version_of(name, data))
@@ -182,6 +180,11 @@ def main() -> int:
                   f'so the file is corrupted or altered{", or the cache holds another pin: download again without --check" if a.check else ""}. '
                   f'To move to a newer list, run --update (with --write-lock for a scratch lock) and say so in the report.')
             return 1
+        if not a.check:   # only bytes whose hash matched the pin reach the cache, by an atomic rename
+            a.cache.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(path.name + '.partial')
+            tmp.write_bytes(data)
+            os.replace(tmp, path)
         blobs[name] = data
         print(f'{name}: {spec["repo"]}@{spec["ref"][:10]}{" version " + spec["version"] if spec.get("version") else ""}, '
               f'{len(data):,} bytes, sha256 {digest[:12]} ok')
