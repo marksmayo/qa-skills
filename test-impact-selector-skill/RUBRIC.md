@@ -36,6 +36,12 @@ A reason must not cite a source recorded `not_run`, `errored` or `not_applicable
 | `deleted_or_renamed` | Tests that imported it in the base tree | `importers` |
 | `non_code` | E2E and visual tests that reach it, falling back to the package's e2e and visual tests, then the tests that reach it through rendering views and templates (a server-rendered app with no browser tests), then the package | `e2e_and_visual` |
 | `huge_change` | Full suite | `full_suite` |
+| `fixture_project` | A file in an excluded fixture project: the tests under the folder that owns the sample and the tests that name or import it | `fixture_host` |
+
+At a repository root with no manifest, the `package` scope of a file in a top-level folder that
+holds tests is that folder's tests (with the guide checks that run its scripts and the tests that
+reach the file), not every test of the repository. A selected test may never lie inside a folder
+listed under `excluded`.
 
 A file of no language (data, styles, configuration) widens to every test of its scope. A Rust
 bench file is change kind `bench`, not a blind spot: `cargo test` never builds or runs it.
