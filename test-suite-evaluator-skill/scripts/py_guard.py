@@ -3,6 +3,7 @@
 
     python py_guard.py run --log <scratch>/net_guard.log -- python -m unittest discover -s tests
     python py_guard.py env --log <scratch>/net_guard.log      # the variables to set yourself
+    python py_guard.py run --log <scratch>/net_guard.log --home <scratch>/home -- python -m pytest   # scratch home
     python py_guard.py --self-test
 
 net_guard.py loads as a pytest plugin (`-p net_guard`), which guards the pytest process and its xdist workers
@@ -12,7 +13,9 @@ py_guard_site/ first on PYTHONPATH. It holds only a sitecustomize.py, which Pyth
 process that inherits the variable; that file loads net_guard.py from this folder (without adding scripts/ to
 sys.path, so no helper module here can shadow one of the tests'), then runs the sitecustomize it hides, if the
 interpreter had one. QA_NET_GUARD_LOG is set, so every guarded process writes `net_guard: loaded pid=<pid>` and each
-refusal `net_guard: refused <host>:<port>` to the log.
+refusal `net_guard: refused <host>:<port>` to the log. --home gives the run an empty home (HOME, USERPROFILE, XDG_*,
+APPDATA, LOCALAPPDATA) but keeps CARGO_HOME, RUSTUP_HOME, Go's caches and the package-manager caches where they are
+(net_guard_proxy.home_env()), so a test that shells out to cargo or go still finds its toolchain.
 
 Limits, to state with the result: a process started with `python -I`, `-E` or `-S`, or with an environment that
 drops PYTHONPATH, is not guarded (and logs no `loaded` line: count the lines against the processes you expect);
@@ -20,20 +23,34 @@ non-Python children are not guarded at all (use net_guard_proxy.py for them); an
 module (connect, create_connection, DNS lookups), not a C extension that opens its own sockets.
 """
 from __future__ import annotations
-import argparse, os, subprocess, sys
+import argparse, os, shutil, subprocess, sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SITE = HERE / 'py_guard_site'
 
 
-def guard_env(log: str | None, environ: dict | None = None) -> dict:
-    """The environment for a guarded run: PYTHONPATH starting with py_guard_site/, QA_NET_GUARD_LOG set."""
+def guard_env(log: str | None, environ: dict | None = None, home: str | None = None,
+              real_home: Path | None = None) -> dict:
+    """The environment for a guarded run: PYTHONPATH starting with py_guard_site/, QA_NET_GUARD_LOG set. With home,
+    HOME, USERPROFILE, XDG_* and APPDATA/LOCALAPPDATA point into that (created) scratch directory, while CARGO_HOME,
+    RUSTUP_HOME, GOPATH/GOCACHE/GOMODCACHE and the package-manager caches keep their real locations (as
+    net_guard_proxy.py --home does), so a test that runs cargo or go still finds the toolchain."""
     env = dict(os.environ if environ is None else environ)
     old = env.get('PYTHONPATH')
     env['PYTHONPATH'] = str(SITE) + (os.pathsep + old if old else '')
     if log:
         env['QA_NET_GUARD_LOG'] = str(Path(log).resolve())
+    if home:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('qa_net_guard_proxy', HERE / 'net_guard_proxy.py')
+        ngp = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ngp)
+        Path(home).mkdir(parents=True, exist_ok=True)
+        before = dict(env)
+        env.update(ngp.home_env(home, real_home, before))
+        if real_home is None:   # go's caches as go sees them now, before the home moves
+            env.update({k: v for k, v in ngp.go_caches().items() if not before.get(k)})
     return env
 
 
@@ -57,11 +74,17 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('action', choices=['run', 'env'])
     ap.add_argument('--log', required=True, help='the guard log (outside the checkout)')
+    ap.add_argument('--home', help='an empty scratch directory to use as HOME/USERPROFILE (toolchain homes are kept)')
     args = ap.parse_args(argv)
-    env = guard_env(args.log)
+    env = guard_env(args.log, home=args.home)
     if args.action == 'env':
-        print(f'PYTHONPATH={env["PYTHONPATH"]}')
-        print(f'QA_NET_GUARD_LOG={env["QA_NET_GUARD_LOG"]}')
+        for k in ('PYTHONPATH', 'QA_NET_GUARD_LOG') + (('HOME', 'USERPROFILE', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME',
+                                                        'XDG_DATA_HOME', 'XDG_STATE_HOME', 'APPDATA', 'LOCALAPPDATA',
+                                                        'CARGO_HOME', 'RUSTUP_HOME', 'GOPATH', 'GOCACHE', 'GOMODCACHE',
+                                                        'npm_config_cache', 'PIP_CACHE_DIR', 'GRADLE_USER_HOME',
+                                                        'NUGET_PACKAGES') if args.home else ()):
+            if env.get(k):
+                print(f'{k}={env[k]}')
         return 0
     if not cmd:
         ap.error('give the command after --')
@@ -115,6 +138,31 @@ def self_test() -> int:
             fails.append(f'both refusals are logged with their hosts (got {s["refused"]})')
         if 'refused connection(s)' not in r.stderr:
             fails.append('the run prints a summary of loaded processes and refusals')
+        # a scratch home moves HOME and USERPROFILE but keeps the toolchain homes (rustup finds no toolchain under an
+        # empty USERPROFILE: "could not choose a version of cargo"), as net_guard_proxy.py --home does
+        fake_real = Path(d) / 'realhome'
+        for sub in ('.cargo', '.rustup'):
+            (fake_real / sub).mkdir(parents=True)
+        home = Path(d) / 'scratch-home'
+        try:
+            env = guard_env(log, environ={'PATH': os.environ.get('PATH', '')}, home=str(home), real_home=fake_real)
+        except TypeError as e:   # noqa: PERF203
+            env = {'error': repr(e)}
+        h = str(home.resolve())
+        if not (env.get('HOME') == h and env.get('USERPROFILE') == h and home.is_dir()
+                and env.get('APPDATA', '').startswith(h) and env.get('XDG_CACHE_HOME', '').startswith(h)):
+            fails.append(f'guard_env(home=...) points HOME, USERPROFILE, APPDATA and XDG_* into the scratch home (got {env})')
+        if env.get('CARGO_HOME') != str(fake_real / '.cargo') or env.get('RUSTUP_HOME') != str(fake_real / '.rustup'):
+            fails.append(f'guard_env(home=...) keeps CARGO_HOME and RUSTUP_HOME at the real ones (got {env})')
+        cargo = shutil.which('cargo')
+        if cargo and subprocess.run([cargo, '--version'], capture_output=True, timeout=120).returncode == 0:
+            r3 = subprocess.run([sys.executable, str(Path(__file__).resolve()), 'run', '--log', log, '--home',
+                                 str(Path(d) / 'home2'), '--', cargo, '--version'], capture_output=True, text=True,
+                                timeout=300)
+            if r3.returncode != 0:
+                fails.append(f'cargo still runs under py_guard.py run --home (exit {r3.returncode}: {r3.stderr[-300:]})')
+        else:
+            print('py_guard self-test: SKIP cargo under --home: no usable cargo here')
         r2 = subprocess.run([sys.executable, '-I', '-c', 'import sys; print("sitecustomize" in sys.modules)'],
                             env=guard_env(log), capture_output=True, text=True, timeout=60)
         if 'False' not in r2.stdout:
