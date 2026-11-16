@@ -6,7 +6,7 @@
   "required": ["schema_version", "metadata", "tools", "baseline", "mutants", "findings", "coverage_gaps", "summary", "limitations", "files_changed"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": {"enum": ["1.0.0", "1.1.0", "1.2.0", "1.3.0"], "description": "Write 1.3.0 (the current version); older versions are still accepted. 1.3.0 requires metadata.language_coverage and a headline naming every P0 finding."},
+    "schema_version": {"enum": ["1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0"], "description": "Write 1.4.0 (the current version); older versions are still accepted. 1.3.0 requires metadata.language_coverage and a headline naming every P0 finding. 1.4.0 adds an engine's stopped record (a run stopped by a tree change, an engine error or an interrupt), a mutant's wrote_outside_scope and language_coverage.declared_product."},
     "metadata": {
       "type": "object",
       "required": ["repo", "commit", "code_hash", "scope", "engines", "coverage", "budget_minutes", "write_tests", "platform", "generated_at"],
@@ -53,6 +53,7 @@
             "status": {"enum": ["ok", "partial", "unsupported_dominant", "no_source"]},
             "unmutated_dominant": {"type": ["string", "null"], "description": "the product's main language when no mutant is in it"},
             "tooling_scope_files": {"type": "array", "items": {"type": "string"}, "description": "scoped files in tooling folders (scripts/, tools/, ...) while the product is elsewhere"},
+            "declared_product": {"type": "array", "items": {"type": "string"}, "description": "folders declared to be the product although their names read as tooling (normalize_results.py --product-path); scoped files under them are not tooling_scope_files"},
             "warning": {"type": ["string", "null"]}
           }
         }
@@ -150,6 +151,18 @@
         "sampled": {"type": ["object", "null"]},
         "timeout_s": {"type": ["number", "null"]},
         "tree_changed": {"type": ["array", "null"], "items": {"type": "string"}},
+        "stopped": {
+          "type": ["object", "null"],
+          "description": "The engine stopped before its budget: tree_changed (a mutant's test run wrote outside the scoped files; the tree is checked after every mutant, later mutants are not_run), engine_error (the test command itself failed, e.g. pytest exit 4) or interrupted (Ctrl-C or a signal; the source was restored). A limitation must name it.",
+          "required": ["kind", "mutant"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"enum": ["tree_changed", "engine_error", "interrupted"]},
+            "mutant": {"type": ["string", "null"], "description": "the mutant whose run stopped the engine (its report id)"},
+            "files": {"type": "array", "items": {"type": "string"}},
+            "detail": {"type": "string"}
+          }
+        },
         "code_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Code hash of the tree the engine ran on, when the engine ran outside the builtin path (run_engine.py stryker); must equal metadata.code_hash."},
         "run_by": {"enum": ["skill", "external"], "description": "skill: the skill's own scripts ran it (builtin, mutmut, a run_engine.py record); external: converted from another tool's output with no run record (counts half in evidence completeness). Absent: builtin and mutmut are skill, others are skill only with a code_hash."},
         "duplicates_merged": {"type": "integer", "minimum": 0, "description": "mutants of this engine merged into another that makes the same edit on the same line"},
@@ -178,6 +191,7 @@
         "reclassified_from": {"type": "string"},
         "covering_tests": {"type": "array", "items": {"type": "string"}},
         "killed_by": {"type": ["string", "null"]},
+        "wrote_outside_scope": {"type": "array", "items": {"type": "string"}, "description": "files outside the scoped files that this mutant's test run changed (the engine stopped after it)"},
         "note": {"type": "string"}
       }
     },

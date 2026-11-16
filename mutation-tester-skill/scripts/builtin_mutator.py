@@ -5,6 +5,7 @@
         [--tests tests/unit [--tests tests/test_x.py ...]] [--pytest-args "-p no:xdist -m 'not slow'"]
         [--timeout-factor 3] [--min-timeout 10] [--max-mutants N] [--coverage-only] [--restore]
         [--language auto|python|go] [--go-run REGEX] [--go-skip REGEX] [--go-flags "-tags integration"]
+        [--runner auto|pytest|unittest|selftest] [--selftest-cmd "python tools/x.py --self-test"]
 
 The language is the one the scope's changed source lines are in (--language picks one when both
 are). Go is handled by go_mutator.py (text-level operators on Go tokens, `go test -overlay`, so the
@@ -45,12 +46,28 @@ tests that need services. --pytest-args is added to every run too (one quoted st
    runs only its covering tests, with -x), not from a whole-suite run. --max-mutants caps the
    count (the rest are "sampled out by --max-mutants"). Progress lines are flushed as they go.
 
-The working tree is hashed before and after (caches skipped). Originals are backed up in
-<dir>/backup before each write; --restore puts them back after a crash. Bytecode is redirected
-to an empty cache so a stale .pyc can never stand in for a mutant. Output: <dir>/builtin.json.
+Test ids are relative to --repo (each mutant run starts there), whatever rootdir pytest picked
+from an ini file in a subfolder; coverage.json records that rootdir, and the engine collects the
+covering ids once before the first mutant and stops (exit 2) when they do not resolve.
+
+--runner selftest: the tests are self-test commands (--tests x.py runs `python x.py --self-test`,
+--selftest-cmd any command that runs a Python script), one test each. A sitecustomize tracer
+records the scoped lines in every Python process a command starts; a failing check or a non-zero
+exit kills the mutant.
+
+The `if __name__ == '__main__':` guard is never mutated, and a module-level statement that never
+ran is no_coverage.
+
+The working tree is hashed before and after (caches skipped), and again after every mutant: a
+mutant whose test run changed a file outside the scoped files stops the run (exit 3; the later
+mutants are not_run, builtin.json records `stopped`). Originals are backed up in <dir>/backup
+before each write; Ctrl-C, SIGTERM, SIGHUP and SIGBREAK put them back and record the run as
+interrupted (exit 130); after a run killed outright, the next run into the same <dir> refuses
+until --restore has put them back. Bytecode is redirected to an empty cache so a stale .pyc can
+never stand in for a mutant. Output: <dir>/builtin.json.
 """
 from __future__ import annotations
-import argparse, ast, copy, hashlib, json, os, random, re, shlex, shutil, subprocess, sys, time
+import argparse, ast, atexit, copy, hashlib, json, os, random, re, shlex, shutil, signal, subprocess, sys, time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -59,17 +76,22 @@ sys.path.insert(0, str(HERE))
 import parse_results  # noqa: E402
 import run_tests  # noqa: E402
 
-VERSION = '1.3.0'
+VERSION = '1.4.0'
 
 PLUGIN = r'''
 import json, os, sys, threading
 _FILES = {os.path.normcase(os.path.abspath(p)) for p in json.loads(os.environ["MT_FILES"])}
 _OUT = os.environ["MT_COV_OUT"]
+_REPO = os.environ.get("MT_REPO", os.getcwd())
 _hits = {}
 _current = ["<import>"]
+_seen = {}
 
 def _tracer(frame, event, arg):
-    f = os.path.normcase(os.path.abspath(frame.f_code.co_filename))
+    co = frame.f_code.co_filename
+    f = _seen.get(co)
+    if f is None:
+        f = _seen[co] = os.path.normcase(os.path.abspath(co))
     if f not in _FILES:
         return None
     def local(frame, event, arg):
@@ -85,9 +107,22 @@ threading.settrace(_tracer)
 
 import pytest
 
+def _repo_id(item):
+    # node ids are relative to pytest's rootdir, which an ini file in a subfolder (benchmarks/pytest.ini) moves away
+    # from the repository; mutant runs start in the repository, so record the id relative to it
+    nid = item.nodeid
+    try:
+        rel = os.path.relpath(str(item.path), _REPO).replace(os.sep, "/")
+    except (ValueError, TypeError, AttributeError):
+        return nid
+    if rel == ".." or rel.startswith("../"):
+        return nid
+    rest = nid.split("::", 1)[1] if "::" in nid else ""
+    return rel + ("::" + rest if rest else "")
+
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_protocol(item, nextitem):
-    _current[0] = item.nodeid
+    _current[0] = _repo_id(item)
     yield
     _current[0] = "<import>"
 
@@ -104,8 +139,52 @@ def pytest_sessionfinish(session, exitstatus):
             loaded.add(os.path.normcase(os.path.abspath(f)))
     modules = {p: {"loaded": p in loaded,
                    "other_copies": sorted(f for f in loaded if f != p and _tail(f) == _tail(p))} for p in _FILES}
+    cfg = session.config
     with open(_OUT, "w", encoding="utf-8") as fh:
-        json.dump({"exitstatus": int(exitstatus), "hits": data, "modules": modules}, fh)
+        json.dump({"exitstatus": int(exitstatus), "hits": data, "modules": modules,
+                   "rootdir": str(cfg.rootpath), "inifile": str(cfg.inipath) if cfg.inipath else None}, fh)
+'''
+
+# The self-test runner's tracer: a sitecustomize module on PYTHONPATH, so every Python process the self-test command
+# starts (the script itself, and any script it runs as a child process) records the scoped lines it ran, written per
+# process when it exits.
+SITE = r'''
+import atexit, json, os, sys, threading
+if os.environ.get("MT_ST_FILES"):
+    _FILES = {os.path.normcase(os.path.abspath(p)) for p in json.loads(os.environ["MT_ST_FILES"])}
+    _OUT = os.environ["MT_ST_OUT"]
+    _hits = {}
+    _seen = {}
+
+    def _tracer(frame, event, arg):
+        co = frame.f_code.co_filename
+        f = _seen.get(co)
+        if f is None:
+            f = _seen[co] = os.path.normcase(os.path.abspath(co))
+        if f not in _FILES:
+            return None
+        def local(frame, event, arg):
+            if event == "line":
+                _hits.setdefault(f, set()).add(frame.f_lineno)
+            return local
+        if event == "call":
+            _hits.setdefault(f, set()).add(frame.f_lineno)
+        return local
+
+    def _dump():
+        sys.settrace(None)
+        loaded = set()
+        for mod in list(sys.modules.values()):
+            fn = getattr(mod, "__file__", None)
+            if fn:
+                loaded.add(os.path.normcase(os.path.abspath(fn)))
+        os.makedirs(_OUT, exist_ok=True)
+        with open(os.path.join(_OUT, "%d.json" % os.getpid()), "w", encoding="utf-8") as fh:
+            json.dump({"hits": {f: sorted(l) for f, l in _hits.items()}, "loaded": sorted(loaded)}, fh)
+
+    sys.settrace(_tracer)
+    threading.settrace(_tracer)
+    atexit.register(_dump)
 '''
 
 CMP_SWAP = {ast.Lt: [(ast.LtE, 'comparison_boundary'), (ast.NotEq, 'comparison_relational')],
@@ -238,9 +317,29 @@ def string_contexts(tree: ast.AST) -> tuple[set[int], set[int], set[int]]:
     return compared, named, literal
 
 
+def is_main_guard(node: ast.AST) -> bool:
+    """`if __name__ == '__main__':` (either operand order)."""
+    if not (isinstance(node, ast.If) and isinstance(node.test, ast.Compare) and len(node.test.ops) == 1):
+        return False
+    t = node.test
+    sides = [t.left, t.comparators[0]]
+    return (isinstance(t.ops[0], ast.Eq) and any(isinstance(s, ast.Name) and s.id == '__name__' for s in sides)
+            and any(isinstance(s, ast.Constant) and s.value == '__main__' for s in sides))
+
+
+def main_guard_tests(tree: ast.AST) -> set[int]:
+    """Ids of the nodes of every module-level `if __name__ == '__main__':` test. Mutating the guard runs the
+    script's main() with the test runner's argv whenever the module is imported: noise, never a finding."""
+    out: set[int] = set()
+    for node in getattr(tree, 'body', []):
+        if is_main_guard(node):
+            out.update(id(n) for n in ast.walk(node.test))
+    return out
+
+
 def candidates(tree: ast.AST):
     """Yield (node, replacement source text, operator) for every mutation the engine knows."""
-    skip = docstring_nodes(tree) | annotation_nodes(tree) | fstring_parts(tree)
+    skip = docstring_nodes(tree) | annotation_nodes(tree) | fstring_parts(tree) | main_guard_tests(tree)
     compared, named, _ = string_contexts(tree)
     data = data_strings(tree)
     for node in ast.walk(tree):
@@ -265,7 +364,7 @@ def candidates(tree: ast.AST):
             yield node, '(' + ast.unparse(m) + ')', 'logical'
         elif isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
             yield node, '(' + ast.unparse(node.operand) + ')', 'negate_condition'
-        elif isinstance(node, (ast.If, ast.While)) and not isinstance(node.test, ast.UnaryOp):
+        elif isinstance(node, (ast.If, ast.While)) and not isinstance(node.test, ast.UnaryOp) and id(node.test) not in skip:
             yield node.test, 'not (' + ast.unparse(node.test) + ')', 'negate_condition'
         elif isinstance(node, ast.Constant):
             v = node.value
@@ -356,9 +455,19 @@ class Runner:
     """How the Python tests are run: pytest (the default) or unittest (`python -m unittest discover`, for a
     suite CI runs with unittest; pytest would also collect plain functions named test_*, such as helpers)."""
 
-    def __init__(self, kind: str, repo: Path, run_dir: Path, tests: list[str], pytest_args: list[str], ut: dict):
+    def __init__(self, kind: str, repo: Path, run_dir: Path, tests: list[str], pytest_args: list[str], ut: dict,
+                 selftest_cmds: list[str] | None = None):
         self.kind, self.repo, self.run_dir, self.tests, self.extra, self.ut = kind, repo, run_dir, tests, pytest_args, ut
         self.n = 0
+        self.jobs: list[tuple[str, list[str]]] = []
+        if kind == 'selftest':
+            # each self-test command is one "test": python <script> --self-test (or a self_test.py), or --selftest-cmd
+            self.jobs = run_tests.selftest_jobs(argparse.Namespace(selftest_cmd=selftest_cmds or []), tests)
+            seen: dict[str, int] = {}
+            for i, (sid, argv) in enumerate(self.jobs):
+                seen[sid] = seen.get(sid, 0) + 1
+                if seen[sid] > 1:
+                    self.jobs[i] = (f'{sid}#{seen[sid]}', argv)
         if kind == 'unittest':
             self.ut_dir = run_dir / '_ut'
             self.ut_dir.mkdir(parents=True, exist_ok=True)
@@ -374,6 +483,8 @@ class Runner:
         return [sys.executable, str(self.ut_dir / 'unittest_runner.py'), str(path)]
 
     def shown(self) -> str:
+        if self.kind == 'selftest':
+            return '; '.join(shown_argv(a) for _, a in self.jobs)
         if self.kind == 'unittest':
             u = self.ut
             return ('python -m unittest discover' + (f' -s {u["start"]}' if u.get('start') not in (None, '.') else '') +
@@ -389,6 +500,7 @@ class Runner:
         plug_dir.mkdir(parents=True, exist_ok=True)
         (plug_dir / 'mt_cov_plugin.py').write_text(PLUGIN, encoding='utf-8')
         cenv = {**env, 'MT_FILES': json.dumps([str(self.repo / p) for p in scoped]), 'MT_COV_OUT': str(out),
+                'MT_REPO': str(self.repo),
                 'PYTHONPATH': os.pathsep.join([str(plug_dir), env.get('PYTHONPATH', '')]).rstrip(os.pathsep)}
         sel = [*self.extra, *self.tests]
         return ([sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', '-p', 'mt_cov_plugin', *sel], cenv,
@@ -399,12 +511,13 @@ class Runner:
             return self.ut_cmd()
         return [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', *self.extra, *self.tests]
 
-    def startup_cmd(self) -> list[str]:
-        """A run that starts the runner and loads the tests but runs none: the fixed cost of every mutant run."""
+    def startup_cmd(self, ids: list[str] | None = None) -> list[str]:
+        """A run that starts the runner and loads the tests but runs none: the fixed cost of every mutant run. Given
+        the covering test ids, pytest collects exactly those from --repo, which also proves they resolve there."""
         if self.kind == 'unittest':
             return self.ut_cmd(ids=[])
         return [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-p', 'no:cacheprovider', *self.extra,
-                *self.tests]
+                *(ids if ids else self.tests)]
 
     def mutant_cmd(self, m: dict, out: Path) -> list[str]:
         if self.kind == 'unittest':
@@ -421,6 +534,110 @@ class Runner:
             imp = [c for c in cases if c['id'].endswith('::(import)') and c['status'] in ('failed', 'error')]
             return [c for c in cases if not c['id'].endswith('::(import)')], bool(imp)
         return parse_results.parse_junit(out, mid)[0], False
+
+
+def shown_argv(argv: list[str]) -> str:
+    return ' '.join('python' if a == sys.executable else (shlex.quote(a) if re.search(r'\s', a) else a) for a in argv)
+
+
+POPEN_KW = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' else {'start_new_session': True}
+LIVE: dict = {'proc': None}   # the test run in progress, killed when the engine is stopped
+NOT_FOUND = re.compile(r'ERROR: (?:file or directory not found|not found):[^\r\n]*')
+
+
+def stop_live(proc) -> None:
+    """Kill a test run that is still going (and its children), and wait for it, so nothing keeps the tree open."""
+    if proc is not None and proc.poll() is None:
+        run_tests.kill_tree(proc)
+        try:
+            proc.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            pass
+
+
+def run_selftests(jobs: list[tuple[str, list[str]]], repo: Path, env: dict, timeout: float | None) -> dict:
+    """Run self-test commands one after another from --repo. {status: passed|failed|timeout|error, failed_by,
+    output, codes}: failed_by is `<script>::<check>` for the first failing check, or `<script>::(exit status)` when the
+    command exited non-zero without naming one."""
+    t0 = time.monotonic()
+    outputs, codes = [], []
+    for sid, argv in jobs:
+        left = None if timeout is None else timeout - (time.monotonic() - t0)
+        if left is not None and left <= 0:
+            return {'status': 'timeout', 'failed_by': None, 'output': '\n'.join(outputs), 'codes': codes}
+        try:
+            proc = subprocess.Popen(argv, cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    **POPEN_KW)
+        except OSError as exc:
+            return {'status': 'error', 'failed_by': None, 'output': f'{shown_argv(argv)}: {exc}', 'codes': codes}
+        LIVE['proc'] = proc
+        try:
+            out, _ = proc.communicate(timeout=left)
+        except subprocess.TimeoutExpired:
+            run_tests.kill_tree(proc)
+            out, _ = proc.communicate()
+            return {'status': 'timeout', 'failed_by': None, 'output': out.decode('utf-8', 'replace'), 'codes': codes}
+        finally:
+            stop_live(proc)                 # interrupted while waiting: never leave the test run behind
+            LIVE['proc'] = None
+        text = out.decode('utf-8', 'replace')
+        outputs.append(text)
+        codes.append(proc.returncode)
+        bad = [c for c in run_tests.parse_selftest_output(text) if c['status'] in ('failed', 'error')]
+        if bad or proc.returncode != 0:
+            # the first failing command decides (as pytest -x): the rest are not run
+            return {'status': 'failed', 'failed_by': f'{sid}::{bad[0]["name"]}' if bad else f'{sid}::(exit status)',
+                    'output': '\n'.join(outputs), 'codes': codes}
+    return {'status': 'passed', 'failed_by': None, 'output': '\n'.join(outputs), 'codes': codes}
+
+
+def _tail(p: str) -> list[str]:
+    return p.replace(os.sep, '/').split('/')[-2:]
+
+
+def run_coverage_selftest(repo: Path, run_dir: Path, scoped: list[str], env: dict, timeout: int,
+                          runner: Runner) -> tuple[dict, float]:
+    """Each self-test command once, traced by a sitecustomize module in every Python process it starts (children
+    included); its lines are covered by that command. A line that ran is covered by the command, at import or not."""
+    site_dir = run_dir / '_site'
+    site_dir.mkdir(parents=True, exist_ok=True)
+    (site_dir / 'sitecustomize.py').write_text(SITE, encoding='utf-8')
+    files = [os.path.normcase(str((repo / p).resolve())) for p in scoped]
+    by_line: dict[str, dict[str, list[str]]] = {}
+    loaded: set[str] = set()
+    codes, t0 = {}, time.monotonic()
+    for i, (sid, argv) in enumerate(runner.jobs):
+        out_dir = run_dir / '_stcov' / str(i)
+        shutil.rmtree(out_dir, ignore_errors=True)
+        cenv = {**env, 'MT_ST_FILES': json.dumps(files), 'MT_ST_OUT': str(out_dir),
+                'PYTHONPATH': os.pathsep.join([str(site_dir), env.get('PYTHONPATH', '')]).rstrip(os.pathsep)}
+        res = run_selftests([(sid, argv)], repo, cenv, timeout)
+        codes[sid] = res['status'] if res['status'] != 'failed' else f'failed ({res["failed_by"]})'
+        for f in sorted(out_dir.glob('*.json')) if out_dir.is_dir() else []:
+            data = json.loads(f.read_text(encoding='utf-8'))
+            loaded.update(data.get('loaded') or [])
+            for path, lines in (data.get('hits') or {}).items():
+                r = Path(path).resolve().relative_to(repo).as_posix()
+                for n in lines:
+                    by_line.setdefault(r, {}).setdefault(str(n), []).append(sid)
+    took = time.monotonic() - t0
+    for r in by_line.values():
+        for n in r:
+            r[n] = sorted(set(r[n]))
+    imports = {}
+    for p, full in zip(scoped, files):
+        imports[p] = {'loaded': full in loaded,
+                      'other_copies': [run_tests.redact_home(c) for c in sorted(loaded)
+                                       if c != full and _tail(c) == _tail(full)]}
+    failed = {s: c for s, c in codes.items() if c != 'passed'}
+    cov = {'command': runner.shown(), 'runner': 'selftest', 'exit_code': 1 if failed else 0,
+           'pytest_exit': None, 'duration_s': round(took, 3), 'files': scoped, 'lines': by_line, 'imports': imports,
+           'rootdir': '.', 'commands': {sid: shown_argv(a) for sid, a in runner.jobs}, 'results': codes,
+           'method': ('sys.settrace from a sitecustomize module in every Python process each self-test command starts '
+                      '(child processes included); a line is covered by the commands that ran it')}
+    shutil.rmtree(site_dir, ignore_errors=True)
+    shutil.rmtree(run_dir / '_stcov', ignore_errors=True)
+    return cov, took
 
 
 def auto_runner(repo: Path, env: dict) -> str:
@@ -505,9 +722,20 @@ def run_coverage(repo: Path, run_dir: Path, scoped: list[str], env: dict, timeou
         r = Path(f).resolve().relative_to(repo).as_posix()
         imports[r] = {'loaded': info['loaded'],
                       'other_copies': [run_tests.redact_home(c) for c in info['other_copies']]}
+    def repo_rel(p):
+        if not p:
+            return None
+        try:
+            r = Path(p).resolve().relative_to(repo).as_posix()
+            return r or '.'
+        except ValueError:
+            return run_tests.redact_home(str(p))
     cov = {'command': shown, 'runner': runner.kind, 'exit_code': res.returncode,
            'pytest_exit': raw['exitstatus'], 'duration_s': round(took, 3), 'files': scoped, 'lines': by_line,
            'imports': imports,
+           # pytest's rootdir (where its node ids start) and ini file; test ids here are relative to --repo instead
+           **({'rootdir': repo_rel(raw.get('rootdir')), 'inifile': repo_rel(raw.get('inifile')),
+               'test_ids': 'relative to --repo, where every mutant run starts'} if runner.kind == 'pytest' else {}),
            'method': ('sys.settrace in a pytest plugin, per test (lines run at import are under "<import>")'
                       if runner.kind == 'pytest' else
                       'sys.settrace in a unittest runner, per TestCase method (lines run at import are under "<import>")')}
@@ -520,7 +748,7 @@ IMPORT_NOTE = ('line ran only while modules were imported (test collection), nev
                'every test that touched the file, since any of them may depend on what it built')
 
 
-def covering(cov: dict, m: dict, module_level: bool) -> tuple[list[str], bool]:
+def covering(cov: dict, m: dict, module_level: bool, stmt: tuple[int, int] | None = None) -> tuple[list[str], bool]:
     """(covering tests, ran only at import). A line that ran only under "<import>" is covered by every test
     that touched its file (every test the coverage run saw, when none did): a module-level statement, or a
     function called while conftest or a module was imported (cached loaders, data built at collection)."""
@@ -528,6 +756,12 @@ def covering(cov: dict, m: dict, module_level: bool) -> tuple[list[str], bool]:
     tests = set()
     for n in range(m['line'], m['end_line'] + 1):
         tests.update(lines.get(str(n), []))
+    if module_level and not tests and stmt is not None:
+        # a module-level statement that never ran at all (the body of `if __name__ == '__main__':` under a test
+        # runner, an else branch of a module-level if) is not covered; a multi-line statement counts as run when
+        # any of its lines ran
+        if not any(lines.get(str(n)) for n in range(stmt[0], stmt[1] + 1)):
+            return [], False
     at_import = tests == {'<import>'}
     if tests <= {'<import>'} and (module_level or at_import):
         tests = {t for ts in lines.values() for t in ts}
@@ -541,6 +775,16 @@ def covering(cov: dict, m: dict, module_level: bool) -> tuple[list[str], bool]:
 def function_lines(text: str) -> list[tuple[int, int]]:
     tree = ast.parse(text)
     return [(n.lineno, n.end_lineno) for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+
+
+def statement_lines(text: str) -> list[tuple[int, int]]:
+    """(first, last) line of every statement, for finding the smallest statement around a mutant."""
+    return [(n.lineno, n.end_lineno) for n in ast.walk(ast.parse(text)) if isinstance(n, ast.stmt)]
+
+
+def enclosing_stmt(stmts: list[tuple[int, int]], a: int, b: int) -> tuple[int, int] | None:
+    inside = [s for s in stmts if s[0] <= a and b <= s[1]]
+    return min(inside, key=lambda s: s[1] - s[0]) if inside else None
 
 
 def sample(mutants: list[dict], keep: int, seed: int) -> list[dict]:
@@ -619,6 +863,53 @@ def pick_language(scope: dict, wanted: str) -> str:
     return supported[0]
 
 
+def stale_backup(run_dir: Path, repo: Path) -> list[str]:
+    """Files whose original, backed up by an earlier run into <run-dir>/backup, differs from the source now: that run
+    was killed outright (no handler can run) with a mutant in place."""
+    b = run_dir / 'backup'
+    out = []
+    if b.is_dir():
+        for f in b.rglob('*'):
+            if f.is_file():
+                rel_p = f.relative_to(b).as_posix()
+                t = repo / rel_p
+                if not t.is_file() or t.read_bytes() != f.read_bytes():
+                    out.append(rel_p)
+    return sorted(out)
+
+
+class Stopped(KeyboardInterrupt):
+    """Raised by the SIGTERM, SIGHUP and SIGBREAK handlers, so a stopped engine restores the source as for Ctrl-C."""
+
+
+def on_signal(signum, frame):
+    raise Stopped(f'signal {signum}')
+
+
+def install_signal_handlers() -> dict:
+    old = {}
+    for name in ('SIGTERM', 'SIGHUP', 'SIGBREAK'):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue
+        try:
+            old[sig] = signal.signal(sig, on_signal)
+        except (ValueError, OSError):       # not the main thread: Ctrl-C and atexit still restore
+            pass
+    return old
+
+
+def unreached_note(stop: dict | None, interrupted: bool) -> str:
+    if interrupted:
+        return 'run interrupted (Ctrl-C or a signal) before this mutant finished'
+    if stop and stop['kind'] == 'tree_changed':
+        return (f'run stopped: mutant {stop["mutant"]}\'s test run changed {", ".join(stop["files"][:3])} outside the '
+                'scoped files, so later runs would read a changed tree')
+    if stop:
+        return f'run stopped: mutant {stop["mutant"]}: {stop["detail"]}'
+    return 'budget exhausted'
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--repo', type=Path, required=True)
@@ -629,11 +920,15 @@ def main(argv=None) -> int:
     ap.add_argument('--min-timeout', type=float, default=10.0)
     ap.add_argument('--max-mutants', type=int)
     ap.add_argument('--tests', action='append', default=[],
-                    help='test file, directory or node id (relative to --repo) every run is limited to (repeatable)')
+                    help='test file, directory or node id (relative to --repo) every run is limited to (repeatable); '
+                         'with --runner selftest, a script whose --self-test is a test (a self_test.py runs as is)')
     ap.add_argument('--pytest-args', default='', help='extra pytest arguments for every run, as one quoted string')
-    ap.add_argument('--runner', choices=['auto', 'pytest', 'unittest'], default='auto',
+    ap.add_argument('--runner', choices=['auto', 'pytest', 'unittest', 'selftest'], default='auto',
                     help='Python test runner (default: pytest when it imports in the repo, else unittest); use unittest '
-                         'when CI runs python -m unittest')
+                         'when CI runs python -m unittest, selftest when the tests are scripts\' own --self-test')
+    ap.add_argument('--selftest-cmd', action='append', default=[],
+                    help='with --runner selftest: a self-test command run from --repo, "python tools/x.py --self-test" '
+                         '(repeatable); each command is one test')
     ap.add_argument('--unittest-args', default='',
                     help='unittest discovery as for python -m unittest discover: "-s tests -p \'test*.py\' -t ."')
     ap.add_argument('--seed', type=int, default=1, help='sampling seed')
@@ -660,6 +955,17 @@ def main(argv=None) -> int:
     if language == 'go':
         import go_mutator
         return go_mutator.main(args, scope)
+    if args.selftest_cmd and args.runner != 'selftest':
+        raise SystemExit('--selftest-cmd needs --runner selftest')
+    # an earlier run killed outright (no handler ran) left a mutant in a source file: never mutate a mutant
+    stale = stale_backup(run_dir, repo)
+    if stale:
+        print(f'ERROR: {run_dir / "backup"} holds originals that differ from the source now ({", ".join(stale[:5])}): '
+              'an earlier run was stopped with a mutant in place. Put them back with builtin_mutator.py --restore '
+              '--repo <repo> --scope <scope> --run-dir <this run dir> (or check those files by hand), then run again.',
+              file=sys.stderr)
+        return 2
+    shutil.rmtree(run_dir / 'backup', ignore_errors=True)
     run_dir.mkdir(parents=True, exist_ok=True)
     skip = {run_dir}
     before = run_tests.tree_snapshot(repo, skip)
@@ -676,18 +982,35 @@ def main(argv=None) -> int:
             raise SystemExit(f'--tests {t}: not found under {repo}')
     extra = shlex.split(args.pytest_args) if args.pytest_args else []
     kind = args.runner if args.runner != 'auto' else auto_runner(repo, env)
-    if kind == 'unittest' and extra:
-        raise SystemExit('--pytest-args with --runner unittest: give discovery options with --unittest-args')
+    if kind in ('unittest', 'selftest') and extra:
+        raise SystemExit(f'--pytest-args with --runner {kind}: ' + ('give discovery options with --unittest-args'
+                                                                    if kind == 'unittest' else 'name the commands with '
+                                                                    '--selftest-cmd'))
+    if kind == 'selftest' and not (args.tests or args.selftest_cmd):
+        raise SystemExit('--runner selftest needs --tests <script.py> or --selftest-cmd "python <script.py> --self-test"')
     if args.runner == 'auto':
         print(f'runner: {kind} (' + ('pytest imports here' if kind == 'pytest' else 'pytest cannot be imported here') +
               '; pass --runner unittest when CI runs python -m unittest)', file=sys.stderr)
-    runner = Runner(kind, repo, run_dir, args.tests, extra, parse_unittest_args(args.unittest_args))
-    cov, cov_s = run_coverage(repo, run_dir, scoped, env, timeout=max(600, int(args.minutes * 60)), runner=runner)
-    child = launched_as_child(repo, scoped, {run_dir})
+    runner = Runner(kind, repo, run_dir, args.tests, extra, parse_unittest_args(args.unittest_args), args.selftest_cmd)
+    for sid, argv_ in runner.jobs:
+        script = next((a for a in argv_[1:] if a.endswith('.py')), None)
+        if argv_[0] != sys.executable or not script:
+            raise SystemExit(f'--selftest-cmd {shown_argv(argv_)}: give a command that runs a Python script '
+                             '("python tools/x.py --self-test"), so its lines can be traced')
+        if not (repo / script).is_file():
+            raise SystemExit(f'--selftest-cmd {shown_argv(argv_)}: {script} not found under {repo}')
+    cov_timeout = max(600, int(args.minutes * 60))
+    if kind == 'selftest':
+        cov, cov_s = run_coverage_selftest(repo, run_dir, scoped, env, timeout=cov_timeout, runner=runner)
+        child: dict[str, list[str]] = {}
+    else:
+        cov, cov_s = run_coverage(repo, run_dir, scoped, env, timeout=cov_timeout, runner=runner)
+        child = launched_as_child(repo, scoped, {run_dir})
     if child:
         cov['launched_as_child'] = child
     (run_dir / 'coverage.json').write_text(json.dumps(cov, indent=1) + '\n', encoding='utf-8')
-    print(f'coverage: {len(scoped)} file(s), {cov_s:.1f}s, {kind} exit {cov["exit_code"]}', flush=True)
+    print(f'coverage: {len(scoped)} file(s), {cov_s:.1f}s, {kind} exit {cov["exit_code"]}'
+          + (f', pytest rootdir {cov["rootdir"]}' if cov.get('rootdir') not in (None, '.') else ''), flush=True)
     shadowed = {f: i['other_copies'] for f, i in cov['imports'].items() if not i['loaded'] and i['other_copies']}
     if shadowed:
         raise SystemExit('the tests imported another copy of the scoped code, so no mutant here could be seen: ' +
@@ -701,27 +1024,50 @@ def main(argv=None) -> int:
         return 0
     if cov['exit_code'] != 0:
         raise SystemExit('the suite does not pass unmutated; fix or exclude failing tests first (no mutants run)'
+                         + (f': {cov["results"]}' if kind == 'selftest' else '')
                          + ('' if args.tests else '; --tests limits the runs to the tests that exercise the scope'))
     t0 = time.monotonic()
-    plain = subprocess.run(runner.plain_cmd(), cwd=repo, env=env, capture_output=True)
+    if kind == 'selftest':
+        plain_ok = run_selftests(runner.jobs, repo, env, None)['status'] == 'passed'
+    else:
+        plain_ok = subprocess.run(runner.plain_cmd(), cwd=repo, env=env, capture_output=True).returncode == 0
     plain_s = time.monotonic() - t0
-    if plain.returncode != 0:
+    if not plain_ok:
         raise SystemExit('the suite does not pass unmutated without tracing; no mutants run')
-    # the fixed cost of every mutant run: start the runner, import conftest and the test modules, run nothing
-    t0 = time.monotonic()
-    subprocess.run(runner.startup_cmd(), cwd=repo, env=env, capture_output=True)
-    startup_s = min(plain_s, time.monotonic() - t0)
-    timeout = max(args.min_timeout, args.timeout_factor * plain_s)
     funcs = {f: function_lines((repo / f).read_text(encoding='utf-8')) for f in scoped}
+    stmts = {f: statement_lines((repo / f).read_text(encoding='utf-8')) for f in scoped}
     for m in mutants:
         module_level = not any(a <= m['line'] <= b for a, b in funcs[m['file']])
-        m['covering_tests'], at_import = covering(cov, m, module_level)
+        m['covering_tests'], at_import = covering(cov, m, module_level,
+                                                  enclosing_stmt(stmts[m['file']], m['line'], m['end_line']))
         m['module_level'] = module_level
         if at_import and m['covering_tests']:
             m['note'] = IMPORT_NOTE
         if not m['covering_tests'] and child.get(m['file']):
             m['note'] = (f'no test ran this line in-process; {", ".join(child[m["file"]][:3])} runs this file as a child '
                          'process, which the tracer cannot see: read that test before calling this a coverage gap')
+    # the fixed cost of every mutant run: start the runner, import conftest and the test modules, run nothing. For
+    # pytest it collects the covering ids from --repo, as each mutant run will: an id that does not resolve there
+    # stops the engine now, instead of every mutant becoming a runtime_error
+    all_ids = sorted({t for m in mutants for t in m['covering_tests']})
+    t0 = time.monotonic()
+    if kind == 'pytest' and all_ids:
+        ids = all_ids
+        if sum(len(i) + 1 for i in ids) > 20000:     # command-line limits: one id per test file is enough to check
+            ids = sorted({i.split('::')[0]: i for i in reversed(all_ids)}.values())
+        st = subprocess.run(runner.startup_cmd(ids), cwd=repo, env=env, capture_output=True)
+        if st.returncode != 0:
+            print('ERROR: pytest could not collect the covering test ids from --repo '
+                  f'(exit {st.returncode}; pytest\'s rootdir was {cov.get("rootdir")}, ini file {cov.get("inifile")}), '
+                  'so every mutant run would fail before a test ran. Output:\n' +
+                  run_tests.redact_home(st.stdout.decode('utf-8', 'replace')[-1200:]), file=sys.stderr)
+            return 2
+    elif kind == 'unittest':
+        subprocess.run(runner.startup_cmd(), cwd=repo, env=env, capture_output=True)
+    else:
+        subprocess.run([sys.executable, '-c', 'pass'], cwd=repo, env=env, capture_output=True)
+    startup_s = min(plain_s, time.monotonic() - t0)
+    timeout = max(args.min_timeout, args.timeout_factor * plain_s)
     runnable = [m for m in mutants if m['covering_tests']]
     # run order: round-robin over operators and files, so stopping at the deadline still leaves an even sample
     order = sample(runnable, len(runnable), args.seed)
@@ -749,12 +1095,23 @@ def main(argv=None) -> int:
     for f, data in originals.items():
         (backup / f).parent.mkdir(parents=True, exist_ok=True)
         (backup / f).write_bytes(data)
-    kw = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' else {'start_new_session': True}
     texts = {m['id']: m.pop('_text') for m in mutants}
     attempted = 0
+    # the tree every mutant run is compared with: after the unmutated runs, so a suite that always writes the same
+    # file is not blamed on a mutant (the before/after check at the end still reports it)
+    ref = run_tests.tree_snapshot(repo, skip)
 
     def add_note(m: dict, note: str) -> None:
         m['note'] = m['note'] + '; ' + note if m.get('note') else note
+
+    def put_back() -> None:
+        stop_live(LIVE.get('proc'))
+        for f, data in originals.items():
+            try:
+                if (repo / f).read_bytes() != data:
+                    (repo / f).write_bytes(data)
+            except OSError:
+                pass
 
     for m in mutants:
         if not m['covering_tests']:
@@ -762,14 +1119,17 @@ def main(argv=None) -> int:
         elif m['id'] not in order_ids:
             m['status'] = 'not_run'
             add_note(m, 'sampled out by --max-mutants')
+    stop: dict | None = None
+    interrupted = False
+    old_handlers = install_signal_handlers()
+    atexit.register(put_back)       # an exception or sys.exit anywhere below still puts the originals back
     try:
         for m in order:
-            text = texts[m['id']]
             if time.monotonic() > deadline:
-                m['status'] = 'not_run'
-                add_note(m, 'budget exhausted')
-                continue
+                break
             attempted += 1
+            m['run_index'] = attempted
+            text = texts[m['id']]
             try:
                 compile(text, m['file'], 'exec')
             except SyntaxError as exc:
@@ -778,38 +1138,76 @@ def main(argv=None) -> int:
                 continue
             target = repo / m['file']
             junit = junit_dir / (f'{m["id"]}.xml' if kind == 'pytest' else f'{m["id"]}.json')
-            cmd = runner.mutant_cmd(m, junit)
             t0 = time.monotonic()
+            st_res, proc, out, timed_out = None, None, b'', False
             try:
                 target.write_bytes(text.encode('utf-8'))
-                proc = subprocess.Popen(cmd, cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kw)
-                try:
-                    out, _ = proc.communicate(timeout=timeout)
-                    timed_out = False
-                except subprocess.TimeoutExpired:
-                    run_tests.kill_tree(proc)
-                    out, _ = proc.communicate()
-                    timed_out = True
+                if kind == 'selftest':
+                    cover = set(m['covering_tests'])
+                    st_res = run_selftests([j for j in runner.jobs if j[0] in cover], repo, env, timeout)
+                else:
+                    proc = subprocess.Popen(runner.mutant_cmd(m, junit), cwd=repo, env=env, stdout=subprocess.PIPE,
+                                            stderr=subprocess.STDOUT, **POPEN_KW)
+                    LIVE['proc'] = proc
+                    try:
+                        out, _ = proc.communicate(timeout=timeout)
+                    except subprocess.TimeoutExpired:
+                        run_tests.kill_tree(proc)
+                        out, _ = proc.communicate()
+                        timed_out = True
             finally:
-                target.write_bytes(originals[m['file']])
+                put_back()
+                LIVE['proc'] = None
             m['duration_s'] = round(time.monotonic() - t0, 3)
-            m['exit_code'] = proc.returncode
-            cases, import_failed = runner.results(junit, m['id'])
-            failed = [c['id'] for c in cases if c['status'] in ('failed', 'error')]
-            if timed_out:
-                m['status'] = 'timeout'
-            elif proc.returncode == 0 and cases:
-                m['status'] = 'survived'
-            elif proc.returncode == 1 and failed and not import_failed:
-                m['status'] = 'killed'
-                m['killed_by'] = failed[0]
+            if st_res is not None:
+                m['exit_code'] = st_res['codes'][-1] if st_res['codes'] else None
+                if st_res['status'] == 'timeout':
+                    m['status'] = 'timeout'
+                elif st_res['status'] == 'passed':
+                    m['status'] = 'survived'
+                elif st_res['status'] == 'failed':
+                    m['status'] = 'killed'
+                    m['killed_by'] = st_res['failed_by']
+                else:
+                    m['status'] = 'runtime_error'
+                    add_note(m, run_tests.redact_home(st_res['output'][-400:]))
             else:
-                m['status'] = 'runtime_error'
-                add_note(m, 'a test module failed to import' if import_failed else
-                         run_tests.redact_home(out.decode('utf-8', 'replace')[-400:]))
-            if junit.exists():
-                junit.unlink()
+                m['exit_code'] = proc.returncode
+                cases, import_failed = runner.results(junit, m['id'])
+                failed = [c['id'] for c in cases if c['status'] in ('failed', 'error')]
+                if timed_out:
+                    m['status'] = 'timeout'
+                elif proc.returncode == 0 and cases:
+                    m['status'] = 'survived'
+                elif proc.returncode == 1 and failed and not import_failed:
+                    m['status'] = 'killed'
+                    m['killed_by'] = failed[0]
+                else:
+                    m['status'] = 'runtime_error'
+                    add_note(m, 'a test module failed to import' if import_failed else
+                             run_tests.redact_home(out.decode('utf-8', 'replace')[-400:]))
+                    missing = NOT_FOUND.search(out.decode('utf-8', 'replace'))
+                    if kind == 'pytest' and proc.returncode == 4 and not cases and missing:
+                        # a test id that no longer resolves: the engine's command is wrong, not the mutant (a conftest
+                        # that fails to import under the mutant is also exit 4, and stays a runtime_error)
+                        stop = {'kind': 'engine_error', 'mutant': m['id'],
+                                'detail': f'pytest could not find the covering tests (exit 4, {missing.group(0)[:200]})'}
+                if junit.exists():
+                    junit.unlink()
             print(f'{m["id"]:>5} {m["file"]}:{m["line"]} {m["operator"]:<22} {m["status"]}', flush=True)
+            # a test run that wrote outside the scoped files (a dry run turned into a write by the mutant) changes
+            # what every later run reads: stop here rather than record contaminated results
+            now = run_tests.tree_snapshot(repo, skip)
+            wrote = sorted(k for k in set(ref) | set(now) if ref.get(k) != now.get(k))
+            if wrote:
+                m['wrote_outside_scope'] = wrote
+                add_note(m, 'its test run changed files outside the scoped files: ' + ', '.join(wrote[:5]))
+                stop = {'kind': 'tree_changed', 'mutant': m['id'], 'files': wrote}
+                print(f'ERROR: mutant {m["id"]}\'s test run changed {", ".join(wrote[:5])}; stopping so no later '
+                      'result reads the changed tree. Restore those files (git checkout, or a fresh copy) and rerun.',
+                      file=sys.stderr, flush=True)
+            if stop:
+                break
             done = [x['duration_s'] for x in order if 'duration_s' in x]
             if len(done) == check_at:
                 mean = sum(done) / len(done)
@@ -819,10 +1217,23 @@ def main(argv=None) -> int:
                       f'{estimate["per_mutant_planned_s"]:.1f}s); the {len(left)} left would take about '
                       f'{mean * len(left) / 60:.1f} min, {max(0.0, deadline - time.monotonic()) / 60:.1f} min of budget '
                       'remain', flush=True)
+    except KeyboardInterrupt:
+        interrupted = True
+        stop = {'kind': 'interrupted', 'mutant': next((m['id'] for m in order if 'run_index' in m and 'status' not in m),
+                                                      None), 'detail': 'Ctrl-C or a signal'}
+        print('interrupted: the source files are restored; recording what ran', file=sys.stderr, flush=True)
     finally:
-        for f, data in originals.items():
-            if (repo / f).read_bytes() != data:
-                (repo / f).write_bytes(data)
+        put_back()
+        atexit.unregister(put_back)
+        for sig, h in old_handlers.items():
+            try:
+                signal.signal(sig, h)
+            except (ValueError, OSError):
+                pass
+    for m in order:
+        if 'status' not in m:
+            m['status'] = 'not_run'
+            add_note(m, unreached_note(stop, interrupted))
     after = run_tests.tree_snapshot(repo, skip)
     changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
     shutil.rmtree(backup, ignore_errors=True)
@@ -838,11 +1249,14 @@ def main(argv=None) -> int:
         command += f' --pytest-args {shlex.quote(args.pytest_args)}'
     if kind == 'unittest':
         command += ' --runner unittest' + (f' --unittest-args {shlex.quote(args.unittest_args)}' if args.unittest_args else '')
+    if kind == 'selftest':
+        command += ' --runner selftest' + ''.join(f' --selftest-cmd {shlex.quote(c)}' for c in args.selftest_cmd)
     if estimate['measured_mean_s'] is None and any('duration_s' in m for m in order):
         done = [m['duration_s'] for m in order if 'duration_s' in m]
         estimate.update(measured_mean_s=round(sum(done) / len(done), 2), measured_over=len(done))
     out = {'engine': {'name': 'builtin', 'version': VERSION, 'python': sys.version.split()[0], 'command': command},
            'ids': 'position', 'runner': kind, 'tests': args.tests, 'pytest_args': extra,
+           **({'selftest_commands': {sid: shown_argv(a) for sid, a in runner.jobs}} if kind == 'selftest' else {}),
            'started_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'files': files,
            'timeout_s': round(timeout, 1), 'suite_duration_s': round(plain_s, 3), 'coverage_duration_s': round(cov_s, 3),
            'estimate': estimate,
@@ -850,14 +1264,21 @@ def main(argv=None) -> int:
                        'skipped': len(runnable) - attempted, 'seed': args.seed},
            'tree': {'before': hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(),
                     'after': hashlib.sha256(json.dumps(after, sort_keys=True).encode()).hexdigest(),
-                    'changed': changed},
+                    'changed': changed, 'checked': 'after every mutant',
+                    **({'stopped': stop} if stop and stop['kind'] == 'tree_changed' else {})},
+           'stopped': stop, 'interrupted': interrupted,
            'counts': counts, 'mutants': mutants}
     (run_dir / 'builtin.json').write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8')
     print(f'{len(mutants)} mutants: ' + ', '.join(f'{v} {k}' for k, v in sorted(counts.items())) +
           f' -> {run_dir / "builtin.json"}')
+    if interrupted:
+        return 130
     if changed:
         print('ERROR: the working tree changed during the run: ' + ', '.join(changed), file=sys.stderr)
         return 3
+    if stop:
+        print(f'ERROR: {unreached_note(stop, False)}', file=sys.stderr)
+        return 2
     return 0
 
 

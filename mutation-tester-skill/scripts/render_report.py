@@ -143,6 +143,11 @@ def main() -> int:
             line += f', {e["sampled"]["skipped"]} skipped by the budget'
         if e.get('timeout_s'):
             line += f', timeout {e["timeout_s"]}s'
+        stop = e.get('stopped')
+        if stop:
+            line += P(f'; STOPPED ({stop["kind"]}' + (f' at {stop["mutant"]}' if stop.get('mutant') else '') +
+                      (f': {", ".join(stop["files"][:3])} changed' if stop.get('files') else '') +
+                      (f': {stop["detail"]}' if stop.get('detail') else '') + '), later mutants not run', RED)
         print(line + (f'. {e["reason"]}' if e['reason'] else ''))
     for t in d['tools']:
         print(P(f'- {t["name"]}: {t["status"]}', TOOL_STYLE[t['status']]) + f' ({t["reason"]})')
