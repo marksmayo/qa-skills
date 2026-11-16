@@ -581,6 +581,20 @@ class Scanner:
         self._roots = inv.package_roots(self.files)
         self.duplicate_pair_cap = int(RULES.get('duplicate_max_pairs', 2000))
         self.duplicate_stats: dict = {}
+        self._components: set[str] | None = None
+
+    def component_of(self, path: str) -> str | None:
+        """The top-level folder of path when it is a component with product code of its own (a tool's skill or
+        service folder: Python or JS/TS outside test areas and sample projects), else None. Data in such a component
+        is read by that component's code, not another's; a top-level tests/ or examples/ folder holds no product code
+        and links anywhere in the host."""
+        if '/' not in path:
+            return None
+        if self._components is None:
+            self._components = {f.split('/', 1)[0] for f in self.sources + [j for j in self.js_files if not inv.in_test_area(j)]
+                                if '/' in f and not self.scope_of(f)}
+        top = path.split('/', 1)[0]
+        return top if top in self._components else None
 
     def scope_of(self, path: str) -> str | None:
         """The sample project path lies in (a fixture project), or None for the host repository's own files."""
@@ -780,7 +794,9 @@ class Scanner:
             # only a comparison in the same sample project (or, for the host's own data, in the host's code) reads this
             # file: a field name shared with another project's code links nothing; the nearest comparison is cited first
             scope = self.scope_of(file)
-            cmp = sorted((c for c in cmp if self.scope_of(c['file']) == scope),
+            comp = self.component_of(file)
+            cmp = sorted((c for c in cmp if self.scope_of(c['file']) == scope
+                          and (comp is None or c['file'].startswith(comp + '/'))),
                          key=lambda c: (-common_depth(file, c['file']), c['file'], c['line']))
             fails = None
             if cmp:

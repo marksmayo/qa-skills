@@ -793,6 +793,11 @@ def tool_repo(root: Path) -> None:
                              'if __name__ == "__main__":\n    if "--self-test" in sys.argv:\n        self_test()\n'),
         'scripts/test_paths.py': ('def is_test_path(p):\n    """True for files under tests/."""\n'
                                   '    return p.startswith("tests/")\n'),
+        # two components of the tool with their own code: a field name shared between them links nothing
+        'notify/send.py': 'def send(window):\n    return window["channel"]\n',
+        'notify/examples/window.json': '{\n  "channel": "mail",\n  "expires": "2027-05-01"\n}\n',
+        'billing/plans.py': ('from datetime import date\n\n\ndef lapsed(plan):\n'
+                             '    return plan.expires < date.today()\n'),
         'scripts/seed_report.py': ('import json\n\n\ndef seed_report(findings):\n'
                                    '    return json.dumps({"findings": findings})\n'),
         'scripts/grants.py': ('from datetime import date\n\n\ndef active(grant):\n'
@@ -915,6 +920,10 @@ def time_bombs_stay_in_project() -> None:
     pre = bombs.get('examples/run/preauth.json', {}).get('details', {})
     check(any(c['file'] == 'scripts/grants.py' for c in pre.get('compared_with_now') or []),
           f'scan: an expiry in host data is linked to the host code comparing it through date.fromisoformat (got {pre.get("compared_with_now")})')
+    win = bombs.get('notify/examples/window.json', {}).get('details', {})
+    check('notify/examples/window.json' in bombs and not win.get('compared_with_now'),
+          f'scan: an expiry in one component (notify/, with its own code) is not linked to another component\'s comparison '
+          f'(got {win.get("compared_with_now")})')
     card = bombs.get('examples/run/card.json', {}).get('details', {})
     check(any(c['file'] == 'scripts/grants.py' and c['line'] == 10 for c in card.get('compared_with_now') or []),
           f'scan: a comparison with a variable that holds today (today = date.today()) is a comparison with now '
