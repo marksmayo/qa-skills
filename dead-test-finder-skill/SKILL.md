@@ -1,7 +1,7 @@
 ---
 name: dead-test-finder
 description: Find tests that give false assurance - tests the framework never collects, tests that pass whatever the code does, tests that only check their own mocks, un-awaited async assertions, swallowed failures, duplicates, and skips whose reason has gone - and prove the important ones with real runs. Never-runs is confirmed by the framework's own collect output; can't-fail by neutralising the code under test in a scratch copy and seeing the test still pass; duplicates by identical coverage and values. Each finding gets a patch, and every strengthening patch is proved to pass on the code and fail when it's neutralised. Never deletes or merges tests, never commits, and never claims a suite has "no dead tests".
-version: 1.6.0
+version: 1.7.0
 ---
 
 # Dead test finder
@@ -220,6 +220,11 @@ pattern).
   Vitest escapes a double quote in a name a second time in that listing; names are compared with
   the escapes undone. The runner comes from the package's dependencies, then its scripts, then the
   nearest workspace root's.
+- **Windows and `npx`.** `npx` is a `.cmd` shim there, and cmd.exe would re-parse the test file
+  names passed to it: a file named `a&<command>&.test.ts` in the audited repository would run
+  `<command>`. When a name holds `^ & | < > ( ) % ! "`, the list command starts the runner's own
+  JS entry with node (from `node_modules`) or, without one, is not run and the package's listing is
+  recorded as errored with the reason.
 - **No list command.** `node:test`, a repository's own runner (`framework: custom`) and a package
   whose `package.json` names no runner are recorded as `no_list_command`; their tests are
   `not_assessed` with that reason, never `not_collected`. Confirm a never-runs finding there by

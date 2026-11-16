@@ -141,7 +141,7 @@ Agreed with the user before the build (`decisions-26-32.md`).
 2. **Confirmation?** Each trigger, unless pre-authorised.
 3. **Collection?** Poll to completion, then collect results and artifacts.
 
-## As built (v1.0.0)
+## As built (v1.1.0)
 
 Where the build differs from the design above, and what the example showed.
 
@@ -159,6 +159,13 @@ Where the build differs from the design above, and what the example showed.
 - **Example results:** `checkout-regression` on staging ran under the QA lead's grant: 2 of 3 passed, one
   failure handed to the triager. `smoke` on production was refused under the grant, then ran with the
   release manager's confirmation: 2 of 2 passed. The stub received exactly two triggers.
+- **An as-of date for the example (v1.1.0).** A grant's expiry is judged on today's date, so the example's
+  grant (until 2026-11-30) would stop `commands.sh` from regenerating the staging run after that date.
+  `trigger --as-of DATE` judges the grant on DATE and records `as_of` in the authorisation; it is accepted
+  only when the API base and the trigger URL are on loopback (the stub), and the validator judges the
+  expiry on the recorded `as_of` and rejects one on a record whose CI is not on loopback. A real CI is
+  always judged on the real date. `scripts/self_test.py` replays the triggers in `commands.sh` with the
+  clock 90 days and ten years ahead and fails if any decision changes.
 - **Testing:** 19 of 19 seeded violations are caught, including an expired or non-covering grant, a
   production run under a grant, a second trigger, a refused request that still reached the CI, edited
   totals, and a token in the record.

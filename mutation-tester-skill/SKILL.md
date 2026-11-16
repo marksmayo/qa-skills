@@ -1,7 +1,7 @@
 ---
 name: mutation-tester
 description: Run mutation testing on the code that changed (or a path you name) and turn the surviving mutants into a short, ranked list of weak assertions and missing cases, each naming the test that should have caught it and the assertion or input that would. Uses the repo's own mutation tool when it is configured, the standard open-source tool otherwise (from a scratch config, never added to the repo), and a stdlib engine for Python (pytest or unittest) and Go as a fallback; reads cargo-mutants for Rust. It says loudly when the product language was not mutated or the mutated code is tooling. Every score is shown with its counts and scope; equivalent mutants need a checkable reason; timeouts and errors are never counted as kills; no-coverage mutants are coverage gaps, not weak assertions. Never claims code is "well tested".
-version: 1.7.0
+version: 1.8.0
 ---
 
 # Mutation tester
@@ -426,7 +426,10 @@ native"`. The scratch copy links the repo's `node_modules` rather than copying i
 inside a workspace is copied into a mirror of the workspace levels, as for Stryker. When the new
 test does not run at all (`test_status: "not_run"`), the proof keeps its output
 (`proof-*.log`) and JUnit in the run directory and records the first error line: read them
-before calling the suggestion wrong.
+before calling the suggestion wrong. The runner starts as `node <runner entry>` from `node_modules`;
+on Windows, when only the `npx` shim is there and the test file name or pattern holds a character
+cmd.exe acts on (`^ & | < > ( ) % ! "`, always true of the `-t` pattern), the proof is refused as
+`not_run` rather than handed to cmd.exe, which would run a command hidden in a file name.
 
 For a Go test file (`*_test.go`) it runs `go test -count=1 -vet=off -run '^TestName$'` on the
 package from the nearest `go.mod`, with the test file and each mutant swapped in by `-overlay`:

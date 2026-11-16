@@ -1,5 +1,7 @@
 """A subset of JSON Schema (local $ref, oneOf, if/then, const, type, enum, required, properties, additionalProperties,
-items, minItems, minLength, minimum, exclusiveMinimum, maximum, pattern) for this skill's scripts (stdlib only)."""
+items, minItems, minLength, minimum, exclusiveMinimum, maximum, pattern) for the skills' validators (stdlib only).
+
+Canonical copy in shared/scripts/; tools/check_shared.py copies it into each skill that uses it."""
 from __future__ import annotations
 import re
 

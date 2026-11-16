@@ -18,7 +18,7 @@ def one(d: dict, brief: bool) -> list[str]:
     if d.get('summary', {}).get('headline'):
         out += [d['summary']['headline'], '']
     for x in d['authorisations']:
-        out.append(f'- {x["at"]}: {x["decision"]}' + (f' ({x["kind"]} by {x["by"]}' + (f', grant {x["grant_id"]} until {x["expires"]}' if x.get('grant_id') else '') + ')' if x['decision'] == 'sent' else f': {x["reason"]}'))
+        out.append(f'- {x["at"]}: {x["decision"]}' + (f' ({x["kind"]} by {x["by"]}' + (f', grant {x["grant_id"]} until {x["expires"]}' if x.get('grant_id') else '') + (f', judged as of {x["as_of"]}' if x.get('as_of') else '') + ')' if x['decision'] == 'sent' else f': {x["reason"]}'))
     if t.get('sent'):
         out += [f'- Triggered: {t["method"]} {t["url"]} -> {t["status"]}', f'- Run: {d["run"]["id"]} {d["run"]["url"] or ""} ({d["run"]["found_by"]})',
                 f'- Outcome: {o["status"]} {o.get("conclusion") or ""}'.rstrip()]

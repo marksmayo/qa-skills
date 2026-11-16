@@ -4,7 +4,7 @@
 
 | Request | Sent when |
 |---|---|
-| Unprotected environment | a grant names the suite and the environment and `expires` is on or after the trigger date; or `--confirmed-by` |
+| Unprotected environment | a grant names the suite and the environment and `expires` is on or after the trigger date (or the recorded `as_of` date, which only a loopback CI stub may use); or `--confirmed-by` |
 | Protected environment | `--confirmed-by` only |
 | Anything else | refused: the record shows the request and why, and nothing is sent |
 

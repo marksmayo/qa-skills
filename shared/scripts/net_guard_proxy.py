@@ -148,6 +148,18 @@ def toolchain_homes(real_home: Path | None = None, environ: dict | None = None) 
     return out
 
 
+def home_env(home: str, real_home: Path | None = None, environ: dict | None = None) -> dict[str, str]:
+    """{variable: path} that give a command an empty home (HOME, USERPROFILE, XDG_*, APPDATA, LOCALAPPDATA inside
+    `home`) while the toolchain homes and caches (toolchain_homes()) stay where they are, so rustup, npm, pip, Gradle
+    and NuGet still find their toolchains and caches. Also used by test-suite-evaluator's py_guard.py --home."""
+    h = str(Path(home).resolve())
+    out = {'HOME': h, 'USERPROFILE': h, 'XDG_CONFIG_HOME': f'{h}/.config', 'XDG_CACHE_HOME': f'{h}/.cache',
+           'XDG_DATA_HOME': f'{h}/.local/share', 'XDG_STATE_HOME': f'{h}/.local/state',
+           'APPDATA': f'{h}/AppData/Roaming', 'LOCALAPPDATA': f'{h}/AppData/Local'}
+    out.update(toolchain_homes(real_home, environ))
+    return out
+
+
 def env_pairs(port: int, home: str | None, go: bool = True, keep_network_env: bool = False,
               real_home: Path | None = None, environ: dict | None = None) -> list[str]:
     """K=V pairs that route proxy-honouring clients to the guard and (with home) isolate the home directory, keeping
@@ -157,11 +169,7 @@ def env_pairs(port: int, home: str | None, go: bool = True, keep_network_env: bo
     pairs = [f'{k}={url}' for k in ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy')]
     pairs += [f'NO_PROXY={LOOPBACK}', f'no_proxy={LOOPBACK}']
     if home:
-        h = str(Path(home).resolve())
-        pairs += [f'HOME={h}', f'USERPROFILE={h}', f'XDG_CONFIG_HOME={h}/.config', f'XDG_CACHE_HOME={h}/.cache',
-                  f'XDG_DATA_HOME={h}/.local/share', f'XDG_STATE_HOME={h}/.local/state',
-                  f'APPDATA={h}/AppData/Roaming', f'LOCALAPPDATA={h}/AppData/Local']
-        pairs += [f'{k}={v}' for k, v in toolchain_homes(real_home, environ).items()]
+        pairs += [f'{k}={v}' for k, v in home_env(home, real_home, environ).items()]
     if not keep_network_env:
         pairs.append('CARGO_NET_OFFLINE=true')
     if go:

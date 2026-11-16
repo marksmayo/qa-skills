@@ -17,7 +17,9 @@ tags.
 
 1. **No trigger without authority.** Either a grant in `preauth.json` that names the suite and the
    environment and hasn't expired, or a confirmation of this exact request (who, how, when) passed as
-   `--confirmed-by`. Without one, show the exact request and stop. Never treat silence as yes.
+   `--confirmed-by`. Without one, show the exact request and stop. Never treat silence as yes. A grant's
+   expiry is judged on today's date; `--as-of` (recorded in the authorisation) judges it on another date
+   and is accepted only for a loopback CI stub, so an example can be regenerated after its grant expires.
 2. **Protected environments** (production by default) always need a confirmation for the run; a
    pre-authorisation never covers them, even if a grant lists them.
 3. **Only the catalogue**: the suite, environment and tag markers must be in `suites.json`. Anything else is
@@ -53,6 +55,7 @@ python scripts/run_suite.py poll --run run/
 python scripts/run_suite.py collect --run run/
 python scripts/validate_suite_run.py run/suite_run.json --preauth preauth.json
 python scripts/render_report.py run/suite_run.json
+python scripts/self_test.py      # the example stays regenerable on any date; the --as-of rules
 ```
 
 1. **Plan** and show the user the request when no grant covers it; ask for the confirmation, and pass their

@@ -8,10 +8,12 @@ python examples/ci-stub/server.py --port 8170 & STUB=$!; sleep 1
 A=http://127.0.0.1:8170
 rm -rf examples/runs
 
-# 1. checkout-regression on staging: covered by grant PA-1, so it is triggered without asking
+# 1. checkout-regression on staging: covered by grant PA-1, so it is triggered without asking.
+#    --as-of judges PA-1 (which expires 2026-11-30) on the example's date, so this can be rerun after the
+#    grant has expired; run_suite.py accepts it only because the CI is the loopback stub.
 python scripts/run_suite.py plan --catalogue examples/suites.json --suite checkout-regression --environment staging \
     --tags "checkout and not slow" --out examples/runs/checkout-staging --api-base $A/github
-python scripts/run_suite.py trigger --run examples/runs/checkout-staging --preauth examples/preauth.json
+python scripts/run_suite.py trigger --run examples/runs/checkout-staging --preauth examples/preauth.json --as-of 2026-11-11
 python scripts/run_suite.py poll --run examples/runs/checkout-staging --poll-seconds 1
 python scripts/run_suite.py collect --run examples/runs/checkout-staging
 

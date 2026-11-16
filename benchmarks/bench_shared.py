@@ -108,7 +108,15 @@ def test_diff_scope_js_functions(benchmark):
     js = read_tree(ROOT / 'ui-crash-hunter-skill' / 'examples' / 'pantry' / 'src', ('.js', '.jsx', '.ts', '.tsx'))
     texts = list(js.values())
     assert texts
-    benchmark(lambda: [diff_scope.js_functions(t) for t in texts])
+    result = benchmark(lambda: [diff_scope.js_functions(t) for t in texts])
+    assert len(result) == len(texts)
+    for text, funcs in zip(texts, result):
+        n = len(text.splitlines())
+        assert all(1 <= f['start'] <= f['end'] <= n for f in funcs), funcs
+    names = {f['name'] for funcs in result for f in funcs}
+    # the pantry app's components, hooks and helpers (declarations, arrow functions, class methods)
+    assert {'App', 'RecipeList', 'RecipeDetail', 'Settings', 'update', 'loadPrefs', 'savePrefs', 'render',
+            'getDerivedStateFromError'} <= names, sorted(names)
 
 
 def test_unified_diff_parse_patch(benchmark):

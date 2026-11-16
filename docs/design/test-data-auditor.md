@@ -580,3 +580,9 @@ parametrised pytest suite globs:
   `data_dir_code` as well; data modules in other languages are not detected.
 - **Example.** The report is now schema 1.1 with `metadata.tests_found: 15`; `run/drift.json`
   gained `status: checked`. The inventory and candidates are unchanged.
+- **The example's baseline is on the audit date.** `examples/run/commands.sh` took its baseline on the
+  real clock, and the planted membership expiry fails on the real clock after 2026-12-01, so the run
+  could not be repeated after that. The baseline now runs with `clock_shift.py` at the audit date
+  (`TDA_CLOCK_DATE=2026-11-11`, the scan's `--today`). The committed B-1 and B-2 are kept (taken on the
+  real clock on 2026-11-12). The self-test runs the baseline line of `commands.sh` as written, on a copy,
+  with the real clock 90 days and ten years ahead, and fails if any test fails.

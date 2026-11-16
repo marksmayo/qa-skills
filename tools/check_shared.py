@@ -2,10 +2,14 @@
 """Check that shared files copied into skills are identical to their canonical copy in shared/.
 
 Skills must be self-contained (installed by copying one directory), so shared files are
-duplicated rather than imported. Copies are compared with line endings normalised.
+duplicated rather than imported. Copies are compared with line endings normalised. It also reports
+scripts that two or more skills carry under the same name with the same or nearly the same content
+but that SHARED does not register (UNREGISTERED): --fix cannot pick their canonical copy, so they
+stay problems until one is put in shared/ and registered.
 
-    python tools/check_shared.py          # report drift, exit 1 if any
-    python tools/check_shared.py --fix    # overwrite copies with the canonical file
+    python tools/check_shared.py              # report drift and unregistered copies, exit 1 if any
+    python tools/check_shared.py --fix        # overwrite copies with the canonical file
+    python tools/check_shared.py --self-test  # check the unregistered-copy detector on a scratch tree
 """
 from __future__ import annotations
 import argparse, sys
@@ -103,6 +107,10 @@ SHARED = {
                                  # run_tests.py maps cargo test ids to their targets with it
                                  'test-data-auditor-skill', 'bug-reproducer-skill'],
     'scripts/png_io.py': ['visual-regression-reviewer-skill', 'cross-browser-checker-skill', 'mobile-app-auditor-skill'],
+    'scripts/schema_check.py': ['api-contract-tester-skill', 'bug-reproducer-skill', 'cross-browser-checker-skill',
+                                'exploratory-charter-writer-skill', 'i18n-checker-skill', 'performance-budget-auditor-skill',
+                                'post-deploy-validator-skill', 'resilience-prober-skill', 'visual-regression-reviewer-skill'],
+    'scripts/py_extras.py': ['test-suite-evaluator-skill', 'journey-mapper-skill'],
     'data/wcag-sc.json': ['wcag-auditor-skill', 'mobile-app-auditor-skill'],
     'data/en301549-map.json': ['wcag-auditor-skill', 'mobile-app-auditor-skill'],
     'data/ambiguity-lexicon.json': ['ticket-readiness-reviewer-skill', 'test-case-designer-skill'],
@@ -111,10 +119,96 @@ SHARED = {
 def normalised(path: Path) -> bytes:
     return path.read_bytes().replace(b'\r\n', b'\n')
 
+
+def unregistered_copies(root: Path, shared: dict | None = None) -> list[dict]:
+    """Scripts under two or more skills' scripts/ or plugins/ with the same file name and the same (or nearly the
+    same) content, that SHARED does not register: copies that drift unnoticed.
+
+    Same-named scripts that merely share a role (render_report.py, self_test.py) differ in most lines and are not
+    reported: two copies are related when their lines are at least COPY_SIMILARITY alike. Each result is
+    {name, skills, paths, identical}."""
+    import difflib
+    shared = SHARED if shared is None else shared
+    registered = set()
+    for rel, skills in shared.items():
+        for entry in skills:
+            skill, _, where = entry.partition(':')
+            registered.add(f'{skill}/{where or rel}')
+    by_name: dict[str, list[str]] = {}
+    for top in ('scripts', 'plugins'):
+        for p in sorted(root.glob(f'*-skill/{top}/**/*')):
+            rel = p.relative_to(root).as_posix()
+            if p.is_file() and p.suffix in COPY_SUFFIXES and '__pycache__' not in p.parts and rel not in registered:
+                by_name.setdefault(p.name, []).append(rel)
+    out = []
+    for name, rels in sorted(by_name.items()):
+        if len({r.split('/', 1)[0] for r in rels}) < 2:
+            continue
+        texts = {r: (root / r).read_bytes().replace(b'\r\n', b'\n').decode('utf-8', 'replace') for r in rels}
+        lines = {r: t.splitlines() for r, t in texts.items()}
+        related: set[str] = set()
+        for i, a in enumerate(rels):
+            for b in rels[i + 1:]:
+                if texts[a] == texts[b]:
+                    related |= {a, b}
+                    continue
+                sm = difflib.SequenceMatcher(None, lines[a], lines[b], autojunk=False)
+                if (sm.real_quick_ratio() >= COPY_SIMILARITY and sm.quick_ratio() >= COPY_SIMILARITY
+                        and sm.ratio() >= COPY_SIMILARITY):
+                    related |= {a, b}
+        if len({r.split('/', 1)[0] for r in related}) >= 2:
+            paths = sorted(related)
+            out.append({'name': name, 'skills': sorted({r.split('/', 1)[0] for r in paths}), 'paths': paths,
+                        'identical': len({texts[r] for r in paths}) == 1})
+    return out
+
+
+COPY_SUFFIXES = {'.py', '.mjs', '.cjs', '.js'}
+COPY_SIMILARITY = 0.8
+
+
+def self_test() -> int:
+    import tempfile
+    checks = []
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        helper = 'def helper(x):\n' + ''.join(f'    x = x + {i}\n' for i in range(30)) + '    return x\n'
+        files = {
+            'alpha-skill/scripts/helper.py': helper, 'beta-skill/scripts/helper.py': helper.replace('\n', '\r\n'),
+            'gamma-skill/scripts/helper.py': helper.replace('x + 29', 'x + 290'),        # a drifted copy
+            'alpha-skill/scripts/render_report.py': 'print("alpha")\n',              # same name, unrelated
+            'beta-skill/scripts/render_report.py': 'import json\nprint(json.dumps({}))\n',
+            'shared/scripts/common.py': helper + '# common\n',
+            'alpha-skill/scripts/common.py': helper + '# common\n', 'beta-skill/scripts/common.py': helper + '# common\n',
+            'alpha-skill/plugins/guard.py': helper + '# guard\n', 'beta-skill/scripts/guard.py': helper + '# guard\n',
+            'alpha-skill/examples/app/helper.py': helper,
+            'alpha-skill/scripts/only_here.py': helper + '# alone\n',
+        }
+        for rel, body in files.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_bytes(body.encode())
+        got = {u['name']: (sorted(u['skills']), u['identical']) for u in
+               unregistered_copies(root, {'scripts/common.py': ['alpha-skill', 'beta-skill']})}
+        checks.append(('an unregistered script copied into three skills (one drifted) is reported, drift noted',
+                       got.get('helper.py') == (['alpha-skill', 'beta-skill', 'gamma-skill'], False), got))
+        checks.append(('identical copies under scripts/ and plugins/ are reported as identical',
+                       got.get('guard.py') == (['alpha-skill', 'beta-skill'], True), got))
+        checks.append(('a registered shared file, same-named unrelated scripts, examples and single copies are not',
+                       set(got) == {'helper.py', 'guard.py'}, sorted(got)))
+    failed = [c for c in checks if not c[1]]
+    for name, ok, extra in checks:
+        print(f"{'PASS' if ok else 'FAIL'} {name}" + ('' if ok else f'  [{extra}]'))
+    print(f'{len(failed)} failed' if failed else 'ALL PASS')
+    return 1 if failed else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--fix', action='store_true', help='overwrite drifted or missing copies')
+    ap.add_argument('--self-test', action='store_true', help='check the unregistered-copy detector on a scratch tree')
     args = ap.parse_args()
+    if args.self_test:
+        return self_test()
     problems = 0
     for rel, skills in SHARED.items():
         canonical = ROOT / 'shared' / rel
@@ -135,6 +229,13 @@ def main() -> int:
                 print(f'FIXED ({state}): {skill}/{rel_shown}')
             else:
                 print(f'{state.upper()}: {skill}/{rel_shown} differs from shared/{rel}'); problems += 1
+    # copies nobody registered drift silently: --fix cannot choose their canonical version, so they stay problems
+    unregistered = unregistered_copies(ROOT)
+    for u in unregistered:
+        print(f'UNREGISTERED: {u["name"]} is copied into {len(u["skills"])} skills '
+              f'({"identical" if u["identical"] else "copies differ"}: {", ".join(u["paths"])}); put the canonical copy '
+              'in shared/ and add it to SHARED in tools/check_shared.py')
+    problems += len(unregistered)
     if problems:
         print(f'{problems} problem(s). Run: python tools/check_shared.py --fix')
         return 1

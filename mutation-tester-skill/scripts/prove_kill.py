@@ -322,7 +322,9 @@ def test_command(runner: str, test_file: str, test_name: str, junit: Path, extra
     # would rewrite a pattern's ^ and | characters
     entry = js_workspace.find_module(cwd, runner) if cwd else None
     script = entry and next((entry / s for s in ENTRY[runner] if (entry / s).is_file()), None)
-    head = [shutil.which('node') or 'node', str(script)] if script else [shutil.which('npx') or 'npx', runner]
+    # (the npx fallback stays a bare name: run_test resolves it with run_tests.resolve_exe, which never hands
+    # cmd.exe metacharacters from a file name or pattern to a .cmd shim)
+    head = [shutil.which('node') or 'node', str(script)] if script else ['npx', runner]
     if runner == 'vitest':
         cmd = [*head, 'run', test_file, '-t', pattern, '--reporter=junit', f'--outputFile={junit}', *extra]
     else:
@@ -352,6 +354,12 @@ FIRST_ERROR = re.compile(r'\b(?:TypeError|ReferenceError|SyntaxError|Error)\b:\s
 def run_test(cwd: Path, runner: str, test_file: str, test_name: str, junit: Path, env: dict, timeout: float,
              extra: list[str]) -> dict:
     cmd, shown = test_command(runner, test_file, test_name, junit, extra, cwd)
+    try:
+        cmd = run_tests.resolve_exe(cmd, env, cwd)
+    except SystemExit as exc:                      # a .cmd shim and an argument cmd.exe would re-parse: never run it
+        why = f'not run: {exc} (test file {test_file!r})'
+        print(f'  {test_name}: {why}', file=sys.stderr)
+        return {'command': shown, 'exit_code': None, 'test_status': 'not_run', 'duration_s': 0.0, 'first_error': why[:300]}
     if runner == 'jest':
         env = {**env, 'JEST_JUNIT_OUTPUT_FILE': str(junit)}
     kw = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' else {'start_new_session': True}
@@ -508,8 +516,9 @@ def main(argv=None) -> int:
         ut = builtin_mutator.parse_unittest_args(args.unittest_args)
         test_id = unittest_id(args.test_file, args.test_name)
     elif runner == 'cargo':
-        if shutil.which('cargo') is None:
-            raise SystemExit('a Rust proof needs cargo on PATH')
+        usable, why = run_tests.cargo_usable()
+        if not usable:
+            raise SystemExit(f'a Rust proof needs a working cargo: {why}')
         cid = cargo_test_id(work, args.test_file, args.test_name)
         if cid is None:
             js_workspace.remove_tree(scratch)

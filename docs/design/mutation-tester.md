@@ -451,8 +451,15 @@ Agreed with the user before the build.
   - The example is now schema 1.3.0: `mutants.json` was re-normalised (adding
     `language_coverage` and the engines' `run_by`; the mutants are unchanged), the headline names
     F1, and it validates.
+- **v1.7.0: the `npx` fallback in `prove_kill.py` never hands cmd.exe a file name.** A security review
+  showed that when the runner's entry script was not found, the proof ran `npx.cmd <runner> <test file>
+  -t <pattern>` on Windows, and cmd.exe re-parsed the arguments (a test file named `a&<command>&.test.ts`
+  ran `<command>`; the pattern's `^`, `(` and `>` were mangled too). The fallback now goes through the
+  shared `run_tests.resolve_exe()`, which starts the runner's JS entry with node or refuses; a refused
+  proof is `not_run` with the reason as `first_error`. Tested by `case_prove_kill_cmd_shim_metacharacters`
+  (a stand-in `npx.cmd` and a marker script on PATH; skipped off Windows).
 
-### Scope stays inside the repository (v1.7.0)
+### Scope stays inside the repository (v1.8.0)
 
 - `builtin_mutator.py` writes mutants into the scoped files (and restores them), but did not check that a
   scope's paths were inside `--repo`: `../x.py` or an absolute path would have been mutated in place. It now

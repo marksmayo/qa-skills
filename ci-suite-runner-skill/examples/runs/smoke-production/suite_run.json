@@ -2,7 +2,7 @@
  "schema_version": "1.0.0",
  "skill": {
   "name": "ci-suite-runner",
-  "version": "1.0.0"
+  "version": "1.1.0"
  },
  "catalogue": "examples/suites.json",
  "request": {
@@ -38,14 +38,14 @@
  },
  "authorisations": [
   {
-   "at": "2026-11-11T14:14:47Z",
+   "at": "2026-11-15T23:56:13Z",
    "decision": "refused",
    "reason": "production is protected: a pre-authorisation never covers it; confirm this run with --confirmed-by"
   },
   {
    "kind": "confirmation",
    "by": "Release manager, in chat on 2026-11-12, for the 2.4.0 post-deploy smoke",
-   "at": "2026-11-11T14:14:47Z",
+   "at": "2026-11-15T23:56:16Z",
    "decision": "sent"
   }
  ],
@@ -67,7 +67,7 @@
    }
   },
   "status": 200,
-  "at": "2026-11-11T14:14:47Z"
+  "at": "2026-11-15T23:56:16Z"
  },
  "run": {
   "id": 3301,
@@ -77,12 +77,12 @@
  },
  "polling": [
   {
-   "at": "2026-11-11T14:14:48Z",
+   "at": "2026-11-15T23:56:17Z",
    "status": "in_progress",
    "conclusion": null
   },
   {
-   "at": "2026-11-11T14:14:52Z",
+   "at": "2026-11-15T23:56:22Z",
    "status": "completed",
    "conclusion": "success"
   }

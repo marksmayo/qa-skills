@@ -400,6 +400,37 @@ def case_prove_kill_unsupported(tmp: Path) -> None:
     assert not (tmp / 'run').exists() or not any((tmp / 'run').iterdir()), 'wrote a scratch copy before refusing'
 
 
+def cmd_shim_fixture(tmp: Path) -> tuple[Path, Path, Path, str]:
+    """A folder for PATH holding a stand-in npx.cmd (it only echoes its arguments) and qa_marker.cmd (which writes
+    marker.txt beside itself when cmd.exe runs it), a package folder, and a test file name that would make cmd.exe
+    run the marker: a&qa_marker&.test.ts."""
+    shim = tmp / 'shim'
+    shim.mkdir()
+    (shim / 'npx.cmd').write_text('@echo off\r\necho shim got: %*\r\n', encoding='ascii')
+    (shim / 'qa_marker.cmd').write_text('@echo ran> "%~dp0marker.txt"\r\n', encoding='ascii')
+    pkg = tmp / 'pkg'
+    pkg.mkdir()
+    return shim, pkg, shim / 'marker.txt', 'a&qa_marker&.test.ts'
+
+
+def case_prove_kill_cmd_shim_metacharacters(tmp: Path) -> None:
+    """A test file name with cmd.exe metacharacters never reaches cmd.exe through the npx .cmd shim (Windows only)."""
+    if os.name != 'nt':
+        raise Skip('the .cmd shim re-parsing only happens on Windows (cmd.exe)')
+    import prove_kill
+    shim, pkg, marker, name = cmd_shim_fixture(tmp)
+    (pkg / name).write_text('test("x", () => {})\n', encoding='utf-8')
+    old = os.environ.get('PATH', '')
+    os.environ['PATH'] = str(shim) + os.pathsep + old
+    try:
+        env = {**os.environ}
+        rec = prove_kill.run_test(pkg, 'vitest', name, 'x', tmp / 'junit.xml', env, 30, [])
+    finally:
+        os.environ['PATH'] = old
+    assert not marker.exists(), 'cmd.exe ran a second command taken from the test file name'
+    assert rec['test_status'] == 'not_run', rec
+
+
 # A tiny Python package ("tea shop prices") whose rate table is loaded once, while conftest is imported:
 # the table's lines run only during collection, never inside a test (a cached loader, data built in conftest).
 PY_PRICES = '''_CACHE = {}
@@ -733,8 +764,13 @@ def case_operator_keys_and_defaults(tmp: Path) -> None:
 
 
 def case_builtin_budget_estimate_measured(tmp: Path) -> None:
-    """The plan's estimate counts the measured start-up of a test run (collection, conftest), not a fixed second:
-    on a suite whose start-up dominates, it is within reach of the measured per-mutant times."""
+    """The plan's estimate counts the measured start-up of a test run (collection, conftest), not a fixed second.
+
+    The conftest sleeps 2 s, so every run's start-up takes at least 2 s of wall time whatever the machine's load (load
+    only lengthens it): a measured start-up, and so the estimate per mutant, is at least that floor, while a fixed or
+    missing start-up is not. The estimate is not compared with the measured per-mutant times: those are wall-clock
+    times taken later, and a machine whose load changes between the estimate and the runs moves their ratio anywhere
+    (0.26 when a CPU load started after the plan was printed), which made this check flaky."""
     conftest = 'import time\n\ntime.sleep(2)\n' + PY_CONFTEST
     repo = py_shop(tmp / 'repo', conftest=conftest)
     (repo / 'tests' / 'test_other.py').write_text(
@@ -747,13 +783,15 @@ def case_builtin_budget_estimate_measured(tmp: Path) -> None:
     assert res.returncode == 0, res.stdout[-800:] + res.stderr[-800:]
     out = json.loads((tmp / 'run' / 'builtin.json').read_text(encoding='utf-8'))
     ran = [m for m in out['mutants'] if 'duration_s' in m]
-    actual = sum(m['duration_s'] for m in ran)
-    est = (out.get('estimate') or {}).get('planned_s')
-    if est is None:
-        import re
-        mm = re.search(r'est\. ([\d.]+) min', res.stdout)
-        est = float(mm.group(1)) * 60 if mm else 0.0
-    assert ran and 0.7 <= est / actual <= 1.6, f'estimate {est:.1f}s for {len(ran)} mutants that took {actual:.1f}s'
+    assert len(ran) == 4, [(m['id'], m['status']) for m in out['mutants']]
+    floor = 2.0   # the conftest's sleep: a lower bound on any run's start-up, under any load
+    assert all(m['duration_s'] >= floor for m in ran), [m['duration_s'] for m in ran]
+    estimate = out.get('estimate') or {}
+    startup, per, est = estimate.get('startup_s'), estimate.get('per_mutant_planned_s'), estimate.get('planned_s')
+    assert startup is not None and startup >= floor, f'measured start-up {startup}s is under the {floor}s conftest sleep'
+    assert per is not None and per >= startup - 0.05, f'estimate {per}s per mutant is under the measured start-up {startup}s'
+    assert est is not None and abs(est - per * len(ran)) <= 0.1 * len(ran), (est, per, len(ran))
+    assert f'start-up {startup:.1f}s' in res.stdout, res.stdout[-800:]
 
 
 def ut_repo(root: Path) -> Path:
@@ -927,8 +965,10 @@ def case_run_engine_cargo_mutants(tmp: Path) -> None:
 def case_prove_kill_rust(tmp: Path) -> None:
     """prove_kill.py proves a Rust test with cargo test (run_tests.py's cargo preset ids) in a scratch copy: it
     passes on the original and fails on the mutant; the repository is untouched."""
-    if shutil.which('cargo') is None:
-        raise Skip('cargo is not on PATH')
+    import run_tests
+    usable, why = run_tests.cargo_usable()   # a rustup proxy with no usable toolchain is not cargo
+    if not usable:
+        raise Skip(why)
     repo = tmp / 'tide-cli'
     shutil.copytree(CARGO_EXAMPLE / 'tide-cli', repo)
     muts = write_json(tmp / 'mutants.json', {'mutants': [
@@ -959,7 +999,7 @@ def case_prove_kill_rust(tmp: Path) -> None:
 
 CASES = [case_builtin_go_engine, case_builtin_scope_outside_repo, case_builtin_unsupported_language, case_ranges_go_only, case_mte_engine_label,
          case_gremlins_operators, case_duplicate_mutants_merged, case_proximity_go, case_proximity_unparsed,
-         case_completeness_external_engine, case_prove_kill_go, case_prove_kill_unsupported,
+         case_completeness_external_engine, case_prove_kill_go, case_prove_kill_unsupported, case_prove_kill_cmd_shim_metacharacters,
          case_builtin_import_time_coverage, case_builtin_budget_uses_covering_tests, case_prove_kill_original_timeout,
          case_prove_kill_default_timeout, case_prove_kill_collection_error,
          case_detect_tools_unscripted_dominant, case_report_language_limitation, case_headline_names_p0,

@@ -70,7 +70,15 @@ def test_ui_crash_scan_text_pantry(benchmark):
 def test_ui_crash_mask_code(benchmark):
     src = ROOT / 'ui-crash-hunter-skill' / 'examples' / 'pantry' / 'src'
     texts = [p.read_text(encoding='utf-8') for p in sorted(src.rglob('*')) if p.suffix in ('.js', '.jsx', '.ts', '.tsx')]
-    benchmark(lambda: [ui_scan.mask_code(t) for t in texts])
+    assert texts
+    masked = benchmark(lambda: [ui_scan.mask_code(t) for t in texts])
+    assert len(masked) == len(texts)
+    for text, m in zip(texts, masked):
+        # same length, newlines where they were (so offsets and line numbers still map), brackets balanced on what is left
+        assert len(m) == len(text)
+        assert [i for i, c in enumerate(m) if c == '\n'] == [i for i, c in enumerate(text) if c == '\n']
+        assert m.count('{') == m.count('}') and m.count('(') == m.count(')') and m.count('[') == m.count(']')
+    assert sum(m != t for m, t in zip(masked, texts)) >= len(texts) // 2   # comments and literals were blanked
 
 
 def test_lang_census_beacon_cli(benchmark):

@@ -20,7 +20,7 @@ Python product package in a directory named e2e. Checks that:
     when a list command overwrites a test file.
 """
 from __future__ import annotations
-import contextlib, io, json, shutil, sys, tempfile
+import contextlib, io, json, os, shutil, sys, tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -433,6 +433,35 @@ def fake_pytest(addopts: list[str], errors: list[str]):
     return run
 
 
+def cmd_shim_checks(tmp: Path, failures: list[str]) -> None:
+    """A test file name with cmd.exe metacharacters (a&qa_marker&.test.ts, from the repository being audited) never
+    reaches cmd.exe through an npx .cmd shim: the stand-in shim on PATH only echoes, and qa_marker.cmd beside it
+    writes marker.txt if cmd.exe ever runs it as a second command. Windows only: elsewhere no shell re-parses."""
+    if os.name != 'nt':
+        print('  skipped cmd-shim check: the .cmd shim re-parsing only happens on Windows (cmd.exe)')
+        return
+    shim, pkg = tmp / 'cmdshim', tmp / 'cmdshim-pkg'
+    shim.mkdir()
+    pkg.mkdir()
+    (shim / 'npx.cmd').write_text('@echo off\r\necho shim got: %*\r\n', encoding='ascii')
+    (shim / 'qa_marker.cmd').write_text('@echo ran> "%~dp0marker.txt"\r\n', encoding='ascii')
+    name = 'a&qa_marker&.test.ts'
+    (pkg / name).write_text('test("x", () => {})\n', encoding='utf-8')
+    old = os.environ.get('PATH', '')
+    os.environ['PATH'] = str(shim) + os.pathsep + old
+    try:
+        for cmd in (['npx', 'vitest', 'list', '--json=out.json', name], ['npx', 'jest', '--listTests', '--json', name],
+                    ['npx', 'playwright', 'test', '--list', '--reporter=json', name]):
+            code, out = collect_check.run(cmd, pkg, {'PATH': os.environ['PATH']})
+            check(not (shim / 'marker.txt').exists(),
+                  f'{cmd[1]}: cmd.exe ran a second command taken from the test file name {name!r}', failures)
+            check(code != 0 and 'cmd.exe' in out, f'{cmd[1]}: the shim run is refused with a reason (got {code}: {out[-200:]})',
+                  failures)
+            (shim / 'marker.txt').unlink(missing_ok=True)
+    finally:
+        os.environ['PATH'] = old
+
+
 def pytest_checks(tmp: Path, failures: list[str]) -> None:
     """pytest's listing whatever verbosity the repository's addopts set, and one file that cannot be imported."""
     root = tmp / 'py'
@@ -622,6 +651,7 @@ def main() -> int:
               f'{pk.get("errored_files")})', failures)
         check(f'{bad}::tags a job' in sp['not_assessed'] and sp['collected'] >= 15,
               'tests in the failing file are not_assessed, the others collected', failures)
+        cmd_shim_checks(tmp, failures)
         pytest_checks(tmp, failures)
         go_checks(tmp, failures)
         report_checks(tmp, failures)
