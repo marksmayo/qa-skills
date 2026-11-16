@@ -1,7 +1,7 @@
 ---
 name: ci-suite-runner
 description: Run a catalogued test suite in CI (GitHub Actions workflow_dispatch or an Azure DevOps pipeline run) on a chosen environment with chosen test tags, then poll it to completion and collect the results and artifacts - JUnit totals and failed tests, artifacts, failed jobs' logs - into one record. Every trigger is confirmed unless a pre-authorisation covers that suite and environment and hasn't expired; protected environments such as production always need a confirmation. Triggers once per request, never re-triggers on a timeout, accepts only the catalogue's suites, environments and tags, and hands failures to the CI failure triager.
-version: 1.0.0
+version: 1.1.0
 ---
 
 # CI suite runner
@@ -27,7 +27,9 @@ tags.
 5. **Results come from JUnit**: no JUnit artifact is `not_collected`, never "passed"; the totals are
    counted from the files.
 6. **Tokens stay out of files** (`GITHUB_TOKEN`/`GH_TOKEN`, `AZURE_DEVOPS_EXT_PAT`); secret inputs are
-   redacted.
+   redacted. Tokens are never sent to another origin: artifact and log downloads redirect to storage hosts,
+   and `safe_http.py` drops credential headers on any cross-origin redirect. Job and artifact names from the
+   CI become plain file names (`safe_name`) and every write is checked to stay inside the run folder.
 7. **No "all green"**: say "N of M tests passed in run R".
 8. **Never approve** a pipeline's environment gate or a deployment on someone's behalf.
 

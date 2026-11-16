@@ -1,6 +1,6 @@
 # Design: `hypercare-anomaly-watcher-skill`
 
-Status: Built (v1.0.0); see "As built" at the end. Build order: 29.
+Status: Built (v1.1.0); see "As built" at the end. Build order: 29.
 
 ## Mission
 
@@ -170,3 +170,9 @@ Where the build differs from the design above, and what the example showed.
 - **Testing:** 19 of 19 seeded violations are caught, including a confirmation without persistence, a
   correlation without a normal hour before the deploy, a draft marked raised, a POST to Datadog, an API
   key, and a copied event payload.
+
+### Security hardening (v1.1.0)
+
+- **Redirects keep keys home.** `sources.py` reads through `safe_http.py` (shared): a redirect to another
+  origin drops `DD-API-KEY`, `DD-APPLICATION-KEY` and the Sentry bearer token. `python scripts/sources.py
+  --self-test` checks it against two loopback ports (written to fail first).

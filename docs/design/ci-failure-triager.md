@@ -1,6 +1,6 @@
 # Design: `ci-failure-triager-skill`
 
-Status: Built (v1.4.0); see "As built" at the end. Build order: 26.
+Status: Built (v1.5.0); see "As built" at the end. Build order: 26.
 
 ## Mission
 
@@ -333,3 +333,10 @@ and the validator stopped the agent from naming the test. Fixed:
   - **Not built**: later runs on the branch at other commits are not fetched; a libtest re-run in which a test passes
     while its step still fails gives `missing`, not `passed`; Azure DevOps timeline issues are still not read as
     annotations.
+
+### Shared redirect handler (2026-11-16)
+
+- `fetch_run.py`'s `SafeRedirect` moved to `shared/scripts/safe_http.py` (shipped with this skill, the CI suite
+  runner, the hypercare watcher and every skill that carries `fetch_ticket.py`); `fetch_run.py` imports it.
+  `rerun.py` now sends its POSTs through the same opener, so a redirected re-run request no longer carries the
+  token to another origin (checked in `fetch_run.py --self-test`, written to fail first).

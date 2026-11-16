@@ -23,7 +23,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from fetch_run import GH_API, gh_token, _get  # noqa: E402
+from fetch_run import GH_API, gh_token, _get, OPENER  # noqa: E402
 
 
 def now() -> str:
@@ -33,7 +33,7 @@ def now() -> str:
 def _send(url: str, method: str, headers: dict, body: dict | None = None) -> int:
     req = urllib.request.Request(url, method=method, headers=dict(headers, **{'Content-Type': 'application/json'}),
                                  data=json.dumps(body or {}).encode())
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with OPENER.open(req, timeout=60) as r:  # SafeRedirect: the token never follows a redirect to another origin
         return r.status
 
 

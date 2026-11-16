@@ -34,6 +34,11 @@ SHARED = {
     'scripts/sarif.py': ['ui-crash-hunter-skill', 'code-security-auditor-skill', 'api-contract-tester-skill', 'db-migration-reviewer-skill', 'privacy-flow-auditor-skill'],
     'scripts/fetch_ticket.py': ['ticket-to-tdd-skill', 'ticket-readiness-reviewer-skill', 'dead-test-finder-skill', 'risk-based-test-planner-skill', 'exploratory-charter-writer-skill', 'bug-reproducer-skill',
                                 'test-case-designer-skill', 'requirements-traceability-auditor-skill'],
+    'scripts/safe_http.py': ['ci-suite-runner-skill', 'ci-failure-triager-skill', 'hypercare-anomaly-watcher-skill',
+                             # fetch_ticket.py sends Jira tokens through it
+                             'ticket-to-tdd-skill', 'ticket-readiness-reviewer-skill', 'dead-test-finder-skill', 'risk-based-test-planner-skill',
+                             'exploratory-charter-writer-skill', 'bug-reproducer-skill', 'test-case-designer-skill',
+                             'requirements-traceability-auditor-skill'],
     'scripts/browser_harness.py': ['bug-reproducer-skill', 'performance-budget-auditor-skill', 'visual-regression-reviewer-skill',
                                    'cross-browser-checker-skill', 'i18n-checker-skill',
                                    'resilience-prober-skill', 'privacy-flow-auditor-skill', 'wcag-auditor-skill'],
