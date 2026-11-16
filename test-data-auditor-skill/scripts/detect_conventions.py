@@ -32,9 +32,26 @@ otherwise (said to be assumed when nothing names a runner). Areas carry `languag
 language) beside `languages` (files); the top level carries `languages` ({files, lines, test_files, test_lines} per
 language) and `dominant_language`, decided by product lines as lang_census does (test files and tooling folders
 such as scripts/ counted apart).
+
+Tests that are not a framework: `self_tests` lists Python scripts that carry their own self-test, with the command to
+run it from the repository root ({file, command, kind, line, area}): kind `flag` for an argparse `--self-test`
+option or a literal `'--self-test' in sys.argv` check (`python <file> --self-test`), `function` for a module-level
+self_test() called under `if __name__ == '__main__'` (`python <file>`), `script` for a self_test.py run as a
+script. find_self_tests(root, files) is the helper; it reads files with ast, so '--self-test' in prose is not a flag.
+
+pytest configuration: every pytest.ini, pyproject.toml [tool.pytest.ini_options], tox.ini [pytest] or setup.cfg
+[tool:pytest] decides the Python test files below it by its testpaths (`.` means its own folder) and python_files;
+an area's own config is under `pytest`, one in a folder with no manifest (benchmarks/pytest.ini) under the owning
+area's `pytest_configs` ({config, dir, testpaths, python_files, python_classes, python_functions, collected,
+not_collected, command}). Framework markers are matched in code only: a marker inside a string literal or comment
+(a self-test's fixture source, a pattern table) is not a framework (code_mask.py).
+
+Fixture projects: Detector(..., exclude_fixtures=True) (CLI --exclude-fixtures, --fixture-dir NAME) leaves out the
+nested sample and fixture projects repo_layout.fixture_projects() finds and lists them under `fixtures_excluded`
+({dir, reason, markers}); by default they are scanned as before.
 """
 from __future__ import annotations
-import argparse, fnmatch, json, os, re, sys
+import argparse, ast, fnmatch, json, os, re, sys
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
@@ -51,6 +68,20 @@ try:   # shipped next to this script in every skill that carries detect_conventi
     import lang_census as _lc   # noqa: E402
 except ImportError:   # pragma: no cover
     _lc = None
+finally:
+    sys.path.pop(0)
+try:   # string and comment masking, so framework markers inside fixture strings are not frameworks
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import code_mask as _cm   # noqa: E402
+except ImportError:   # pragma: no cover
+    _cm = None
+finally:
+    sys.path.pop(0)
+try:   # sample and fixture projects (exclude_fixtures=True)
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import repo_layout as _rl   # noqa: E402
+except ImportError:   # pragma: no cover
+    _rl = None
 finally:
     sys.path.pop(0)
 MANIFESTS = {'package.json', 'pyproject.toml', 'setup.py', 'setup.cfg', 'requirements.txt',
@@ -343,9 +374,87 @@ def pytest_collection(root: Path, area: str) -> dict | None:
                 return re.findall(r'["\']([^"\']+)["\']', raw)
             return raw.split()
         files = values('python_files') or ['test_*.py', '*_test.py']
+        paths = [re.sub(r'^\./', '', t.replace('\\', '/')).strip('/') for t in values('testpaths')]
         return {'config': (PurePosixPath(area) / name).as_posix() if area != '.' else name, 'dir': area,
-                'testpaths': [t.strip('/') for t in values('testpaths')], 'python_files': files}
+                'testpaths': ['.' if t in ('', '.') else t for t in paths], 'python_files': files,
+                'python_classes': values('python_classes') or ['Test'],
+                'python_functions': values('python_functions') or ['test']}
     return None
+
+
+PYTEST_CONFIG_NAMES = ('pytest.ini', 'pyproject.toml', 'tox.ini', 'setup.cfg')
+
+
+_SPANS: dict = {}   # (path, len(text)) -> masked spans of the last file read, so each file is lexed once
+
+
+def code_search(rx, text: str, path: str):
+    """rx.search(text), but a match that starts inside a string literal or comment does not count (code_mask), so
+    fixture sources a self-test holds in strings and pattern tables are not read as the code they describe."""
+    if _cm is None:
+        return rx.search(text)
+    lang = _cm.lang_of(path)
+    if lang is None:
+        return rx.search(text)
+    m = rx.search(text)
+    if m is None:
+        return None   # no match at all: nothing to lex
+    key = (path, len(text))
+    if key not in _SPANS:
+        _SPANS.clear()
+        _SPANS[key] = _cm.masked_spans(text, lang)
+    return _cm.code_search(rx, text, lang, _SPANS[key])
+
+
+SELF_TEST_NAMES = {'self_test.py', 'selftest.py', 'self_tests.py'}
+SELF_TEST_HINT = re.compile(r'--self-test|^(?:async\s+)?def self_test\b', re.M)
+
+
+def _is_main_guard(node) -> bool:
+    t = getattr(node, 'test', None)
+    return isinstance(t, ast.Compare) and isinstance(t.left, ast.Name) and t.left.id == '__name__' and any(
+        isinstance(c, ast.Constant) and c.value == '__main__' for c in t.comparators)
+
+
+def find_self_tests(root: Path, files) -> list[dict]:
+    """Python scripts that carry their own self-test, with the command to run it from the repository root:
+    kind 'flag' (an argparse --self-test option or a literal '--self-test' check: `python <file> --self-test`),
+    'function' (a module-level self_test() called under `if __name__ == '__main__'`: `python <file>`) or 'script'
+    (a self_test.py run as a script). Read with ast: '--self-test' inside a longer string (prose, a docstring) is
+    not a flag. Only scripts with a __main__ block count."""
+    out = []
+    for f in files:
+        if not f.endswith('.py'):
+            continue
+        name = PurePosixPath(f).name
+        text = read(root / f, 2_000_000)
+        if name not in SELF_TEST_NAMES and not SELF_TEST_HINT.search(text):
+            continue
+        try:
+            tree = ast.parse(text)
+        except (SyntaxError, ValueError):
+            continue
+        mains = [n for n in tree.body if isinstance(n, ast.If) and _is_main_guard(n)]
+        flag, argv_check = None, False
+        if '--self-test' in text:
+            for n in ast.walk(tree):
+                if isinstance(n, ast.Constant) and n.value == '--self-test' and flag is None:
+                    flag = n.lineno
+                elif isinstance(n, ast.Compare) and any(isinstance(x, ast.Constant) and x.value == '--self-test'
+                                                        for x in [n.left, *n.comparators]):
+                    argv_check = True
+        if not mains and not argv_check:   # not run as a script: a module that only mentions the flag
+            continue
+        defs = {n.name: n.lineno for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        calls = 'self_test' in defs and any(isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+                                            and c.func.id == 'self_test' for m in mains for c in ast.walk(m))
+        if flag:
+            out.append({'file': f, 'command': f'python {f} --self-test', 'kind': 'flag', 'line': flag})
+        elif 'self_test' in defs and calls:
+            out.append({'file': f, 'command': f'python {f}', 'kind': 'function', 'line': defs['self_test']})
+        elif name in SELF_TEST_NAMES:
+            out.append({'file': f, 'command': f'python {f}', 'kind': 'script', 'line': mains[0].lineno})
+    return out
 
 
 def is_test_file(path: str) -> bool:
@@ -446,7 +555,10 @@ def filter_matches(target: str, root: str, pkg_name: str | None) -> bool:
 
 
 class Detector:
-    def __init__(self, root: Path, max_files: int, include=()):
+    def __init__(self, root: Path, max_files: int, include=(), exclude_fixtures: bool = False, fixture_dirs=()):
+        self.exclude_fixtures = exclude_fixtures
+        self.fixture_dirs = list(fixture_dirs or ())
+        self.fixtures: list[dict] = []
         self.root = root.resolve()
         self.max_files = max_files
         self.files: list[str] = []
@@ -471,8 +583,15 @@ class Detector:
     def walk(self):
         self.build_output = []
         self.evidence = _lc.BuildEvidence(self.root, self.include) if _lc else None
+        if self.exclude_fixtures:
+            if _rl is None:
+                self.limitations.append('Fixture projects were not excluded: repo_layout.py is not available.')
+            else:
+                self.fixtures = _rl.fixture_projects(self.root, self.fixture_dirs)
+        fixture_dirs = {f['dir'] for f in self.fixtures}
         for dirpath, dirnames, filenames in os.walk(self.root):
-            dirnames[:] = sorted(d for d in dirnames if self.keep_dir(dirpath, d))
+            dirnames[:] = sorted(d for d in dirnames if self.keep_dir(dirpath, d)
+                                 and rel(Path(dirpath) / d, self.root) not in fixture_dirs)
             for fn in sorted(filenames):
                 self.files.append(rel(Path(dirpath) / fn, self.root))
                 if len(self.files) >= self.max_files:
@@ -801,27 +920,55 @@ class Detector:
             a['run_commands'].append({'command': f'{runner} playwright test' + (f' --config {rel_cfg}' if '/' in rel_cfg else ''),
                                       'source': f, 'origin': 'playwright config',
                                       'note': 'no package.json script runs Playwright; run from the area root'})
-        for r, a in areas.items():   # pytest's own collection rules decide which Python files are its tests
+        # pytest's own collection rules decide which Python files are its tests: every pytest configuration counts, an
+        # area's own and one in a folder with no manifest (benchmarks/pytest.ini), each governing the files below it
+        cfg_dirs = {}
+        for r in areas:
             cfg = pytest_collection(self.root, r)
-            if not cfg:
-                continue
-            base = '' if cfg['dir'] == '.' else cfg['dir'] + '/'
-            def collected(f, cfg=cfg, base=base):
+            if cfg:
+                cfg_dirs[r] = cfg
+        for f in self.files:
+            p = PurePosixPath(f)
+            d = str(p.parent) if str(p.parent) not in ('', '.') else '.'
+            if p.name in PYTEST_CONFIG_NAMES and d not in cfg_dirs:
+                cfg = pytest_collection(self.root, d)
+                if cfg:
+                    cfg_dirs[d] = cfg
+
+        def governing(f):
+            ds = [d for d in cfg_dirs if d == '.' or f.startswith(d + '/')]
+            return max(ds, key=lambda d: (d != '.', len(d))) if ds else None
+        for d, cfg in sorted(cfg_dirs.items(), key=lambda kv: (kv[0].count('/'), kv[0])):
+            r = d if d in areas else self.owner(d, roots)
+            a = areas[r]
+            base = '' if d == '.' else d + '/'
+
+            def collected(f, cfg=cfg, base=base, d=d):
                 if not f.startswith(base) or not f.endswith('.py') or PurePosixPath(f).name == 'conftest.py':
                     return False
+                if governing(f) != d:
+                    return False
                 rel = f[len(base):]
-                if cfg['testpaths'] and not any(rel == t or rel.startswith(t.rstrip('/') + '/') for t in cfg['testpaths']):
+                if cfg['testpaths'] and '.' not in cfg['testpaths'] and not any(
+                        rel == t or rel.startswith(t.rstrip('/') + '/') for t in cfg['testpaths']):
                     return False
                 return any(fnmatch.fnmatch(PurePosixPath(f).name, p) for p in cfg['python_files'])
-            py_tests = [f for f in a['test_files'] if f.endswith('.py') and PurePosixPath(f).name != 'conftest.py']
+            py_tests = [f for f in a['test_files'] if f.endswith('.py') and PurePosixPath(f).name != 'conftest.py'
+                        and f.startswith(base) and governing(f) == d]
             outside = sorted(f for f in py_tests if not collected(f))
             extra = sorted(f for f in self.files if self.owner(f, roots) == r and collected(f) and f not in a['test_files'])
             a['test_files'] = [f for f in a['test_files'] if f not in outside] + extra
-            a['pytest'] = {'config': cfg['config'], 'testpaths': cfg['testpaths'], 'python_files': cfg['python_files'],
-                           'not_collected': outside[:50],
-                           **({'note': f'{len(outside)} Python test file(s) are outside pytest\'s testpaths or '
-                                       'python_files, so a bare `pytest` does not collect them; they run only when named '
-                                       'explicitly (check CI)'} if outside else {})}
+            entry = {'config': cfg['config'], 'testpaths': cfg['testpaths'], 'python_files': cfg['python_files'],
+                     'python_classes': cfg['python_classes'], 'python_functions': cfg['python_functions'],
+                     'collected': sum(1 for f in a['test_files'] if collected(f)),
+                     'not_collected': outside[:50],
+                     **({'note': f'{len(outside)} Python test file(s) are outside pytest\'s testpaths or '
+                                 'python_files, so a bare `pytest` does not collect them; they run only when named '
+                                 'explicitly (check CI)'} if outside else {})}
+            if d == r:
+                a['pytest'] = entry
+            else:
+                a.setdefault('pytest_configs', []).append({**entry, 'dir': d, 'command': f'python -m pytest {d}'})
         declared_at = {r: {n for cat in areas[r]['frameworks'].values() for n in cat} for r in areas}
         declared = lambda a: declared_at[a['root']] | declared_at.get('.', set())  # noqa: E731
         for a in areas.values():
@@ -832,8 +979,8 @@ class Detector:
             for f in scanned:
                 text = read(self.root / f, 120_000)
                 for rx, cat, fw in CONTENT_SIGNALS:
-                    if rx.search(text):
-                        if fw in GATED and fw not in declared(a) and not GATED[fw].search(text):
+                    if code_search(rx, text, f):
+                        if fw in GATED and fw not in declared(a) and not code_search(GATED[fw], text, f):
                             continue
                         add_fw(a, cat, fw, f); fws.add(fw)
                 for cat, sigs in STYLE_SIGNALS.items():
@@ -900,9 +1047,11 @@ class Detector:
             }
             if a.get('pytest'):
                 fingerprint['pytest'] = a['pytest']
+            if a.get('pytest_configs'):
+                fingerprint['pytest_configs'] = a['pytest_configs']
             pr = self.python_runner(a, [g for g in ci_gates if self._ci_applies(g, r, fw_names, [x for x in roots
                                                                                          if x != '.'], pkg_names.get(r))],
-                                    bool(a.get('pytest')) or 'pytest' in fw_names - {'unittest'} and any(
+                                    bool(a.get('pytest') or a.get('pytest_configs')) or 'pytest' in fw_names - {'unittest'} and any(
                                         'pytest' in c for c in a['config_files'] + a['manifests']))
             if pr:
                 fingerprint['python_runner'] = pr
@@ -923,6 +1072,8 @@ class Detector:
                                   if (product_lines or tooling_lines) else None),
             'dominant_by': 'product lines (lang_census rule: test files and tooling folders counted apart)',
             'build_output': self.build_output,
+            'self_tests': [{**s, 'area': self.owner(s['file'], roots)} for s in find_self_tests(self.root, self.files)],
+            **({'fixtures_excluded': self.fixtures} if self.exclude_fixtures else {}),
             'limitations': self.limitations + [
                 f"{b['path']}/ was not scanned: {b['reason']} (pass --include {b['path']} if it is source)"
                 for b in self.build_output if b['decision'] == 'build_output'] + [
@@ -1239,6 +1390,24 @@ def self_test() -> int:
                                             "  testDir: './e2e',\n"
                                             "  use: { baseURL: process.env.BIRDS_URL ?? \"http://127.0.0.1:8520\", },\n});\n"),
         'apps/birds/e2e/home.spec.ts': "import { test } from '@playwright/test';\ntest('home', async ({ page }) => {});\n",
+        # benchmarks in a folder with no manifest, collected by their own pytest.ini (testpaths = .)
+        'bench/pytest.ini': '[pytest]\ntestpaths = .\npython_files = bench_*.py\npython_functions = bench_* test_*\n',
+        'bench/bench_speed.py': 'def bench_parse():\n    assert 1\n',
+        # a tool package whose scripts carry their own self-tests, and a self_test.py holding fixture sources in strings
+        'tool/pyproject.toml': '[project]\nname = "tool"\n',
+        'tool/scan.py': ('"""Scan things. Run with --self-test to check it."""\nimport argparse\n\n\ndef main():\n'
+                         '    ap = argparse.ArgumentParser()\n    ap.add_argument("--self-test", action="store_true")\n'
+                         '    ap.parse_args()\n\n\nif __name__ == "__main__":\n    main()\n'),
+        'tool/check.py': ('import sys\n\n\ndef self_test():\n    return 0\n\n\n'
+                          'if __name__ == "__main__":\n    raise SystemExit(self_test())\n'),
+        'tool/quick.py': 'import sys\nif "--self-test" in sys.argv[1:]:\n    print("ok    adds")\n',
+        'tool/notes.py': '"""Mentions python x.py --self-test in prose only."""\nX = "run it with --self-test later"\n',
+        'tool/self_test.py': ('"""Checks for the scanner."""\nGO = """\nfunc TestAdd(t *testing.T) {}\n"""\n'
+                              'JS = "import { test } from \'node:test\'"\n\n\ndef main():\n    return 0\n\n\n'
+                              'if __name__ == "__main__":\n    raise SystemExit(main())\n'),
+        # a planted sample project under examples/
+        'examples/shop/package.json': json.dumps({'name': 'shop', 'devDependencies': {'vitest': '5.0.0'}}),
+        'examples/shop/tests/cart.test.ts': "import { test } from 'vitest';\ntest('cart', () => {});\n",
     }
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
@@ -1247,6 +1416,10 @@ def self_test() -> int:
             (root / rel_path).write_text(body, encoding='utf-8')
         det = Detector(root, 10_000)
         res = det.run(None)
+        try:
+            res_fx = Detector(root, 10_000, exclude_fixtures=True).run(None)
+        except TypeError as e:   # an older Detector without the option
+            res_fx = {'error': str(e)}
     areas = {a['root']: a for a in res['areas']}
     fws = lambda r: {n for cat in areas[r]['frameworks'].values() for n in cat}  # noqa: E731
     cmds = lambda r: [c['command'] for c in areas[r]['run_commands']]  # noqa: E731
@@ -1283,6 +1456,23 @@ def self_test() -> int:
          (areas.get('apps/birds', {}).get('e2e') or {}).get('base_url')),
         ('a Playwright config with no test script still gives a run command',
          'pnpm exec playwright test' in (cmds('apps/birds') if 'apps/birds' in areas else []), cmds('apps/birds') if 'apps/birds' in areas else sorted(areas)),
+        ('a pytest.ini in a folder with no manifest (testpaths = .) decides its test files, with python_functions',
+         any(c.get('config') == 'bench/pytest.ini' and c.get('python_functions') == ['bench_*', 'test_*']
+                 and c.get('collected') == 1
+                 for c in areas['.'].get('pytest_configs', [])), areas['.'].get('pytest_configs')),
+        ('framework markers inside string literals are not frameworks',
+         'tool' in areas and not ({'go-testing', 'node-test'} & fws('tool')), fws('tool') if 'tool' in areas else sorted(areas)),
+        ('self-tests are listed with their commands: an argparse --self-test flag, a literal check, and a self_test() '
+         'called under __main__; prose that only mentions the flag is not one',
+         {(s['file'], s['command'], s['kind']) for s in res.get('self_tests', [])} == {
+             ('tool/scan.py', 'python tool/scan.py --self-test', 'flag'),
+             ('tool/quick.py', 'python tool/quick.py --self-test', 'flag'),
+             ('tool/check.py', 'python tool/check.py', 'function'),
+             ('tool/self_test.py', 'python tool/self_test.py', 'script')}, res.get('self_tests')),
+        ('fixture projects are areas by default, and left out (and recorded) with exclude_fixtures',
+         'examples/shop' in areas and 'examples/shop' not in {a['root'] for a in res_fx.get('areas', [])}
+         and [f['dir'] for f in res_fx.get('fixtures_excluded', [])] == ['examples/shop']
+         and 'fixtures_excluded' not in res, res_fx.get('fixtures_excluded', res_fx.get('error'))),
     ]
     checks += _rust_unittest_checks()
     failed = 0
@@ -1303,11 +1493,20 @@ def main(argv=None) -> int:
     ap.add_argument('--max-files', type=int, default=50_000)
     ap.add_argument('--include', action='append', default=[], metavar='DIR',
                     help='scan this folder even if it is named like build output (e.g. a hand-written dist/)')
+    ap.add_argument('--exclude-fixtures', action='store_true',
+                    help='leave out nested sample and fixture projects (repo_layout.fixture_projects); listed under '
+                         'fixtures_excluded')
+    ap.add_argument('--fixture-dir', action='append', default=[], metavar='NAME|PATH',
+                    help='with --exclude-fixtures: also treat this directory as a fixture parent')
     args = ap.parse_args(argv)
     root = Path(args.repo)
     if not root.is_dir():
         print(f'Not a directory: {root}', file=sys.stderr); return 2
-    res = Detector(root, args.max_files, args.include).run(args.target)
+    res = Detector(root, args.max_files, args.include, args.exclude_fixtures, args.fixture_dir).run(args.target)
+    if res.get('fixtures_excluded'):
+        print(f"{len(res['fixtures_excluded'])} fixture project(s) left out: "
+              + ', '.join(f['dir'] for f in res['fixtures_excluded'][:5])
+              + (' ...' if len(res['fixtures_excluded']) > 5 else ''), file=sys.stderr)
     for b in res.get('build_output') or []:
         print(f"{b['decision']}: {b['reason']}", file=sys.stderr)
     text = json.dumps(res, indent=2, ensure_ascii=False)
