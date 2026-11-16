@@ -123,7 +123,7 @@ A YAML file alone does not demonstrate CI readiness.
 
 A gate covers only what its command builds and runs: a coverage threshold enforced with the default features (or on a `--source` subset) says nothing about feature-gated code or the modules left out, and `#[ignore]`d or feature-gated tests that no job runs are a part of the suite CI does not run (3–4 when that part holds behaviour the product ships).
 
-- **1–2:** No CI runs the tests, or CI ignores their exit code.
+- **1–2:** No CI runs the tests, or CI ignores their exit code. Recorded as a critical finding of category `ci_runs_no_tests` (severity high or critical), which caps the overall at 5 (`ci_runs_no_tests`); the score and the finding go together for a suite that exists (not with `execution: no_tests`) **(checked)**. A CI that runs only benchmarks (`pytest benchmarks --codspeed`, a configuration collecting only `bench_*.py`), lint or a build runs no tests in this sense.
 - **3–4:** CI runs only part of the suite (for example not the end-to-end layer), on weak triggers, or not as a required check; configured thresholds never run.
 - **5–6:** CI runs the suite on pull requests; gating, artefacts or provisioning incomplete.
 - **7–8:** Required checks on pull requests, realistic provisioning, artefacts on failure, scheduled suites for slow layers.
@@ -230,7 +230,7 @@ Record each item in the evidence inventory with its `kind` (`application_source`
 ## What counts as each evidence kind
 
 - **application_source:** the code under test, readable. `available` when all of the repository's own product code is readable, even when a library it imports lives elsewhere (note it); `partial` when part of the system under test is unreadable: a service, a package, or a private submodule whose code the tests exercise.
-- **test_source:** the test code and its configuration.
+- **test_source:** the test code and its configuration, including tests that are not a test framework: scripts with their own `--self-test`, `self_test.py` files, and documented commands that validate committed example outputs (SKILL.md Step 3, "Tests that are not a test framework").
 - **ci_configuration:** the pipeline definitions that run the tests (workflow files, pipeline YAML). `partial` when a referenced template or required-check setting is unavailable.
 - **recent_execution:** results from the current code: your own runs (origin `assessor`), or CI or local reports for the assessed commit or one close to it. `partial` when only some layers or tests ran. A committed log from months ago is `other`.
 - **historical_ci:** outcomes of many CI runs over time (pass/fail per run, retries, durations), from the CI system or exported reports. Your own repeated runs are never historical CI, however many: they are recent execution and may support a flakiness observation for reliability. `partial` when fewer than about ten runs or a short window is available. Count only runs that reached the tests: a run waiting for approval (`action_required`, a fork pull request), cancelled, or failed with no jobs (a workflow file error, a billing or runner-availability stop) says nothing about the suite; leave them out of reliability and say how many were excluded and why. History counts only for the layers those CI jobs ran: runs of a job that tests a side tool say nothing about the main suite, which then has no historical CI.
