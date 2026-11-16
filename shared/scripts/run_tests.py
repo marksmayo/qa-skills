@@ -150,6 +150,22 @@ packages and ids, are refused (one -run applies to every package): use --isolate
 `--order shuffle` adds `-shuffle=<seed>`, `--workers` sets `-p`, and `-race` or `-timeout` go in --runner-args.
 A package that fails to build or set up makes the run errored (its tests did not run), with the package named.
 Go has no in-process network guard: see net_guard.py for the proxy and HOME isolation recipe.
+
+Script self-tests: the `selftest` preset runs scripts' own self-tests, one command after another in --cwd:
+`--selftest-cmd "python scripts/x.py --self-test"` (repeatable), or `--tests scripts/x.py ...` (each runs as
+`python <script> --self-test`, or `python <script>` for a self_test.py; detect_conventions.py lists them under
+`self_tests`). Each check line of the output becomes a JUnit case with id `<script>::<check name>`. Shapes read
+(leading spaces allowed, a "  [detail]" after the name is the failure message):
+    ok    name   |  FAIL  name   |  PASS name   |  FAIL name   |  [PASS] name   |  ERROR name
+    name: ok     |  name: FAIL   |  name ... ok |  name ... FAIL                     (unittest -v style)
+    SKIP name    |  SKIPPED name |  name: skipped                                   -> skipped
+Summary lines (ALL PASS, "3 failed", "self-test passed: ...") are not checks. Names are made stable across runs by
+stable_check_name(): parenthesised measurements and observed values ("(took 0.6 s)", "(got 98)", "(ratio 0.70)",
+"(3)") and trailing timings ("in 340 ms", ": 12") are removed, so ids from two runs match. A script whose output
+holds no check line is one case `<script>::(exit status)` decided by its exit code (with a note); a script with
+checks that exits non-zero with no failing check gets a failed `(exit status)` case. The run is errored only when
+no check line was found at all and a command exited non-zero, could not start or timed out; failing checks never
+make it errored. --order, --workers and --hash-seed do not apply; --env, --tz, --locale, --cpu-load and --repeat do.
 """
 from __future__ import annotations
 import argparse, hashlib, json, os, random, re, shlex, shutil, signal, subprocess, sys, tempfile, time
@@ -234,6 +250,10 @@ PRESETS = {
         'shuffle': ['--shuffle', '{seed}'], 'unittest': True,
     },
     'custom': {'cmd': None, 'tests': 'placeholder'},
+    # scripts' own self-tests (`python x.py --self-test`, a self_test.py): each command's ok/FAIL lines become cases
+    # <script>::<check> (see run_one_selftest); --tests takes script paths (or <script>::<check> ids), --selftest-cmd
+    # whole commands
+    'selftest': {'cmd': None, 'tests': 'selftest', 'selftest': True},
 }
 
 
@@ -532,7 +552,7 @@ def tree_snapshot(root: Path, skip: set[Path]) -> dict[str, str]:
 
 def runtime_of(preset_name: str, cmd: str | None) -> str:
     """Which runtime reads TZ for this run: python, node, go, rust or unknown."""
-    if preset_name in ('pytest', 'unittest'):
+    if preset_name in ('pytest', 'unittest', 'selftest'):
         return 'python'
     if preset_name in NODE_RUNNERS or preset_name == 'node-test':
         return 'node'
@@ -1760,6 +1780,8 @@ def node_reporter_url(args) -> str:
 
 def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_dir: Path, cwd: Path,
             seed: int | None, notes: list[str]) -> dict:
+    if preset.get('selftest'):
+        return run_one_selftest(args, run_id, tests, base_env, junit_dir, cwd, notes)
     junit = (junit_dir / f'{run_id}.xml').resolve()
     if junit.exists():
         junit.unlink()
@@ -1900,6 +1922,187 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
             **({'run_status': 'partial', 'run_status_reason': 'time box reached', 'timebox': box}
                if box and box['reached'] else {}),
             **({'id_prefix': prefix} if prefix else {})}, cases
+
+
+# ---------------------------------------------------------------- script self-tests (the selftest preset)
+SELF_TEST_SCRIPTS = {'self_test.py', 'selftest.py', 'self_tests.py'}
+# one check per line, in the shapes self-tests print (leading whitespace and a "[...]" detail after the name allowed):
+#   ok    name   /  FAIL  name          PASS name  /  FAIL name         [PASS] name  /  [FAIL] name
+#   name: ok  /  name: FAIL             name ... ok  /  name ... FAIL    (unittest -v style)
+#   SKIP name  /  SKIPPED name  /  name: skipped   -> skipped
+CHECK_HEAD = re.compile(r'^\s*\[?(ok|OK|PASS|PASSED|FAIL|FAILED|ERROR|SKIP|SKIPPED)\]?:?\s+(?P<name>\S.*)$')
+CHECK_TAIL = re.compile(r'^\s*(?P<name>\S.*?)\s*(?::|\.\.\.|\s-)\s*(?P<word>ok|OK|PASS|PASSED|FAIL|FAILED|ERROR|SKIP|'
+                        r'SKIPPED|skipped)\s*$')
+CHECK_SUMMARY = re.compile(r'^(all\s+pass(ed)?|\d+\s+(failed|passed|checks?|errors?)\b.*|self-test\s+(passed|failed).*|'
+                           r'ok|pass(ed)?|fail(ed)?)\s*$', re.I)
+CHECK_STATUS = {'ok': 'passed', 'pass': 'passed', 'passed': 'passed', 'fail': 'failed', 'failed': 'failed',
+                'error': 'error', 'skip': 'skipped', 'skipped': 'skipped'}
+MEASURE_PAREN = re.compile(r'\s*\((?:(?:took|got|expected|actual|ratio|elapsed|in|after|was|seen|observed|measured|'
+                           r'n|count|size|=)\b[^()]*|[~<>=]*\s*[-+]?\d[\d.,]*\s*(?:%|ms|s|sec|secs|seconds|min|kb|mb|'
+                           r'gb|b|bytes|x|runs?|files?|lines?|items?|of\s+\d+|/\s*\d+)?\s*)\)', re.I)
+MEASURE_TAIL = re.compile(r'(?:\s+(?:in|after|took)\s+[~<>]?\d[\d.,]*\s*(?:ms|s|sec|secs|seconds|min|m)\b'
+                          r'|\s+[~<>]?\d[\d.,]*\s*(?:ms|s|sec|secs|seconds)|\s*[:=]\s*[-+]?\d[\d.,]*\s*\S{0,8})\s*$', re.I)
+
+
+def stable_check_name(name: str) -> str:
+    """A check name with what changes between runs removed: a trailing "  [detail]", parenthesised measurements and
+    observed values ("(took 0.6 s)", "(got 98)", "(ratio 0.70)", "(3)", "(12 ms)"), and a trailing timing
+    ("in 340 ms", "0.6s", ": 12"). Words and other parentheses ("(PEP 8)") stay."""
+    n = re.sub(r'\s{2,}\[.*\]\s*$', '', name.strip())
+    n = re.sub(r'\s+\[(?:took|got|expected)\b.*\]\s*$', '', n, flags=re.I)
+    for _ in range(3):
+        n2 = MEASURE_TAIL.sub('', MEASURE_PAREN.sub('', n)).strip()
+        if n2 == n:
+            break
+        n = n2
+    return re.sub(r'\s+', ' ', n).strip(' :-') or name.strip()
+
+
+def parse_selftest_output(text: str) -> list[dict]:
+    """[{name, status, message}] from a self-test's output (shapes in CHECK_HEAD/CHECK_TAIL above); names are
+    stable_check_name()s. Summary lines (ALL PASS, "3 failed", "self-test passed: ...") are not checks."""
+    out = []
+    for line in text.splitlines():
+        line = line.rstrip()
+        if not line.strip() or CHECK_SUMMARY.match(line.strip()):
+            continue
+        m = CHECK_HEAD.match(line)
+        word, raw = (m.group(1), m.group('name')) if m else (None, None)
+        if not m:
+            t = CHECK_TAIL.match(line)
+            if not t:
+                continue
+            word, raw = t.group('word'), t.group('name')
+        if CHECK_SUMMARY.match(raw.strip()):
+            continue
+        detail = re.search(r'\s{2,}\[(.*)\]\s*$', raw)
+        name = stable_check_name(raw)
+        if not name:
+            continue
+        out.append({'name': name, 'status': CHECK_STATUS[word.lower()],
+                    'message': (detail.group(1)[:500] if detail else (raw.strip() if raw.strip() != name else None))})
+    return out
+
+
+def selftest_command(script: str) -> list[str]:
+    """The command for a script's self-test: `python <script>` for a self_test.py, else `python <script> --self-test`."""
+    return [sys.executable, script] + ([] if Path(script).name in SELF_TEST_SCRIPTS else ['--self-test'])
+
+
+def selftest_jobs(args, tests: list[str]) -> list[tuple[str, list[str]]]:
+    """[(script id, argv)] for a selftest run: every --selftest-cmd, then each script named by --tests ids."""
+    jobs = []
+    for c in getattr(args, 'selftest_cmd', None) or []:
+        toks = shlex.split(c, posix=os.name != 'nt') if c else []
+        toks = [t.strip('"') for t in toks]
+        if toks and re.match(r'^python[\d.]*(\.exe)?$', Path(toks[0]).name, re.I):
+            toks[0] = sys.executable
+        script = next((t for t in toks[1:] if t.endswith('.py')), c)
+        jobs.append((script.replace('\\', '/'), toks))
+    for t in tests:
+        script = t.split('::', 1)[0].replace('\\', '/')
+        if script not in [j[0] for j in jobs]:
+            jobs.append((script, selftest_command(script)))
+    return jobs
+
+
+def run_one_selftest(args, run_id: str, tests: list[str], base_env: dict, junit_dir: Path, cwd: Path,
+                     notes: list[str]) -> tuple[dict, list]:
+    """Run each self-test command in --cwd, one after another, and turn its output into JUnit cases
+    <script>::<check> (classname = script). A script whose output holds no check line gets one case
+    <script>::(exit status), passed on exit 0; a script with checks that exits non-zero with no failing check gets a
+    failed `(exit status)` case. The run is errored only when no command printed a check (or one could not start or
+    timed out)."""
+    from xml.sax.saxutils import quoteattr, escape
+    junit = (junit_dir / f'{run_id}.xml').resolve()
+    if junit.exists():
+        junit.unlink()
+    notes = list(notes)
+    jobs = selftest_jobs(args, tests)
+    env = dict(base_env)
+    hogs = start_hogs(args.cpu_load) if args.cpu_load else []
+    t0 = time.monotonic()
+    suites, shown, codes, found, timed_out, outputs, problems = [], [], [], 0, False, [], []
+    kw = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' else {'start_new_session': True}
+    try:
+        for script, argv in jobs:
+            shown.append(' '.join('python' if a == sys.executable else (shlex.quote(a) if re.search(r'\s', a) else a)
+                                  for a in argv))
+            s0 = time.monotonic()
+            try:
+                proc = subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kw)
+            except OSError as e:
+                problems.append(f'{script}: could not start ({e})')
+                codes.append(None)
+                continue
+            try:
+                out, _ = proc.communicate(timeout=args.timeout)
+            except subprocess.TimeoutExpired:
+                kill_tree(proc)
+                out, _ = proc.communicate()
+                timed_out = True
+                problems.append(f'{script}: timed out after {args.timeout}s')
+            text = redact_home((out or b'').decode('utf-8', 'replace'))
+            outputs.append(text)
+            codes.append(proc.returncode)
+            checks = parse_selftest_output(text)
+            found += len(checks)
+            secs = round(time.monotonic() - s0, 3)
+            if not checks:
+                checks = [{'name': '(exit status)', 'status': 'passed' if proc.returncode == 0 else 'failed',
+                           'message': None if proc.returncode == 0 else f'exit {proc.returncode}: ' + scrub(text[-400:])}]
+                notes.append(f'{script}: its output holds no check line, so it is one case `(exit status)` decided by '
+                             f'the exit code ({proc.returncode}).')
+            elif proc.returncode not in (0, None) and not any(c['status'] in ('failed', 'error') for c in checks):
+                checks.append({'name': '(exit status)', 'status': 'failed',
+                               'message': f'exit {proc.returncode} with no failing check printed: ' + scrub(text[-400:])})
+            suites.append((script, checks, secs))
+    finally:
+        for h in hogs:
+            kill_tree(h)
+    duration = round(time.monotonic() - t0, 3)
+    xml = ['<?xml version="1.0" encoding="utf-8"?>', '<testsuites>']
+    for script, checks, secs in suites:
+        xml.append(f'  <testsuite name={quoteattr(script)} tests="{len(checks)}" time="{secs}">')
+        for c in checks:
+            xml.append(f'    <testcase classname={quoteattr(script)} name={quoteattr(c["name"])} time="0">')
+            msg = quoteattr(c.get('message') or '')
+            if c['status'] == 'failed':
+                xml.append(f'      <failure message={msg}>{escape(c.get("message") or "")}</failure>')
+            elif c['status'] == 'error':
+                xml.append(f'      <error message={msg}>{escape(c.get("message") or "")}</error>')
+            elif c['status'] == 'skipped':
+                xml.append(f'      <skipped message={msg}/>')
+            xml.append('    </testcase>')
+        xml.append('  </testsuite>')
+    xml.append('</testsuites>')
+    junit.write_text('\n'.join(xml) + '\n', encoding='utf-8')
+    cases, pnotes = parse_results.parse_junit(junit, run_id, cwd)
+    for c in cases:   # the script path is the id's file part, never guessed from the classname
+        c['file'] = c.get('classname') or c.get('file')
+    error = None
+    if not found and (problems or any(c != 0 for c in codes) or not codes):
+        # with no check line anywhere the exit status decides: a non-zero exit (a crash, an import error) or a command
+        # that could not start or timed out means the self-tests did not run
+        error = '; '.join(problems) if problems else (
+            'no check found: no self-test printed a check line (ok/FAIL/PASS/SKIP name, or name: ok) and '
+            + ', '.join(f'{j[0]} exited {c}' for j, c in zip(jobs, codes) if c != 0))
+    if timed_out:
+        notes.append('A self-test timed out; its process tree was killed.')
+    run_notes = notes + pnotes + problems
+    if error:
+        run_notes.append(f'Errored: {error}. Treat this run as not having run the tests. Output tail: '
+                         + scrub(('\n'.join(outputs))[-600:]))
+    rel = os.path.relpath(junit, args.out.resolve().parent).replace(os.sep, '/')
+    missing = [] if error else tests_not_run([t for t in tests if '::' in t], cases, cwd)
+    if missing:
+        run_notes.append(f'{len(missing)} requested check(s) printed no result: ' + ', '.join(missing[:5]))
+    return {'id': run_id, 'command': scrub(' && '.join(shown)), 'exit_code': next((c for c in codes if c), codes[0] if codes else None),
+            'junit_paths': [rel], 'started_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'totals': parse_results.totals(cases), 'file_hashes': {}, 'notes': run_notes,
+            'duration_s': duration, 'timed_out': timed_out, 'errored': bool(error), 'error': error,
+            'label': args.label, 'preset': args.preset, 'tests_selected': tests,
+            'selftest_commands': shown, **({'tests_not_run': missing} if missing else {})}, cases
 
 
 def tests_not_run(tests: list[str], cases: list[dict], cwd: Path, prefix: str = '') -> list[str]:
@@ -2426,10 +2629,73 @@ def unittest_self_checks() -> list:
     return checks
 
 
+def selftest_self_checks() -> list:
+    """selftest preset: a script whose self-test prints ok/FAIL/PASS/SKIP/name: ok lines with timings and values that
+    change on every run gives the same case ids in two runs; a script that prints no check is an errored run."""
+    checks = []
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'tool'
+        (root / 'scripts').mkdir(parents=True)
+        (root / 'scripts' / 'scan.py').write_text(
+            'import random, sys\n'
+            'if "--self-test" in sys.argv:\n'
+            '    t = random.random() * 3\n'
+            '    print(f"ok    parses dates (took {t:.2f} s)")\n'
+            '    print(f"FAIL  rounds totals (got {random.randint(10, 99)})  [expected 100]")\n'
+            '    print("PASS loads the config")\n'
+            '    print(f"cache warm in {random.randint(2, 900)} ms: ok")\n'
+            '    print("SKIP needs a network")\n'
+            '    print("1 failed")\n'
+            '    sys.exit(1)\n', encoding='utf-8')
+        (root / 'scripts' / 'quiet.py').write_text('import sys\nsys.exit(0)\n', encoding='utf-8')
+        (root / 'scripts' / 'crash.py').write_text('import missing_module_for_the_check\n', encoding='utf-8')
+        out = Path(d) / 'out' / 'runs.json'
+
+        def run(*extra):
+            try:
+                code = main(['--preset', 'selftest', '--cwd', str(root), '--out', str(out), *extra])
+            except SystemExit as e:
+                code = f'exit {e.code}'
+            data = json.loads(out.read_text(encoding='utf-8')) if out.exists() else {'runs': [], 'cases': []}
+            return code, data
+        code, data = run('--tests', 'scripts/scan.py', '--repeat', '2')
+        runs = data['runs'][-2:]
+        by_run = [{c['id']: c['status'] for c in data['cases'] if c.get('run_id') == r.get('id')} for r in runs]
+        want = {'scripts/scan.py::parses dates': 'passed', 'scripts/scan.py::rounds totals': 'failed',
+                'scripts/scan.py::loads the config': 'passed', 'scripts/scan.py::cache warm': 'passed',
+                'scripts/scan.py::needs a network': 'skipped'}
+        checks.append(('selftest: ok/FAIL/PASS/name: ok/SKIP lines become cases <script>::<check>, measurements stripped, '
+                       'so two runs with different timings give identical ids',
+                       len(by_run) == 2 and by_run[0] == by_run[1] == want, (code, by_run)))
+        checks.append(('selftest: a failing check does not make the run errored; the command is recorded',
+                       len(runs) == 2 and all(r.get('errored') is False for r in runs)
+                       and 'python scripts/scan.py --self-test' in (runs[0].get('command') or ''),
+                       [(r.get('errored'), r.get('error'), r.get('command')) for r in runs]))
+        code, data = run('--selftest-cmd', 'python scripts/quiet.py --self-test')
+        r = data['runs'][-1] if data['runs'] else {}
+        got = {c['id']: c['status'] for c in data['cases'] if c.get('run_id') == r.get('id')}
+        checks.append(('selftest: with no check line, the exit status decides: exit 0 is one passed (exit status) case, '
+                       'with a note, never a clean empty run',
+                       r.get('errored') is False and got == {'scripts/quiet.py::(exit status)': 'passed'}
+                       and any('no check line' in n for n in r.get('notes', [])), (code, r.get('error'), got)))
+        code, data = run('--selftest-cmd', 'python scripts/crash.py')
+        r = data['runs'][-1] if data['runs'] else {}
+        checks.append(('selftest: a self-test that prints no check and exits non-zero (a crash) is an errored run',
+                       r.get('errored') is True and 'no check' in (r.get('error') or ''), (code, r.get('error'))))
+    names = [stable_check_name(n) if 'stable_check_name' in globals() else n for n in
+             ('merges 3 runs (took 0.61 s)', 'rounds totals (got 98)', 'budget estimate (ratio 0.70)',
+              'keeps (PEP 8) style', 'parses 12 files in 340 ms')]
+    checks.append(('selftest: stable_check_name strips timings, observed values and numbers in parentheses',
+                   names == ['merges 3 runs', 'rounds totals', 'budget estimate', 'keeps (PEP 8) style',
+                             'parses 12 files'], names))
+    return checks
+
+
 def self_test() -> int:
     """Check id patterns, npm script chains and workspace delegation, and (with node on PATH) a node-test run with
     --repo-root on a small synthetic workspace."""
     checks = []
+    checks += selftest_self_checks()
     with tempfile.TemporaryDirectory() as d:
         calls = []
         real_run = subprocess.run
@@ -2532,6 +2798,9 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--preset', choices=sorted(PRESETS), default='pytest')
     ap.add_argument('--cmd', help='base command; required for --preset custom ({junit}, {tests}, {seed}, {n} placeholders)')
+    ap.add_argument('--selftest-cmd', action='append', default=[], metavar='CMD',
+                    help='--preset selftest: a self-test command run in --cwd, e.g. "python scripts/x.py --self-test"; '
+                         'repeatable. --tests <script.py> adds `python <script> --self-test` (a self_test.py: no flag)')
     ap.add_argument('--cwd', type=Path, default=Path('.'))
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--junit-dir', type=Path, help='default: <out dir>/junit')
@@ -2590,8 +2859,15 @@ def main(argv=None) -> int:
     if bad:
         ap.error(f'--env takes K=V pairs, not {bad[0]!r}')
     preset = PRESETS[args.preset]
-    if preset['cmd'] is None and not args.cmd:
+    if preset.get('selftest'):
+        if args.cmd:
+            ap.error('--preset selftest takes --selftest-cmd (repeatable) or --tests <script>, not --cmd')
+        if not args.selftest_cmd and not (args.tests or args.tests_file):
+            ap.error('--preset selftest needs --selftest-cmd "python x.py --self-test" or --tests <script.py> ...')
+    elif preset['cmd'] is None and not args.cmd:
         ap.error('--preset custom needs --cmd')
+    elif args.selftest_cmd:
+        ap.error('--selftest-cmd works with --preset selftest only')
     cwd = args.cwd.resolve()
     junit_dir = (args.junit_dir or args.out.parent / 'junit').resolve()
     junit_dir.mkdir(parents=True, exist_ok=True)
