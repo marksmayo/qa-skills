@@ -1,6 +1,6 @@
 # Design: `code-security-auditor-skill`
 
-Status: Built (v1.7.0), see the "As built" sections at the end. Build order: 5.
+Status: Built (v1.8.0), see the "As built" sections at the end. Build order: 5.
 
 ## Mission
 
@@ -600,3 +600,18 @@ web framework and the language census thrown off by vendored code.
   user-profile paths in committed data files are left to review; non-FFI `unsafe` blocks with SAFETY
   comments (raw pointer casts) stay ungrouped; a pointer cast to `usize` is still a truncation
   candidate; `PY-SSRF` on loopback and pinned-and-hashed downloads is unchanged.
+
+## As built: command PoC lint (v1.8.0)
+
+- Running the skill on this repository (F-8) showed the command-PoC lint was a denylist that only looked
+  at `argv[0]`: `python -c "...shutil.rmtree(...)"`, `env bash -c ...` and `node -e "fs.rmSync(...)"` all
+  passed `--check`. The rule is now the simpler, honest one: a denylist cannot judge code, so inline code
+  is refused outright. `inline_code_issue` refuses launchers (`env`, `wsl`, `busybox`, `sudo`, `xargs`,
+  `nohup`, `timeout`, ...) and interpreters given code as an argument (`-c`, `-e`, `--eval`, `-p`, `-r`,
+  `deno eval`, `npx -c`, awk without `-f`; `python -m` and a script path end the scan, so a script's own
+  `-c` is fine). The code goes into `files` and runs by path, where it is linted and kept; a new
+  `destructive file operation` pattern refuses `shutil.rmtree`, `os.remove`/`unlink`, `fs.rm*`/`unlink*`,
+  `Remove-Item`, `os.RemoveAll` and the like in any payload or file.
+- **Tested** (written to fail first): `self_test.py` (`poc_and_report_rules`) holds the three review cases
+  plus `python.exe -c`, `node --eval=`, `wsl`, and `rmtree`/`unlinkSync` inside a PoC file; the guard-check
+  case now runs its probe from `files`. The example PoCs and report are unchanged.

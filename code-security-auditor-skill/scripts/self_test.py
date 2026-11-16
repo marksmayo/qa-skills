@@ -645,6 +645,23 @@ def poc_and_report_rules() -> None:
     bad = {**ok, 'steps': [{'name': 'run', 'argv': ['bash', '-c', 'rm -rf /tmp/x']}]}
     issues = run_poc.lint(bad, None, [])
     check(any('shell' in i for i in issues) and any('destructive' in i for i in issues), 'shells and destructive commands are refused')
+    # inline interpreter code and wrapped shells: the denylist cannot judge code, so inline code is refused outright
+    for argv, why in ((['python', '-c', "import shutil; shutil.rmtree('/nonexistent-qa-lint-probe')"], 'python -c'),
+                      (['env', 'bash', '-c', 'echo $((7*191))'], 'env-wrapped shell'),
+                      (['node', '-e', "require('fs').rmSync('/nonexistent-qa-lint-probe',{recursive:true,force:true})"], 'node -e'),
+                      ([r'C:\Python\python.exe', '-c', 'print(7*191)'], 'python.exe -c, even harmless'),
+                      (['node', '--eval=console.log(7*191)'], 'node --eval='),
+                      (['wsl', 'ls'], 'wsl launcher')):
+        got = run_poc.lint({**ok, 'steps': [{'name': 'run', 'argv': argv}]}, None, [])
+        check(bool(got), f'{why} must be refused by --check ({argv})')
+    # code in a file is linted, and destructive file operations in it are refused
+    got = run_poc.lint({**ok, 'files': {'probe.py': "import shutil\nshutil.rmtree('/nonexistent-qa-lint-probe')\n"},
+                        'steps': [{'name': 'run', 'argv': ['python', 'probe.py']}]}, None, [])
+    check(any('destructive file operation' in i for i in got), f'shutil.rmtree in a PoC file must be refused ({got})')
+    got = run_poc.lint({**ok, 'files': {'probe.js': "require('fs').unlinkSync('x')\n"}, 'steps': [{'name': 'run', 'argv': ['node', 'probe.js']}]}, None, [])
+    check(any('destructive file operation' in i for i in got), f'fs.unlinkSync in a PoC file must be refused ({got})')
+    got = run_poc.lint({**ok, 'files': {'probe.py': 'print(7*191)\n'}, 'steps': [{'name': 'run', 'argv': ['python', 'probe.py']}]}, None, [])
+    check(got == [], f'a harmless script run by path passes the lint ({got})')
     check(any('marker' in i for i in run_poc.lint({**ok, 'files': {'a.txt': 'CANARY-1337'}}, None, [])),
           'a marker planted in the input proves nothing')
     report = {'recon': {'entry_points': [{'id': 'EP-1', 'handler': 'a.ts:1', 'kind': 'cli'}],
@@ -887,7 +904,8 @@ def poc_guard_and_render_rules() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         t = Path(tmp)
         poc = {'finding': 'O-1', 'kind': 'command', 'purpose': 'guard_check',
-               'steps': [{'name': 'run', 'argv': [sys.executable, '-c', 'print(7*191)']}],
+               'files': {'probe.py': 'print(7*191)\n'},
+               'steps': [{'name': 'run', 'argv': [sys.executable, 'probe.py']}],
                'proof': {'type': 'marker_in_output', 'step': 'run', 'marker': '1337'}}
         check(run_poc.lint(poc, None, []) == [], f'a guard-check command PoC passes the lint ({run_poc.lint(poc, None, [])})')
         ev = run_poc.run_command_poc(poc, t, 'self-test', t / 'poc.json')
