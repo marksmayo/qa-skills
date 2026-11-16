@@ -782,11 +782,11 @@ def scan(root: Path, data: dict, layout: dict | None = None, info: dict | None =
                     continue
                 if py_source_skip and sm.get('scope') == 'source':
                     continue          # module state in a module no test imports: no two tests share it
+                if not sm['rx'].search(line):
+                    continue
                 if spans is not None or sm.get('code_only'):
                     if not any(in_code(i, mm.start(), line) for mm in sm['rx'].finditer(line)):
                         continue          # only inside a string or comment: a fixture source, a child's command
-                elif not sm['rx'].search(line):
-                    continue
                 if sm['skip_rx'] is not None:
                     if sm['id'] not in has_skip:
                         has_skip[sm['id']] = first_match(sm['skip_rx'], lines) is not None

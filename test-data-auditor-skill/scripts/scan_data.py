@@ -751,20 +751,35 @@ class Scanner:
                 tree = ast.parse((self.root / rel).read_text(encoding='utf-8', errors='replace'))
             except SyntaxError:
                 continue
+            # The module first: a comparison with a now() call in it. Then each outermost function with the names it
+            # binds to the clock anywhere inside it (today = date.today()). A nested function binds a subset of its
+            # outermost function's names, so it can add nothing: each node is walked at most twice.
+            module_cmps: list[ast.Compare] = []
+            functions: list[tuple[set[str], list[ast.Compare]]] = []
+            inner: set[int] = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Compare):
+                    module_cmps.append(node)
+                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and id(node) not in inner:
+                    names, cmps = set(), []
+                    for n in ast.walk(node):
+                        if n is not node and isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            inner.add(id(n))
+                        elif isinstance(n, ast.Compare):
+                            cmps.append(n)
+                        elif isinstance(n, ast.Assign) and any(
+                                isinstance(c, ast.Call) and getattr(c.func, 'attr', getattr(c.func, 'id', None)) in nows
+                                for c in ast.walk(n.value)):
+                            names.update(t.id for t in n.targets if isinstance(t, ast.Name))
+                    functions.append((names, cmps))
             seen: set[int] = set()
-            # each function (and the module) with the names it binds to the clock: today = date.today()
-            scopes = [tree] + [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
-            for scope in scopes:
-                clock_vars = {t.id for st in ast.walk(scope) if isinstance(st, ast.Assign)
-                              and any(isinstance(n, ast.Call) and getattr(n.func, 'attr', getattr(n.func, 'id', None)) in nows
-                                      for n in ast.walk(st.value))
-                              for t in st.targets if isinstance(t, ast.Name)} if scope is not tree else set()
+            for clock_vars, cmps in [(set(), module_cmps)] + [f for f in functions if f[0]]:
 
                 def is_clock(p: ast.AST) -> bool:
                     return any((isinstance(n, ast.Call) and getattr(n.func, 'attr', getattr(n.func, 'id', None)) in nows)
                                or (isinstance(n, ast.Name) and n.id in clock_vars) for n in ast.walk(p))
-                for node in ast.walk(scope):
-                    if not isinstance(node, ast.Compare) or id(node) in seen:
+                for node in cmps:
+                    if id(node) in seen:
                         continue
                     parts = [node.left] + node.comparators
                     if not any(is_clock(p) for p in parts):

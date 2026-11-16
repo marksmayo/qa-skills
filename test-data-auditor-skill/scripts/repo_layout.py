@@ -53,7 +53,7 @@ Every decision carries its reason; nothing is excluded silently. Directories nev
 cache and virtual-environment folders (.git, node_modules, __pycache__, .venv, ...).
 """
 from __future__ import annotations
-import ast, fnmatch, hashlib, json, os, re, sys
+import ast, fnmatch, hashlib, json, os, re, stat, sys
 from pathlib import Path, PurePosixPath
 
 FIXTURE_PARENTS = {'examples', 'example', 'fixtures', 'fixture', 'testdata', 'test-data', 'test_data', 'samples',
@@ -327,9 +327,10 @@ def walk_files(root) -> list[str]:
     return out
 
 
-def _digest(p: Path) -> tuple[str, int] | None:
+def _digest(p) -> tuple[str, int] | None:
     try:
-        data = p.read_bytes().replace(b'\r\n', b'\n')
+        with open(p, 'rb') as fh:
+            data = fh.read().replace(b'\r\n', b'\n')
     except OSError:
         return None
     return hashlib.sha256(data).hexdigest(), len(data)
@@ -350,14 +351,16 @@ def copy_groups(root, files=None, declared=None) -> list[dict]:
     rels = [f.replace('\\', '/').strip('/') for f in files] if files is not None else walk_files(root)
     by_hash: dict[str, list[str]] = {}
     digests: dict[str, str] = {}
+    base = str(root)
     for rel in rels:
-        if _boilerplate(PurePosixPath(rel).name):
+        if _boilerplate(rel.rsplit('/', 1)[-1]):
             continue
-        p = root / rel
+        p = os.path.join(base, rel)
         try:
-            if not p.is_file() or p.stat().st_size < MIN_BYTES:
-                continue
+            st = os.stat(p)   # one call for both "a regular file" and its size
         except OSError:
+            continue
+        if not stat.S_ISREG(st.st_mode) or st.st_size < MIN_BYTES:
             continue
         d = _digest(p)
         if not d or d[1] < MIN_BYTES or not d[0]:

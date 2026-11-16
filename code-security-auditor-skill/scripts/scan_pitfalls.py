@@ -67,7 +67,7 @@ test_paths.py): a workspace package named e2e is product code and is scanned. Da
 a file and listed under skipped_data_dirs; --scan-data-dirs reads them.
 """
 from __future__ import annotations
-import argparse, json, re, sys
+import argparse, bisect, json, re, sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -319,21 +319,41 @@ def scan_file(path: Path, rel: str, pitfalls: list[dict], include_tests: bool = 
     # Python and JavaScript: a match must start in code, not inside a string, docstring or comment (a pattern table,
     # a usage example, a fixture string). string_regex (a template inside a string) and match_in_strings are exempt.
     lang = code_mask.lang_of(path)
-    spans = code_mask.masked_spans(text, lang) if lang in ('python', 'javascript') and active else []
-    starts, off = [], 0
-    for raw in text.splitlines(keepends=True):
-        starts.append(off)
-        off += len(raw)
+    maskable = lang in ('python', 'javascript')
+    masking: list = []   # [spans, line starts, lines a span touches], worked out on the first match that needs them
+
+    def code_view() -> list:
+        if not masking:
+            starts, off = [], 0
+            for raw in text.splitlines(keepends=True):
+                starts.append(off)
+                off += len(raw)
+            spans = code_mask.masked_spans(text, lang)
+            touched: set[int] = set()
+            for s, e, _ in spans:
+                touched.update(range(bisect.bisect_right(starts, s) - 1, bisect.bisect_right(starts, e - 1)))
+            masking.extend([spans, starts, touched])
+        return masking
     hits = []
+    # the per-line loop runs once per line and pitfall: look each pitfall's patterns up once per file
+    plan = [(p, p['_rx'], p.get('_string_regex'), maskable and not p.get('match_in_strings')) for p in active]
     for i, line in enumerate(lines):
         if COMMENT.match(line):
             continue
-        for p in active:
-            m = p['_rx'].search(line)
-            if m and spans and not p.get('match_in_strings'):
-                m = next((x for x in p['_rx'].finditer(line) if audit_scope.in_code(spans, starts[i] + x.start(), starts[i] + x.end())), None)
-            if not m and p.get('_string_regex'):
-                m = p['_string_regex'].search(line)
+        for p, rx, string_rx, code_only in plan:
+            m = rx.search(line)
+            if m is None:
+                if string_rx is None:
+                    continue
+                m = string_rx.search(line)
+                if m is None:
+                    continue
+            elif code_only:
+                spans, starts, touched = code_view()
+                if i in touched:   # a line no string or comment touches: the plain match already starts in code
+                    m = next((x for x in rx.finditer(line) if audit_scope.in_code(spans, starts[i] + x.start(), starts[i] + x.end())), None)
+                if m is None and string_rx is not None:
+                    m = string_rx.search(line)
             if not m or (p.get('_suppress_line') and p['_suppress_line'].search(line)):
                 continue
             if p.get('_narrow_match') and p['_narrow_match'].search(m.group(0)) \

@@ -47,7 +47,9 @@ C_EXT = {'.go', '.rs', '.java', '.kt', '.kts', '.cs', '.c', '.h', '.cc', '.cpp',
 
 
 def lang_of(path) -> str | None:
-    suf = Path(str(path)).suffix.lower()
+    name = str(path).replace('\\', '/').rsplit('/', 1)[-1].lstrip('.')   # as Path.suffix: leading dots never count
+    dot = name.rfind('.')
+    suf = name[dot:].lower() if 0 < dot < len(name) - 1 else ''
     return 'python' if suf in PY_EXT else 'javascript' if suf in JS_EXT else 'c' if suf in C_EXT else None
 
 
@@ -162,7 +164,214 @@ def _python_items(text: str) -> list[tuple]:
         return _python_fallback(text)
 
 
+# one token per match: a run of plain code (names, numbers, operators; it starts with a non-blank character), a
+# quote, a comment, a newline, a bracket, ';' or a backslash continuation
+_PY_LEX = re.compile(r'(?P<ws>[ \t\f]+)|(?P<code>[^"\'#\r\n()\[\]{};\\ \t\f][^"\'#\r\n()\[\]{};\\]*)|(?P<q>["\'])'
+                     r'|(?P<com>#[^\r\n]*)|(?P<nl>\r\n|\n|\r)|(?P<open>[(\[{])|(?P<close>[)\]}])|(?P<semi>;)'
+                     r'|(?P<cont>\\(?:\r\n|\n|\r))')
+_PY_PREFIX_TAIL = re.compile(r'(?<![\w])[A-Za-z]{1,2}$')
+_PY_BAD_CODE = re.compile(r'[$?`]')
+_PY_NAME = re.compile(r'[^\W\d]\w*')
+_PY_PREFIXES = {'r', 'u', 'b', 'br', 'rb', 'f', 'fr', 'rf'}
+_PY_T_PREFIXES = {'t', 'tr', 'rt'}
+_PY_BODY = {
+    '"': re.compile(r'(?:[^"\\\r\n]|\\(?:\r\n|[\s\S]))*"'),
+    "'": re.compile(r"(?:[^'\\\r\n]|\\(?:\r\n|[\s\S]))*'"),
+    '"""': re.compile(r'(?:[^"\\]|\\[\s\S]|"(?!""))*"""'),
+    "'''": re.compile(r"(?:[^'\\]|\\[\s\S]|'(?!''))*'''"),
+}
+
+
+def _py_string_end(text: str, i: int, f: bool) -> int:
+    """Index just after the string whose opening quote is at i (-1 if it never closes)."""
+    q = text[i] * 3 if text.startswith(text[i] * 3, i) else text[i]
+    if f:
+        return _py_fstring_end(text, i + len(q), q)
+    m = _PY_BODY[q].match(text, i + len(q))
+    return m.end() if m else -1
+
+
+def _py_fstring_end(text: str, i: int, q: str) -> int:
+    n, single = len(text), len(q) == 1
+    while i < n:
+        c = text[i]
+        if c == '\\':
+            i += 2
+            continue
+        if text.startswith(q, i):
+            return i + len(q)
+        if single and c in '\r\n':
+            return -1
+        if c == '{':
+            if text.startswith('{{', i):
+                i += 2
+                continue
+            i = _py_fexpr_end(text, i + 1, q)
+            if i < 0:
+                return -1
+            continue
+        i += 1
+    return -1
+
+
+def _py_fexpr_end(text: str, i: int, q: str) -> int:
+    """Index just after the } closing an f-string replacement field whose expression starts at i (Python 3.12
+    rules: nested strings may reuse the outer quote; a top-level ':' starts the format spec)."""
+    n, depth = len(text), 0
+    while i < n:
+        c = text[i]
+        m = _PY_NAME.match(text, i) if c.isalpha() or c == '_' else None
+        if m:
+            j = m.end()
+            word = m.group().lower()
+            if j < n and text[j] in '\'"' and word in _PY_PREFIXES:
+                i = _py_string_end(text, j, 'f' in word)
+                if i < 0:
+                    return -1
+            else:
+                i = j
+            continue
+        if c in '\'"':
+            i = _py_string_end(text, i, False)
+            if i < 0:
+                return -1
+            continue
+        if c == '\\':
+            i += 2
+            continue
+        if c in '([{':
+            depth += 1
+        elif c in ')]':
+            depth -= 1
+        elif c == '}':
+            if depth == 0:
+                return i + 1
+            depth -= 1
+        elif c == ':' and depth == 0:
+            return _py_fspec_end(text, i + 1, q)
+        i += 1
+    return -1
+
+
+def _py_fspec_end(text: str, i: int, q: str) -> int:
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if c == '{':
+            i = _py_fexpr_end(text, i + 1, q)
+            if i < 0:
+                return -1
+            continue
+        if c == '}':
+            return i + 1
+        if text.startswith(q, i):
+            return -1
+        if c == '\\':
+            i += 2
+            continue
+        i += 1
+    return -1
+
+
+def _python_fast_spans(text: str, docstrings_only: bool = False):
+    """The ranges _python_spans_tokenize gives, from one regex-driven pass (several times faster than tokenize).
+    None when the text is anything but plain valid lexing (an unterminated string, unbalanced brackets, a t-string,
+    a character it does not class), so the caller falls back to tokenize and its hand lexer."""
+    n, i, depth, line_start = len(text), 0, 0, True
+    strings: list[list] = []   # [start, end, kind, prev_is_break, next_is_break]
+    spans: list[tuple[int, int, str]] = []
+    pending = None
+
+    def settle(is_break: bool) -> None:
+        nonlocal pending
+        if pending is not None:
+            pending[4] = is_break
+            pending = None
+
+    match = _PY_LEX.match
+    while i < n:
+        m = match(text, i)
+        if m is None:
+            return None
+        g, j = m.lastgroup, m.end()
+        if g == 'ws' or g == 'cont':
+            i = j
+            continue
+        if g == 'com':
+            if not docstrings_only:
+                spans.append((i, j, 'comment'))
+            i = j
+            continue
+        if g == 'nl':
+            if depth == 0:
+                settle(True)
+                line_start = True
+            i = j
+            continue
+        if g == 'semi':
+            settle(True)
+            line_start = False
+            i = j
+            continue
+        prefix = ''
+        if g == 'code':
+            run = m.group()
+            if not run.isascii() or _PY_BAD_CODE.search(run):
+                return None   # characters tokenize refuses outside strings: let it (and its hand lexer) decide
+            if j < n and text[j] in '\'"':
+                t = _PY_PREFIX_TAIL.search(run)
+                word = t.group().lower() if t else ''
+                if word in _PY_T_PREFIXES:
+                    return None
+                if word in _PY_PREFIXES:
+                    prefix = word
+                    if run[:t.start()].strip(' \t\f'):
+                        settle(False)
+                        line_start = False
+                    i = j - len(word)
+                    g = 'q'
+        if g != 'q':
+            settle(False)
+            line_start = False
+            if g == 'open':
+                depth += 1
+            elif g == 'close':
+                depth -= 1
+                if depth < 0:
+                    return None
+            i = j
+            continue
+        qpos = i + len(prefix)
+        e = _py_string_end(text, qpos, 'f' in prefix)
+        if e < 0:
+            return None
+        settle(False)
+        pending = [i, e, 'fstring' if 'f' in prefix else 'string', line_start and depth == 0, False]
+        strings.append(pending)
+        line_start = False
+        i = e
+    if depth:
+        return None
+    settle(True)
+    for s, e, kind, prev_break, next_break in strings:
+        statement = prev_break and next_break
+        a, b = _py_string_inner(text[s:e])
+        if docstrings_only:
+            if kind == 'string' and statement:
+                spans.append((s + a, s + b, 'docstring'))
+        elif kind == 'fstring':
+            spans.append((s + a, s + b, 'fstring'))
+        else:
+            spans.append((s + a, s + b, 'docstring' if statement else 'string'))
+    return _merge(spans)
+
+
 def _python_spans(text: str, docstrings_only: bool = False) -> list[tuple[int, int, str]]:
+    fast = _python_fast_spans(text, docstrings_only)
+    return fast if fast is not None else _python_spans_tokenize(text, docstrings_only)
+
+
+def _python_spans_tokenize(text: str, docstrings_only: bool = False) -> list[tuple[int, int, str]]:
     items = _python_items(text)
     spans = []
     sig = [k for k, x in enumerate(items) if x[0] != 'comment']   # indices of non-comment items, in order
@@ -427,6 +636,35 @@ def self_test() -> int:
                    'plain string\'s (prefix and quotes stay code), with tokenize and with the fallback lexer',
                    got == [('https://x.test/{q}', 'fstring'), ('https://x.test/', 'string'), ('{q}', 'fstring')]
                    and got_fb[:2] == [('https://x.test/{q}', 'fstring'), ('https://x.test/', 'string')], (got, got_fb)))
+    tricky = [
+        '"""Module doc."""\nx = 1\n',
+        '# lead\n"""doc after a comment"""\n',
+        'def f():\n    """doc"""\n    return 1\n',
+        'def f(): "same-line string is not a docstring"\n',
+        'x = (\n    "inside brackets"\n)\n',
+        '"a" "b"\n',
+        '"a"; y = 2\n',
+        'x = 1 + \\\n"continued"\n',
+        '"s" \\\n + x\n',
+        'if"a": pass\n',
+        'v = f"{x["k"]} and {y!r:>{w}} {{literal}}"\n',
+        'v = f"""multi\n{a + "b"}\nline"""\n',
+        'w = rb"\\d+" + Br\'raw\' + u"u"\n',
+        's = "esc \\" quote" # trailing comment\n',
+        "t = '''it's \"\"\" inside'''\n",
+        'a = 1\r\n"crlf doc"\r\nb = "x"  # c\r\n',
+        'class C:\n    x = [\n        "one",\n    ]\n    "class-level string"\n',
+        'z = {"k": f\'{d["k"]:{fmt}}\'}\n',
+        'last = "no newline at end"',
+        '"only"',
+    ]
+    diffs = [(t, _python_fast_spans(t), _python_spans_tokenize(t)) for t in tricky]
+    diffs = [d for d in diffs if d[1] != d[2]]
+    checks.append(('the single-pass Python lexer gives exactly the ranges tokenize gives (docstrings after comments, '
+                   'strings in brackets, continuations, nested f-string quotes and format specs, prefixes, CRLF)',
+                   not diffs, diffs[:2]))
+    checks.append(('the single-pass lexer hands odd input (an unterminated string) back to tokenize',
+                   _python_fast_spans('x = "open\ny = 1\n') is None, None))
     checks.append(('string delimiters stay, so the code still shows where a string was',
                    m.splitlines()[2].startswith('RULES = [r"') and '"' in m.splitlines()[2], m.splitlines()[2]))
     doc = mask_python_docstrings_only(py)
