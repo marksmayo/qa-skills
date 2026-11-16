@@ -8,10 +8,10 @@
     "quill": "./dist/cli.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.12.0",
+    "@modelcontextprotocol/sdk": "1.32.0",
     "commander": "12.1.0"
   },
   "devDependencies": {
-    "vitest": "2.1.8"
+    "vitest": "4.1.11"
   }
 }
