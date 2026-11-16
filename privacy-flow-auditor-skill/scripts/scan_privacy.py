@@ -292,14 +292,12 @@ def masked_kind(spans: list, off: int) -> str | None:
 
 def inside_literal(spans: list, off: int, text: str = '') -> bool:
     """A match starting at off lies INSIDE a string, docstring or comment (a URL or a <script> tag in a fixture string or a
-    docstring), as opposed to a literal of the code itself, whose opening quote is code or opens the range (a Python
-    f-string's range starts at its quote)."""
+    docstring), as opposed to a literal of the code itself, whose opening quote is code: every range code_mask gives
+    (strings, f-strings, template literals) starts after its opening quote. `text` is accepted for older callers."""
     if not spans:
         return False
     i = bisect.bisect_right(spans, (off, float('inf'), '')) - 1
-    if i < 0 or not spans[i][0] <= off < spans[i][1]:
-        return False
-    return spans[i][0] < off or not (off < len(text) and text[off] in '"\'`')
+    return i >= 0 and spans[i][0] <= off < spans[i][1]
 
 
 def tracked_files(repo: Path) -> set[str] | None:

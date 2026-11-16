@@ -279,7 +279,7 @@ def main() -> int:
     if not static and (cands_doc.get('environment') or []) != env:
         errs.append('candidates.json environment does not follow from runs.json; rerun compare_engines.py')
     for e in env:
-        if not any(re.search(r'upgrade-insecure-requests|https', x, re.I) for x in rep['limitations']):
+        if not any(re.search(r'upgrade-insecure-requests|\bhttps\b', x, re.I) for x in rep['limitations']):
             errs.append(f'limitations: {", ".join(e["engines"])} fetched the site over https on a plain-http target and '
                         f'failed ({e["requests"]} request(s), {e["runs"]} run(s)): name this environment cause '
                         '(upgrade-insecure-requests, https) in a limitation; those runs were not compared')

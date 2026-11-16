@@ -23,7 +23,8 @@ character keeps its offset, line and column (newlines are kept; the result has t
 
 Languages:
   * python: the tokenize module. String delimiters (prefix and quotes) are kept, their content blanked.
-    f-strings are blanked whole, expressions included (on every Python version, so results do not depend on
+    f-strings are blanked whole, expressions included, and like any string their range (kind 'fstring') starts
+    after the opening quote and ends before the closing one (on every Python version, so results do not depend on
     the interpreter: Python 3.12+ tokenizes f-string expressions, older versions do not). A file tokenize
     cannot read (a syntax error, Python 2) falls back to a small hand lexer with the same rules.
   * javascript (also TypeScript, JSX): '...' and "..." strings, template literals (blanked whole, ${...}
@@ -100,12 +101,14 @@ def _python_tokens(text: str):
         if tok.type in (fend, tend) and tok.type is not None:
             depth -= 1
             if depth == 0:
-                out.append(('fstring', f0, at(tok.end), tok.string))
+                out.append(('fstring', f0, at(tok.end), text[f0:at(tok.end)]))
             continue
         if depth:
             continue
-        if tok.type == tokenize.STRING:
-            out.append(('string', at(tok.start), at(tok.end), tok.string))
+        if tok.type == tokenize.STRING:   # before Python 3.12 an f-string is one STRING token
+            pre = PY_STR_START.match(tok.string)
+            kind = 'fstring' if pre and 'f' in (pre.group(1) or '').lower() else 'string'
+            out.append((kind, at(tok.start), at(tok.end), tok.string))
         elif tok.type == tokenize.COMMENT:
             out.append(('comment', at(tok.start), at(tok.end), tok.string))
         elif tok.type in (tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER):
@@ -181,8 +184,8 @@ def _python_spans(text: str, docstrings_only: bool = False) -> list[tuple[int, i
         if kind == 'comment':
             spans.append((s, e, 'comment'))
         elif kind == 'fstring':
-            a, _ = _py_string_inner(tok)
-            spans.append((s + a, e, 'fstring'))   # the whole f-string, expressions included
+            a, b = _py_string_inner(tok)
+            spans.append((s + a, s + b, 'fstring'))   # the whole content, expressions included; prefix and quotes stay
         else:
             a, b = _py_string_inner(tok)
             spans.append((s + a, s + b, 'docstring' if statement else 'string'))
@@ -416,6 +419,14 @@ def self_test() -> int:
                    and len(call.findall(py)) == 7, hits))
     ln, col = _pos(py, 'return requests')
     checks.append(('the real call keeps its line and column', _pos(m, 'return requests') == (ln, col), (ln, col)))
+    fs = 'a = f"https://x.test/{q}"\nb = "https://x.test/"\nc = rf\'\'\'{q}\'\'\'\n'
+    got = [(fs[s:e], k) for s, e, k in masked_spans(fs, 'python')]
+    fb = 'a = f"https://x.test/{q}"\nb = "https://x.test/"\nif a:\n    b = 1\n  c = 2\n'   # bad dedent: the fallback lexer
+    got_fb = [(fb[s:e], k) for s, e, k in masked_spans(fb, 'python')]
+    checks.append(('an f-string\'s range starts after its opening quote and ends before its closing quote, like a '
+                   'plain string\'s (prefix and quotes stay code), with tokenize and with the fallback lexer',
+                   got == [('https://x.test/{q}', 'fstring'), ('https://x.test/', 'string'), ('{q}', 'fstring')]
+                   and got_fb[:2] == [('https://x.test/{q}', 'fstring'), ('https://x.test/', 'string')], (got, got_fb)))
     checks.append(('string delimiters stay, so the code still shows where a string was',
                    m.splitlines()[2].startswith('RULES = [r"') and '"' in m.splitlines()[2], m.splitlines()[2]))
     doc = mask_python_docstrings_only(py)

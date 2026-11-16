@@ -71,7 +71,10 @@ Only Python on Windows gets a translation, because its C runtime reads just "XXX
 Node and Python are asked which zone they actually see before the runs; a TZ the runtime
 ignored is an error, and for other runners the note says the zone was set but not checked.
 LANG and LC_ALL are set as given; many runtimes on Windows ignore them, and each run says so.
-`--env K=V` may be repeated or take several pairs, anywhere on the command line.
+`--env K=V` may be repeated or take several pairs, anywhere on the command line. When it moves HOME or
+USERPROFILE (a scratch home), the toolchain homes and caches under the real home (CARGO_HOME, RUSTUP_HOME,
+GOPATH, GOMODCACHE, GOCACHE, the npm, pip, Gradle and NuGet caches) keep their real locations unless --env names
+them too, and the run notes which were kept.
 
 Environment values are not copied into runs.json: `variation.env` records every name, but only the
 harness's own variables (clock shift, TZ, locale, PYTHONPATH, PYTEST_ADDOPTS, NODE_OPTIONS, seeds,
@@ -158,8 +161,10 @@ Script self-tests: the `selftest` preset runs scripts' own self-tests, one comma
 (leading spaces allowed, a "  [detail]" after the name is the failure message):
     ok    name   |  FAIL  name   |  PASS name   |  FAIL name   |  [PASS] name   |  ERROR name
     name: ok     |  name: FAIL   |  name ... ok |  name ... FAIL                     (unittest -v style)
+    name: FAILED, detail  |  name: FAIL detail                                    (the detail is the message)
     SKIP name    |  SKIPPED name |  name: skipped                                   -> skipped
-Summary lines (ALL PASS, "3 failed", "self-test passed: ...") are not checks. Names are made stable across runs by
+Summary lines (ALL PASS, "3 failed", "self-test passed: ...", "x self-test: FAILED") are not checks. A name
+keeps a leading `--flag`. Names are made stable across runs by
 stable_check_name(): parenthesised measurements and observed values ("(took 0.6 s)", "(got 98)", "(ratio 0.70)",
 "(3)") and trailing timings ("in 340 ms", ": 12") are removed, so ids from two runs match. A script whose output
 holds no check line is one case `<script>::(exit status)` decided by its exit code (with a note); a script with
@@ -290,6 +295,61 @@ def env_pairs(groups) -> list[str]:
     out = []
     for g in groups or []:
         out.extend([g] if isinstance(g, str) else g)
+    return out
+
+
+# Toolchain homes and package caches that default to a place under the real home: (variable, defaults under the home,
+# tried in order). The same table as net_guard_proxy.TOOLCHAIN_HOMES (kept here because not every skill carrying this
+# file carries net_guard_proxy.py; the self-test compares the two when both are present).
+TOOLCHAIN_HOMES = [
+    ('CARGO_HOME', ['.cargo']), ('RUSTUP_HOME', ['.rustup']),
+    ('npm_config_cache', ['AppData/Local/npm-cache', '.npm']),
+    ('PIP_CACHE_DIR', ['AppData/Local/pip/Cache', '.cache/pip', 'Library/Caches/pip']),
+    ('GRADLE_USER_HOME', ['.gradle']), ('NUGET_PACKAGES', ['.nuget/packages']),
+]
+GO_HOMES = ('GOPATH', 'GOMODCACHE', 'GOCACHE')
+
+
+def go_env_values(environ: dict, real_home: Path | None = None) -> dict[str, str]:
+    """GOPATH, GOMODCACHE and GOCACHE as go sees them in `environ` (before HOME moves): `go env` when go is on PATH,
+    else the defaults under the real home that exist (~/go, ~/go/pkg/mod)."""
+    go = shutil.which('go', path=environ.get('PATH'))
+    if go:
+        try:
+            res = subprocess.run([go, 'env', *GO_HOMES], capture_output=True, text=True, timeout=60, env=dict(environ))
+            if res.returncode == 0:
+                return {k: v.strip() for k, v in zip(GO_HOMES, res.stdout.splitlines()) if v.strip()}
+        except (OSError, subprocess.SubprocessError):
+            pass
+    home = Path(real_home) if real_home else Path.home()
+    gopath = Path(environ['GOPATH']) if environ.get('GOPATH') else home / 'go'
+    out = {}
+    if gopath.is_dir():
+        out['GOPATH'] = str(gopath)
+        if (gopath / 'pkg' / 'mod').is_dir():
+            out['GOMODCACHE'] = str(gopath / 'pkg' / 'mod')
+    return out
+
+
+def kept_toolchain_homes(given: dict, environ: dict, real_home: Path | None = None) -> dict[str, str]:
+    """{variable: real location} to add when `given` (the --env pairs) moves HOME or USERPROFILE: the toolchain homes
+    and caches that would otherwise follow the scratch home (rustup and cargo would find no toolchain, Go and npm would
+    rebuild or download their caches). A variable the calling environment already sets is inherited anyway; one named
+    in `given` is left as given. {} when the home does not move."""
+    if not ({'HOME', 'USERPROFILE'} & set(given)):
+        return {}
+    home = Path(real_home) if real_home else Path.home()
+    out = {}
+    for var, defaults in TOOLCHAIN_HOMES:
+        if var in given or environ.get(var):
+            continue
+        hit = next((home / d for d in defaults if (home / d).is_dir()), None)
+        if hit:
+            out[var] = str(hit)
+    if not all(environ.get(v) or v in given for v in GO_HOMES):
+        for k, v in go_env_values(environ, home).items():
+            if k not in given and not environ.get(k):
+                out[k] = v
     return out
 
 
@@ -1933,7 +1993,10 @@ SELF_TEST_SCRIPTS = {'self_test.py', 'selftest.py', 'self_tests.py'}
 CHECK_HEAD = re.compile(r'^\s*\[?(ok|OK|PASS|PASSED|FAIL|FAILED|ERROR|SKIP|SKIPPED)\]?:?\s+(?P<name>\S.*)$')
 CHECK_TAIL = re.compile(r'^\s*(?P<name>\S.*?)\s*(?::|\.\.\.|\s-)\s*(?P<word>ok|OK|PASS|PASSED|FAIL|FAILED|ERROR|SKIP|'
                         r'SKIPPED|skipped)\s*$')
-CHECK_SUMMARY = re.compile(r'^(all\s+pass(ed)?|\d+\s+(failed|passed|checks?|errors?)\b.*|self-test\s+(passed|failed).*|'
+#   name: FAILED, detail  /  name: FAIL detail   -> failed, with the detail as the message
+CHECK_MID = re.compile(r'^\s*(?P<name>\S.*?):\s+(?P<word>FAIL|FAILED)(?:,\s*|\s+|$)(?P<detail>.*)$')
+CHECK_SUMMARY = re.compile(r'^(all\s+pass(ed)?|\d+\s+(failed|failing|passed|checks?|errors?)\b.*|'
+                           r'([\w.-]+\s+)?self-test:?\s+(passed|failed).*|([\w.-]+\s+)?self-test|test\s+result|'
                            r'ok|pass(ed)?|fail(ed)?)\s*$', re.I)
 CHECK_STATUS = {'ok': 'passed', 'pass': 'passed', 'passed': 'passed', 'fail': 'failed', 'failed': 'failed',
                 'error': 'error', 'skip': 'skipped', 'skipped': 'skipped'}
@@ -1955,11 +2018,12 @@ def stable_check_name(name: str) -> str:
         if n2 == n:
             break
         n = n2
-    return re.sub(r'\s+', ' ', n).strip(' :-') or name.strip()
+    n = re.sub(r'\s+', ' ', n).rstrip(' :-')
+    return re.sub(r'^(?:[\s:]+|-\s+)', '', n) or name.strip()   # a leading `--flag` is part of the name
 
 
 def parse_selftest_output(text: str) -> list[dict]:
-    """[{name, status, message}] from a self-test's output (shapes in CHECK_HEAD/CHECK_TAIL above); names are
+    """[{name, status, message}] from a self-test's output (shapes in CHECK_HEAD/CHECK_MID/CHECK_TAIL above); names are
     stable_check_name()s. Summary lines (ALL PASS, "3 failed", "self-test passed: ...") are not checks."""
     out = []
     for line in text.splitlines():
@@ -1968,8 +2032,13 @@ def parse_selftest_output(text: str) -> list[dict]:
             continue
         m = CHECK_HEAD.match(line)
         word, raw = (m.group(1), m.group('name')) if m else (None, None)
+        said = None   # the detail after `name: FAILED,`
         if not m:
-            t = CHECK_TAIL.match(line)
+            t = CHECK_MID.match(line)
+            if t:
+                said = t.group('detail').strip() or None
+            else:
+                t = CHECK_TAIL.match(line)
             if not t:
                 continue
             word, raw = t.group('word'), t.group('name')
@@ -1980,7 +2049,8 @@ def parse_selftest_output(text: str) -> list[dict]:
         if not name:
             continue
         out.append({'name': name, 'status': CHECK_STATUS[word.lower()],
-                    'message': (detail.group(1)[:500] if detail else (raw.strip() if raw.strip() != name else None))})
+                    'message': (said[:500] if said else detail.group(1)[:500] if detail
+                                else (raw.strip() if raw.strip() != name else None))})
     return out
 
 
@@ -2688,6 +2758,88 @@ def selftest_self_checks() -> list:
     checks.append(('selftest: stable_check_name strips timings, observed values and numbers in parentheses',
                    names == ['merges 3 runs', 'rounds totals', 'budget estimate', 'keeps (PEP 8) style',
                              'parses 12 files'], names))
+    got = parse_selftest_output('ok   --include-fixtures scans the sample projects too\n'
+                                'reads the lockfile: FAILED, expected 3 entries, got 2\n'
+                                'drops stale cache entries: FAIL stale entry kept\n'
+                                'loads the config: ok\n'
+                                'term_safe self-test: FAILED\n'
+                                'FAILED: 2 failing check(s)\n'
+                                'test result: FAILED. 1 passed; 2 failed; 0 ignored\n')
+    want = [{'name': '--include-fixtures scans the sample projects too', 'status': 'passed'},
+            {'name': 'reads the lockfile', 'status': 'failed', 'message': 'expected 3 entries, got 2'},
+            {'name': 'drops stale cache entries', 'status': 'failed', 'message': 'stale entry kept'},
+            {'name': 'loads the config', 'status': 'passed'}]
+    checks.append(('selftest: `name: FAILED, detail` and `name: FAIL detail` lines are failed checks with their detail, '
+                   'a leading `--` in a name is kept, and summary lines are not checks',
+                   [{k: c[k] for k in ('name', 'status', 'message') if k in w} for c, w in zip(got, want)] == want
+                   and len(got) == len(want), got))
+    return checks
+
+
+def home_override_checks() -> list:
+    """--env HOME=<scratch> (or USERPROFILE): the toolchain homes and caches that default to the real home (cargo,
+    rustup, Go's GOPATH and module cache, npm and pip caches) keep pointing at their real locations, unless --env names
+    them too; a note says which were kept."""
+    checks = []
+    names = ('CARGO_HOME', 'RUSTUP_HOME', 'GOPATH', 'GOMODCACHE', 'npm_config_cache', 'PIP_CACHE_DIR')
+    with tempfile.TemporaryDirectory() as d:
+        real = Path(d) / 'realhome'
+        for sub in ('.cargo', '.rustup', 'go/pkg/mod', 'AppData/Local/npm-cache', '.cache/pip'):
+            (real / sub).mkdir(parents=True)
+        scratch = Path(d) / 'scratch'
+        scratch.mkdir()
+        root = Path(d) / 'tool'
+        root.mkdir()
+        (root / 'envcheck.py').write_text(
+            'import os\n'
+            f'for v in {names!r}:\n'
+            '    got, want = os.environ.get(v), os.environ.get("WANT_" + v)\n'
+            '    print(("ok  " if got == want else "FAIL") + " keeps " + v + "  [" + str(got) + " != " + str(want) + "]")\n',
+            encoding='utf-8')
+        want = {'CARGO_HOME': real / '.cargo', 'RUSTUP_HOME': real / '.rustup', 'GOPATH': Path(d) / 'gp',
+                'GOMODCACHE': real / 'go' / 'pkg' / 'mod', 'npm_config_cache': real / 'AppData' / 'Local' / 'npm-cache',
+                'PIP_CACHE_DIR': real / '.cache' / 'pip'}
+        saved_env = {k: os.environ.pop(k) for k in list(os.environ) if k in names or k.startswith('WANT_')}
+        saved_home, saved_go = Path.home, globals().get('go_env_values')
+        os.environ.update({f'WANT_{k}': str(v) for k, v in want.items()})
+        Path.home = classmethod(lambda cls: real)
+        globals()['go_env_values'] = lambda environ, real_home=None: {
+            'GOPATH': str(real / 'go'), 'GOMODCACHE': str(real / 'go' / 'pkg' / 'mod')}
+        out = Path(d) / 'runs.json'
+        try:
+            code = main(['--preset', 'selftest', '--cwd', str(root), '--out', str(out), '--selftest-cmd',
+                         'python envcheck.py', '--env', f'HOME={scratch}', f'USERPROFILE={scratch}',
+                         f'GOPATH={Path(d) / "gp"}'])
+        except SystemExit as e:
+            code = f'exit {e.code}'
+        finally:
+            Path.home = saved_home
+            if saved_go is None:
+                globals().pop('go_env_values', None)
+            else:
+                globals()['go_env_values'] = saved_go
+            for k in [k for k in os.environ if k.startswith('WANT_')]:
+                del os.environ[k]
+            os.environ.update(saved_env)
+        data = json.loads(out.read_text(encoding='utf-8')) if out.exists() else {'runs': [], 'cases': []}
+        bad = {c['id']: c.get('message') for c in data['cases'] if c['status'] != 'passed'}
+        r = data['runs'][-1] if data['runs'] else {}
+        checks.append(('--env HOME/USERPROFILE keeps CARGO_HOME, RUSTUP_HOME, GOMODCACHE and the npm and pip caches at '
+                       'their real locations; a GOPATH given with --env wins',
+                       len(data['cases']) == len(names) and not bad, (code, bad, len(data['cases']))))
+        checks.append(('the run notes which toolchain homes were kept when HOME moved',
+                       any('toolchain' in n and 'CARGO_HOME' in n for n in r.get('notes', [])), r.get('notes')))
+    checks.append(('without HOME or USERPROFILE in --env nothing is added',
+                   kept_toolchain_homes({'TZ': 'UTC'}, {}) == {}, None))
+    proxy = next((p for p in (Path(__file__).with_name('net_guard_proxy.py'),
+                              Path(__file__).resolve().parent.parent / 'plugins' / 'net_guard_proxy.py') if p.is_file()), None)
+    if proxy:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('_ngp_for_check', proxy)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        checks.append(('TOOLCHAIN_HOMES is the same table as net_guard_proxy.py\'s',
+                       mod.TOOLCHAIN_HOMES == TOOLCHAIN_HOMES, (mod.TOOLCHAIN_HOMES, TOOLCHAIN_HOMES)))
     return checks
 
 
@@ -2696,6 +2848,7 @@ def self_test() -> int:
     --repo-root on a small synthetic workspace."""
     checks = []
     checks += selftest_self_checks()
+    checks += home_override_checks()
     with tempfile.TemporaryDirectory() as d:
         calls = []
         real_run = subprocess.run
@@ -2925,6 +3078,15 @@ def main(argv=None) -> int:
         k, _, v = kv.partition('=')
         env[k] = v
         variation['env'][k] = recorded_env(k, v, keep)
+    kept = kept_toolchain_homes(dict(kv.partition('=')[::2] for kv in args.env), os.environ)
+    if kept:   # a scratch HOME must not hide the toolchains and caches that live under the real one
+        for k, v in kept.items():
+            env[k] = v
+            variation['env'][k] = recorded_env(k, v, keep)
+        msg = ('--env moves the home directory; the toolchain homes and caches under the real home were kept where '
+               'they are: ' + ', '.join(sorted(kept)) + ' (name one with --env to move it too).')
+        notes.append(msg)
+        print('NOTE: ' + msg)
     for k in sorted(keep):   # --record-env also records a value the runs inherit from the calling environment
         if k not in variation['env'] and k in os.environ:
             variation['env'][k] = recorded_env(k, os.environ[k], keep)

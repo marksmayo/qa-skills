@@ -21,12 +21,20 @@ API (paths are repository-relative, '/'-separated):
         sample sources, or (a direct child of the fixture parent) an app of its own with no manifest: an entry or
         service file at its top (server.py, serve.py, app.py, main.go, index.html, alembic.ini,
         docker-compose.yml, Dockerfile, openapi.yaml ...) or a site/, src/, web/, app/, public/ or static/
-        folder holding sources. Only the outermost such directory is listed (its nested projects belong to it). Never the
+        folder holding sources, or a test-only folder (examples/regression/ holding test_*.py and recorded runs,
+        whose every source file is a test file: the tests of a sample project kept beside it). Only the outermost
+        such directory is listed (its nested projects belong to it). Never the
         repository root, never a workspace package the root declares (package.json workspaces,
         pnpm-workspace.yaml). A path named in `extra` that holds no such project is itself listed ("named by
         the caller"). markers: the files that decided it.
     is_fixture(path, fixtures) -> str | None
         The fixture directory path lies in, or None.
+    fixture_dirs(root, extra=(), files=None) -> [{dir, reason, data_files, projects}]
+        The outermost fixture parent folders (as above, or named in `extra`) that hold data files (DATA_EXT,
+        manifests left out) or fixture projects; a fixture parent holding neither is not listed.
+    walk_files(root) -> [path]
+        Every file below root, repository-relative, with VCS, dependency, cache and virtual-environment folders
+        left out (the walk copy_groups uses).
     declared_shared(root) -> {canonical: [copies]}
         The declared copy mapping of a tools/check_shared.py-style script, read with ast (never imported): a
         module-level SHARED = {'scripts/x.py': ['skill-a', 'skill-b:other/x.py']} dict whose keys live under
@@ -107,6 +115,27 @@ def _has_sources(d: Path, cap: int = 2000) -> int:
     return n
 
 
+TEST_FILE_RX = re.compile(r'^(test_.+\.py|.+_test\.py|.+\.(test|spec)\.[cm]?[jt]sx?|.+_test\.go|.+_spec\.rb|'
+                          r'.+Tests?\.(java|kt|cs))$')
+
+
+def _test_only(d: Path, cap: int = 500) -> list[str]:
+    """The test files of a folder whose every source file is a test file (none of its own sources), else []."""
+    tests, seen = [], 0
+    for dp, dns, fns in os.walk(d):
+        dns[:] = [x for x in dns if x not in PRUNE]
+        for f in fns:
+            seen += 1
+            if PurePosixPath(f).suffix.lower() not in SOURCE_EXT or f in ('conftest.py', '__init__.py'):
+                continue
+            if not TEST_FILE_RX.match(f):
+                return []
+            tests.append((Path(dp) / f).relative_to(d).as_posix())
+        if seen > cap:
+            return []
+    return sorted(tests)
+
+
 def fixture_projects(root, extra=()) -> list[dict]:
     """Nested sample or fixture projects (see the module doc): [{dir, reason, markers}], sorted by dir."""
     root = Path(root).resolve()
@@ -151,6 +180,12 @@ def fixture_projects(root, extra=()) -> list[dict]:
             if entry or webroot:
                 markers = entry + [d + '/' for d in webroot]
                 why = 'an app of its own (' + ', '.join(markers) + ')'
+            else:
+                tests = _test_only(Path(dp))
+                if tests:
+                    markers = tests
+                    why = (f'a test-only folder ({len(tests)} test file(s), no sources of its own): the tests of a '
+                           'sample project, kept beside it')
         if why:
             where = f'{named}/ (named by the caller)' if named else f'{parent}/'
             out.append({'dir': rel, 'reason': f'a nested project under {where} with {why}', 'markers': markers})
@@ -169,6 +204,57 @@ def is_fixture(path: str, fixtures) -> str | None:
         if p == d or p.startswith(d + '/'):
             return d
     return None
+
+
+DATA_EXT = {'.json', '.jsonl', '.ndjson', '.yaml', '.yml', '.csv', '.tsv', '.xml', '.txt', '.sql', '.har', '.snap',
+            '.toml', '.ini', '.parquet', '.xlsx', '.xls', '.db', '.sqlite', '.sqlite3'}
+
+
+def fixture_dirs(root, extra=(), files=None) -> list[dict]:
+    """The outermost fixture parent folders (FIXTURE_PARENTS, or a name or path in `extra`) that hold data files or
+    fixture projects: [{dir, reason, data_files, projects}], sorted by dir. data_files counts the files below it with a
+    data extension (DATA_EXT), manifests left out; projects are the fixture_projects inside it. A fixture parent that
+    holds neither (only documentation, say) is not listed. files: limit to these repository-relative paths."""
+    root = Path(root).resolve()
+    names = set(FIXTURE_PARENTS)
+    paths = set()
+    for e in extra or ():
+        e = str(e).replace('\\', '/').strip('/')
+        if e:
+            (paths if '/' in e else names).add(e)
+    rels = [f.replace('\\', '/').strip('/') for f in files] if files is not None else walk_files(root)
+    projects = fixture_projects(root, extra)
+
+    def parent_of(rel: str) -> str | None:
+        parts = rel.split('/')[:-1]
+        cands = [p for p in paths if rel.startswith(p + '/')]
+        i = next((k for k, seg in enumerate(parts) if seg in names), None)
+        named = min(cands, key=len) if cands else None
+        found = '/'.join(parts[:i + 1]) if i is not None else None
+        if named and (found is None or len(named) <= len(found)):
+            return named
+        return found
+    data: dict[str, int] = {}
+    for rel in rels:
+        d = parent_of(rel)
+        if d is None:
+            continue
+        data.setdefault(d, 0)
+        name = PurePosixPath(rel).name
+        if PurePosixPath(rel).suffix.lower() in DATA_EXT and not _manifests([name]):
+            data[d] += 1
+    for pr in projects:
+        data.setdefault(parent_of(pr['dir'] + '/x') or pr['dir'], 0)
+    out = []
+    for d in sorted(data):
+        projs = sorted(pr['dir'] for pr in projects if pr['dir'] == d or pr['dir'].startswith(d + '/'))
+        n = data[d]
+        if not n and not projs:
+            continue
+        bits = ([f'{n} data file(s)'] if n else []) + ([f'{len(projs)} sample project(s)'] if projs else [])
+        out.append({'dir': d, 'reason': f'a fixture folder ({PurePosixPath(d).name}/) holding ' + ' and '.join(bits),
+                    'data_files': n, 'projects': projs})
+    return out
 
 
 def declared_shared(root) -> dict[str, list[str]]:
@@ -228,7 +314,10 @@ def declared_shared(root) -> dict[str, list[str]]:
     return {}
 
 
-def _walk_files(root: Path) -> list[str]:
+def walk_files(root) -> list[str]:
+    """Every file under root, repository-relative and '/'-separated, sorted per folder; VCS, dependency, cache and
+    virtual-environment folders (PRUNE) and *.egg-info are not walked."""
+    root = Path(root)
     out = []
     for dp, dns, fns in os.walk(root):
         dns[:] = sorted(d for d in dns if d not in PRUNE and not d.endswith('.egg-info'))
@@ -258,7 +347,7 @@ def copy_groups(root, files=None, declared=None) -> list[dict]:
     """Groups of identical files (see the module doc): [{canonical, copies, how[, undeclared, drifted]}]."""
     root = Path(root).resolve()
     declared = declared_shared(root) if declared is None else declared
-    rels = [f.replace('\\', '/').strip('/') for f in files] if files is not None else _walk_files(root)
+    rels = [f.replace('\\', '/').strip('/') for f in files] if files is not None else walk_files(root)
     by_hash: dict[str, list[str]] = {}
     digests: dict[str, str] = {}
     for rel in rels:
@@ -370,6 +459,10 @@ def self_test() -> int:
         'alpha-skill/examples/report.example.json': '{}',
         'examples/stub-site/serve.py': 'import http.server\n', 'examples/stub-site/site/index.html': '<p>hi</p>',
         'examples/repro/repro_1.py': 'print(1)\n',                          # loose scripts: not an app
+        # the regression tests of a sample project, kept in their own folder with their recorded runs
+        'examples/regression/test_shop_regressions.py': 'def test_cart():\n    assert 1\n',
+        'examples/regression/fixed_run.txt': '1 passed\n',
+        'docs/fixtures/README.md': '# How the fixtures are made\n',          # a fixture parent with no data or project
         'tests/fixtures/data/a.json': '{}',
         'tests/fixtures/app/go.mod': 'module example.test/app\n', 'tests/fixtures/app/main.go': 'package main\n',
         'testdata/golden/expected.json': '[]', 'testdata/golden/main.go': 'package main\n',
@@ -382,7 +475,7 @@ def self_test() -> int:
     try:
         fx = {f['dir']: f for f in fixture_projects(root, extra=['demo-apps'])}
         want = {'examples/shop', 'alpha-skill/examples/ledger', 'tests/fixtures/app', 'testdata/golden', 'demo-apps/one',
-                'examples/stub-site'}
+                'examples/stub-site', 'examples/regression'}
         checks.append(('nested sample projects under examples/, fixtures/ and testdata/ (manifest, expected.json '
                        'beside sources, or an app entry point) and under a caller-named directory are found, outermost only',
                        set(fx) == want, sorted(fx)))
@@ -390,6 +483,29 @@ def self_test() -> int:
                        all(f['reason'] and f['markers'] for f in fx.values())
                        and 'package.json' in fx.get('examples/shop', {}).get('markers', [])
                        and 'expected.json' in fx.get('testdata/golden', {}).get('markers', []), list(fx.values())[:2]))
+        checks.append(('a test-only folder under a fixture parent (test files, no sources of its own, no manifest) is a '
+                       'fixture project, with its reason',
+                       'test-only' in fx.get('examples/regression', {}).get('reason', '')
+                       and 'test_shop_regressions.py' in fx.get('examples/regression', {}).get('markers', []),
+                       fx.get('examples/regression')))
+        try:
+            walked = walk_files(root)
+        except NameError as e:
+            walked = str(e)
+        checks.append(('walk_files lists every file, repository-relative, pruning dependency and VCS folders',
+                       isinstance(walked, list) and sorted(walked) == sorted(files),
+                       walked if isinstance(walked, str) else sorted(set(walked) ^ set(files))))
+        try:
+            fdirs = {f['dir']: f for f in fixture_dirs(root, extra=['demo-apps'])}
+        except NameError as e:
+            fdirs = {'error': str(e)}
+        checks.append(('fixture_dirs lists the outermost fixture parents that hold data files or fixture projects, with '
+                       'their reason, data file count and projects; one holding neither is not listed',
+                       set(fdirs) == {'examples', 'alpha-skill/examples', 'tests/fixtures', 'testdata', 'samples',
+                                      'demo-apps'}
+                       and fdirs['examples']['projects'] == ['examples/regression', 'examples/shop', 'examples/stub-site']
+                       and fdirs['testdata']['data_files'] == 2 and fdirs['samples']['projects'] == []
+                       and all(f['reason'] for f in fdirs.values()), fdirs))
         checks.append(('the repository root, a declared workspace package, example outputs and plain data are not '
                        'fixture projects', not ({'.', '', 'packages/samples', 'alpha-skill/examples/run',
                                                   'testdata/plain', 'samples', 'examples/repro'} & set(fx)), sorted(fx)))
@@ -420,7 +536,7 @@ def self_test() -> int:
                        and idx.get('libs/b/helper.py') == 'vendor_a/helper.py', None))
         c = classify(root, extra=['demo-apps'])
         checks.append(('classify reports both, with notes and counts',
-                       c['stats'] == {'fixtures': 6, 'copy_groups': 2, 'copies': 4} and len(c['notes']) == 2, c['stats']))
+                       c['stats'] == {'fixtures': 7, 'copy_groups': 2, 'copies': 4} and len(c['notes']) == 2, c['stats']))
         only = copy_groups(root, files=['vendor_a/helper.py', 'libs/b/helper.py', 'src/app.py'], declared={})
         checks.append(('copy_groups can be limited to given files and an explicit (empty) mapping',
                        [x['canonical'] for x in only] == ['vendor_a/helper.py'], only))

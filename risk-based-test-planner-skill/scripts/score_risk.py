@@ -3754,7 +3754,8 @@ def tool_repo_checks() -> list[tuple[str, bool]]:
             out.append((f'a sample project under examples/ is never an area, even with a Next.js config that sets headers '
                         f'(areas {ids})', not any('examples' in p for a in res['areas'] for p in a['paths'] + [a['id']])))
             out.append((f'the fixture projects left out are reported (got {res.get("fixtures_excluded")})',
-                        [f['dir'] for f in res.get('fixtures_excluded') or []] == ['alpha-tool/examples/shop']))
+                        [f['dir'] for f in res.get('fixtures_excluded') or []] == ['alpha-tool/examples/regression',
+                                                                               'alpha-tool/examples/shop']))
             homes = [a['id'] for a in res['areas']
                      if any('pagekit.py' in e for e in ' '.join(a['factors']['surface']['evidence']).split(', '))]
             out.append((f'copies of a shared file are excluded from their areas, naming the canonical copy (excluded '
