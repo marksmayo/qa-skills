@@ -15,7 +15,9 @@ When any file changed, appeared or disappeared, it puts the original bytes back 
 that was not there) and raises GuardError naming the command and the files, so the script stops
 loudly instead of reading results built on a damaged tree. When the directory is a git work
 tree, `git status` of the tracked files is compared too (with optional locks off, so the check
-itself never writes the index).
+itself never writes the index). The guard holds the bytes of the guarded files only: another tracked
+file that git status shows changed is named in GuardError.not_restored and the message says it was NOT
+put back (GuardError.restored is then False).
 
     python tree_guard.py --self-test
 """
@@ -27,11 +29,23 @@ from pathlib import Path
 class GuardError(Exception):
     """A command changed guarded files of the target (they have been put back)."""
 
-    def __init__(self, command: str, changed: list[str], restored: bool):
-        self.command, self.changed, self.restored = command, changed, restored
+    def __init__(self, command: str, changed: list[str], restored: bool, not_restored: list[str] | None = None):
+        # restored is True only when every change was put back: a tracked file seen only through git status is one
+        # the guard holds no bytes of, so it stays changed and is named in not_restored
+        self.not_restored = list(not_restored or [])
+        self.command, self.changed, self.restored = command, changed, restored and not self.not_restored
+        guarded = [c for c in changed if not c.endswith(' (git status)')]
         shown = ', '.join(changed[:8]) + (f' and {len(changed) - 8} more' if len(changed) > 8 else '')
-        super().__init__(f'"{command}" changed {len(changed)} of the target\'s test files ({shown}); '
-                         + ('they were restored byte for byte. ' if restored else 'RESTORING THEM FAILED. ')
+        if not restored:
+            put_back = 'RESTORING THE GUARDED FILES FAILED. '
+        elif guarded:
+            put_back = f'the {len(guarded)} guarded file(s) were restored byte for byte. '
+        else:
+            put_back = ''
+        if self.not_restored:
+            put_back += (f'{len(self.not_restored)} other tracked file(s) changed and were NOT put back '
+                         f'({", ".join(self.not_restored[:8])}): check them with git diff. ')
+        super().__init__(f'"{command}" changed {len(changed)} of the target\'s files ({shown}); ' + put_back
                          + 'Nothing from this command can be trusted; the script stopped.')
 
 
@@ -98,6 +112,21 @@ class TreeGuard:
                         changed.append(f'{d.as_posix()}/{entry[3:]} (git status)')
         return changed
 
+    def unguarded(self, changed: list[str]) -> list[str]:
+        """The git-status changes to tracked files this guard holds no bytes of (restore() cannot put them back),
+        relative to their work tree."""
+        held = {os.path.normcase(str(f)) for f in self.files}
+        out = []
+        for c in changed:
+            if not c.endswith(' (git status)'):
+                continue
+            path = c[:-len(' (git status)')]
+            if os.path.normcase(str(Path(path).resolve())) in held:
+                continue
+            d = next((d for d in self.git_dirs if path.startswith(d.as_posix() + '/')), None)
+            out.append(path[len(d.as_posix()) + 1:] if d else path)
+        return out
+
     def restore(self, before: dict) -> bool:
         ok = True
         for f, data in before['files'].items():
@@ -122,7 +151,7 @@ class TreeGuard:
             changed = self.compare(before)
             if changed:
                 restored = self.restore(before)
-                raise GuardError(command, changed, restored)
+                raise GuardError(command, changed, restored, self.unguarded(changed))
 
 
 def report(exc: GuardError) -> None:
@@ -147,6 +176,29 @@ def self_test() -> int:
         assert a.read_bytes() == b"it('x', () => {})\r\n" and not (tmp / 'missing.test.ts').exists()
     else:
         raise AssertionError('the guard did not notice the overwritten file')
+    # a tracked file the guard does not hold (seen only through git status) cannot be put back: say so, never "restored"
+    import shutil
+    if shutil.which('git'):
+        repo = tmp / 'repo'
+        repo.mkdir()
+        t, other = repo / 't.test.ts', repo / 'other.py'
+        t.write_bytes(b'kept')
+        other.write_bytes(b'x = 1\n')
+        env = {**os.environ, 'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@example.test', 'GIT_COMMITTER_NAME': 't',
+               'GIT_COMMITTER_EMAIL': 't@example.test'}
+        for args in (['init', '-q'], ['add', '-A'], ['-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'base']):
+            subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True, env=env)
+        g = TreeGuard.of_files([t], git_dirs=[repo])
+        try:
+            with g.around('a tool that rewrites another tracked file'):
+                other.write_bytes(b'x = 2\n')
+        except GuardError as exc:
+            assert not exc.restored and getattr(exc, 'not_restored', None) == ['other.py'], (exc.restored, getattr(exc, 'not_restored', None))
+            assert 'restored byte for byte' not in str(exc) and 'NOT put back' in str(exc) and 'other.py' in str(exc), str(exc)
+        else:
+            raise AssertionError('the guard did not notice the changed tracked file')
+    else:
+        print('tree_guard self-test: git not on PATH, the git status case was skipped')
     print('tree_guard self-test: ok')
     return 0
 

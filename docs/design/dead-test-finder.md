@@ -1,6 +1,6 @@
 # Design: `dead-test-finder-skill`
 
-Status: Built (v1.4.0), see "As built" at the end. Build order: 12.
+Status: Built (v1.6.0), see "As built" at the end. Build order: 12.
 
 ## Mission
 
@@ -510,3 +510,10 @@ Where the build differs from the design above, and what the example showed.
   - Not fixed here: tests CI runs outside `testpaths`, the false duplicate pairs from tests looping
     over different module-level lists, helper methods named `test_*` read as tests, skips conditioned
     on the product's own response, and hashing a large data tree before every neutralisation.
+
+### Honest guard message (v1.6.0)
+
+- `tree_guard.py` compared `git status` too, but could only put back the guarded test files, and still said
+  every change was "restored byte for byte". A tracked file outside the guarded set is now named in
+  `GuardError.not_restored`, `restored` is false, and the message says it was NOT put back (check it with git
+  diff). Tested in `tree_guard.py --self-test` (written to fail first, on a scratch git repository).
