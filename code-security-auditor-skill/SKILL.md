@@ -1,7 +1,7 @@
 ---
 name: code-security-auditor
 description: Audit a codebase for security weaknesses with open-source scanners (Semgrep OSS, Bandit, gosec, Brakeman, gitleaks, osv-scanner, pip-audit, npm audit, zizmor, Trivy, Checkov and more) plus a deep manual review, trace each finding from attacker-controlled input to the dangerous operation, rate it with CVSS v4.0, and write safe reproduction steps, a fix and a regression test. Optionally confirms findings with canary-only proofs of concept against localhost or a test environment the user names. Every candidate is triaged, every tool's status is recorded, and the report never calls the code secure.
-version: 1.8.0
+version: 1.9.0
 ---
 
 # Code Security Auditor
@@ -103,6 +103,33 @@ Semgrep is passed `--exclude` for it. Each script takes `--exclude-dir PATH` (re
 out more, and `--scan-data-dirs` to read them after all. A pruned directory was not checked for
 secrets or code: `seed_report.py` adds it to `limitations`; keep it there, or rerun the secret scan
 with `--scan-data-dirs` when the data could hold credentials.
+
+**Sample projects, copied files and code inside strings.** Tool and library repositories often carry
+deliberately broken sample projects (`examples/shop/` with its own `requirements.txt`, a sample site
+with its own `package.json`, a `testdata/` app with an `expected.json`) and files kept identical in
+several folders (a script copied into every package, declared in a `tools/check_shared.py`-style
+mapping). A planted defect in a sample is not the repository's finding, and a copied file is one
+piece of code. So, by default, recon, the pattern scan, `run_scanners.py` (its inventory, Semgrep
+and Bandit) and `merge_findings.py` leave out every fixture project (`scripts/audit_scope.py` on the
+shared `repo_layout.py`) and list it under `fixtures_excluded` with the reason; `--include-fixtures`
+audits them too, `--fixture-dir NAME|PATH` names more. The secret scan still reads them (a real key
+committed in a sample is still exposed) but sets aside their low-entropy literals, and those of any
+file under `examples/`, `fixtures/`, `testdata/` or `samples/`, the way it sets aside test-file
+literals; a real-looking key stays a candidate. Their lockfiles are listed under `fixture_lockfiles`
+and never decide `dependency_advisories`. A file kept identical in several places is read once: its
+entry points, outbound calls and pattern hits are listed on the canonical copy with `copies`
+(`copy_groups` lists the groups), and a Semgrep or Bandit hit on a copy joins the canonical
+candidate. `seed_report.py` names each left-out fixture project in `target.excluded` and the
+limitations, and the copies in each entry point's note and triage reason; the validator's `--recon`
+rejects a report that does not name a fixture project recon left out. In Python and
+JavaScript/TypeScript, recon and the pattern scan match only code: a pattern that lies wholly inside
+a string, docstring or comment (a scanner's own pattern table, a usage example in a docstring, a
+fixture string holding sample server code) is not an entry point, a queue consumer, an MCP tool, an
+agent permission handler or a pattern hit, which keeps recon in agreement with the validator (it
+rejects entry points inside strings). Pitfalls that read string content by design (security header
+values) say so with `match_in_strings`, and a Jinja `|safe` inside a Python template string is
+matched by the pitfall's `string_regex`. The secret scan does not report a detection rule's own
+regular expression in a rule catalogue, or a `fake` password in a documented connection string.
 
 **Server-rendered templates and rate limits.** recon lists server-side templates (`templates`:
 HTML with `{{ }}` or `{% %}`, `.jinja`, `.j2`, `.njk`), part of the web surface, which the pattern
@@ -300,8 +327,10 @@ read them too. An input passed through `env:` and used as `"$NAME"` is the safe 
 python scripts/run_scanners.py <repo> --out-dir <out> [--offline] [--osv-local-db <dir>] [--cargo-audit-db <dir>]
 ```
 
-Whatever runs, the pinned packages in lockfiles and requirements files are listed offline in
-`<out>/dependencies.json`, and `scanners.json` records `dependency_advisories`: `assessed`,
+Whatever runs, the packages in lockfiles and requirements files are listed offline in
+`<out>/dependencies.json` (a requirements file with version ranges lists every requirement, with its
+`constraint` and `version` null when it is not pinned to one version; its lockfile row counts them as
+`unpinned`), and `scanners.json` records `dependency_advisories`: `assessed`,
 `partial` (a lockfile no tool covered, say npm with only pip-audit) or `not_assessed` (no advisory
 tool ran, for example with `--offline`). Coverage is per lockfile: each tool row lists the lockfiles
 it `covers`, so npm audit on one nested `package-lock.json` (a composite action's) does not count
@@ -369,6 +398,7 @@ Then the built-in scans, which work with no tools installed:
 ```bash
 python scripts/scan_pitfalls.py <repo> --out <out>/patterns.json     # data/pitfalls.json, organised by CWE
                                                                      # [--exclude-dir DIR] [--scan-data-dirs]
+                                                                     # [--include-fixtures] [--fixture-dir DIR]
 python scripts/scan_secrets.py <repo> --history --out <out>/secrets.json
 python scripts/merge_findings.py --root <repo> --patterns <out>/patterns.json --secrets <out>/secrets.json \
     --sarif <out>/semgrep.sarif <out>/zizmor.sarif <out>/gitleaks.sarif ... --bandit <out>/bandit.json \
@@ -730,10 +760,19 @@ and leaves sibling ones to that report.
   (a dismissed one still counts if it looks like a real key); placeholder words and values under
   8 characters are skipped, only JSON string values are searched (not keys), short values must
   match as whole tokens, and an error names the candidate and the JSON path, never the value.
-- No `TODO(seed)` placeholder from `seed_report.py` left anywhere.
+- No `TODO(seed)` placeholder from `seed_report.py` left anywhere, and no home-directory path
+  (`C:\Users\<name>\...`, `/home/<name>/...`, `/Users/<name>/...`) outside
+  `verification.local_copy` and `files_written`: `seed_report.py` writes `~` for the home directory in
+  tool commands, output paths and database paths, and the validator expands `~` when it reads a
+  dependency tool's output.
+- With `--recon`, every fixture project recon left out (`fixtures_excluded`) is named in
+  `target.excluded` or the limitations.
 - Secret blocks agree with the scanner: a secret it found in history is not reported as absent,
   `no` is not claimed when it could not tell, and `git_status` matches. A `partial` or `errored`
   history scan is named in the limitations.
 - Summary counts recomputed (`--write-summary` also fills each finding's `priority_score` and
   `priority`); headlines claiming the code is secure, safe or free of issues are
-  rejected ("secure" in a technical phrase such as "the Secure cookie flag" is fine).
+  rejected ("secure" in a technical phrase such as "the Secure cookie flag" is fine). Priority claims
+  in the headline must match the counts: "all P3" or "only P3" with any P0 to P2 finding, "no P1"
+  with a P1, or "2 P1" when there are 9 is rejected. `coverage.entry_points_total` is the number of
+  entry points the report keeps in `recon.entry_points` (removed ones do not count).

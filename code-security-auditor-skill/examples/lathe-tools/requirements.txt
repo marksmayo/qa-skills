@@ -1,0 +1,4 @@
+# the tools' own dependencies
+requests>=2.31,<3
+PyYAML~=6.0
+rich==13.7.1

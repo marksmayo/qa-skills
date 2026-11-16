@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Map a repository's attack surface for a security review.
 
-    python recon.py <repo> [--out recon.json]
+    python recon.py <repo> [--include-fixtures] [--fixture-dir DIR] [--out recon.json]
 
 Finds languages and frameworks, entry points (HTTP routes, GraphQL operations, webhooks, queue
 consumers, CLI commands, mobile deep links and exported components, CI workflow triggers, Next.js
@@ -64,6 +64,14 @@ and an environment variable that chooses an executable or library is a `config_i
 Process launches and library loads are review leads, with a path built from env::current_dir(), a relative path
 (through a const or a let default too) or a DLL loaded by bare name named as a search-path risk (CWE-427).
 
+Strings, docstrings and comments are not code (code_mask.py, Python and JavaScript/TypeScript): a CLI, queue
+consumer, MCP tool, listener or permission handler that only appears in a usage example, a pattern table or a
+fixture string is not an entry point. Sample and fixture projects (a nested project with its own manifest or app
+under examples/, fixtures/, testdata/, samples/ ...; see audit_scope.py) are left out and listed under
+fixtures_excluded unless --include-fixtures (--fixture-dir names more). Files kept identical in several places
+(copy_groups) are listed once: each entry point, outbound call, secret setting and data store on the canonical
+copy, with `copies`.
+
 Everything here is a regex-level first pass. The agent confirms entry points and auth by reading
 the code; an 'unknown' auth value means the script could not tell, not that the route is public.
 """
@@ -75,6 +83,8 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import audit_scope  # noqa: E402
+import code_mask  # noqa: E402
 import data_dirs as data_dir_rule  # noqa: E402
 import go_entries  # noqa: E402
 import lang_census  # noqa: E402
@@ -332,6 +342,53 @@ def ado_pipeline_info(rel: str, text: str, template: bool) -> tuple[dict, list[d
             'uses_secrets': bool(re.search(r'^\s*-\s*group\s*:|AzureKeyVault@|\$\(\w*(secret|password|token|key)\w*\)', text, re.M | re.I))}
     return info, entries
 
+# An MCP server module: the SDK class, or an import of the SDK package (the import keyword is code even though the
+# package name is a string, so a fixture string that mentions the package does not make a file an MCP server)
+MCP_FILE = re.compile(r'\bMcpServer\b|\bFastMCP\b|\bfrom\s+mcp(?:\.server)?(?:\.\w+)*\s+import\b|'
+                      r'(?:\bfrom|\brequire\s*\(|\bimport\s*\(?)\s*["\'`]@modelcontextprotocol/')
+
+def line_starts(text: str) -> list[int]:
+    """Offset of each line of text.splitlines() in text."""
+    out, off = [], 0
+    for raw in text.splitlines(keepends=True):
+        out.append(off)
+        off += len(raw)
+    return out
+
+def code_line_search(rx, line: str, spans, base: int):
+    """The first match of rx on line that starts in code: not inside a string, docstring or comment of the file
+    (spans from code_mask.masked_spans; base is the line's offset in the file). With no spans, rx.search(line)."""
+    if not spans:
+        return rx.search(line)
+    for m in rx.finditer(line):
+        if audit_scope.in_code(spans, base + m.start(), base + m.end()):
+            return m
+    return None
+
+def file_spans(path: Path, text: str) -> list:
+    """Masked spans for Python and JavaScript/TypeScript files (strings, docstrings, comments); [] otherwise."""
+    lang = code_mask.lang_of(path)
+    return code_mask.masked_spans(text, lang) if lang in ('python', 'javascript') else []
+
+def fold_copies(rows: list[dict], rep: dict[str, str], where, key=lambda r: ()) -> list[dict]:
+    """Rows (entry points, outbound calls...) found in a copy of a file listed once, on the representative copy's
+    row with the same line (and key), which gains `copies` ('file:line'). where(row) -> (file, line)."""
+    kept = {}
+    for r in rows:
+        f, line = where(r)
+        if rep.get(f) == f:
+            kept[(f, str(line), key(r))] = r
+    out = []
+    for r in rows:
+        f, line = where(r)
+        target = rep.get(f)
+        hit = kept.get((target, str(line), key(r))) if target and target != f else None
+        if hit is not None:
+            hit['copies'] = sorted(set(hit.get('copies') or []) | {f'{f}:{line}'})
+            continue
+        out.append(r)
+    return out
+
 HASH_COMMENT = {'.py', '.rb', '.sh', '.yml', '.yaml', '.toml', '.tf'}
 TRIPLE = {'.py'}
 BACKTICK = {'.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts', '.vue', '.svelte', '.go', '.kt', '.scala'}
@@ -513,7 +570,7 @@ def walk(root: Path, vendored: list[dict] | None = None, census: dict | None = N
                 rel_dir = p.relative_to(root).as_posix()
                 why = (lang_census.excluded_path(census, rel_dir) if census else None) or test_paths.vendored_dir(p.name)
                 if why and p.name not in SKIP_DIRS:
-                    if vendored is not None:
+                    if vendored is not None and not why.startswith('fixture project'):  # fixtures are listed apart
                         vendored.append({'dir': p.relative_to(root).as_posix(), 'reason': why})
                     continue
                 if p.name not in SKIP_DIRS and (not p.name.startswith('.') or p.name == '.github' or p.name in ADO_DIRS) \
@@ -538,12 +595,14 @@ def head(p: Path, n: int = 4000) -> str:
     except OSError:
         return ''
 
-def python_listeners(rel: str, text: str) -> list[dict]:
+def python_listeners(rel: str, text: str, spans=None) -> list[dict]:
     """Servers a Python module starts itself (app.run, uvicorn.run, waitress.serve, make_server), with the bind host:
-    no host argument means the server's default (loopback for Flask's app.run and uvicorn)."""
+    no host argument means the server's default (loopback for Flask's app.run and uvicorn). A call inside a string
+    or docstring is not one."""
     out = []
+    starts = line_starts(text)
     for i, line in enumerate(text.splitlines(), 1):
-        m = PY_LISTENER.search(line)
+        m = code_line_search(PY_LISTENER, line, spans, starts[i - 1])
         if not m or line.lstrip().startswith('#'):
             continue
         args = next(g for g in m.groups() if g is not None)
@@ -731,25 +790,30 @@ def bin_entries(rel: str, text: str) -> list[dict]:
              'function': None, 'auth': 'unknown', 'auth_evidence': 'local invocation: the user (or a script, CI job or agent) '
              'supplies the arguments, environment and working directory'} for name, target in names.items() if isinstance(target, str)]
 
-def node_entries(rel: str, text: str, mcp_file: bool) -> tuple[list[dict], list[dict]]:
-    """(entries, leads) for a Node or Python file: CLI dispatch, MCP tools, listeners, config loading, agent permissions."""
+def node_entries(rel: str, text: str, mcp_file: bool, spans=None) -> tuple[list[dict], list[dict]]:
+    """(entries, leads) for a Node or Python file: CLI dispatch, MCP tools, listeners, config loading, agent permissions.
+    spans (code_mask): a pattern that starts inside a string, template literal or comment is not code."""
     out, leads, lines = [], [], text.splitlines()
+    starts = line_starts(text)
     seen_cli = seen_cfg = False
+    cli_file = code_mask.code_search(NODE_CLI_FILE, text, None, spans or []) if spans else NODE_CLI_FILE.search(text)
     for i, line in enumerate(lines, 1):
         s = line.strip()
         if s.startswith(('//', '*', '/*', '#')) or len(line) > 3000:
             continue
+        base = starts[i - 1]
+        at = lambda rx: code_line_search(rx, line, spans, base)  # noqa: E731
         js = Path(rel).suffix in JS_EXT
         if js:
-            m = NODE_CLI_NAMED.search(line)
-            if m and (seen_cli or NODE_CLI_FILE.search(text)):
+            m = at(NODE_CLI_NAMED)
+            if m and (seen_cli or cli_file):
                 out.append({'kind': 'cli', 'framework': 'node', 'method': 'COMMAND', 'path': m.group(1), 'handler': f'{rel}:{i}',
                             'function': None, 'auth': 'unknown', 'auth_evidence': 'local invocation: subcommand arguments come from the caller'})
-            elif not seen_cli and NODE_CLI_FILE.search(line) and not re.search(r'process\.argv\s*\[\s*[01]\s*\]', line):
+            elif not seen_cli and at(NODE_CLI_FILE) and not re.search(r'process\.argv\s*\[\s*[01]\s*\]', line):
                 seen_cli = True
                 out.append({'kind': 'cli', 'framework': 'node', 'method': 'ARGV', 'path': rel, 'handler': f'{rel}:{i}',
                             'function': None, 'auth': 'unknown', 'auth_evidence': 'local invocation: command-line arguments'})
-            if LISTENER.search(line) and not s.startswith(('import ', 'export type', 'type ')):
+            if at(LISTENER) and not s.startswith(('import ', 'export type', 'type ')):
                 # the bind host decides who can connect: the listen() call that follows, or the options object
                 window = '\n'.join(lines[i - 1:i + 80])
                 lc = LISTEN_CALL.search(window)
@@ -767,20 +831,22 @@ def node_entries(rel: str, text: str, mcp_file: bool) -> tuple[list[dict], list[
                     bind, why = 'unknown', 'bind host not read (a variable or an options object); read the code'
                 out.append({'kind': 'listener', 'framework': 'node', 'method': 'LISTEN', 'path': f'{rel} ({bind})', 'handler': f'{rel}:{i}',
                             'function': None, 'auth': 'unknown', 'auth_evidence': why, 'bind': bind})
-            if not seen_cfg and CONFIG_LOAD.search(line) and not s.startswith(('import ', 'export ')):
+            if not seen_cfg and at(CONFIG_LOAD) and not s.startswith(('import ', 'export ')):
                 seen_cfg = True
                 out.append({'kind': 'config_input', 'framework': 'node', 'method': 'CONFIG', 'path': rel, 'handler': f'{rel}:{i}',
                             'function': None, 'auth': 'unknown', 'auth_evidence': 'loads a config file from the working directory or '
                             'a path the caller gives: whoever controls the checkout (a cloned repository, a pull request) controls it'})
         if mcp_file:
             m = MCP_TOOL.search(line + ' ' + (lines[i].strip() if i < len(lines) and re.search(r'\.(registerTool|tool)\s*\(\s*$', line) else ''))
+            if m and spans and not audit_scope.in_code(spans, base + m.start(), base + min(m.end(), len(line))):
+                m = None  # registerTool( inside a fixture string or a comment
             if m:
                 out.append({'kind': 'mcp_tool', 'framework': 'mcp', 'method': 'TOOL', 'path': m.group(2) or m.group(3), 'handler': f'{rel}:{i}',
                             'function': None, 'auth': 'unknown', 'auth_evidence': None})
-            elif MCP_CALL_HANDLER.search(line) or (not js and re.match(r'\s*@\w+\.tool\s*\(', line)):
+            elif at(MCP_CALL_HANDLER) or (not js and re.match(r'\s*@\w+\.tool\s*\(', line) and at(re.compile(r'@\w+\.tool'))):
                 out.append({'kind': 'mcp_tool', 'framework': 'mcp', 'method': 'TOOL', 'path': handler_after(lines, i) or 'tools/call',
                             'handler': f'{rel}:{i}', 'function': handler_after(lines, i), 'auth': 'unknown', 'auth_evidence': None})
-        if AGENT_PERMISSION.search(line) and not s.startswith(('import ', 'export type', 'type ')):
+        if at(AGENT_PERMISSION) and not s.startswith(('import ', 'export type', 'type ')):
             leads.append({'area': 'access_control', 'entry_point': None,
                           'why': f'{rel}:{i} answers an agent permission request: check what is approved without asking the user '
                                  '(tool kinds, paths outside the workspace, shell commands) and that the default is deny'})
@@ -791,6 +857,7 @@ def main() -> int:
     ap.add_argument('repo', type=Path)
     ap.add_argument('--out', type=Path)
     data_dir_rule.add_arguments(ap)
+    audit_scope.add_arguments(ap)
     args = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(errors='replace')  # tool output can hold characters the console can't encode
@@ -822,7 +889,11 @@ def main() -> int:
     forwarded_keys: list[dict] = []
     next_config_seen = False
     data = data_dir_rule.DataDirs(root, args.exclude_dir, auto=not args.scan_data_dirs)
-    for p in walk(root, vendored, lang_census.census(root), data):
+    # sample and fixture projects (examples/shop with its own manifest...) are left out unless --include-fixtures
+    census = lang_census.census(root, exclude_fixtures=not args.include_fixtures, fixture_dirs=tuple(args.fixture_dir))
+    fixtures = census.get('fixtures_excluded') or []
+    source_read: list[str] = []
+    for p in walk(root, vendored, census, data):
         rel = p.relative_to(root).as_posix()
         if time.monotonic() - last_progress >= 30:
             last_progress = time.monotonic()
@@ -886,20 +957,25 @@ def main() -> int:
         langs[lang] += 1
         text = read(p)
         files_read += 1
+        source_read.append(rel)
+        # strings, docstrings and comments are not code: a pattern table, a usage example or a fixture string that
+        # looks like a CLI, a queue consumer or an MCP tool is not one (Python and JavaScript/TypeScript)
+        spans = file_spans(p, text)
+        starts = line_starts(text)
         for i, line in enumerate(text.splitlines(), 1):
-            if GLOBAL_AUTH.search(line):
+            if code_line_search(GLOBAL_AUTH, line, spans, starts[i - 1]):
                 global_hooks.append(f'{rel}:{i}')
-        for name, rx in FRAMEWORKS:
-            if re.search(rx, text):
+        for name, rx in FRAMEWORKS:  # Python: an import or call in code, not a framework named in a string
+            if (code_mask.code_search(rx, text, None, spans) if spans and p.suffix == '.py' else re.search(rx, text)):
                 frameworks.setdefault(name, []).append(rel)
-        mcp_file = bool(re.search(r'@modelcontextprotocol/|McpServer|FastMCP', text))
+        mcp_file = bool(code_mask.code_search(MCP_FILE, text, None, spans) if spans else MCP_FILE.search(text))
         if mcp_file:
             if MCP_STDIO.search(text):
                 mcp_transport['stdio'].append(rel)
             if MCP_HTTP.search(text):
                 mcp_transport['http'].append(rel)
         if p.suffix.lower() in JS_EXT or (p.suffix == '.py' and mcp_file):
-            eps_n, leads_n = node_entries(rel, text, mcp_file)
+            eps_n, leads_n = node_entries(rel, text, mcp_file, spans)
             entries += eps_n
             node_leads += leads_n
         if p.suffix == '.go':  # routes only from router registrations; CLI commands, flags, listeners, config files
@@ -918,7 +994,7 @@ def main() -> int:
                     forwarded_keys.append({'at': f'{rel}:{i}', 'header': m.group(1)})
         if p.suffix == '.py':
             py_files[rel] = text
-            entries += python_listeners(rel, text)
+            entries += python_listeners(rel, text, spans)
         if p.suffix.lower() in CLIENT_EXT:
             js_files[rel] = text
         if p.suffix.lower() in CLIENT_EXT and not p.name.endswith('.min.js') and not CONFIG_FILE.search(rel) \
@@ -938,19 +1014,20 @@ def main() -> int:
             m = OUTBOUND.search(code_lines[i - 1]) if i <= len(code_lines) else None
             if m and not line.lstrip().startswith(('import ', 'from ', '#', '//')) and (m.group(1) != 'got' or GOT_IMPORT.search(text)):
                 outbound.append({'file': rel, 'line': i, 'snippet': line.strip()[:160]})
-            if SECRET_CFG.search(line):
+            at = lambda rx: code_line_search(rx, line, spans, starts[i - 1])  # noqa: E731
+            if at(SECRET_CFG):
                 secret_cfg.append({'file': rel, 'line': i, 'snippet': line.strip()[:160]})
-            if QUEUE.search(line):
+            if at(QUEUE):
                 queues.append({'kind': 'queue_consumer', 'framework': None, 'method': 'CONSUME', 'path': line.strip()[:80],
                                'handler': f'{rel}:{i}', 'function': None, 'auth': 'unknown', 'auth_evidence': None})
-            if CLI.search(line) and p.suffix == '.rs':
+            if p.suffix == '.rs' and CLI.search(line):
                 if not line.lstrip().startswith(('use ', 'pub use ')):  # kept only when there is no Cargo model
                     rust_cli_lines.append({'kind': 'cli', 'framework': None, 'method': 'CLI', 'path': rel, 'handler': f'{rel}:{i}',
                                            'function': None, 'auth': 'unknown', 'auth_evidence': 'local invocation'})
-            elif CLI.search(line):
+            elif p.suffix != '.rs' and at(CLI):
                 clis.append({'kind': 'cli', 'framework': None, 'method': 'CLI', 'path': rel, 'handler': f'{rel}:{i}',
                              'function': None, 'auth': 'unknown', 'auth_evidence': 'local invocation'})
-            if UPLOAD.search(line) and not line.lstrip().startswith(('import ', 'from ')):
+            if at(UPLOAD) and not line.lstrip().startswith(('import ', 'from ')):
                 uploads.append(f'{rel}:{i}')
     # Python: FastAPI, Flask and Azure Functions from the syntax tree, routers followed across files
     py_eps, py_failed = py_routes.entries(py_files, root, classify_decorators)
@@ -973,6 +1050,9 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001 - recon must still write the rest of the map
             print(f'  recon: the Next.js reader failed ({type(exc).__name__}: {exc}); pages and headers not modelled',
                   file=sys.stderr)
+    if next_model and fixtures:  # a sample site's missing headers are not the repository's
+        next_model['projects'] = [pr for pr in next_model.get('projects') or []
+                                  if not audit_scope.fixture_of(pr.get('root') or '', fixtures)]
     helpers = nextjs_auth.guard_helpers(js_files) if (next_model and next_model.get('projects')) or any(
         nextjs_auth.ROUTE_FILE.search(r) or nextjs_auth.PAGES_API.search(r) or "use server" in t for r, t in js_files.items()) else {}
     next_eps = []
@@ -1029,6 +1109,14 @@ def main() -> int:
                 e['bind'] = next(iter(binds))
                 e['auth_evidence'] = (e['auth_evidence'] + '; ' if e['auth_evidence'] else '') + \
                     f"served on a {e['bind']} listener in {f if f in go_binds else 'the same package'}"
+    # a file kept identical in several places (a shared script copied into each package) is one entry point, listed
+    # on the canonical copy with the copies; the same for outbound calls, secret configuration and data stores
+    rep, copy_groups = audit_scope.representatives(root, source_read)
+    if rep:
+        entries = fold_copies(entries, rep, lambda e: tuple(e['handler'].rsplit(':', 1)), lambda e: e['kind'])
+        outbound = fold_copies(outbound, rep, lambda o: (o['file'], o['line']))
+        secret_cfg = fold_copies(secret_cfg, rep, lambda o: (o['file'], o['line']))
+        stores = fold_copies(stores, rep, lambda o: (o['file'], o['line']), lambda o: o['kind'])
     # example code: shipped as documentation, not deployed by the project
     for e in entries:
         if EXAMPLE_DIR.search(e['handler'].rsplit(':', 1)[0]):
@@ -1146,7 +1234,13 @@ def main() -> int:
     # Next.js response headers (CSP, framing, HSTS, catch-all caching), the image optimiser's sources, third-party
     # scripts and service workers
     security_headers = next_surface.security_headers(next_model, js_files) if next_model else None
-    leads += next_surface.leads(security_headers, entries)
+    header_leads = next_surface.leads(security_headers, entries)
+    roots = [pr.get('root') or '' for pr in (next_model or {}).get('projects') or []]
+    if header_leads and roots and all(EXAMPLE_DIR.search(r + '/') for r in roots):  # say a sample site is the source
+        for l in header_leads:
+            if not l.get('entry_point'):
+                l['why'] += f" (from example code only: {', '.join(r or '.' for r in roots[:3])})"
+    leads += header_leads
     agent_cfg = agent_config(root)
     if agent_cfg:
         leads.append({'area': 'supply_chain_ci', 'entry_point': None,
@@ -1184,6 +1278,12 @@ def main() -> int:
         'vendored': sorted(vendored, key=lambda v: v['dir']),
         # data directories (hundreds of data files, no code) and --exclude-dir paths: not opened (see data_dirs.py)
         'skipped_data_dirs': data.report(),
+        # sample and fixture projects left out of the walk (their planted defects are not the repository's); name them
+        # in the report's scope and limitations, or rerun with --include-fixtures
+        'fixtures_excluded': fixtures,
+        # files kept identical in several places: each entry point, call or store in them is listed once, on the
+        # canonical copy, with `copies`
+        'copy_groups': copy_groups,
         # server-side templates (HTML with {{ }} or {% %}): part of the web surface, pattern-scanned by the templates pack
         'templates': sorted(templates),
         'rate_limiting': {'libraries': sorted(limiter_libs), 'files': sorted({f for fs in limiter_libs.values() for f in fs}),
@@ -1201,6 +1301,11 @@ def main() -> int:
         args.out.write_text(text + '\n', encoding='utf-8')
         print(f"{len(entries)} entry point(s) {dict(counts)}, {len(stores)} data store(s), {len(outbound)} outbound call(s), "
               f"{len(workflows)} workflow(s), {len(leads)} review lead(s) -> {args.out}")
+        for f in fixtures:
+            print(f"  left out fixture project {f['dir']}/ ({f['reason']}; --include-fixtures reads it)")
+        if copy_groups:
+            print(f"  {len(copy_groups)} file(s) kept identical in {sum(len(g['copies']) for g in copy_groups)} more place(s): "
+                  'read once, listed on the canonical copy')
     else:
         print(text)
     return 0

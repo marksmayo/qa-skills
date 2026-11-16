@@ -26,7 +26,12 @@ fetches the RustSec database online; under --offline it runs --no-fetch --stale 
 copy (--cargo-audit-db, default CARGO_HOME/advisory-db) when one exists, and its record keeps the
 copy's advisory count and last update (advisory_db). cargo-deny check advisories runs when installed.
 
-Whatever runs, the pinned packages in lockfiles and requirements files are listed offline in
+Sample and fixture projects (see audit_scope.py) are left out of the inventory, and Semgrep and Bandit are told to
+skip them, unless --include-fixtures; they are listed under fixtures_excluded, and their lockfiles under
+fixture_lockfiles, which never decide dependency_advisories. A requirements file with version ranges lists every
+requirement (version null and a constraint when it is not pinned to one version; `unpinned` on its row).
+
+Whatever runs, the packages in lockfiles and requirements files are listed offline in
 dependencies.json, and scanners.json records dependency_advisories: assessed, partial (a lockfile
 no tool covered) or not_assessed (no advisory tool ran), for the report. Coverage is per lockfile:
 each tool record lists the lockfiles it `covers`, so npm audit on one nested package-lock.json does
@@ -55,6 +60,7 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import audit_scope  # noqa: E402
 import data_dirs as data_dir_rule  # noqa: E402
 import test_paths  # noqa: E402
 
@@ -65,17 +71,51 @@ ALLOWED_DOT_DIRS = {'.github', '.azuredevops', '.pipelines', '.azure-pipelines',
 EXT = {'python': {'.py'}, 'javascript': {'.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.vue', '.svelte'},
        'go': {'.go'}, 'ruby': {'.rb'}, 'php': {'.php'}, 'java': {'.java', '.kt', '.kts'}, 'csharp': {'.cs'},
        'c': {'.c', '.h', '.cc', '.cpp'}, 'swift': {'.swift'}, 'terraform': {'.tf'}}
+LOCKFILE_NAMES = re.compile(r'^(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|Pipfile\.lock|go\.mod|Gemfile\.lock|'
+                            r'composer\.lock|Cargo\.lock|pom\.xml|build\.gradle|gradle\.lockfile|pubspec\.lock|'
+                            r'packages\.lock\.json|requirements[\w.-]*\.txt)$')
+# One requirement per line: a name, optional extras, an optional version specifier and environment marker. Options
+# (-r, -e, --hash), URLs and VCS references are not package lines.
+REQUIREMENT = re.compile(r'^\s*([A-Za-z0-9][A-Za-z0-9_.\-]*)\s*(?:\[[^\]]*\])?\s*'
+                         r'((?:===?|~=|!=|>=|<=|>|<)\s*[^\s,;#]+(?:\s*,\s*(?:===?|~=|!=|>=|<=|>|<)\s*[^\s,;#]+)*)?\s*(?:;[^#]*)?(?:#.*)?$')
 
-def inventory(root: Path, exclude_dirs: list[str] | None = None, data_dirs: bool = True) -> dict:
+def requirements_packages(text: str, dev: bool) -> list[tuple]:
+    """(ecosystem, name, version, dev, constraint) per requirement line: version is the pinned version for ==X (no
+    wildcard), None for a range or a bare name; constraint is the specifier as written ('' when none)."""
+    out = []
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith(('#', '-')) or '://' in s or s.startswith(('git+', 'hg+', 'svn+', 'bzr+')):
+            continue
+        m = REQUIREMENT.match(s)
+        if not m:
+            continue
+        spec = re.sub(r'\s+', '', m.group(2) or '')
+        pin = re.fullmatch(r'===?([^,*]+)', spec)
+        out.append(('PyPI', m.group(1), pin.group(1) if pin else None, dev, spec))
+    return out
+
+def inventory(root: Path, exclude_dirs: list[str] | None = None, data_dirs: bool = True, include_fixtures: bool = False,
+              fixture_dirs=()) -> dict:
+    """Languages and files the scanners apply to. Sample and fixture projects (see audit_scope.py) are left out unless
+    include_fixtures: listed under fixtures_excluded, with their lockfiles under fixture_lockfiles (not the
+    product's dependencies, so they never decide dependency_advisories)."""
     langs: dict[str, int] = {}
     names: list[str] = []
+    fixture_files: list[tuple[str, str]] = []
     data = data_dir_rule.DataDirs(root, exclude_dirs, auto=data_dirs)
+    fixtures = [] if include_fixtures else audit_scope.fixture_projects(root, fixture_dirs)
+    fixture_dirs_set = {f['dir'] for f in fixtures}
     for dirpath, dirnames, filenames in os.walk(root):
         # vendored and bundled trees (vendor/, Pods/, PrivateHeaders/, *.app, *.framework...) are not the repository's code;
         # data directories (thousands of JSON records) and --exclude-dir paths are not opened (see data_dirs.py)
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and (not d.startswith('.') or d in ALLOWED_DOT_DIRS)
                        and not test_paths.vendored_dir(d) and not data.why(Path(dirpath) / d)]
         rel = Path(dirpath).relative_to(root).as_posix()
+        fx = audit_scope.fixture_of(rel, fixtures) if fixture_dirs_set and rel != '.' else None
+        if fx:
+            fixture_files += [(f'{rel}/{f}', fx) for f in filenames]
+            continue
         for f in filenames:
             names.append(f'{rel}/{f}' if rel != '.' else f)
             for lang, exts in EXT.items():
@@ -111,6 +151,8 @@ def inventory(root: Path, exclude_dirs: list[str] | None = None, data_dirs: bool
         'is_git': (root / '.git').exists(),
         'mobile_package': [n for n in names if n.endswith(('.apk', '.aab', '.ipa'))],
         'skipped_data_dirs': data.report(),
+        'fixtures_excluded': fixtures,
+        'fixture_lockfiles': [{'file': n, 'fixture': fx} for n, fx in fixture_files if LOCKFILE_NAMES.match(Path(n).name)],
     }
 
 def _head(p: Path, n: int = 4000) -> str:
@@ -152,8 +194,8 @@ def dependency_inventory(root: Path, inv: dict) -> dict:
                 else:
                     got = [('npm', k, v.get('version'), bool(v.get('dev'))) for k, v in (d.get('dependencies') or {}).items()]
             elif re.match(r'requirements[\w.-]*\.txt$', name):
-                got = [('PyPI', m.group(1), m.group(2), 'dev' in name) for m in
-                       re.finditer(r'^\s*([A-Za-z0-9_.\-\[\]]+)\s*==\s*([^\s;#]+)', p.read_text(encoding='utf-8', errors='replace'), re.M)]
+                # every requirement, pinned or not: a range (requests>=2.31,<3) is still a dependency of the product
+                got = requirements_packages(p.read_text(encoding='utf-8', errors='replace'), 'dev' in name)
             elif name in ('poetry.lock', 'Cargo.lock'):
                 eco = 'PyPI' if name == 'poetry.lock' else 'crates.io'
                 got = [(eco, a, b, False) for a, b in
@@ -181,9 +223,14 @@ def dependency_inventory(root: Path, inv: dict) -> dict:
             continue
         if got is None:
             continue
-        uniq = sorted({(e, a, b, dev) for e, a, b, dev in got if a})
-        lockfiles.append({'file': n, 'ecosystem': uniq[0][0] if uniq else None, 'packages': len(uniq)})
-        packages += [{'ecosystem': e, 'name': a, 'version': b, 'dev': dev, 'file': n} for e, a, b, dev in uniq]
+        got = [g if len(g) == 5 else (*g, None) for g in got]
+        uniq = sorted({g for g in got if g[1]}, key=lambda g: tuple('' if x is None else str(x) for x in g))
+        row = {'file': n, 'ecosystem': uniq[0][0] if uniq else None, 'packages': len(uniq)}
+        if any(g[4] is not None for g in uniq):  # a requirements file: how many are not pinned to one version
+            row['unpinned'] = sum(1 for g in uniq if g[2] is None)
+        lockfiles.append(row)
+        packages += [{'ecosystem': e, 'name': a, 'version': b, 'dev': dev, 'file': n, **({'constraint': c} if c is not None else {})}
+                     for e, a, b, dev, c in uniq]
     return {'lockfiles': lockfiles, 'packages': packages}
 
 def covered_lockfiles(records: list[dict], deps: dict) -> set[str]:
@@ -208,11 +255,13 @@ def advisory_status(records: list[dict], deps: dict) -> dict:
     ran = [r['name'] for r in records if r.get('area') == 'dependencies' and r.get('status') == 'ran']
     if not deps['lockfiles']:
         return {'status': 'assessed' if ran else 'not_assessed', 'tools': ran,
-                'reason': None if ran else 'no lockfile or pinned requirements file was found'}
+                'reason': None if ran else 'no lockfile or requirements file was found'}
     if not ran:
         why = [f"{r['name']}: {r.get('reason')}" for r in records if r.get('area') == 'dependencies' and r.get('status') != 'not_applicable']
         return {'status': 'not_assessed', 'tools': [], 'reason': 'no dependency advisory tool ran (' + '; '.join(why) + '); '
-                f"{sum(l.get('packages') or 0 for l in deps['lockfiles'])} pinned package(s) listed offline in dependencies.json"}
+                f"{sum(l.get('packages') or 0 for l in deps['lockfiles'])} package(s) listed offline in dependencies.json"
+                + (f" ({sum(l.get('unpinned') or 0 for l in deps['lockfiles'])} not pinned to one version)"
+                   if any(l.get('unpinned') for l in deps['lockfiles']) else '')}
     covered = covered_lockfiles(records, deps)
     missing = sorted({l['file'] for l in deps['lockfiles'] if l.get('ecosystem')} - covered)
     if missing:
@@ -265,14 +314,16 @@ def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str], osv_local
                       'not_run': not_run, 'note': note, 'covers': covers, 'version_args': version_args, 'version_rx': version_rx,
                       'db_path': db_path})
     cfg = [a for c in semgrep_configs for a in ('--config', c)]
-    skip_data = [f"--exclude={s['dir']}" for s in inv.get('skipped_data_dirs') or []]  # data trees and --exclude-dir paths
+    # data trees, --exclude-dir paths and the sample and fixture projects left out of the audit
+    skip_data = [f"--exclude={s['dir']}" for s in (inv.get('skipped_data_dirs') or []) + (inv.get('fixtures_excluded') or [])]
     add('semgrep', 'sast', 'semgrep', True if src else 'no source files',
         [{'cmd': ['semgrep', 'scan', *cfg, *skip_data, '--metrics=off', '--disable-version-check', '--sarif', '--output',
                   str(out / 'semgrep.sarif'), '--quiet', str(root)],
           'output': 'semgrep.sarif'}], network=any(c.startswith(('p/', 'r/')) for c in semgrep_configs))
     add('bandit', 'sast', 'bandit', True if L.get('python') else 'no Python files',
         [{'cmd': ['bandit', '-r', str(root), '-f', 'json', '-o', str(out / 'bandit.json'), '-q',
-                  '-x', '*/tests/*,*/test/*,*/.venv/*,*/venv/*,*/node_modules/*'], 'output': 'bandit.json'}])
+                  '-x', ','.join(['*/tests/*', '*/test/*', '*/.venv/*', '*/venv/*', '*/node_modules/*']
+                                 + [f"*/{f['dir']}/*" for f in inv.get('fixtures_excluded') or []])], 'output': 'bandit.json'}])
     add('gosec', 'sast', 'gosec', True if L.get('go') else 'no Go files',
         [{'cmd': ['gosec', '-fmt', 'sarif', '-out', str(out / 'gosec.sarif'), '-no-fail', './...'], 'cwd': str(root), 'output': 'gosec.sarif'}])
     add('brakeman', 'sast', 'brakeman', True if inv['rails'] else 'not a Rails application',
@@ -542,6 +593,7 @@ def main() -> int:
     ap.add_argument('--cargo-audit-db', type=Path, help='a local RustSec advisory database for cargo-audit (default: '
                     'CARGO_HOME/advisory-db); with --offline, cargo-audit runs --no-fetch --stale against it')
     data_dir_rule.add_arguments(ap)
+    audit_scope.add_arguments(ap)
     args = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(errors='replace')  # tool output can hold characters the console can't encode
@@ -555,7 +607,7 @@ def main() -> int:
         return 2
     if args.path_prepend:
         os.environ['PATH'] = os.pathsep.join([str(Path(p).resolve()) for p in args.path_prepend] + [os.environ.get('PATH', '')])
-    inv = inventory(root, args.exclude_dir, not args.scan_data_dirs)
+    inv = inventory(root, args.exclude_dir, not args.scan_data_dirs, args.include_fixtures, args.fixture_dir)
     tools = plan(root, out, inv, args.semgrep_config, args.osv_local_db.resolve() if args.osv_local_db else None,
                  online_ci=not args.offline, cargo_audit_db=args.cargo_audit_db.resolve() if args.cargo_audit_db else None,
                  offline=args.offline)
@@ -595,6 +647,9 @@ def main() -> int:
                 'out_dir': str(out), 'languages': inv['langs'], 'tools': records,
                 # left out of the inventory (the scanners themselves walk the whole repository)
                 'skipped_data_dirs': inv['skipped_data_dirs'],
+                # sample and fixture projects left out (Semgrep and Bandit exclude them too); their lockfiles are listed
+                # apart and do not count toward dependency_advisories (--include-fixtures audits them)
+                'fixtures_excluded': inv['fixtures_excluded'], 'fixture_lockfiles': inv['fixture_lockfiles'],
                 'dependency_inventory': {'lockfiles': deps['lockfiles'], 'packages': len(deps['packages']),
                                          'output': str(out / 'dependencies.json')},
                 'dependency_advisories': advisory_status(records, deps)}
