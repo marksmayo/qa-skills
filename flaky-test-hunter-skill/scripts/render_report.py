@@ -78,7 +78,8 @@ def main() -> int:
          if s.get('single_test_runs') else '')
       + f", {s['wall_minutes']} min  |  gate: {m['gate']['level']}")
     for su in m.get('suites') or []:
-        n = f"{su['tests']} tests" if su.get('tests') is not None else 'tests (count unknown)'
+        n = (f"{su['tests']} tests" if su.get('tests') is not None
+             else 'tests counted from its runs' if su['status'] == 'ran' else 'tests (count unknown)')
         state = P('ran', GREEN) if su['status'] == 'ran' else P('NOT RUN', MAGENTA)
         w(f"Suite {su['language']}: {n}, {state} ({', '.join(su['presets']) or 'no preset'}): {su['reason']}")
     w('')

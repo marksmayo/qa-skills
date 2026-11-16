@@ -214,7 +214,8 @@ def summary_numbers(d: dict, runs_data: dict, runs: dict) -> dict:
         by_pr[f['priority']] += 1
     ran = sum(v['status'] == 'ran' for v in d['variations'])
     planned = sum(v['status'] in ('ran', 'not_run') for v in d['variations'])
-    completeness = round(ran / planned * suite_share(d['metadata'].get('suites')), 2) if planned else 0.0
+    completeness = round(ran / planned * suite_share(d['metadata'].get('suites'), observed_counts(runs_data, runs)),
+                         2) if planned else 0.0
     single = sum(bool((r.get('variation') or {}).get('isolate')) for r in runs.values())
     return {'tests_run': sum(t['status'] != 'not_run' for t in tests), 'flaky': count('flaky'),
             'consistently_failing': count('consistently_failing'), 'not_observed_flaky': count('not_observed_flaky'),
@@ -234,15 +235,34 @@ def version_at_least(d: dict, v: tuple) -> bool:
         return False
 
 
-def suite_share(suites: list | None) -> float:
+def observed_counts(runs_data: dict | None, runs: dict | None) -> dict[str, int]:
+    """preset -> the number of distinct test ids its counted runs recorded (skipped cases left out)."""
+    if not runs_data or not runs:
+        return {}
+    ids: dict[str, set] = defaultdict(set)
+    for c in runs_data.get('cases', []):
+        r = runs.get(c['run_id'])
+        if r and c['status'] != 'skipped':
+            ids[r.get('preset') or ''].add(REPEAT_SUFFIX.sub('', c['id']))
+    return {k: len(v) for k, v in ids.items()}
+
+
+def suite_share(suites: list | None, observed: dict[str, int] | None = None) -> float:
     """The share of the repository's tests that had per-test runs: tests of suites that ran over all suites' tests
-    (static counts), or suites that ran over all suites when a count is unknown. 1.0 when the report lists no suites
-    (one language, as before schema 1.3.0)."""
+    (static counts), or suites that ran over all suites when a count is unknown. A suite that ran with no static
+    count (script self-tests print their checks, they don't declare them) counts the distinct tests its presets'
+    runs recorded. 1.0 when the report lists no suites (one language, as before schema 1.3.0)."""
     if not suites:
         return 1.0
-    counts = [s.get('tests') for s in suites]
+    observed = observed or {}
+    counts = []
+    for s in suites:
+        n = s.get('tests')
+        if not isinstance(n, int) and s['status'] == 'ran':
+            n = sum(observed.get(p, 0) for p in s.get('presets') or []) or None
+        counts.append(n)
     if all(isinstance(n, int) for n in counts) and sum(counts):
-        return sum(s['tests'] for s in suites if s['status'] == 'ran') / sum(counts)
+        return sum(n for s, n in zip(suites, counts) if s['status'] == 'ran') / sum(counts)
     return sum(s['status'] == 'ran' for s in suites) / len(suites)
 
 
@@ -667,11 +687,22 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
             for k in ('rate_factor', 'gate', 'masking', 'score', 'priority'):
                 if f[k] != exp[k]:
                     errs.append(f'{at}: {k} is {f[k]!r} but the rubric gives {exp[k]!r}')
-        # a smell's test with no counted run: nothing was observed, so it is not_run, never not_observed
+        # a smell's test with no counted run: nothing was observed, so it is not_run, never not_observed. A script
+        # self-test (selftest preset) names its checks by message, not by function: a smell in the script ran when
+        # any of its checks did, since the script runs whole.
+        selftest_ids: dict[str, list[str]] = defaultdict(list)
+        for c in runs_data['cases']:
+            r = runs.get(c['run_id'])
+            if r and r.get('preset') == 'selftest' and c['status'] != 'skipped' and c.get('file'):
+                tid = REPEAT_SUFFIX.sub('', c['id'])
+                if tid not in selftest_ids[c['file'].replace('\\', '/')]:
+                    selftest_ids[c['file'].replace('\\', '/')].append(tid)
         for s in d['static_smells']:
             if not s['test'] or s['status'] not in ('not_observed', 'not_run'):
                 continue
             ran_as = [tid for tid, t in rc.items() if t['runs'] and smell_in_test(tid, t['file'], s)]
+            if not ran_as:
+                ran_as = [t for t in selftest_ids.get(s['file'].replace('\\', '/'), []) if rc.get(t, {}).get('runs')]
             if s['status'] == 'not_observed' and not ran_as:
                 errs.append(f"smell {s['smell_id']} ({s['file']} :: {s['test']}) is not_observed, but its test never ran "
                             'in the counted runs: record it as not_run')
@@ -1000,6 +1031,34 @@ def self_test() -> int:
     run('suites: a two-language scan needs metadata.suites', lambda r, x: None, False, 'metadata.suites',
         smells=inventory)
 
+    # Script self-tests (run_tests.py --preset selftest): ids <script>::<check>, no static count of checks.
+    def selftest_runs(rep, runs, checks=('render: joins rows', 'parse: one function', 'build: sorts in under 2 s')):
+        for i in (1, 2):
+            runs['runs'].append({'id': f'S-{i}', 'label': 'baseline' if i == 1 else 'repeat', 'code_hash': SELF_HASH,
+                                 'duration_s': 2.0, 'totals': {'tests': len(checks)}, 'variation': {'env': {}},
+                                 'platform': 'linux', 'preset': 'selftest'})
+            runs['cases'] += [{'run_id': f'S-{i}', 'id': f'tools/self_test.py::{c}', 'file': 'tools/self_test.py',
+                               'status': 'passed'} for c in checks]
+
+    def selftest_suite(rep, runs):
+        suites(rep, runs)
+        selftest_runs(rep, runs)
+        rep['metadata']['suites'].append({'language': 'self-test', 'tests': None, 'presets': ['selftest'],
+                                          'status': 'ran', 'reason': 'python tools/self_test.py'})
+    # go 2 tests ran, the self-test's 3 checks ran, rust 6 tests not run: (2 + 3) / (2 + 3 + 6)
+    run('suites: a self-test suite with no static count counts the checks its runs recorded', selftest_suite, True,
+        after=completeness_is(0.45))
+
+    def selftest_smell(status):
+        def mutate(rep, runs):
+            selftest_runs(rep, runs)
+            rep['static_smells'].append({'smell_id': 'SM-1', 'smell': 'wall-time-assertion', 'file': 'tools/self_test.py',
+                                         'line': 30, 'test': 'test_render', 'cause': 'resource_contention',
+                                         'status': status, 'flake_id': None, 'note': 'Ran in both self-test runs.'})
+        return mutate
+    run('a smell in a self-test script whose checks ran is not_observed', selftest_smell('not_observed'), True)
+    run('a smell in a self-test script whose checks ran is not not_run', selftest_smell('not_run'), False, 'ran in')
+
     # Single-test runs (--isolate) are counted apart from suite runs in the summary.
     def isolated(rep, runs):
         rep['schema_version'] = '1.3.0'
@@ -1015,6 +1074,20 @@ def self_test() -> int:
                 fails.append(f"isolate: single_test_runs {rep['summary'].get('single_test_runs')}, want {want}")
         return after
     run('isolate runs are counted apart in the summary', isolated, True, after=single_runs_are(2))
+
+    # SKILL.md spells out the schema values that otherwise cost validation rounds: the newest schema_version, every
+    # tools[].status and variations[].status value, that `skill` is an object and that `quarantine` is required.
+    skill_md = (Path(__file__).resolve().parent.parent / 'SKILL.md').read_text(encoding='utf-8')
+    schema = json.loads(SCHEMA.read_text(encoding='utf-8'))
+    props = schema['properties']
+    want = [f"`\"schema_version\": \"{props['schema_version']['enum'][-1]}\"`",
+            *[f'`{v}`' for v in props['tools']['items']['properties']['status']['enum']],
+            *[f'`{v}`' for v in props['variations']['items']['properties']['status']['enum']],
+            '`"skill": {"name": "flaky-test-hunter", "version":', '`quarantine`']
+    section = skill_md.split('## Report fields', 1)[-1]
+    missing = [w for w in want if w not in section]
+    if missing:
+        fails.append('SKILL.md Report fields does not spell out ' + ', '.join(missing))
 
     if fails:
         print('validate_flaky_report self-test FAILED:\n  - ' + '\n  - '.join(fails))

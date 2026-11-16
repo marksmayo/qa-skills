@@ -1604,10 +1604,11 @@ def self_test() -> int:
         no_warn_rust = coverage_warning(root, data) is None
         if missing:
             ok = False
-        lines.append(f"rust pack: {'ok' if not missing else 'FAILED, missing ' + str(sorted(missing))} "
-                     f"({len(found)} smell id(s) hit); enclosing test named: {named}; "
-                     f"warning silent on rust repo: {no_warn_rust}")
-        ok = ok and named and no_warn_rust
+        good = not missing and named and no_warn_rust
+        lines.append('rust pack fires, names the enclosing test, and the language warning stays silent: ' + (
+            'ok' if good else f'FAILED, missing {sorted(missing)}, enclosing test named {named}, '
+                              f'warning silent {no_warn_rust}'))
+        ok = ok and good
 
     # 2) The coverage warning fires for an unsupported dominant language, not for a supported one.
     with tempfile.TemporaryDirectory() as d:
@@ -1683,9 +1684,31 @@ def self_test() -> int:
             'ok' if good else f'FAILED, missing {sorted(want - got)}, unwanted {sorted(unwanted)}, excluded {excluded}'))
         ok = ok and good
 
-    print('self-test ' + ('passed' if ok else 'FAILED') + ':\n  ' + '\n  '.join(lines),
-          file=sys.stderr)
+    # 9) The output is one check per line in a shape run_tests.py --preset selftest reads (ok name / FAIL name
+    #    [detail]), so this script's own checks can be repeated and pooled like any other test.
+    printed = [check_line(l) for l in lines]
+    try:
+        parsed = _import_sibling('run_tests').parse_selftest_output('\n'.join(printed))
+        statuses = sorted(c['status'] for c in parsed)
+        want_st = sorted('passed' if l.endswith(': ok') else 'failed' for l in lines)
+        good = statuses == want_st
+        detail = f'{len(parsed)} check(s) read from {len(lines)} line(s)'
+    except Exception as exc:          # noqa: BLE001
+        good, detail = False, repr(exc)
+    printed.append(check_line('the self-test output is one check per line that the selftest preset reads: '
+                              + ('ok' if good else f'FAILED, {detail}')))
+    ok = ok and good
+    print('\n'.join(printed), file=sys.stderr)
+    print('self-test ' + ('passed' if ok else 'FAILED'), file=sys.stderr)
     return 0 if ok else 1
+
+
+def check_line(line: str) -> str:
+    """'name: ok' -> 'ok   name'; 'name: FAILED, detail' -> 'FAIL name  [detail]' (run_tests.py's selftest shapes)."""
+    if line.endswith(': ok'):
+        return 'ok   ' + line[:-4]
+    name, _, detail = line.partition(': FAILED')
+    return f'FAIL {name}  [{detail.lstrip(", ").strip() or "failed"}]'
 
 
 def main(argv=None) -> int:
