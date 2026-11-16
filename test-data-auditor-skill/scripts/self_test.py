@@ -682,7 +682,10 @@ def baseline_on_audit_date() -> None:
 
     The planted membership expiry fails on the real clock after 2026-12-01 (that is the point of it), so a
     baseline on the real clock would stop passing. The baseline line in commands.sh is run as written, on a
-    copy, with the real clock moved 90 days and ten years ahead underneath it; every test must still pass.
+    copy, with the real clock moved 90 days and ten years ahead underneath it; no test may change result. A test
+    that fails both ways depends on the machine, not the clock (on Linux the planted locale-dependent fee test
+    fails under the C locale), and is printed as a note. The same comparison on the baseline without its pinned
+    date must see the planted expiry, so the check can tell a time bomb at all.
     """
     import re, shlex, shutil, subprocess
     ex = HERE.parent / 'examples'
@@ -718,27 +721,51 @@ def baseline_on_audit_date() -> None:
     except ImportError:
         print('skip  baseline on a moved clock: pytest is not installed')
         return
-    for days in (90, 3650):
+    def outcomes(run_args: list[str], days: int | None) -> tuple[dict[str, str], str]:
+        """{test id: status} of the baseline line run on a copy, with the real clock moved `days` ahead (None: not
+        moved), and an error text when nothing was recorded."""
         with tempfile.TemporaryDirectory() as d:
             copy = Path(d) / 'clinic-api'
             shutil.copytree(ex / 'clinic-api', copy)
             shutil.copy(HERE / 'clock_shift.py', copy / 'clock_shift.py')
-            a = list(args)
+            a = list(run_args)
             for flag, value in (('--cwd', str(copy)), ('--out', str(Path(d) / 'runs.json')), ('--repeat', '1')):
                 if flag in a:
                     a[a.index(flag) + 1] = value
                 else:
                     a += [flag, value]
-            a += ['--env', 'PYTEST_PLUGINS=clock_shift', f'TDA_CLOCK_SHIFT=+{days}d']
+            if days is not None:
+                a += ['--env', 'PYTEST_PLUGINS=clock_shift', f'TDA_CLOCK_SHIFT=+{days}d']
             r = subprocess.run([sys.executable, str(HERE / 'run_tests.py')] + a, capture_output=True, text=True, timeout=300)
             try:
-                run = json.loads((Path(d) / 'runs.json').read_text(encoding='utf-8'))['runs'][-1]
-                tot = run['totals']
+                data = json.loads((Path(d) / 'runs.json').read_text(encoding='utf-8'))
+                rid = data['runs'][-1]['id']
+                return {c['id']: c['status'] for c in data['cases'] if c['run_id'] == rid}, ''
             except (OSError, ValueError, KeyError, IndexError):
-                run, tot = {}, {}
-            ok = bool(tot) and tot.get('tests', 0) > 0 and tot.get('passed') == tot.get('tests') and not run.get('errored')
-            check(ok, f'commands.sh: the baseline still passes with the real clock {days} days ahead '
-                      f'(got {tot or r.stderr.strip()[-200:]})')
+                return {}, r.stderr.strip()[-200:]
+
+    def clock_dependent(run_args: list[str], days: int) -> tuple[list[str], dict[str, str], str]:
+        """Tests whose result changes when the real clock moves `days` ahead under the baseline line. A test that
+        fails both ways depends on this machine (for example its locale: the example plants one), not on the clock."""
+        now, err = outcomes(run_args, None)
+        later, err2 = outcomes(run_args, days)
+        changed = sorted(t for t in set(now) | set(later) if now.get(t) != later.get(t))
+        return changed, now, err or err2
+
+    # the check is not vacuous: the same comparison on the baseline without its pinned date sees the planted expiry
+    unpinned = [w for i, w in enumerate(args) if not (w.startswith('TDA_CLOCK_DATE=')
+                                                      or (w == '--env' and i + 1 < len(args) and args[i + 1].startswith('TDA_CLOCK_DATE=')))]
+    changed, _, err = clock_dependent(unpinned, 90)
+    check(bool(changed), f'commands.sh: without its pinned date the baseline would change with the real clock 90 days '
+                         f'ahead (the planted expiry), so this check can see a time bomb (got {changed or err})')
+    for days in (90, 3650):
+        changed, now, err = clock_dependent(args, days)
+        check(bool(now) and not changed, f'commands.sh: no baseline test changes result with the real clock {days} days '
+                                         f'ahead (changed {changed or err})')
+        env_failures = sorted(t for t, s in now.items() if s != 'passed')
+        if env_failures and days == 90:
+            print(f'note  the baseline fails on this machine whatever the clock, which is environment, not a time bomb: '
+                  f'{", ".join(env_failures)}')
 
 
 def main() -> int:

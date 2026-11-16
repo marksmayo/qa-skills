@@ -25,8 +25,10 @@ ANSI colour and cursor codes are stripped from names, messages and excerpts befo
 classified. Node's built-in runner (`node --test --test-reporter=junit`) is recognised by its shape
 (a classname that is the dotted describe path, or `test`, and a `file` attribute on every case):
 its ids become `file::Describe > Inner > test`, like Vitest's, so two files with the same describe
-names never pool. `--root` (or parse_junit's `root`) makes absolute `file` attributes relative to
-the directory the tests ran in.
+names never pool. An older Node's reporter (Node 22) writes no `file` attribute and the classname
+`test` at every depth: those cases keep the describe path as their id, their file is recorded as
+unknown (never `test`) and a note says so. `--root` (or parse_junit's `root`) makes absolute
+`file` attributes relative to the directory the tests ran in.
 
 Go (gotestsum JUnit, or `go test -json` output turned into the same shape by go_json_to_junit or `--go-json`):
 ids stay `<import path>::TestX/sub` (run_tests.py turns them back into `-run '^TestX$/^sub$'`). A parent test is
@@ -222,14 +224,17 @@ def parse_junit(path: Path, run_id: str, root=None, test_dir: str | None = None)
         notes.append(f'{path}: held escape or control characters XML does not allow; they were stripped before parsing')
     cases, seen = [], {}
 
-    def walk(el: ET.Element, suite_file: str | None, suite_name: str | None, path_names: tuple = ()):
+    def walk(el: ET.Element, suite_file: str | None, suite_name: str | None, path_names: tuple = (),
+             node_suites: bool = True):
         tag = local(el.tag)
         if tag == 'testsuite':
             suite_file = el.get('file') or el.get('filepath') or suite_file
             suite_name = el.get('name') or suite_name
             inner = path_names + ((el.get('name') or ''),)
+            # node:test writes every suite with a `disabled` attribute; other runners' suites end the Node shape
+            inner_node = node_suites and el.get('disabled') is not None
             for child in el:
-                walk(child, suite_file, suite_name, inner)
+                walk(child, suite_file, suite_name, inner, inner_node)
             # a suite-level error with no cases (e.g. a file that failed to import)
             if not any(local(c.tag) == 'testcase' for c in el.iter()) and (int(el.get('errors', 0) or 0) or int(el.get('failures', 0) or 0)):
                 msg = ' '.join((c.get('message') or '') + ' ' + (c.text or '') for c in el if local(c.tag) in ('error', 'failure', 'system-err'))
@@ -263,6 +268,13 @@ def parse_junit(path: Path, run_id: str, root=None, test_dir: str | None = None)
             # (or "test" at the top level); make the id file::Describe > Inner > name, as for Vitest
             if el.get('file') and (classname == '.'.join(path_names) or (classname == 'test' and not path_names)):
                 node_path = ' > '.join([*path_names, name])
+            # an older node:test JUnit (Node 22): no file attribute and the classname "test" at every depth. The file
+            # is unknown, never "test": the id is the describe path alone, and a note says so
+            node_nofile = (not el.get('file') and not suite_file and classname == 'test' and node_suites
+                           and not FILE_RX.search(name))
+            if node_nofile:
+                file, classname = None, '.'.join(path_names)
+                node_unknown.append(name)
             go_pkg = None
             # gotestsum / go test: the classname is the package's import path, which is also the suite's name
             if not el.get('file') and suite_name and classname == suite_name and GO_PKG_RX.fullmatch(classname) \
@@ -276,10 +288,11 @@ def parse_junit(path: Path, run_id: str, root=None, test_dir: str | None = None)
             add({'name': name, 'classname': go_pkg or classname,
                  'file': file, 'status': status, 'failure_type': ftype, 'message': message,
                  'time': el.get('time'), **({'_go': go_pkg} if go_pkg else {})},
-                f'{file}::{node_path}' if node_path else (f'{go_pkg}::{name}' if go_pkg else None))
+                f'{file}::{node_path}' if node_path else (' > '.join([*path_names, name]) if node_nofile else
+                                                          (f'{go_pkg}::{name}' if go_pkg else None)))
             return
         for child in el:
-            walk(child, suite_file, suite_name, path_names)
+            walk(child, suite_file, suite_name, path_names, node_suites)
 
     def add(c: dict, base: str | None = None):
         base = base or (f"{c['classname']}::{c['name']}" if c['classname'] else c['name'])
@@ -296,7 +309,12 @@ def parse_junit(path: Path, run_id: str, root=None, test_dir: str | None = None)
             signals.append('build_failed')
         cases.append({'run_id': run_id, 'id': cid, **c, 'signals': signals, 'message_excerpt': excerpt(msg), 'time': t})
 
+    node_unknown: list[str] = []
     walk(xml_root, None, None)
+    if node_unknown:
+        notes.append(f'{path}: {len(node_unknown)} node:test case(s) have no file attribute and the classname "test" '
+                     "(the JUnit reporter of an older Node, such as 22); their files are unknown, so their ids are the "
+                     "describe path alone and tests of the same name in different files can't be told apart")
     if any('_go' in c for c in cases):
         cases = go_fixups(cases, root, notes)
     return cases, notes
@@ -942,12 +960,31 @@ def self_test() -> int:
                   '<failure message="&#27;[31mexpected 2 to be 3&#27;[39m">\x1b[2mAssertionError: expected 2 to be 3\x1b[22m'
                   '</failure></testcase><testcase classname="tests/cart.test.ts" name="cart &gt; totals"/>'
                   '</testsuite></testsuites>')
+        # Node 22's built-in JUnit reporter: no file attribute, and the classname is "test" at every depth
+        node22 = """<?xml version="1.0" encoding="utf-8"?><testsuites>
+  <testcase name="top" time="0.000300" classname="test"/>
+  <testsuite name="cart" time="0.003990" disabled="0" errors="0" tests="2" failures="1" skipped="0" hostname="h">
+    <testcase name="adds" time="0.001448" classname="test"/>
+    <testcase name="fails" time="0.001326" classname="test" failure="1 == 2">
+      <failure type="testCodeFailure" message="1 == 2">Error [ERR_TEST_FAILURE]: 1 == 2
+  cause: AssertionError [ERR_ASSERTION]: 1 == 2
+      at TestContext.&lt;anonymous> (file:///work/packages/cart/tests/cart.test.mjs:3:93)</failure>
+    </testcase>
+  </testsuite>
+</testsuites>"""
         (root / 'node.xml').write_text(node, encoding='utf-8')
+        (root / 'node22.xml').write_text(node22, encoding='utf-8')
         (root / 'vitest.xml').write_text(vitest, encoding='utf-8')
         ncases, _ = parse_junit(root / 'node.xml', 'N', root)
+        n22cases, n22notes = parse_junit(root / 'node22.xml', 'N22', root)
         vcases, vnotes = parse_junit(root / 'vitest.xml', 'V')
     ids = [c['id'] for c in ncases]
     checks = [
+        ("Node 22's JUnit (no file attribute, classname test) keeps the describe path and never takes 'test' as the file",
+         [(c['id'], c['file'], c['status']) for c in n22cases] == [('top', None, 'passed'), ('cart > adds', None, 'passed'),
+                                                                  ('cart > fails', None, 'failed')],
+         [(c['id'], c['file'], c['status']) for c in n22cases]),
+        ("Node 22's JUnit says the files are unknown", any('no file attribute' in n for n in n22notes), n22notes),
         ('node:test ids carry the file and the describe path', ids == ['pkg-a/sum.test.mjs::top', 'pkg-a/sum.test.mjs::sum > adds',
                                                                       'pkg-a/sum.test.mjs::sum > inner > deep # 1',
                                                                       'pkg-b/sum.test.mjs::sum > adds',
