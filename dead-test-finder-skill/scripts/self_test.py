@@ -364,6 +364,177 @@ def go_checks(tmp: Path, failures: list[str]) -> None:
           failures)
 
 
+# A small tool repository: scripts with their own self-tests (a self_test.py whose check() records a failure instead of
+# raising, and a product script with a --self-test flag), a benchmark suite that pytest finds only through its own
+# pytest.ini (python_files = bench_*.py), product code named like a test module, a test file nothing runs, and a
+# sample project under examples/ with a planted dead test.
+TOOL_FILES = {
+    'README.md': '# fare tool\n',
+    'pyproject.toml': '[project]\nname = "fare-tool"\nversion = "0.1.0"\n',
+    'scripts/pricing.py': ('"""Fare arithmetic."""\n\n\ndef fare(stops):\n    return stops * 2\n\n\n'
+                           'def surcharge(fare_value,\n              rate):\n'
+                           '    """A surcharge (its signature spans two lines)."""\n    return fare_value * rate\n\n\n'
+                           'def zones():\n    return ["inner", "outer"]\n'),
+    'scripts/test_paths.py': ('"""Decides which paths hold tests (product code named like a test module)."""\n\n\n'
+                              'class Classifier:\n    def test_dir(self, rel):\n'
+                              '        return rel.split("/")[0] in ("tests", "test")\n'),
+    'scripts/tidy.py': ('import test_paths\n\n\ndef tidy(paths):\n    c = test_paths.Classifier()\n'
+                        '    return [p for p in paths if not c.test_dir(p)]\n'),
+    'scripts/lint.py': ('import argparse, sys\n\n\ndef trailing(line):\n    return line.rstrip() != line\n\n\n'
+                        'def self_test():\n    cases = [("x ", True), ("x", False)]\n'
+                        '    bad = [c for c, want in cases if trailing(c) != want]\n    for c in bad:\n'
+                        '        print(f"FAIL {c!r}")\n    return 1 if bad else 0\n\n\n'
+                        'def main(argv=None):\n    ap = argparse.ArgumentParser()\n'
+                        '    ap.add_argument("--self-test", action="store_true")\n    args = ap.parse_args(argv)\n'
+                        '    if args.self_test:\n        return self_test()\n    return 0\n\n\n'
+                        'if __name__ == "__main__":\n    sys.exit(main())\n'),
+    'scripts/report.py': ('import sys\n\n\ndef test_ids(rows):\n    return [r["id"] for r in rows]\n\n\n'
+                          'def format_checks():\n    fails = []\n    if test_ids([{"id": 1}]) != [1]:\n'
+                          '        fails.append("ids are read")\n    return fails\n\n\n'
+                          'def self_test():\n    fails = format_checks()\n    for f in fails:\n        print("FAIL", f)\n'
+                          '    return 1 if fails else 0\n\n\n'
+                          'if __name__ == "__main__":\n    sys.exit(self_test() if "--self-test" in sys.argv else 0)\n'),
+    'scripts/self_test.py': ('"""Self-test for the scripts: python scripts/self_test.py"""\nimport sys\n'
+                             'from pathlib import Path\n\nHERE = Path(__file__).resolve().parent\n'
+                             'sys.path.insert(0, str(HERE))\nimport pricing  # noqa: E402\n\nFAILS = []\n\n\n'
+                             'def check(cond, what):\n    print(("ok    " if cond else "FAIL  ") + what)\n'
+                             '    if not cond:\n        FAILS.append(what)\n\n\n'
+                             'def test_fares():\n    check(pricing.fare(3) == 6, "a fare is two per stop")\n\n\n'
+                             'def surcharges():\n    check(pricing.surcharge(10, 2) == 20, "a surcharge multiplies the fare")\n\n\n'
+                             'def quiet_case():\n    pricing.fare(1)\n\n\n'
+                             'def zone_count():\n    check(len(pricing.zones()) == 2, "two zones")\n\n\n'
+                             'def write(path, text):\n    Path(path).write_text(text)\n\n\n'
+                             'def main():\n    for t in (test_fares, surcharges, quiet_case, zone_count):\n        t()\n'
+                             '    print(f"{len(FAILS)} failure(s)" if FAILS else "all checks passed")\n'
+                             '    return 1 if FAILS else 0\n\n\nif __name__ == "__main__":\n    sys.exit(main())\n'),
+    'benchmarks/pytest.ini': '[pytest]\npython_files = bench_*.py\n',
+    'benchmarks/bench_pricing.py': ('import sys\nfrom pathlib import Path\n\n'
+                                    'sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))\n'
+                                    'import pricing  # noqa: E402\n\n\n'
+                                    'def test_fare_speed():\n    assert pricing.fare(4) == 8\n\n\n'
+                                    'def test_surcharge_speed():\n    pricing.surcharge(1, 2)\n'),
+    'tests/cases_extra.py': 'def test_extra():\n    assert 1 + 1 == 2\n',
+    'examples/shop/requirements.txt': 'flask\n',
+    'examples/shop/shop.py': 'def cart():\n    return []\n',
+    'examples/shop/tests/test_cart.py': 'from shop import cart\n\n\ndef test_cart():\n    cart()\n',
+}
+
+
+def tool_repo_checks(tmp: Path, failures: list[str]) -> None:
+    """A tool repository: configured pytest suites, script self-tests and their runner, product code named test_*.py,
+    fixture projects, copies kept identical in two folders, and neutralisation through the suite's own runner."""
+    import neutralise  # noqa: E402
+    root = tmp / 'tool'
+    for rel, text in {**TOOL_FILES, 'tool_copies/lint.py': TOOL_FILES['scripts/lint.py']}.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(text, encoding='utf-8')
+    res = scan_tests.scan(root)
+    defs = {d['id']: d for d in res['definitions']}
+    cands = res['candidates']
+    bench = 'benchmarks/bench_pricing.py'
+    # pytest.ini in benchmarks/ sets python_files = bench_*.py: its tests are defined and run with pytest
+    check(f'{bench}::test_fare_speed' in defs and defs[f'{bench}::test_fare_speed'].get('runner') == 'pytest'
+          and not [c for c in cands if c['file'] == bench and c['category'] == 'never_runs'],
+          f'a pytest.ini python_files suite is scanned and collectable (got {sorted(i for i in defs if "bench" in i)})',
+          failures)
+    check(any(c['rule'] == 'no_assertion' and c['test_ids'] == [f'{bench}::test_surcharge_speed'] for c in cands),
+          'a benchmark with no assertion is a no_assertion candidate', failures)
+    # product code named like a test module, imported by product scripts, is not a test file
+    check(not any(d['file'] == 'scripts/test_paths.py' for d in defs.values())
+          and any(p['file'] == 'scripts/test_paths.py' for p in res.get('product_files', [])),
+          f'a test_*.py imported by product code is product code (got {res.get("product_files")})', failures)
+    # script self-tests: the functions the runner calls are tests of the selftest runner, with its command
+    st = 'scripts/self_test.py'
+    units = {i.split('::')[1]: d for i, d in defs.items() if d['file'] == st}
+    check(set(units) == {'test_fares', 'surcharges', 'quiet_case', 'zone_count'} and all(
+        d.get('framework') == 'selftest' and d.get('runner') == 'selftest' and d.get('selftest_command') == f'python {st}'
+        for d in units.values()), f'self-test units are the functions its runner calls (got {sorted(units)})', failures)
+    lint = defs.get('scripts/lint.py::self_test') or {}
+    check(lint.get('selftest_command') == 'python scripts/lint.py --self-test' and 'lint.trailing' in lint.get('calls', []),
+          f'a --self-test flag makes self_test() a test that targets its own module (got {lint})', failures)
+    # a script kept identical in another folder runs the same tests: scanned once, on the canonical copy
+    check(not any(d['file'].startswith('tool_copies/') for d in defs.values()) and
+          {'file': 'tool_copies/lint.py', 'canonical': 'scripts/lint.py'} in res.get('copies_skipped', []),
+          f'an identical copy of a test script is scanned once (got {res.get("copies_skipped")})', failures)
+    rep_units = sorted(i for i in defs if i.startswith('scripts/report.py::'))
+    check(rep_units == ['scripts/report.py::format_checks'] and 'report.test_ids' in defs[rep_units[0]]['calls'],
+          f'a product function named test_ids is not a self-test; the check group returning its failures is '
+          f'(got {rep_units})', failures)
+    dead = {c['test_ids'][0].split('::')[1] for c in cands if c['category'] in ('no_assertion', 'unreached_assertion')
+            and c['file'] in (st, 'scripts/lint.py', 'scripts/report.py')}
+    check(dead == {'quiet_case'}, f'a check() that records a failure is an assertion; a unit with none is not '
+          f'(no_assertion: {sorted(dead)})', failures)
+    # fixture projects under examples/ are left out by default and listed; --include-fixtures scans them
+    check(not any(i.startswith('examples/') for i in defs) and
+          [f['dir'] for f in res.get('fixtures_excluded', [])] == ['examples/shop'],
+          f'a sample project under examples/ is excluded and listed (got {res.get("fixtures_excluded")})', failures)
+    check(any(i.startswith('examples/shop/') for i in (d['id'] for d in scan_tests.scan(root, include_fixtures=True)['definitions'])),
+          'include_fixtures scans the sample project', failures)
+    check((defs.get('tests/cases_extra.py::test_extra') or {}).get('runner') == 'unknown',
+          'a test file no configured runner collects has an unknown runner', failures)
+
+    # collect_check: self-tests have no list command (not_assessed, never not_collected); the benchmarks are listed by
+    # pytest from their own config directory
+    cand = tmp / 'tool-candidates.json'
+    cand.write_text(json.dumps(res), encoding='utf-8')
+    real_run, seen = collect_check.run, []
+
+    def fake_list(cmd, cwd, env):
+        seen.append((cmd, Path(cwd)))
+        if 'pytest' in cmd and Path(cwd).name == 'benchmarks':
+            return 0, 'bench_pricing.py::test_fare_speed\nbench_pricing.py::test_surcharge_speed\n'
+        return 0, ''
+    collect_check.run = fake_list
+    try:
+        code = quiet(collect_check.main, [str(root), '--candidates', str(cand), '--run-dir', str(tmp / 'tool-col')])
+    finally:
+        collect_check.run = real_run
+    col = json.loads((tmp / 'tool-col' / 'collection.json').read_text(encoding='utf-8')) if code == 0 else {}
+    check(code == 0 and f'{bench}::test_fare_speed' not in col.get('not_collected', [])
+          and f'{st}::test_fares' in col.get('not_assessed', []) and f'{st}::test_fares' not in col.get('not_collected', []),
+          f'benchmarks are listed from their config directory and self-tests are not assessed (exit {code}, '
+          f'not collected {col.get("not_collected")})', failures)
+
+    # neutralise through the suite's own runner: under pytest test_fares passes whatever pricing.fare returns (check()
+    # never raises); the script's runner prints FAIL and exits 1
+    run_dir = tmp / 'tool-run'
+    code = quiet(neutralise.main, ['--repo', str(root), '--candidates', str(cand), '--run-dir', str(run_dir),
+                                   '--test', f'{st}::test_fares', '--test', f'{st}::surcharges', '--test', f'{st}::zone_count',
+                                   '--test', 'tests/cases_extra.py::test_extra', '--copy-ignore', '*.png', '*.apk'])
+    got = {r['test_id']: r for r in json.loads((run_dir / 'neutralisations.json').read_text(encoding='utf-8'))['results']} \
+        if (run_dir / 'neutralisations.json').is_file() else {}
+    fares = got.get(f'{st}::test_fares') or {}
+    check(code == 0 and fares.get('runner') == 'selftest' and fares.get('outcome') == 'failed_neutralised'
+          and [t['target'] for t in fares.get('targets', [])] == ['pricing.fare'],
+          f'a self-test is neutralised with its own runner and its sys.path import resolved (exit {code}, '
+          f'{fares.get("runner")}, {fares.get("outcome")}, {[t.get("note") or t["target"] for t in fares.get("targets", [])]})',
+          failures)
+    sur = got.get(f'{st}::surcharges') or {}
+    check(sur.get('outcome') == 'failed_neutralised', f'a function whose signature spans two lines is neutralised '
+          f'(got {sur.get("outcome")}, {[t.get("note") for t in sur.get("targets", [])]})', failures)
+    zc = got.get(f'{st}::zone_count') or {}
+    check(zc.get('outcome') == 'failed_neutralised' and zc.get('checks_no_exception') is True,
+          f'a self-test that crashes on the neutral body (exit 1 before any check line) failed, not errored '
+          f'(got {zc.get("outcome")}, {[v for t in zc.get("targets", []) for v in t["variants"]]})', failures)
+    import validate_dead_test_report as v  # noqa: E402
+    runs = json.loads((run_dir / 'runs.json').read_text(encoding='utf-8')) if (run_dir / 'runs.json').is_file() else \
+        {'runs': [], 'cases': []}
+    verr = [e for r in got.values() for e in v.neutralisation_errors(r, runs, {x['id'] for x in runs['runs']}, None)]
+    check(got and not verr, f'the validator reads a self-test neutralisation by its script\'s checks (got {verr[:2]})',
+          failures)
+    extra = got.get('tests/cases_extra.py::test_extra') or {}
+    check(extra.get('outcome') == 'not_run' and 'runner' in (extra.get('not_run_reason') or ''),
+          f'a test no known runner runs is not neutralised (got {extra.get("outcome")}, {extra.get("not_run_reason")})',
+          failures)
+    # the other units are silenced while one runs, so quiet_case (no check) passes with fare neutralised
+    code = quiet(neutralise.main, ['--repo', str(root), '--candidates', str(cand), '--run-dir', str(run_dir),
+                                   '--test', f'{st}::quiet_case', '--target', f'{st}::quiet_case=pricing.fare'])
+    got = {r['test_id']: r for r in json.loads((run_dir / 'neutralisations.json').read_text(encoding='utf-8'))['results']}
+    quiet_r = got.get(f'{st}::quiet_case') or {}
+    check(code == 0 and quiet_r.get('outcome') == 'passed_neutralised' and 'test_fares' in quiet_r.get('silenced', []),
+          f'one self-test unit runs at a time (got {quiet_r.get("outcome")}, silenced {quiet_r.get("silenced")})', failures)
+
+
 def report_checks(tmp: Path, failures: list[str]) -> None:
     """The validator: a stale skip found by review (no skips.json verdict) validates with its git age, and is refused
     under the age threshold or without the age's source."""
@@ -392,6 +563,24 @@ def report_checks(tmp: Path, failures: list[str]) -> None:
     check(any('F99' in e and 'stale' in e for e in young), 'an agent stale skip under the age threshold is refused', failures)
     nosrc = with_skip({'verdict': 'stale', 'age_days': 200, 'ticket': None})
     check(any('F99' in e for e in nosrc), 'an agent stale skip needs the source of its age', failures)
+
+    # a candidate whose test passed with its code neutralised is dismissed as a scanner error only with the
+    # counter-evidence (a run of the suite's own runner) as an evidence file, never on a source line alone
+    def dismiss_f2(basis: list[dict]) -> list[str]:
+        r = copy.deepcopy(rep)
+        f2 = next(f for f in r['findings'] if f['id'] == 'F2')
+        r['findings'] = [f for f in r['findings'] if f['id'] != 'F2']
+        r['dismissed'].append({'candidate_id': f2['candidates'][0], 'scanner_error': True, 'basis': basis,
+                               'reason': 'The checks are recorded by the script runner, not raised.'})
+        v.fill(r)
+        r['summary'] = {'headline': r['summary']['headline'], **v.summary(r, ev)}
+        return v.check(r, ev, None, ex)
+    line_only = dismiss_f2([{'file': 'core/tests/test_tax.py', 'line': 1, 'excerpt': 'import'}])
+    check(any('C3' in e and 'counter-evidence' in e for e in line_only),
+          f'a passed-neutralised candidate needs counter-evidence to be a scanner error (got {line_only[:3]})', failures)
+    with_ev = dismiss_f2([{'evidence': 'run/runs.json'}])
+    check(not any('C3' in e and 'counter-evidence' in e for e in with_ev),
+          'an evidence file is counter-evidence for the dismissal', failures)
 
 
 PYTEST_FILES = {
@@ -654,6 +843,7 @@ def main() -> int:
         cmd_shim_checks(tmp, failures)
         pytest_checks(tmp, failures)
         go_checks(tmp, failures)
+        tool_repo_checks(tmp, failures)
         report_checks(tmp, failures)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

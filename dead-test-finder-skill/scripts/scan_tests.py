@@ -8,6 +8,13 @@ bracket matching (`it`/`test` inside `describe`). Every test function or case fo
 definition, whether or not the framework would collect it; collect_check.py then compares the
 definitions with what the framework really collects.
 
+Python test files are those in a test directory, named like tests, matching the python_files of
+the nearest pytest configuration (benchmarks/pytest.ini with bench_*.py), and script self-tests
+(detect_conventions self_tests: their tests are the functions the runner runs, framework and
+runner `selftest`). A test_*.py that product modules import is product code (`product_files`);
+fixture projects are left out unless --include-fixtures (`fixtures_excluded`). Every Python
+definition records its `runner` (pytest, selftest or unknown).
+
 Candidate categories: never_runs (a file outside the collect patterns, a stray .only),
 no_assertion, tautology, unreached_assertion, swallowed_failure, async_not_awaited, mock_only,
 skipped and duplicate (normalised AST similarity >= the threshold in data/rules.json, within one
@@ -22,7 +29,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import detect_conventions, diff_scope, go_tests, lang_census  # noqa: E402
+import detect_conventions, diff_scope, go_tests, lang_census, repo_layout  # noqa: E402
 
 RULES = json.loads((HERE.parent / 'data' / 'rules.json').read_text(encoding='utf-8'))
 PY, JS = RULES['python'], RULES['javascript']
@@ -158,7 +165,7 @@ def pytest_config(root: Path, pkg: str) -> dict:
 
 def _pytest_config(root: Path, pkg: str) -> dict:
     conf = {'python_files': PY['default_python_files'], 'python_functions': PY['default_python_functions'],
-            'python_classes': PY['default_python_classes'], 'source': 'pytest defaults'}
+            'python_classes': PY['default_python_classes'], 'source': 'pytest defaults', 'dir': None}
     base = root / pkg if pkg != '.' else root
     # pytest reads the first configuration file it finds in the package directory or above it (up to the repo root)
     dirs = [base] + [d for d in base.parents if d == root or root in d.parents]
@@ -182,6 +189,8 @@ def _pytest_config(root: Path, pkg: str) -> dict:
                         [a or b for a, b in re.findall(r'"([^"]+)"|\'([^\']+)\'', val)] or val.split()
             rel = p.relative_to(root).as_posix()
             conf['source'] = rel if found else f'pytest defaults; {rel} sets no patterns'
+            conf['dir'] = PurePosixPath(rel).parent.as_posix()
+            conf['sets_files'] = found and bool(re.search(r'^\s*python_files\s*=', text, re.M))
             return conf
     return conf
 
@@ -234,13 +243,43 @@ STDLIB = set(getattr(sys, 'stdlib_module_names', ())) | {'pytest', 'unittest', '
                                                           'pytest_mock', 'responses', 'httpx', 'requests', 'faker'}
 
 
-def asserts_in(fn: ast.AST, helpers: dict) -> bool:
-    """fn holds an assertion, or calls a helper (helpers: name -> function node) that does, two calls deep at most."""
+FAIL_WORD = re.compile(r'\bfail', re.I)
+CHECK_NAME = re.compile(r'(^|_)(check|expect|verify|ensure|assert|require|ok|fail)', re.I)
+
+
+def says_fail(node: ast.AST) -> bool:
+    """A string constant (or f-string part) under node that says FAIL / failed."""
+    return any(isinstance(x, ast.Constant) and isinstance(x.value, str) and FAIL_WORD.search(x.value) for x in ast.walk(node))
+
+
+def is_recorder(fn: ast.AST) -> bool:
+    """A helper that records a failed check instead of raising: check(cond, what) that appends to a failures list,
+    counts, prints FAIL, exits or raises when its condition argument is false. It takes a parameter that a condition
+    tests, does one of those things, and is named like a check (check, expect, verify, ok...) or says FAIL."""
+    if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return False
+    params = {a.arg for a in fn.args.args + fn.args.posonlyargs + fn.args.kwonlyargs} - {'self', 'cls'}
+    if not params:
+        return False
+    tested = any(isinstance(n, (ast.If, ast.IfExp, ast.While)) and any(isinstance(x, ast.Name) and x.id in params
+                                                                        for x in ast.walk(n.test))
+                 for n in ast.walk(fn))
+    records = any(isinstance(n, (ast.AugAssign, ast.Raise, ast.Assert)) or (
+        isinstance(n, ast.Call) and (call_name(n) in ('append', 'add', 'extend', 'exit', '_exit') or
+                                     (call_name(n) in ('print', 'write', 'error', 'warning') and says_fail(n))))
+        for n in ast.walk(fn))
+    return tested and records and bool(CHECK_NAME.search(fn.name) or says_fail(fn))
+
+
+def asserts_in(fn: ast.AST, helpers: dict, pred=None) -> bool:
+    """fn holds an assertion, or calls a helper (helpers: name -> function node) that does, two calls deep at most.
+    pred (default is_assertion) decides what a check is."""
     seen: set[str] = set()
+    pred = pred or is_assertion
 
     def visit(node: ast.AST, depth: int) -> bool:
         for n in ast.walk(node):
-            if is_assertion(n):
+            if pred(n):
                 return True
             if depth < 2 and isinstance(n, ast.Call):
                 name = call_name(n)
@@ -255,22 +294,130 @@ def asserts_in(fn: ast.AST, helpers: dict) -> bool:
     return visit(fn, 0)
 
 
+def _mentions_self_test(test: ast.AST) -> bool:
+    return any((isinstance(x, ast.Attribute) and x.attr in ('self_test', 'selftest')) or
+               (isinstance(x, ast.Name) and x.id in ('self_test', 'selftest')) or
+               (isinstance(x, ast.Constant) and x.value == '--self-test') for x in ast.walk(test))
+
+
+def self_test_entries(tree: ast.Module, kind: str) -> list[ast.AST]:
+    """The functions a script's self-test starts from: for a --self-test flag, the function called under the `if` that
+    tests the flag (else self_test()); for a self_test() function, that; for a self_test.py script, the functions its
+    __main__ block calls (main())."""
+    defs = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    names: list[str] = []
+    if kind == 'flag':
+        for n in ast.walk(tree):
+            if isinstance(n, ast.If) and _mentions_self_test(n.test):
+                names += [c.func.id for s in n.body for c in ast.walk(s)
+                          if isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id in defs]
+        names = names or ['self_test']
+    elif kind == 'function':
+        names = ['self_test']
+    else:
+        mains = [n for n in tree.body if isinstance(n, ast.If) and detect_conventions._is_main_guard(n)]
+        names = [c.func.id for m in mains for c in ast.walk(m)
+                 if isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id in defs]
+    return [defs[n] for n in dict.fromkeys(names) if n in defs]
+
+
+def self_test_units(tree: ast.Module, kind: str, scanner: 'PyScanner') -> list[ast.AST]:
+    """A script self-test's tests: the same-file functions its entry runs, either listed in a group it loops over
+    (`for t in (fares, zones): t()`), or called directly when named test* or holding a check. Helpers it calls that
+    check nothing (write(), a setup step) and recording helpers (check()) are not tests. An entry that runs no such
+    function is itself the one test (a self_test() with its checks inline)."""
+    entries = self_test_entries(tree, kind)
+    defs = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    skip = {e.name for e in entries} | scanner.recorders | {'main'}
+    units: list[ast.AST] = []
+    for e in entries:
+        listed = {x.id for n in ast.walk(e) if isinstance(n, (ast.Tuple, ast.List, ast.Set))
+                  for x in n.elts if isinstance(x, ast.Name)}
+        refs = sorted(((x.lineno, x.col_offset, x.id) for x in ast.walk(e)
+                       if isinstance(x, ast.Name) and isinstance(x.ctx, ast.Load) and x.id in defs and x.id not in skip),
+                      key=lambda r: (r[0], r[1]))
+        for _, _, name in refs:
+            called = any(isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id == name for c in ast.walk(e))
+            f = defs[name]
+            if kind == 'script':
+                # a self_test.py holds only tests and their helpers
+                unit = name in listed or (called and (name.startswith('test') or asserts_in(f, scanner.helpers, scanner.is_check)))
+            else:
+                # a product script's self_test() also calls the product's own functions (some with sanity asserts):
+                # only functions named as checks (go_self_checks, test_cases) that hold one are its tests
+                unit = bool(CHECKY_NAME.search(name)) and asserts_in(f, scanner.helpers, scanner.is_check)
+            if unit and f not in units:
+                units.append(f)
+    return units or entries
+
+
+CHECKY_NAME = re.compile(r'(^test|checks?|self_?tests?|selftest|cases?$)', re.I)
+
+
+def returned_records(fn: ast.AST) -> set[int]:
+    """Nodes of a self-test function that record a check in a list it returns to its runner (`fails.append(msg)` ...
+    `return fails`, `out.append((name, ok))` ... `return out`, `fails += [...]`): ids of the recording nodes."""
+    if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return set()
+    returned = set()
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Return) and n.value is not None:
+            vals = n.value.elts if isinstance(n.value, ast.Tuple) else [n.value]
+            returned |= {v.id for v in vals if isinstance(v, ast.Name)}
+    out = set()
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in ('append', 'extend', 'add') \
+                and isinstance(n.func.value, ast.Name) and n.func.value.id in returned:
+            out.add(id(n))
+        elif isinstance(n, ast.AugAssign) and isinstance(n.target, ast.Name) and n.target.id in returned:
+            out.add(id(n))
+    return out
+
+
 class PyScanner:
-    def __init__(self, root: Path, rel: str, pkg: str, conf: dict):
+    def __init__(self, root: Path, rel: str, pkg: str, conf: dict, selftest: dict | None = None):
         self.root, self.rel, self.pkg, self.conf = root, rel, pkg, conf
         self.text = (root / rel).read_text(encoding='utf-8', errors='replace')
         self.tree = ast.parse(self.text)
         self.imports = self.imported_names()
+        # a script self-test ({file, command, kind}): its tests are the functions its runner calls (self_test_units)
+        self.selftest = selftest
+        self.units: list[ast.AST] = []
         # module-level functions and class methods that are not tests themselves: a test that calls one holding
         # asserts (_test_shape(result), self._check_row(row)) has assertions
         self.helpers: dict[str, ast.AST] = {}
         for node in self.tree.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith('test'):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and (selftest is not None or not node.name.startswith('test')):
                 self.helpers[node.name] = node
             elif isinstance(node, ast.ClassDef):
                 for m in node.body:
                     if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)) and not m.name.startswith('test'):
                         self.helpers.setdefault(m.name, m)
+        # same-file helpers that record a failed check instead of raising (check(cond, what) appending to FAILS)
+        self.recorders = {n for n, f in self.helpers.items() if is_recorder(f)}
+        # in a script self-test, a function may record its checks in a list it returns to the runner (fails.append)
+        self.returned = set().union(*(returned_records(f) for f in self.tree.body)) if selftest is not None else set()
+        if selftest is not None:
+            self.units = self_test_units(self.tree, selftest["kind"], self)
+            self.helpers = {n: f for n, f in self.helpers.items() if f not in self.units}
+
+    def is_check(self, n: ast.AST, strong: bool = False) -> bool:
+        """An assertion, a call of a same-file recording check helper, or (in a script self-test, unless strong) a
+        raise or a line printed as a failure (a loop that prints each failure reports them; it checks nothing)."""
+        if is_assertion(n):
+            return True
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in self.recorders:
+            # check(False, 'missed x') in a loop over what is missing reports a failure; it is no check of its own
+            return not (strong and n.args and isinstance(n.args[0], ast.Constant) and not n.args[0].value)
+        if id(n) in self.returned:
+            # fails.append(...) in a loop over what is missing reports it; strong (loop) checks need a condition
+            return not strong
+        if self.selftest is not None and not strong:
+            if isinstance(n, ast.Raise):
+                return True
+            if isinstance(n, ast.Call) and call_name(n) in ('print', 'write', 'error') and says_fail(n):
+                return True
+        return False
 
     def imported_names(self) -> dict[str, str]:
         """local name -> dotted origin for `from x import y` and `import x`."""
@@ -288,7 +435,10 @@ class PyScanner:
         return any(fnmatch.fnmatch(name, p) for p in pats)
 
     def tests(self):
-        """(test id, function node, class name) for every test-like function, collectable or not."""
+        """(test id, function node, class name) for every test-like function, collectable or not; for a script
+        self-test, the functions its runner calls."""
+        if self.selftest is not None:
+            return [(f'{self.rel}::{fn.name}', fn, None) for fn in self.units]
         out = []
         for node in self.tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith('test'):
@@ -310,8 +460,19 @@ class PyScanner:
                    f': {m["reason"] or "no reason given"}')
             add(cat, m['kind'], all_ids, m['line'], why, m)
         for tid, fn, cls in self.tests():
-            defs.append({'id': tid, 'file': self.rel, 'line': fn.lineno, 'name': fn.name, 'lang': 'python', 'package': self.pkg,
-                         'calls': self.called_targets(fn)})
+            d = {'id': tid, 'file': self.rel, 'line': fn.lineno, 'name': fn.name, 'lang': 'python', 'package': self.pkg,
+                 'calls': self.called_targets(fn)}
+            if self.selftest is not None:
+                # run by the script's own runner, never by pytest (its check() records failures pytest never sees)
+                d.update(framework='selftest', runner='selftest', selftest_command=self.selftest['command'])
+                defs.append(d)
+                self.rules(tid, fn, add, cls)
+                continue
+            d['runner'] = 'pytest' if file_ok else 'unknown'
+            cdir = self.conf.get('dir')
+            if cdir and cdir != self.pkg and (self.pkg == '.' or cdir.startswith(self.pkg + '/')):
+                d['pytest_root'] = cdir                  # a pytest.ini below the package (benchmarks/pytest.ini) governs it
+            defs.append(d)
             if not file_ok:
                 add('never_runs', 'file_pattern', [tid], fn.lineno,
                     f'{PurePosixPath(self.rel).name} does not match python_files {self.conf["python_files"]} '
@@ -329,19 +490,31 @@ class PyScanner:
                     out.append(self.imports[f.id])
                 elif isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id in self.imports:
                     out.append(f'{self.imports[f.value.id]}.{f.attr}')
+        # a self-test inside a product script (a --self-test flag, a self_test() function) checks that script's own
+        # functions: they are its targets, as <module>.<function>
+        if self.selftest is not None and PurePosixPath(self.rel).name not in detect_conventions.SELF_TEST_NAMES:
+            stem = PurePosixPath(self.rel).stem
+            unit_names = {u.name for u in self.units}
+            local = {n.name for n in self.tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+            for n in ast.walk(fn):
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in local and \
+                        n.func.id not in unit_names and n.func.id not in self.recorders and n.func.id != 'main':
+                    out.append(f'{stem}.{n.func.id}')
         # the standard library and test tooling are never the code under test
         return sorted({t for t in out if t.split('.')[0] not in STDLIB})
 
     def rules(self, tid, fn, add, cls=None):
         body_nodes = list(ast.walk(fn))
-        asserts = [n for n in body_nodes if is_assertion(n)]
+        asserts = [n for n in body_nodes if self.is_check(n)]
         info = self.skip_info(fn, cls)
         if info is not None:
             add('skipped', info['kind'], [tid], info['line'], f'{info["kind"]}: {info["reason"] or "no reason given"}', info)
         if not asserts:
-            if asserts_in(fn, self.helpers):
+            if asserts_in(fn, self.helpers, self.is_check):
                 return                                  # every check is in a helper of this file (_test_x, self._check)
-            add('no_assertion', 'no_assertion', [tid], fn.lineno, f'{fn.name} has no assert, assertion call or pytest.raises', {})
+            what = ('no assert, raise, recording check (check(cond, ...)) or FAIL line' if self.selftest is not None else
+                    'no assert, assertion call or pytest.raises')
+            add('no_assertion', 'no_assertion', [tid], fn.lineno, f'{fn.name} has {what}', {})
             return
         for a in asserts:
             if isinstance(a, ast.Assert):
@@ -352,9 +525,9 @@ class PyScanner:
                         ast.dump(t.left) == ast.dump(t.comparators[0]) and isinstance(t.ops[0], (ast.Eq, ast.Is, ast.LtE, ast.GtE)):
                     add('tautology', 'compare_to_self', [tid], a.lineno, 'the assertion compares a value with itself', {})
         handler_asserts = {id(x) for h in body_nodes if isinstance(h, ast.ExceptHandler) for s in h.body for x in ast.walk(s)
-                           if is_assertion(x)}
+                           if self.is_check(x)}
         for n in body_nodes:
-            if isinstance(n, (ast.For, ast.AsyncFor)) and any(is_assertion(x) for x in ast.walk(n)) and \
+            if isinstance(n, (ast.For, ast.AsyncFor)) and any(self.is_check(x, True) for x in ast.walk(n)) and \
                     not isinstance(n.iter, (ast.List, ast.Tuple, ast.Set)) and not emptiness_guarded(fn, n, self.helpers):
                 add('unreached_assertion', 'assert_in_loop', [tid], n.lineno,
                     'every assertion in this loop is skipped when the iterable is empty', {})
@@ -365,12 +538,12 @@ class PyScanner:
                         add('swallowed_failure', 'except_around_assert', [tid], h.lineno,
                             f'except {ast.unparse(h.type) if h.type is not None else "(bare)"} catches the AssertionError '
                             'raised by the assertion in its try block and carries on', {})
-                    in_handler = {id(x) for s in h.body for x in ast.walk(s) if is_assertion(x)}
+                    in_handler = {id(x) for s in h.body for x in ast.walk(s) if self.is_check(x)}
                     if in_handler and all(id(a) in handler_asserts for a in asserts):     # the only checks are in except
                         add('unreached_assertion', 'assert_in_except', [tid], h.lineno,
                             'assertions inside except run only if the call raises; nothing fails when it does not', {})
         for i, st in enumerate(fn.body):
-            if isinstance(st, ast.Return) and any(is_assertion(x) for s in fn.body[i + 1:] for x in ast.walk(s)):
+            if isinstance(st, ast.Return) and any(self.is_check(x) for s in fn.body[i + 1:] for x in ast.walk(s)):
                 add('unreached_assertion', 'assert_after_return', [tid], st.lineno, 'assertions after return never run', {})
         # mock_only: the test patches a function and then checks that same function
         patched = {}
@@ -1831,15 +2004,118 @@ def is_playwright_setup(root: Path, rel: str, pkg: str) -> bool:
 SCANNED_LANGS = {'Python', 'JavaScript', 'TypeScript', 'Go'}
 
 
-def scan(root: Path, extra_test_files: list[str] | None = None) -> dict:
+_TESTPATHS: dict[tuple[str, str], list[str]] = {}
+
+
+def configured_suite_file(root: Path, rel: str, conf: dict) -> bool:
+    """rel is a test file of a pytest configuration that names its own python_files (benchmarks/pytest.ini with
+    python_files = bench_*.py): its name matches and it lies under the config's testpaths (when it sets any)."""
+    if not conf.get('sets_files') or conf.get('dir') is None:
+        return False
+    if not any(fnmatch.fnmatch(PurePosixPath(rel).name, p) for p in conf['python_files']):
+        return False
+    d = conf['dir']
+    key = (str(root), d)
+    if key not in _TESTPATHS:
+        _TESTPATHS[key] = (detect_conventions.pytest_collection(root, d) or {}).get('testpaths') or []
+    base = '' if d == '.' else d + '/'
+    if not rel.startswith(base):
+        return False
+    tp = [t for t in _TESTPATHS[key] if t != '.']
+    return not tp or any(rel[len(base):] == t or rel[len(base):].startswith(t.rstrip('/') + '/') for t in tp)
+
+
+def product_named_like_tests(root: Path, files: list[str], named: list[str]) -> dict[str, list[str]]:
+    """Files named like test modules (test_paths.py) outside any test directory that product code imports: pytest
+    test modules are never imported by the product, so these are product code. {file: [importers]}. Imports are read
+    with ast, so an import inside a fixture string does not count."""
+    if not named:
+        return {}
+    by_stem: dict[str, list[str]] = {}
+    for f in named:
+        by_stem.setdefault(PurePosixPath(f).stem, []).append(f)
+    out: dict[str, list[str]] = {}
+    for f in files:
+        if not f.endswith('.py') or f in named or in_test_dir(root, f) or detect_conventions.is_test_file(f) or \
+                PurePosixPath(f).name in detect_conventions.SELF_TEST_NAMES | {'conftest.py'}:
+            continue
+        try:
+            text = (root / f).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        if not any(s in text for s in by_stem):
+            continue
+        try:
+            tree = ast.parse(text)
+        except (SyntaxError, ValueError):
+            continue
+        mods = []
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Import):
+                mods += [a.name for a in n.names]
+            elif isinstance(n, ast.ImportFrom):
+                mods += [f'{n.module}.{a.name}' if n.module else a.name for a in n.names] + ([n.module] if n.module else [])
+        here = PurePosixPath(f).parent
+        for m in mods:
+            parts = m.split('.')
+            for stem, cands in by_stem.items():
+                if stem not in parts:
+                    continue
+                for c in cands:
+                    cp = PurePosixPath(c)
+                    dotted = '.'.join(cp.with_suffix('').parts)
+                    # a sibling module (scripts/ imports test_paths) or a dotted path that ends in the file's own path
+                    if cp.parent == here or dotted.endswith('.'.join(parts[:parts.index(stem) + 1])) and \
+                            len(parts[:parts.index(stem) + 1]) > 1:
+                        out.setdefault(c, [])
+                        if f not in out[c]:
+                            out[c].append(f)
+    return out
+
+
+def scan(root: Path, extra_test_files: list[str] | None = None, include_fixtures: bool = False,
+         fixture_dirs: list[str] | tuple = ()) -> dict:
     cen = lang_census.census(root)
     # vendored, embedded third-party and submodule trees are never the repository's tests
     files = [f for f in walk(root) if not lang_census.excluded_path(cen, f)]
+    # sample and fixture projects (examples/shop with its own manifest) hold planted tests of their own: left out
+    # and listed unless include_fixtures
+    fixtures = [] if include_fixtures else repo_layout.fixture_projects(root, fixture_dirs)
+    if fixtures:
+        files = [f for f in files if not repo_layout.is_fixture(f, fixtures)]
     extra = list(extra_test_files or [])
-    det = detect_conventions.Detector(root, 50_000).run(None)
+    det = detect_conventions.Detector(root, 50_000, exclude_fixtures=not include_fixtures,
+                                      fixture_dirs=fixture_dirs).run(None)
     roots = sorted({a['root'] for a in det['areas']}, key=len, reverse=True)
     pkg_of = lambda rel: next((r for r in roots if r != '.' and (rel == r or rel.startswith(r + '/'))), '.')  # noqa: E731
     cands, defs, notes = [], [], []
+    self_tests = {s['file']: s for s in det.get('self_tests', []) if not repo_layout.is_fixture(s['file'], fixtures)}
+    conf_of = lambda rel: pytest_config(root, PurePosixPath(rel).parent.as_posix())  # noqa: E731
+    py_tests, cfg_dirs = [], set()
+    for rel in files:
+        name = PurePosixPath(rel).name
+        if not rel.endswith('.py') or name == 'conftest.py':
+            continue
+        if rel in self_tests or in_test_dir(root, rel) or detect_conventions.is_test_file(rel) or \
+                configured_suite_file(root, rel, conf_of(rel)):
+            py_tests.append(rel)
+    named_only = [f for f in py_tests if f not in self_tests and not in_test_dir(root, f)
+                  and not configured_suite_file(root, f, conf_of(f))]
+    product = product_named_like_tests(root, files, named_only)
+    product_files = [{'file': f, 'imported_by': sorted(v)[:5],
+                      'reason': f'named like a test module but imported by product code ({sorted(v)[0]}), so it is '
+                                'product code, not a test file'} for f, v in sorted(product.items())]
+    py_tests = set(py_tests) - set(product)
+    # a file kept identical in several folders (a declared shared copy, or the same bytes) runs the same tests: it is
+    # scanned once, on its canonical copy, and the other copies are listed
+    copy_of = repo_layout.copy_index(repo_layout.copy_groups(root, files=files))
+    kept = set(files)
+    copies_skipped = [{'file': f, 'canonical': copy_of[f]} for f in files
+                      if copy_of.get(f, f) != f and copy_of[f] in kept]
+    skip_copy = {c['file'] for c in copies_skipped}
+    files = [f for f in files if f not in skip_copy]
+    scanned_like = set(py_tests) | {f for f in skip_copy if f.endswith('_test.go') or any(
+        fnmatch.fnmatch(PurePosixPath(f).name, p) for p in JS['test_files'])}
 
     def adder(rel):
         def add(category, rule, test_ids, line, why, details, file=None):
@@ -1859,14 +2135,20 @@ def scan(root: Path, extra_test_files: list[str] | None = None) -> dict:
             except (OSError, ValueError, IndexError, RecursionError) as exc:
                 notes.append(f'{rel}: not parsed ({exc!r}); its tests are missing from definitions')
             continue
-        if rel.endswith('.py') and (in_test_dir(root, rel) or detect_conventions.is_test_file(rel)) and name != 'conftest.py':
+        if rel in py_tests:
+            conf = conf_of(rel)
             try:
-                s = PyScanner(root, rel, pkg, pytest_config(root, pkg))
+                s = PyScanner(root, rel, pkg, conf, self_tests.get(rel))
             except SyntaxError as exc:
                 notes.append(f'{rel}: not parsed ({exc.msg})')
                 continue
             if not s.tests():
+                if rel in self_tests:
+                    notes.append(f'{rel}: a script self-test ({self_tests[rel]["command"]}) whose runner calls no '
+                                 'function of the file; its checks are not definitions')
                 continue
+            if conf.get('dir') is not None:
+                cfg_dirs.add(conf['dir'])
             pyscanners.append(s)
             s.scan(adder(rel), defs)
             package_of[rel] = pkg
@@ -1885,7 +2167,14 @@ def scan(root: Path, extra_test_files: list[str] | None = None) -> dict:
     for i, c in enumerate(sorted(cands, key=lambda c: (c['file'], c['line'], c['category'])), 1):
         out.append({'id': f'C{i}', **c})
     result = {'repo': root.name, 'definitions': defs, 'candidates': out, **({'extra_test_files': extra} if extra else {}),
-              'pytest_config': {r: pytest_config(root, r) for r in roots if (root / r / 'pyproject.toml').exists() or r == '.'},
+              'pytest_config': {r: pytest_config(root, r) for r in sorted(
+                  {r for r in roots if (root / r / 'pyproject.toml').exists() or r == '.'} | cfg_dirs)},
+              **({'self_tests': sorted(({'file': s['file'], 'command': s['command'], 'kind': s['kind']}
+                                        for s in self_tests.values()), key=lambda s: s['file'])} if self_tests else {}),
+              **({'product_files': product_files} if product_files else {}),
+              **({'copies_skipped': [c for c in copies_skipped if c['file'] in scanned_like]}
+                 if any(c['file'] in scanned_like for c in copies_skipped) else {}),
+              **({'fixtures_excluded': [{'dir': f['dir'], 'reason': f['reason']} for f in fixtures]} if fixtures else {}),
               'summary': {'tests_defined': len(defs), 'candidates': len(out),
                           'by_category': {k: len([c for c in out if c['category'] == k]) for k in sorted({c['category'] for c in out})},
                           **({'near_duplicates': near} if near else {})},
@@ -1910,8 +2199,13 @@ def main(argv=None) -> int:
     ap.add_argument('--allow-minority', action='store_true',
                     help='exit 0 even when the dominant language is one the scanner does not read (the warning stays '
                          'in the output); without it that case exits 3')
+    ap.add_argument('--include-fixtures', action='store_true',
+                    help='also scan sample and fixture projects (a nested project with its own manifest under '
+                         'examples/, fixtures/, testdata/, samples/...), which are left out and listed by default')
+    ap.add_argument('--fixture-dir', action='append', default=[], metavar='DIR',
+                    help='also treat DIR (a name or a repo-relative path) as holding fixture projects to leave out')
     args = ap.parse_args(argv)
-    res = scan(args.repo.resolve(), args.test_files)
+    res = scan(args.repo.resolve(), args.test_files, args.include_fixtures, args.fixture_dir)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(res, indent=2) + '\n', encoding='utf-8')
     guard = res.get('language_coverage')

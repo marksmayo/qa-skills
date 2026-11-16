@@ -53,7 +53,8 @@
       "calls": [
         "ledger.entries.balance",
         "ledger.entries.post_entry"
-      ]
+      ],
+      "runner": "unknown"
     },
     {
       "id": "core/tests/test_entries.py::test_post_entry_records_a_sale",
@@ -64,7 +65,8 @@
       "package": "core",
       "calls": [
         "ledger.entries.post_entry"
-      ]
+      ],
+      "runner": "pytest"
     },
     {
       "id": "core/tests/test_entries.py::test_balance_sums_the_account",
@@ -76,7 +78,8 @@
       "calls": [
         "ledger.entries.balance",
         "ledger.entries.post_entry"
-      ]
+      ],
+      "runner": "pytest"
     },
     {
       "id": "core/tests/test_entries.py::test_zero_entry_is_rejected",
@@ -87,7 +90,8 @@
       "package": "core",
       "calls": [
         "ledger.entries.post_entry"
-      ]
+      ],
+      "runner": "pytest"
     },
     {
       "id": "core/tests/test_imports.py::test_package_imports",
@@ -96,7 +100,8 @@
       "name": "test_package_imports",
       "lang": "python",
       "package": "core",
-      "calls": []
+      "calls": [],
+      "runner": "pytest"
     },
     {
       "id": "core/tests/test_reports.py::test_trial_balance_with_two_currencies",
@@ -108,7 +113,8 @@
       "calls": [
         "ledger.entries.post_entry",
         "ledger.reports.trial_balance"
-      ]
+      ],
+      "runner": "pytest"
     },
     {
       "id": "core/tests/test_reports.py::test_csv_lines_are_sorted",
@@ -119,7 +125,8 @@
       "package": "core",
       "calls": [
         "ledger.reports.to_csv_lines"
-      ]
+      ],
+      "runner": "pytest"
     },
     {
       "id": "core/tests/test_reports.py::test_trial_balance_lists_every_account",
@@ -131,7 +138,8 @@
       "calls": [
         "ledger.entries.post_entry",
         "ledger.reports.trial_balance"
-      ]
+      ],
+      "runner": "pytest"
     },
     {
       "id": "core/tests/test_tax.py::test_gst_on_one_hundred_dollars",
@@ -142,7 +150,8 @@
       "package": "core",
       "calls": [
         "ledger.tax.gst"
-      ]
+      ],
+      "runner": "pytest"
     },
     {
       "id": "core/tests/test_tax.py::test_gst_on_a_hundred_dollar_invoice",
@@ -153,7 +162,8 @@
       "package": "core",
       "calls": [
         "ledger.tax.gst"
-      ]
+      ],
+      "runner": "pytest"
     },
     {
       "id": "core/tests/test_tax.py::test_with_gst_adds_the_tax",
@@ -164,7 +174,8 @@
       "package": "core",
       "calls": [
         "ledger.tax.with_gst"
-      ]
+      ],
+      "runner": "pytest"
     },
     {
       "id": "core/tests/test_tax.py::test_tax_is_calculated",
@@ -175,7 +186,8 @@
       "package": "core",
       "calls": [
         "ledger.tax.calculate_tax"
-      ]
+      ],
+      "runner": "pytest"
     }
   ],
   "candidates": [
@@ -316,7 +328,9 @@
       "python_classes": [
         "Test*"
       ],
-      "source": "pytest defaults; core/pyproject.toml sets no patterns"
+      "source": "pytest defaults; core/pyproject.toml sets no patterns",
+      "dir": "core",
+      "sets_files": false
     }
   },
   "summary": {
