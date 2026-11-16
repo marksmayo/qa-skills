@@ -997,6 +997,387 @@ def case_prove_kill_rust(tmp: Path) -> None:
         shutil.rmtree(shared, ignore_errors=True)
 
 
+# A small "tool repository": a scoring helper under tools/ whose only tests are benchmarks configured by their own
+# pytest.ini (python_files = bench_*.py), so pytest takes benchmarks/ as its rootdir and writes node ids relative to it.
+SCORE_PY = '''def band(rate):
+    if rate >= 0.5:
+        return 'high'
+    return 'low'
+
+
+def total(values):
+    return sum(values) + 0
+'''
+BENCH_INI = '[pytest]\npython_files = bench_*.py\npythonpath = ..\n'
+BENCH_SCORE = '''from tools.score import band, total
+
+
+def test_band_high():
+    assert band(0.9) == 'high'
+
+
+def test_band_low():
+    assert band(0.1) == 'low'
+
+
+def test_total():
+    assert total([1, 2]) == 3
+'''
+
+
+def bench_repo(root: Path) -> Path:
+    (root / 'tools').mkdir(parents=True)
+    (root / 'benchmarks').mkdir()
+    (root / 'tools' / 'score.py').write_text(SCORE_PY, encoding='utf-8')
+    (root / 'benchmarks' / 'pytest.ini').write_text(BENCH_INI, encoding='utf-8')
+    (root / 'benchmarks' / 'bench_score.py').write_text(BENCH_SCORE, encoding='utf-8')
+    return root
+
+
+def case_builtin_rootdir_of_ids(tmp: Path) -> None:
+    """Tests whose pytest.ini sits in a subfolder (benchmarks/, python_files = bench_*.py) get node ids relative to
+    that folder, not to --repo. The engine records ids that resolve from --repo and the rootdir pytest used, so the
+    mutants run and are killed instead of every one being a runtime_error."""
+    repo = bench_repo(tmp / 'repo')
+    scope = write_json(tmp / 'scope.json', scope_for({'tools/score.py': [[1, 8]]}))
+    res = run('builtin_mutator.py', '--repo', repo, '--scope', scope, '--run-dir', tmp / 'run', '--minutes', '3',
+              '--tests', 'benchmarks')
+    assert res.returncode == 0, res.stdout[-800:] + res.stderr[-800:]
+    out = json.loads((tmp / 'run' / 'builtin.json').read_text(encoding='utf-8'))
+    st = [(m['id'], m['status']) for m in out['mutants']]
+    assert not [s for s in st if s[1] == 'runtime_error'], st
+    assert any(s[1] == 'killed' for s in st), st
+    ids = {t for m in out['mutants'] for t in m.get('covering_tests', [])}
+    assert ids and all(t.startswith('benchmarks/bench_score.py::') for t in ids), ids
+    cov = json.loads((tmp / 'run' / 'coverage.json').read_text(encoding='utf-8'))
+    assert cov.get('rootdir') == 'benchmarks', cov.get('rootdir')
+
+
+# A patch helper whose dry-run branch is one string comparison away from writing: a mutant there makes the test
+# write into the sample project, which every later run would then read.
+PATCHER_PY = '''from pathlib import Path
+
+
+def run(action, target, text):
+    if action == 'check':
+        return Path(target).read_text() != text
+    Path(target).write_text(text)
+    return True
+
+
+def size(target):
+    return len(Path(target).read_text())
+'''
+PATCHER_TEST = '''from pathlib import Path
+
+from tools.patcher import run, size
+
+SAMPLE = Path(__file__).resolve().parent.parent / 'examples' / 'sample' / 'notes.txt'
+
+
+def test_check_is_dry():
+    assert run('check', SAMPLE, 'new text\\n') is True
+
+
+def test_size():
+    assert size(SAMPLE) == 6
+'''
+
+
+def patcher_repo(root: Path) -> Path:
+    for d in ('tools', 'tests', 'examples/sample'):
+        (root / d).mkdir(parents=True)
+    (root / 'pytest.ini').write_text('[pytest]\npythonpath = .\ntestpaths = tests\n', encoding='utf-8')
+    (root / 'tools' / 'patcher.py').write_text(PATCHER_PY, encoding='utf-8')
+    (root / 'tests' / 'test_patcher.py').write_text(PATCHER_TEST, encoding='utf-8')
+    (root / 'examples' / 'sample' / 'notes.txt').write_bytes(b'hello\n')
+    return root
+
+
+def case_builtin_tree_checked_per_mutant(tmp: Path) -> None:
+    """A mutant whose test run writes outside the scoped files (the dry run turned into a write) stops the run at
+    that mutant: builtin.json names it and the files it changed, and no later mutant runs on the changed tree."""
+    repo = patcher_repo(tmp / 'repo')
+    scope = write_json(tmp / 'scope.json', scope_for({'tools/patcher.py': [[1, 12]]}))
+    res = run('builtin_mutator.py', '--repo', repo, '--scope', scope, '--run-dir', tmp / 'run', '--minutes', '3')
+    assert res.returncode == 3, (res.returncode, res.stdout[-800:] + res.stderr[-800:])
+    out = json.loads((tmp / 'run' / 'builtin.json').read_text(encoding='utf-8'))
+    stop = out['tree'].get('stopped')
+    assert stop, out['tree']
+    assert stop['files'] == ['examples/sample/notes.txt'], stop
+    by_id = {m['id']: m for m in out['mutants']}
+    culprit = by_id[stop['mutant']]
+    assert culprit['line'] == 5, culprit
+    assert culprit.get('wrote_outside_scope') == ['examples/sample/notes.txt'], culprit
+    later = [m for m in out['mutants'] if m.get('run_index', 0) > culprit['run_index']]
+    assert all(m['status'] == 'not_run' and stop['mutant'] in m.get('note', '') for m in later), \
+        [(m['id'], m['status'], m.get('note')) for m in later]
+    never = [m for m in out['mutants'] if m['status'] == 'not_run' and 'run_index' not in m]
+    assert all(stop['mutant'] in m.get('note', '') for m in never), [(m['id'], m.get('note')) for m in never]
+    assert (repo / 'tools' / 'patcher.py').read_text(encoding='utf-8') == PATCHER_PY
+
+
+SLOW_PY = '''def label(n):
+    if n > 1:
+        return 'many'
+    return 'one'
+'''
+SLOW_TEST = '''import time
+
+from tools.slow import label
+
+
+def test_label():
+    time.sleep(20)
+    assert label(2) == 'many'
+'''
+
+
+def slow_repo(root: Path) -> Path:
+    (root / 'tools').mkdir(parents=True)
+    (root / 'tests').mkdir()
+    (root / 'pytest.ini').write_text('[pytest]\npythonpath = .\ntestpaths = tests\n', encoding='utf-8')
+    (root / 'tools' / 'slow.py').write_text(SLOW_PY, encoding='utf-8')
+    (root / 'tests' / 'test_slow.py').write_text(SLOW_TEST, encoding='utf-8')
+    return root
+
+
+def case_builtin_restores_on_interrupt(tmp: Path) -> None:
+    """Stopping the engine while a mutant is in the source file (Ctrl-C, or SIGTERM where signals exist) puts the
+    original back, kills the test run and records the run as interrupted; a later run into a run directory that still
+    holds backups that differ from the source refuses to start and names --restore."""
+    import threading, _thread, signal
+    import builtin_mutator
+    repo = slow_repo(tmp / 'repo')
+    target = repo / 'tools' / 'slow.py'
+    scope = write_json(tmp / 'scope.json', scope_for({'tools/slow.py': [[1, 4]]}))
+    seen = {}
+
+    def watch():
+        end = __import__('time').monotonic() + 240
+        while __import__('time').monotonic() < end:
+            if target.read_text(encoding='utf-8') != SLOW_PY:
+                seen['mutated'] = True
+                __import__('time').sleep(1)
+                _thread.interrupt_main()
+                return
+            __import__('time').sleep(0.1)
+
+    t = threading.Thread(target=watch, daemon=True)
+    t.start()
+    argv = ['--repo', str(repo), '--scope', str(scope), '--run-dir', str(tmp / 'run'), '--minutes', '5',
+            '--min-timeout', '60']
+    try:
+        code = builtin_mutator.main(argv)
+    except KeyboardInterrupt:
+        code = 'raised'
+    t.join(5)
+    assert seen.get('mutated'), 'no mutant was ever written'
+    assert target.read_text(encoding='utf-8') == SLOW_PY, 'the mutant was left in the source file'
+    assert code == 130, code
+    out = json.loads((tmp / 'run' / 'builtin.json').read_text(encoding='utf-8'))
+    assert out.get('interrupted'), {k: v for k, v in out.items() if k != 'mutants'}
+    if hasattr(signal, 'SIGKILL'):
+        # POSIX: SIGTERM from outside is handled the same way
+        p = subprocess.Popen([sys.executable, str(HERE / 'builtin_mutator.py'), *argv[:5], str(tmp / 'run2'),
+                              *argv[6:]], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        end = __import__('time').monotonic() + 240
+        while target.read_text(encoding='utf-8') == SLOW_PY and __import__('time').monotonic() < end:
+            __import__('time').sleep(0.1)
+        p.send_signal(signal.SIGTERM)
+        p.communicate(timeout=60)
+        assert target.read_text(encoding='utf-8') == SLOW_PY, 'SIGTERM left the mutant in the source file'
+        assert p.returncode in (130, 143), p.returncode
+    # a run killed outright (no handler can run) leaves a backup that differs from the source
+    (tmp / 'run3' / 'backup' / 'tools').mkdir(parents=True)
+    (tmp / 'run3' / 'backup' / 'tools' / 'slow.py').write_text(SLOW_PY, encoding='utf-8')
+    target.write_text(SLOW_PY.replace('> 1', '>= 1'), encoding='utf-8')
+    res = run('builtin_mutator.py', '--repo', repo, '--scope', scope, '--run-dir', tmp / 'run3', '--minutes', '1')
+    assert res.returncode == 2 and '--restore' in res.stderr, (res.returncode, res.stderr[-600:])
+    assert '>= 1' in target.read_text(encoding='utf-8'), 'the refused run changed the source'
+
+
+FMT_PY = '''import sys
+
+
+def pct(n, d):
+    return round(100 * n / d)
+
+
+def main(argv):
+    print(pct(int(argv[0]), int(argv[1])))
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))
+'''
+FMT_TEST = 'from tools.fmt import pct\n\n\ndef test_pct():\n    assert pct(1, 4) == 25\n'
+
+
+def case_builtin_main_guard(tmp: Path) -> None:
+    """Under pytest, `if __name__ == '__main__':` never runs its body: the guard itself is not mutated (mutating it
+    runs main() with pytest's argv at import) and mutants in its body are no_coverage, not survivors."""
+    repo = tmp / 'repo'
+    (repo / 'tools').mkdir(parents=True)
+    (repo / 'tests').mkdir()
+    (repo / 'pytest.ini').write_text('[pytest]\npythonpath = .\ntestpaths = tests\n', encoding='utf-8')
+    (repo / 'tools' / 'fmt.py').write_text(FMT_PY, encoding='utf-8')
+    (repo / 'tests' / 'test_fmt.py').write_text(FMT_TEST, encoding='utf-8')
+    n = len(FMT_PY.splitlines())
+    scope = write_json(tmp / 'scope.json', scope_for({'tools/fmt.py': [[1, n]]}))
+    res = run('builtin_mutator.py', '--repo', repo, '--scope', scope, '--run-dir', tmp / 'run', '--minutes', '3')
+    assert res.returncode == 0, res.stdout[-800:] + res.stderr[-800:]
+    out = json.loads((tmp / 'run' / 'builtin.json').read_text(encoding='utf-8'))
+    guard = n - 1
+    assert not [m['id'] for m in out['mutants'] if m['line'] == guard], \
+        [(m['id'], m['mutated']) for m in out['mutants'] if m['line'] == guard]
+    body = [(m['id'], m['status']) for m in out['mutants'] if m['line'] == n]
+    assert body and all(s == 'no_coverage' for _, s in body), body
+    assert any(m['status'] == 'killed' for m in out['mutants'] if m['line'] == 5), out['mutants']
+
+
+# A script whose tests are its own --self-test, and a checker that runs it as a child process.
+PCT_PY = '''import sys
+
+
+def pct(n, d):
+    return round(100 * n / d)
+
+
+def self_test():
+    checks = [('quarter', pct(1, 4) == 25), ('half', pct(1, 2) == 50)]
+    for name, ok in checks:
+        print(('ok  ' if ok else 'FAIL') + '  ' + name)
+    return 0 if all(ok for _, ok in checks) else 1
+
+
+if __name__ == '__main__':
+    if sys.argv[1:] == ['--self-test']:
+        sys.exit(self_test())
+    print(pct(int(sys.argv[1]), int(sys.argv[2])))
+'''
+CHECK_ALL_PY = '''import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+
+
+def self_test():
+    out = subprocess.run([sys.executable, str(HERE / 'pct.py'), '3', '4'], capture_output=True, text=True).stdout
+    ok = out.strip() == '75'
+    print(('ok  ' if ok else 'FAIL') + '  pct cli prints 75')
+    return 0 if ok else 1
+
+
+if __name__ == '__main__':
+    sys.exit(self_test())
+'''
+
+
+def case_builtin_selftest_runner(tmp: Path) -> None:
+    """--runner selftest: the tests are scripts' own --self-test commands (and checkers that run a script as a child
+    process). Coverage is traced in every Python process the command starts; mutants are killed by named checks."""
+    repo = tmp / 'repo'
+    (repo / 'tools').mkdir(parents=True)
+    (repo / 'tools' / 'pct.py').write_text(PCT_PY, encoding='utf-8')
+    (repo / 'tools' / 'check_all.py').write_text(CHECK_ALL_PY, encoding='utf-8')
+    scope = write_json(tmp / 'scope.json', scope_for({'tools/pct.py': [[4, 5], [16, 18]]}))
+    res = run('builtin_mutator.py', '--repo', repo, '--scope', scope, '--run-dir', tmp / 'run', '--minutes', '3',
+              '--runner', 'selftest', '--tests', 'tools/pct.py', '--selftest-cmd', 'python tools/check_all.py')
+    assert res.returncode == 0, res.stdout[-800:] + res.stderr[-800:]
+    out = json.loads((tmp / 'run' / 'builtin.json').read_text(encoding='utf-8'))
+    assert out['runner'] == 'selftest', out['runner']
+    st = [(m['id'], m['line'], m['status'], m.get('killed_by')) for m in out['mutants']]
+    assert not [s for s in st if s[2] == 'runtime_error'], st
+    on_pct = [m for m in out['mutants'] if m['line'] == 5]
+    assert on_pct and all(m['status'] == 'killed' for m in on_pct), st
+    # killed by a named check of the first covering command (--selftest-cmd commands run before --tests scripts)
+    assert all(m.get('killed_by') == 'tools/check_all.py::pct cli prints 75' for m in on_pct), st
+    # the CLI branch runs only in the checker's child process; the tracer follows it there
+    cli = [m for m in out['mutants'] if m['line'] == 18]
+    assert cli and all(m['status'] != 'no_coverage' for m in cli), st
+    assert any('tools/check_all.py' in m['covering_tests'] for m in cli), [m['covering_tests'] for m in cli]
+
+
+DEMO_TS = 'export function band(n: number): string {\n  return n > 3 ? "high" : "low";\n}\n'
+
+
+def case_detect_tools_leaves_out_fixtures(tmp: Path) -> None:
+    """A sample project under examples/ with its own package.json is a fixture, not the product: detect_tools.py
+    leaves it out of the languages and the census by default (listing it), and --include-fixtures counts it."""
+    repo = tmp / 'repo'
+    (repo / 'tools').mkdir(parents=True)
+    (repo / 'tests').mkdir()
+    (repo / 'pyproject.toml').write_text('[project]\nname = "toolkit"\nversion = "0.1.0"\n', encoding='utf-8')
+    (repo / 'tools' / 'score.py').write_text(SCORE_PY * 3, encoding='utf-8')
+    (repo / 'tests' / 'test_score.py').write_text(BENCH_SCORE, encoding='utf-8')
+    demo = repo / 'examples' / 'demo-app'
+    (demo / 'src').mkdir(parents=True)
+    (demo / 'package.json').write_text('{"name": "demo-app", "version": "1.0.0"}\n', encoding='utf-8')
+    for i in range(12):
+        (demo / 'src' / f'band{i}.ts').write_text(DEMO_TS * 4, encoding='utf-8')
+    res = run('detect_tools.py', repo, '--out', tmp / 'tools.json')
+    assert res.returncode == 0, res.stderr[-600:]
+    out = json.loads((tmp / 'tools.json').read_text(encoding='utf-8'))
+    assert 'typescript' not in out['languages'], out['languages']
+    assert out['language_coverage'].get('dominant') == 'Python', out['language_coverage']
+    assert [f['dir'] for f in out.get('fixtures_excluded') or []] == ['examples/demo-app'], out.get('fixtures_excluded')
+    res = run('detect_tools.py', repo, '--include-fixtures', '--out', tmp / 'tools2.json')
+    out2 = json.loads((tmp / 'tools2.json').read_text(encoding='utf-8'))
+    assert 'typescript' in out2['languages'], out2['languages']
+
+
+def case_report_declared_product(tmp: Path) -> None:
+    """--product-path tells normalize_results.py that a scripts/ folder is the product (a repository whose product is
+    its scripts): the scoped files there are not tooling, the declaration is recorded, and the validator's fresh
+    census agrees, so no tooling limitation is demanded."""
+    import validate_mutation_report as v
+    repo, d, _ = lc_report(tmp)
+    res = run('normalize_results.py', '--scope', tmp / 'scope.json', '--repo', repo, '--builtin', tmp / 'builtin.json',
+              '--out', tmp / 'mutants2.json', '--product-path', 'scripts')
+    assert res.returncode == 0, res.stdout + res.stderr
+    mfile = json.loads((tmp / 'mutants2.json').read_text(encoding='utf-8'))
+    lc = mfile['language_coverage']
+    assert lc['tooling_scope_files'] == [] and lc.get('declared_product') == ['scripts'], lc
+    d['metadata']['language_coverage'] = lc
+    d['limitations'] = ['Rust, the product language, was not mutated: cargo-mutants is not installed here.']
+    errs, _ = v.check(d, mfile, None, None, repo)
+    assert not errs, errs
+
+
+def case_report_names_engine_stop(tmp: Path) -> None:
+    """An engine that stopped early (a mutant's run wrote outside the scope, or the run was interrupted) is recorded on
+    the engine by normalize_results.py, and the validator wants a limitation naming the stop."""
+    import validate_mutation_report as v
+    repo, d, _ = lc_report(tmp)
+    raw = json.loads((tmp / 'builtin.json').read_text(encoding='utf-8'))
+    raw['mutants'][0]['wrote_outside_scope'] = ['examples/sample/notes.txt']
+    raw['tree'] = {'changed': ['examples/sample/notes.txt']}
+    raw['stopped'] = {'kind': 'tree_changed', 'mutant': 'B1', 'files': ['examples/sample/notes.txt']}
+    write_json(tmp / 'builtin.json', raw)
+    res = run('normalize_results.py', '--scope', tmp / 'scope.json', '--repo', repo, '--builtin', tmp / 'builtin.json',
+              '--out', tmp / 'mutants3.json')
+    mfile = json.loads((tmp / 'mutants3.json').read_text(encoding='utf-8'))
+    e = mfile['engines'][0]
+    assert e.get('stopped') == raw['stopped'], (e.get('stopped'), res.stderr[-400:])
+    assert mfile['mutants'][0].get('wrote_outside_scope') == ['examples/sample/notes.txt'], mfile['mutants'][0]
+    d['metadata']['engines'] = [e]
+    d['mutants'] = [mfile['mutants'][0]]
+    d['files_changed'] = ['examples/sample/notes.txt']
+    d['limitations'] = ['Rust, the product language, was not mutated: cargo-mutants is not installed here.',
+                        'scripts/levels.py is tooling (a helper script), not the product.']
+    errs, _ = v.check(d, None, None, None, repo)
+    assert any('stopped' in x and 'B1' in x for x in errs), errs
+    d['limitations'].append('The builtin engine stopped after B1: its test run wrote examples/sample/notes.txt.')
+    errs, _ = v.check(d, None, None, None, repo)
+    assert not errs, errs
+    v.write_summary(d, repo)
+    shown = run('render_report.py', write_json(tmp / 'report.json', d), '--color', 'never')
+    assert 'STOPPED (tree_changed at B1' in shown.stdout, shown.stdout[-800:] + shown.stderr[-400:]
+
+
 CASES = [case_builtin_go_engine, case_builtin_scope_outside_repo, case_builtin_unsupported_language, case_ranges_go_only, case_mte_engine_label,
          case_gremlins_operators, case_duplicate_mutants_merged, case_proximity_go, case_proximity_unparsed,
          case_completeness_external_engine, case_prove_kill_go, case_prove_kill_unsupported, case_prove_kill_cmd_shim_metacharacters,
@@ -1006,7 +1387,10 @@ CASES = [case_builtin_go_engine, case_builtin_scope_outside_repo, case_builtin_u
          case_schema_version_hint, case_render_path_scope, case_path_scope_records_head,
          case_operator_keys_and_defaults, case_builtin_budget_estimate_measured, case_builtin_unittest_runner,
          case_prove_kill_unittest, case_builtin_subprocess_only_coverage, case_cargo_mutants_normalise,
-         case_run_engine_cargo_mutants, case_prove_kill_rust]
+         case_run_engine_cargo_mutants, case_prove_kill_rust, case_builtin_rootdir_of_ids,
+         case_builtin_tree_checked_per_mutant, case_builtin_restores_on_interrupt, case_builtin_main_guard,
+         case_builtin_selftest_runner, case_detect_tools_leaves_out_fixtures, case_report_declared_product,
+         case_report_names_engine_stop]
 
 
 def main(argv=None) -> int:

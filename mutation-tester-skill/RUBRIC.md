@@ -109,7 +109,13 @@ run is therefore never 1.0.
   language (`unmutated_dominant`: a Rust workspace whose Python helper scripts were mutated), a
   limitation names it; when the mutated files sit in tooling folders while the product is
   elsewhere (`tooling_scope_files`), a limitation says they are tooling. The scores then speak
-  for the helper scripts, never for the product.
+  for the helper scripts, never for the product. A folder declared to be the product with
+  `normalize_results.py --product-path` (`declared_product`) is not tooling; fixture projects
+  under `examples/` and the like are left out of the census.
+- An engine that stopped early (`stopped`: a mutant's test run wrote outside the scoped files,
+  the test command itself failed, or the run was interrupted) is named in a limitation, with the
+  mutant that stopped it; mutants after the stop are `not_run`, never counted. The files such a
+  run changed are listed in `files_changed`.
 - Never "well tested", "strong tests", "thoroughly tested", "fully tested" or "bulletproof".
 - With a `changed` or `path` scope, no text puts a score on the whole codebase, repo or suite.
 - `baseline.passed` must match the runs; a baseline that isn't green twice means no mutants.

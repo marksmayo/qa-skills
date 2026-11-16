@@ -16,8 +16,9 @@ It is strict about what a mutation run shows:
 - A mutant on a line no test runs is a coverage gap, not a weak assertion.
 - An equivalent mutant needs an argument that both versions behave the same for every input.
 - Timeouts and crashes are never counted as kills.
-- The baseline must pass twice first, the tree is hashed before and after, and tests are only
-  written to the repo when you ask.
+- The baseline must pass twice first, the tree is hashed before and after (and after every mutant
+  by the builtin engine, which stops when a mutant's run writes outside the scope), stopping the
+  engine puts the source back, and tests are only written to the repo when you ask.
 
 ## Install
 
@@ -53,6 +54,8 @@ python scripts/diff_scope.py --repo <repo> --base main --out run/scope.json
 python scripts/run_tests.py --preset pytest --cwd <repo> --out run/runs.json --repeat 2 --label baseline --run-prefix G
 python scripts/builtin_mutator.py --repo <repo> --scope run/scope.json --run-dir run --tests tests/unit
 #   a unittest suite (CI runs python -m unittest):  ... --runner unittest --unittest-args "-s tests"
+#   scripts tested by their own self-test:  ... --runner selftest --tests tools/x.py [--selftest-cmd "python tools/check.py"]
+#   after a run killed outright:  ... --restore
 #   Rust, once cargo-mutants is installed:  python scripts/run_engine.py cargo-mutants --repo <workspace> #       --scope run/scope.json --run-dir run   (then normalize_results.py --cargo-mutants run/mutants.out #       --cargo-mutants-run run/cargo-mutants.run.json)
 python scripts/normalize_results.py --scope run/scope.json --repo <repo> --builtin run/builtin.json \
     --coverage run/coverage.json --out run/mutants.json
@@ -146,11 +149,11 @@ python scripts/self_test.py
 - `RUBRIC.md`: statuses, scores, triage, ranking, proofs
 - `data/operators.json`: common operators, their kind, and each engine's names for them
 - `schemas/mutation_report.schema.json`: output contract
-- `scripts/detect_tools.py`: configured and available mutation tools
+- `scripts/detect_tools.py`: configured and available mutation tools; sample and fixture projects under `examples/`, `fixtures/` ... are left out (`--include-fixtures`)
 - `scripts/diff_scope.py`: changed files, lines and functions from git or a diff (shared)
 - `scripts/run_tests.py`, `scripts/parse_results.py`, `scripts/detect_conventions.py`: test runs and conventions (shared)
 - `scripts/path_scope.py`: a path scope (every line of the files under a path) in `scope.json` form
-- `scripts/builtin_mutator.py`: stdlib AST mutation engine and per-test line coverage for pytest or unittest (`--runner`), limited to `--tests`; Go through `go_mutator.py`
+- `scripts/builtin_mutator.py`: stdlib AST mutation engine and per-test line coverage for pytest, unittest or scripts' own self-tests (`--runner selftest`), limited to `--tests`; checks the tree after every mutant and restores the source when stopped; Go through `go_mutator.py`
 - `scripts/unittest_runner.py`: runs a unittest suite as `python -m unittest discover` does, with per-test results and tracing (used by the builtin engine and `prove_kill.py`)
 - `scripts/go_mutator.py`, `scripts/go_scan.py`: the builtin engine's Go half (Go tokens, `go test -overlay`, per-test coverprofiles) and the Go helpers the validator and `prove_kill.py` use
 - `scripts/self_test.py`: synthetic cases for the Go engine, loud refusals, engine naming, merged duplicates, proximity, evidence completeness, the product-language and tooling warnings, unittest suites, the budget estimate, cargo-mutants and Rust proofs
@@ -158,7 +161,7 @@ python scripts/self_test.py
 - `scripts/run_engine.py`: runs mutmut in a scratch copy, StrykerJS on the scope's line ranges (with `--sandbox` and `--stryker-option`), or cargo-mutants on the scoped Rust files, and keeps the raw results and the tree check
 - `scripts/js_workspace.py`: workspace root, package manager and module versions, and the workspace mirror Stryker's sandbox and `prove_kill.py` use
 - `scripts/ts_scan.py`: finds JavaScript/TypeScript tests by name and whether they call a function (for proximity)
-- `scripts/normalize_results.py`: one mutant list across engines (builtin, mutmut, mutation-testing-elements, cargo-mutants' `outcomes.json`), limited to the scope, with the report's language coverage
+- `scripts/normalize_results.py`: one mutant list across engines (builtin, mutmut, mutation-testing-elements, cargo-mutants' `outcomes.json`), limited to the scope, with the report's language coverage (`--product-path` declares a `scripts/` folder that is the product)
 - `scripts/prove_kill.py`: proves a suggested test passes on the original and fails on the mutants (pytest, unittest, Vitest, Jest, Go, cargo test)
 - `scripts/validate_mutation_report.py`: checks the report against the evidence and the rules
 - `scripts/render_report.py`: coloured terminal/Markdown report

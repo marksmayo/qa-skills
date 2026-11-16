@@ -16,6 +16,13 @@ descending. A language is listed only with a project marker (pyproject.toml, set
 requirements*.txt, package.json, tsconfig.json, go.mod, Cargo.toml, a .csproj, ...); files of a
 language with no marker (a helper script) are counted under without_project_marker and get no
 recommendation. JavaScript and TypeScript are listed separately; both use StrykerJS.
+
+Nested sample and fixture projects (a folder under examples/, fixtures/, testdata/, samples/ ... with its own
+manifest or app: repo_layout.fixture_projects) are not the product: they are left out of the walk and the
+language census and listed under fixtures_excluded. --include-fixtures counts them; --fixture-dir names another
+fixture folder.
+
+    python detect_tools.py <repo> [--out tools.json] [--include-fixtures] [--fixture-dir DIR]
 """
 from __future__ import annotations
 import argparse, json, os, re, shutil, subprocess, sys
@@ -24,6 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import js_workspace  # noqa: E402
 import lang_census  # noqa: E402
+import repo_layout  # noqa: E402
 
 LANG_DEFAULT = {'python': 'mutmut', 'javascript': 'stryker', 'typescript': 'stryker', 'csharp': 'stryker-net', 'jvm': 'pit', 'rust': 'cargo-mutants',
                 'go': 'go-mutesting', 'swift': 'muter', 'dart': 'mutation_test'}
@@ -65,12 +73,17 @@ MARKERS = {'python': re.compile(r'^(pyproject\.toml|setup\.py|setup\.cfg|Pipfile
            'swift': re.compile(r'^Package\.swift$|\.xcodeproj$'), 'dart': re.compile(r'^pubspec\.yaml$')}
 
 
-def walk(repo: Path) -> tuple[dict[str, int], set[str], list[str]]:
-    """One pruned walk: file counts per language, the project markers seen, and stryker-config.json paths."""
+def walk(repo: Path, skip_dirs=()) -> tuple[dict[str, int], set[str], list[str]]:
+    """One pruned walk: file counts per language, the project markers seen, and stryker-config.json paths.
+    skip_dirs: repository-relative folders left out (fixture projects)."""
     counts: dict[str, int] = {}
     marked: set[str] = set()
     net_cfgs: list[str] = []
+    skip_dirs = set(skip_dirs)
     for dirpath, dirnames, filenames in os.walk(repo):
+        here = Path(dirpath).relative_to(repo).as_posix()
+        if skip_dirs:
+            dirnames[:] = [d for d in dirnames if (d if here == '.' else f'{here}/{d}') not in skip_dirs]
         names = dirnames + filenames
         for lang, rx in MARKERS.items():
             if any(rx.search(n) for n in names):
@@ -91,8 +104,10 @@ def languages(repo: Path, scan=None) -> tuple[list[str], dict[str, int]]:
     return sorted(l for l in counts if l in marked), {l: n for l, n in sorted(counts.items()) if l not in marked}
 
 
-def detect(repo: Path) -> dict:
+def detect(repo: Path, include_fixtures: bool = False, fixture_dirs=()) -> dict:
     tools = []
+    fixtures = [] if include_fixtures else repo_layout.fixture_projects(repo, fixture_dirs)
+    fixture_set = {f['dir'] for f in fixtures}
 
     def add(name, configured, available, ver=None, note=''):
         tools.append({'name': name, 'licence': LICENCE[name], 'configured': configured, 'available': available,
@@ -113,7 +128,7 @@ def detect(repo: Path) -> dict:
     core = js_workspace.find_module(repo, '@stryker-mutator/core')
     add('stryker', sj, bool(core), js_workspace.module_version(repo, '@stryker-mutator/core') if core else None,
         note='run with npx stryker run --reporters json,clear-text' if sj else '')
-    scan = walk(repo)
+    scan = walk(repo, fixture_set)
     sn = scan[2][0] if scan[2] else None
     add('stryker-net', sn, bool(shutil.which('dotnet-stryker')) or bool(version(['dotnet', 'stryker', '--version'])) if sn else False)
     pit = None
@@ -177,10 +192,11 @@ def detect(repo: Path) -> dict:
                 how = 'not configured; run from a scratch config if installed (installing it needs the user\'s agreement)'
             recs.append({'language': lang, 'engine': default, 'config_source': 'scratch',
                          'why': f'standard open-source tool for {lang}; {how}'})
-    lc, tooling, warnings = language_facts(repo, tools)
+    lc, tooling, warnings = language_facts(repo, tools, not include_fixtures, fixture_dirs)
     return {'repo': repo.name, 'platform': sys.platform, 'languages': langs, 'files_by_language': scan[0],
             'without_project_marker': unmarked, 'tools': tools, 'recommended': recs, 'node': node,
-            'language_coverage': lc, 'tooling': tooling, 'warnings': warnings}
+            'language_coverage': lc, 'tooling': tooling, 'warnings': warnings,
+            'fixtures_excluded': fixtures, 'fixtures_included': include_fixtures}
 
 
 # census language -> the tool that must be available here for a mutation engine to run on it
@@ -203,12 +219,13 @@ def runnable_languages(tools: list[dict]) -> set[str]:
     return out
 
 
-def language_facts(repo: Path, tools: list[dict]) -> tuple[dict, dict, list[str]]:
+def language_facts(repo: Path, tools: list[dict], exclude_fixtures: bool = True,
+                   fixture_dirs=()) -> tuple[dict, dict, list[str]]:
     """(language coverage, tooling languages, warnings). The language with the most lines of product code (test
     files and tooling folders such as scripts/ counted apart: lang_census.py) decides: when no engine can run on
     it here, that is a loud warning, because mutating the other languages does not test the product. A language
     whose only non-test code sits in tooling folders while the product is elsewhere is named as tooling."""
-    c = lang_census.census(repo)
+    c = lang_census.census(repo, exclude_fixtures=exclude_fixtures, fixture_dirs=fixture_dirs)
     run_here = runnable_languages(tools)
     lc = lang_census.language_coverage(c, run_here, tool='the mutation engines that can run here',
                                        what='mutation test')
@@ -237,16 +254,23 @@ def language_facts(repo: Path, tools: list[dict]) -> tuple[dict, dict, list[str]
     return lc, tooling, warnings
 
 
-def report_language_coverage(repo: Path, mutated_files, scope_paths) -> dict:
+def under(path: str, dirs) -> bool:
+    return any(path == d or path.startswith(d.rstrip('/') + '/') for d in dirs)
+
+
+def report_language_coverage(repo: Path, mutated_files, scope_paths, product_paths=()) -> dict:
     """The report's metadata.language_coverage: the language with the most product lines, the languages this
     report's mutants are in, `unmutated_dominant` when the product's main language was not mutated (the report
     must then say so in a limitation), and the scoped files that sit in tooling folders while the product is
-    elsewhere (`tooling_scope_files`: mutating them tests helper scripts, which a limitation must say)."""
-    c = lang_census.census(repo)
+    elsewhere (`tooling_scope_files`: mutating them tests helper scripts, which a limitation must say).
+    product_paths: folders the user declares are the product although their names read as tooling (a repository
+    whose product is its scripts/); recorded as `declared_product`. Fixture projects are left out of the census."""
+    product_paths = sorted({p.replace('\\', '/').strip('/') for p in product_paths or ()})
+    c = lang_census.census(repo, exclude_fixtures=True)
     mutated = sorted({lang_census.LANG_BY_EXT.get(Path(f).suffix) for f in mutated_files} - {None})
     lc = lang_census.language_coverage(c, mutated, tool="this report's mutation engines", what='mutation test')
-    tooling = sorted(f for f in scope_paths if lang_census.is_tooling_file(f)) if c.get('total_product_lines') else []
-    return {'dominant': c.get('dominant'), 'dominant_by': c.get('dominant_by'), 'product_lines': c.get('lines') or {},
+    tooling = sorted(f for f in scope_paths if lang_census.is_tooling_file(f) and not under(f, product_paths))         if c.get('total_product_lines') else []
+    return {**({'declared_product': product_paths} if product_paths else {}),'dominant': c.get('dominant'), 'dominant_by': c.get('dominant_by'), 'product_lines': c.get('lines') or {},
             'mutated_languages': mutated, 'status': lc['status'],
             'unmutated_dominant': lc.get('dominant_unsupported_language') if lc['status'] == 'unsupported_dominant' else None,
             'tooling_scope_files': tooling, 'warning': lc.get('warning')}
@@ -277,8 +301,12 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('repo', type=Path)
     ap.add_argument('--out', type=Path)
+    ap.add_argument('--include-fixtures', action='store_true',
+                    help='count nested sample and fixture projects (under examples/, fixtures/, ...) as the product')
+    ap.add_argument('--fixture-dir', action='append', default=[],
+                    help='another folder (name or repository-relative path) whose projects are fixtures (repeatable)')
     args = ap.parse_args(argv)
-    out = detect(args.repo.resolve())
+    out = detect(args.repo.resolve(), args.include_fixtures, args.fixture_dir)
     text = json.dumps(out, indent=2) + '\n'
     if args.out:
         args.out.write_text(text, encoding='utf-8')
@@ -288,6 +316,10 @@ def main(argv=None) -> int:
         print(f'{r["language"]}: {r["engine"]} ({r["config_source"]}) - {r["why"]}', file=sys.stderr)
     for w in out['warnings']:
         print(f'WARNING: {w}', file=sys.stderr)
+    if out['fixtures_excluded']:
+        print(f'left out {len(out["fixtures_excluded"])} fixture project(s): ' +
+              ', '.join(f['dir'] for f in out['fixtures_excluded'][:5]) + ' (--include-fixtures counts them)',
+              file=sys.stderr)
     return 0
 
 
