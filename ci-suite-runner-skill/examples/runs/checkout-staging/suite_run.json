@@ -2,7 +2,7 @@
  "schema_version": "1.0.0",
  "skill": {
   "name": "ci-suite-runner",
-  "version": "1.0.0"
+  "version": "1.1.0"
  },
  "catalogue": "examples/suites.json",
  "request": {
@@ -34,7 +34,7 @@
   {
    "kind": "preauth",
    "by": "QA lead",
-   "at": "2026-11-11T14:14:42Z",
+   "at": "2026-11-15T23:56:02Z",
    "grant_id": "PA-1",
    "scope": {
     "suites": [
@@ -48,6 +48,7 @@
    },
    "expires": "2026-11-30",
    "preauth_file": "examples/preauth.json",
+   "as_of": "2026-11-11",
    "decision": "sent"
   }
  ],
@@ -63,7 +64,7 @@
    }
   },
   "status": 204,
-  "at": "2026-11-11T14:14:42Z"
+  "at": "2026-11-15T23:56:02Z"
  },
  "run": {
   "id": 7001,
@@ -73,17 +74,17 @@
  },
  "polling": [
   {
-   "at": "2026-11-11T14:14:42Z",
+   "at": "2026-11-15T23:56:03Z",
    "status": "queued",
    "conclusion": null
   },
   {
-   "at": "2026-11-11T14:14:44Z",
+   "at": "2026-11-15T23:56:04Z",
    "status": "in_progress",
    "conclusion": null
   },
   {
-   "at": "2026-11-11T14:14:47Z",
+   "at": "2026-11-15T23:56:08Z",
    "status": "completed",
    "conclusion": "failure"
   }
@@ -130,7 +131,8 @@
   "The slow checkout test was excluded by the tags; run \"checkout\" alone before the release if it matters."
  ],
  "limitations": [
-  "The CI API is the example's loopback stub (examples/ci-stub/server.py); the tests it ran are real pytest runs of examples/ci-stub/suites."
+  "The CI API is the example's loopback stub (examples/ci-stub/server.py); the tests it ran are real pytest runs of examples/ci-stub/suites.",
+  "Grant PA-1 was judged on the as-of date 2026-11-11 (run_suite.py trigger --as-of), not on the trigger date, so the example can be rerun after PA-1 expires on 2026-11-30; only a loopback CI stub accepts an as-of date."
  ],
  "jobs": [
   {

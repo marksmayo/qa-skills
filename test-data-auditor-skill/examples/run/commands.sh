@@ -15,8 +15,11 @@ python $SKILL/scripts/schema_drift.py $EX/clinic-api --inventory $EX/run/invento
 rm -rf "$COPY" && cp -r $EX/clinic-api "$COPY" && cp $SKILL/scripts/clock_shift.py "$COPY/"
 OUT=$EX/run/runs.json
 RT="python $SKILL/scripts/run_tests.py"
-$RT --preset pytest --cwd "$COPY" --out $OUT --label baseline --run-prefix B --repeat 2
 CLOCK="python -m pytest -q -p no:cacheprovider -p clock_shift --junitxml={junit}"
+# The baseline runs on the audit date (the scan's --today), not the real clock: the planted membership
+# expiry fails on the real clock after 2026-12-01, so a real-clock baseline would stop passing.
+# (The committed B-1 and B-2 were taken on the real clock on 2026-11-12, before the baseline was pinned.)
+$RT --preset custom --cmd "$CLOCK" --cwd "$COPY" --env TDA_CLOCK_DATE=2026-11-11 --out $OUT --label baseline --run-prefix B --repeat 2
 $RT --preset custom --cmd "$CLOCK" --cwd "$COPY" --env TDA_CLOCK_SHIFT=+400d --out $OUT --label "clock +400d" --run-prefix S || true
 $RT --preset custom --cmd "$CLOCK" --cwd "$COPY" --env TDA_CLOCK_DATE=2027-01-31 --out $OUT --label "clock month-end 2027-01-31" --run-prefix M || true
 $RT --preset custom --cmd "$CLOCK" --cwd "$COPY" --env TDA_CLOCK_DATE=2028-02-29 --out $OUT --label "clock leap-day 2028-02-29" --run-prefix L || true
