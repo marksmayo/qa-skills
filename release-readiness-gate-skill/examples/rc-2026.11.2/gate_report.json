@@ -4,7 +4,7 @@
   "name": "release-readiness-gate",
   "version": "1.0.0"
  },
- "generated_at": "2026-11-15T08:14:48Z",
+ "generated_at": "2026-11-15T23:48:53Z",
  "as_of": "2026-11-12",
  "candidate": {
   "commit": "a7c23dea801abfc544a0eebeaa71587787fc47ca",
@@ -22,7 +22,7 @@
   "repo": "(outside the working directory; HEAD a7c23dea801abfc544a0eebeaa71587787fc47ca)",
   "repo_used": true,
   "candidate_commit_time": "2026-11-09T06:00:00+00:00",
-  "collected_at": "2026-11-15T08:14:47Z"
+  "collected_at": "2026-11-15T23:48:49Z"
  },
  "policy": {
   "path": "release-readiness-gate-skill/examples/rc-2026.11.2/release_policy.json",
@@ -250,7 +250,7 @@
   },
   {
    "path": "journey-to-tests-skill/examples/journey_tests_report.example.json",
-   "sha256": "3ca08badf1b73d7ef2d85dc2331966d67ac7f22f1005102818fe622300a5b4b8",
+   "sha256": "bd31d7e8bd7b4d3a7867bd0ae49965e852b7e141102c361f265af184b41c9aa7",
    "type": "journey-to-tests",
    "skill": "journey-to-tests",
    "skill_version": "1.0.0",
