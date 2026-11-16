@@ -1,6 +1,6 @@
 # Design: `mutation-tester-skill`
 
-Status: Built (v1.5.0), see "As built" at the end. Build order: 9.
+Status: Built (v1.7.0), see "As built" at the end. Build order: 9.
 
 ## Mission
 
@@ -451,3 +451,10 @@ Agreed with the user before the build.
   - The example is now schema 1.3.0: `mutants.json` was re-normalised (adding
     `language_coverage` and the engines' `run_by`; the mutants are unchanged), the headline names
     F1, and it validates.
+
+### Scope stays inside the repository (v1.7.0)
+
+- `builtin_mutator.py` writes mutants into the scoped files (and restores them), but did not check that a
+  scope's paths were inside `--repo`: `../x.py` or an absolute path would have been mutated in place. It now
+  refuses such a scope before anything runs (Python and Go). Tested in `self_test.py`
+  (`builtin_scope_outside_repo`, written to fail first).

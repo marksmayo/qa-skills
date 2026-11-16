@@ -1,7 +1,7 @@
 ---
 name: mutation-tester
 description: Run mutation testing on the code that changed (or a path you name) and turn the surviving mutants into a short, ranked list of weak assertions and missing cases, each naming the test that should have caught it and the assertion or input that would. Uses the repo's own mutation tool when it is configured, the standard open-source tool otherwise (from a scratch config, never added to the repo), and a stdlib engine for Python (pytest or unittest) and Go as a fallback; reads cargo-mutants for Rust. It says loudly when the product language was not mutated or the mutated code is tooling. Every score is shown with its counts and scope; equivalent mutants need a checkable reason; timeouts and errors are never counted as kills; no-coverage mutants are coverage gaps, not weak assertions. Never claims code is "well tested".
-version: 1.6.0
+version: 1.7.0
 ---
 
 # Mutation tester
@@ -109,7 +109,8 @@ as `not_run`; never hand-copy results. A converted report keeps its own engine's
 
 `builtin_mutator.py`, `run_engine.py ranges` and `prove_kill.py` refuse a language they don't
 cover with a non-zero exit and name the files they left out; record that engine as `not_run`
-with the message as its reason.
+with the message as its reason. `builtin_mutator.py` also refuses a scope that names a file outside `--repo`
+(`../` or an absolute path), before anything runs: it only ever writes inside the repository.
 
 `detect_tools.py` lists a language only when the repo has a project marker for it
 (`package.json`, `pyproject.toml`, `go.mod`, ...), so one helper script doesn't make a Python

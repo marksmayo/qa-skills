@@ -650,6 +650,12 @@ def main(argv=None) -> int:
         print(f'restored {restore(run_dir, repo)} file(s)')
         return 0
     scope = json.loads(args.scope.read_text(encoding='utf-8'))
+    # every file the mutator may write must be inside --repo: a scope naming ../x.py or an absolute path is refused
+    # before anything runs (mutants are written into the scoped files, then restored)
+    outside = [f['path'] for f in scope.get('files', []) if f.get('status') != 'deleted'
+               and (Path(f['path']).is_absolute() or not (repo / f['path']).resolve().is_relative_to(repo))]
+    if outside:
+        raise SystemExit(f'scope names file(s) outside --repo {repo}: {", ".join(outside[:5])}; refusing to mutate them')
     language = pick_language(scope, args.language)
     if language == 'go':
         import go_mutator
