@@ -1,6 +1,6 @@
 # Design: `test-data-auditor-skill`
 
-Status: Built (v1.7.0), see "As built" at the end. Build order: 11.
+Status: Built (v1.8.0), see "As built" at the end. Build order: 11.
 
 ## Mission
 
@@ -586,3 +586,50 @@ parametrised pytest suite globs:
   (`TDA_CLOCK_DATE=2026-11-11`, the scan's `--today`). The committed B-1 and B-2 are kept (taken on the
   real clock on 2026-11-12). The self-test runs the baseline line of `commands.sh` as written, on a copy,
   with the real clock 90 days and ten years ahead, and fails if any test fails.
+
+### v1.8.0: a tool repository whose test data is sample projects
+
+- **Found on** a repository of agent skills whose test data is the `examples/` folder of every
+  skill (sample projects with planted defects, recorded runs, tickets, captures), read by validator
+  commands and self-tests rather than by test functions. The default inventory found 88 sources,
+  almost none of them fixtures; with 33 `--data-dir` flags it found 1,298, of which 657 were
+  "unused" because commands, not tests, read them; `.html`, `.md`, `.diff`, `.toml` and `.css`
+  were "unknown format"; the near-duplicate check compared every same-format pair across the
+  repository (133,823 pairs, each a `SequenceMatcher` with `autojunk=False`) and ran out of memory
+  after 20 minutes; a time-bomb expiry was linked to another sample project's comparison by field
+  name; `"\n@router.get"` in a fixture string was an email; a bare `"*"` glob made a test the loader
+  of every fixture; `seed_report.py` was a seed and `scripts/test_paths.py` a test file; the
+  validator accepted "Draft headline to be replaced..."; and a bomb confirmed by date arithmetic
+  rendered as "Experiment: none -> not run ()" and lowered evidence completeness.
+- **Changed:** fixture folders (repo_layout's fixture parents holding data files) are data trees by
+  default (`fixture_dirs`, `fixture_projects`, a warning; `--no-fixture-dirs`). Commands in
+  Markdown shell fences and command spans, shell scripts (simple `VAR=value` expanded), Makefiles,
+  CI files and `package.json` scripts are resolved from their folder upwards; a file they name, or a
+  folder of two or more segments holding it, is `used_by_commands`, and so is a file a used data file
+  names by folder and file name (`via`). Self-test scripts (shared `find_self_tests`) load the files
+  and sample projects whose paths they build (`<script>::*`); their bare file names no longer count.
+  The unused rule skips used-by-commands files and the notes count them. HTML, Markdown, diffs,
+  TOML and CSS are read as text (an address in a sentence counts); README-style docs beside data are
+  not inventoried. Near-duplicates: compared within a project (sample project or package root) and
+  format, candidates from one-permutation MinHash sketches banded for LSH (the text is not kept),
+  confirmed most-similar first up to `duplicate_max_pairs` (2,000), with `duplicates` stats and a note
+  when the cap is reached. Time-bomb comparisons are kept within the data file's sample project (or
+  the host's code, and within its top-level component when that folder holds product code), nearest first; a field read through a parser (`date.fromisoformat(g["expires"])`,
+  `x.get("expires")`) and a variable holding the clock (`today = date.today()`) count. An escape
+  sequence before `@` and a call after it are not addresses; a secret value with a `{name}` format
+  placeholder is a dismissed placeholder; a glob tail that is only wildcards names no file. A
+  `test_*.py` outside test areas with no tests and no self-test is not a test; a code file named
+  `seed_*` outside test, seed and db folders is a seed only as `seed.py`, `seeds.ts`, `seed_data.py`
+  and the like. The validator rejects placeholder headlines; a time bomb confirmed by arithmetic
+  counts as evidenced and the renderer says "Confirmed by date arithmetic".
+- **Numbers** (the review clone at dfc689a, Windows, one process): inventory with 33 `--data-dir`
+  flags, 94 s, 798 MB peak, 1,298 sources, 482 not assessed, 657 unused; the scan stopped in the
+  near-duplicate loop after 782 sources and was killed at 420 s (about 810 MB). Now, with no flags:
+  inventory 74 s, 800 MB peak, 1,251 sources (33 fixture folders found), 337 not assessed (mostly
+  screenshots), 60 unused and 672 used by commands only; scan 156 s, 816 MB peak, 1,485 candidates,
+  1,442 candidate pairs confirmed out of 751 files (181 near-duplicate candidates), 54 unused
+  candidates; every expiry outside clinic-api now says no comparison with now was found.
+- **Not changed:** product code is still read for clock and locale calls only; a comparison with a
+  parameter that a caller fills with now (`covering(grants, today)`) is not followed across calls;
+  the inventory still parses every Python module once (about 800 MB peak on that repository).
+- **Example.** Unchanged: rescanning `clinic-api` gives the same candidates.

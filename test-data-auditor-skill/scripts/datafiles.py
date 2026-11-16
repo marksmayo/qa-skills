@@ -19,7 +19,9 @@ from __future__ import annotations
 import ast, csv, io, json, re, sys
 from pathlib import Path
 
-DATA_EXT = {'.json': 'json', '.yaml': 'yaml', '.yml': 'yaml', '.csv': 'csv', '.tsv': 'csv', '.sql': 'sql', '.py': 'python'}
+DATA_EXT = {'.json': 'json', '.yaml': 'yaml', '.yml': 'yaml', '.csv': 'csv', '.tsv': 'csv', '.sql': 'sql', '.py': 'python',
+            # text read line by line (no records)
+            '.md': 'markdown', '.markdown': 'markdown', '.diff': 'diff', '.patch': 'diff', '.toml': 'toml', '.css': 'css'}
 
 
 class NotAssessed(Exception):

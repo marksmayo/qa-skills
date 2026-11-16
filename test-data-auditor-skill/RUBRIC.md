@@ -96,7 +96,10 @@ and `<` it is the fixed date itself.
 
 The mean of three shares:
 - the inventory files scanned (not `not_assessed`);
-- the confirmable findings (time bomb, shared mutable, locale) whose experiment ran;
+- the confirmable findings (time bomb, shared mutable, locale) whose experiment ran, counting a
+  time bomb confirmed by date arithmetic (its candidate compared the date with now and computed
+  the same `fails_on_date`) as evidenced: no run can add to the arithmetic, and it needs no
+  `experiment` object;
 - the applicable tools that ran.
 
 With no confirmable findings, the second share is left out and the mean is of the other two:
@@ -109,14 +112,16 @@ found". When the repository has no tests (`tests_found: 0` in the candidates, `m
 statement about the repository ("has no tests", "there are no tests", "no tests were found");
 "no test data", "no tests failed" or "without tests" do not count. A schema 1.1 report records
 `metadata.tests_found`, which must equal the candidates' `tests_found`. With no tests, no file is
-`unused`: the unused-file rule does not run.
+`unused`: the unused-file rule does not run. A file a documented command or a self-test reads
+(`used_by_commands` or a `<script>::*` loader in the inventory) is not `unused` either.
 
 A `run_tests.py` tool that `ran` needs `metadata.runs_file`, the runs file passed with `--runs`,
 and at least one run in it.
 
 ## Honesty rules
 
-- **The headline:** it names the P0 findings when there are any. A finding count in it must
+- **The headline:** it is written, not a placeholder ("Draft headline to be replaced", TODO, TBD,
+  "placeholder", an empty string are rejected), and it names the P0 findings when there are any. A finding count in it must
   equal the report's, and it never says "no findings" when there are some.
 - **No clean-data claims:** the validator rejects these and similar:
   - "the test data is clean" or "safe";

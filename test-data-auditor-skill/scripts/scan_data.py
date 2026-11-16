@@ -28,7 +28,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import datafiles, detect_conventions, inventory as inv, jsparse, schema_drift  # noqa: E402
+import datafiles, detect_conventions, inventory as inv, jsparse, repo_layout, schema_drift  # noqa: E402
 
 RULES = json.loads((HERE.parent / 'data' / 'rules.json').read_text(encoding='utf-8'))
 RESERVED = json.loads((HERE.parent / 'data' / 'reserved.json').read_text(encoding='utf-8'))
@@ -90,6 +90,11 @@ JS_FROZEN = re.compile(r'useFakeTimers|setSystemTime|MockDate|mockdate|timekeepe
                        r'jest\.useFakeTimers|sinon\.useFakeTimers|mockDate\(|freezeTime|tk\.freeze')
 ATTR_BEFORE = re.compile(r'([A-Za-z_:][\w:.-]*)\s*=\s*$')        # an XML/SVG/HTML attribute name before its value
 MARKUP_EXT = ('.svg', '.xml', '.html', '.htm', '.xhtml')
+# near-duplicate sketches: DUP_BINS MinHash values per file in bands of DUP_ROWS; a bucket over DUP_BUCKET_MAX files
+# pairs neighbours only; pairs whose sketch estimate is below the threshold minus DUP_EST_SLACK are not confirmed
+DUP_BINS, DUP_ROWS, DUP_BUCKET_MAX, DUP_EST_SLACK = 64, 4, 60, 0.25
+# formats read as running text: an address in a sentence is checked, not only one in quotes
+PROSE_FORMATS = {'text', 'markdown', 'diff', 'toml', 'css', 'html', 'xml'}
 GEOMETRY_FIELD = re.compile(r'^(d|points|view_box|transform|path)$')
 JS_KEY_BEFORE = re.compile(r'([A-Za-z_$][\w$]*)[\'"]?\s*:\s*(?:new\s+Date\s*\(|[\w$.]+\s*\()?\s*[\'"`]?$')
 JS_ID_CALL = re.compile(r'(?<![\w$])(get|find|findOne|fetch|load|lookup|retrieve|[\w$]*By[Ii]d)\s*\(\s*(\d+)\s*[,)]'
@@ -323,6 +328,10 @@ def not_mailbox(value: str, m: re.Match) -> str | None:
     (`https://user:key@grid.example.org`) is a credential, not a mailbox: the url_credentials secret rule judges it."""
     if URL_USERINFO_BEFORE.search(value[:m.start()]):
         return 'the user-info of a URL (scheme://user:password@host): a credential, checked by the url_credentials secret rule'
+    if m.start() and value[m.start() - 1] == '\\' and len(m.group(1)) == 1:
+        return 'an escape sequence before @ ("\\n@router.get" in a string of source code), not a mailbox'
+    if value[m.end():m.end() + 1] == '(':
+        return 'a decorator or a method call after @ (@pytest.fixture(...)): code, not a mail domain'
     labels = m.group(2).split('.')
     tld = labels[-1]
     if not (tld.isalpha() and len(tld) >= 2) or all(x.isdigit() for x in labels[:-1]):
@@ -381,6 +390,8 @@ def placeholder_secret(kind: str, match: str) -> str | None:
     w = PLACEHOLDER_SECRET.search(value)
     if w:
         return f'placeholder secret: the value contains the placeholder word "{w.group(0).lower()}"'
+    if re.search(r'\{[A-Za-z_][\w.]*\}|%\(\w+\)s', value):
+        return 'placeholder secret: the value is filled in at run time from a format placeholder ({name}), not written here'
     # a value that names what it stands for: google-access-token, zoom_client_secret, pi_123_secret_abc
     if re.fullmatch(r'[a-z]+(?:[-_.][a-z0-9]+)+', value) and \
             re.search(r'(^|[-_.])(secret|token|key|apikey|password|passwd|pass|access|refresh|client|session|auth|bearer)([-_.]|$)', value):
@@ -488,6 +499,32 @@ def go_restores(mlines: list[str], start: int, end: int, var: str) -> tuple[set[
 CODE_RULE_LANGS = {'python', 'javascript', 'typescript', 'go'}
 
 
+def common_depth(a: str, b: str) -> int:
+    """How many leading folders two repo-relative paths share."""
+    n = 0
+    for x, y in zip(PurePosixPath(a).parts[:-1], PurePosixPath(b).parts[:-1]):
+        if x != y:
+            break
+        n += 1
+    return n
+
+
+def compared_field(p: ast.AST, depth: int = 0) -> str | None:
+    """The field a comparison operand reads: x.expires, x["expires"], x.get("expires"), or one of those parsed first
+    (date.fromisoformat(grant["valid_until"]), parse(x.expires))."""
+    if isinstance(p, ast.Attribute):
+        return p.attr
+    if isinstance(p, ast.Subscript) and isinstance(p.slice, ast.Constant) and isinstance(p.slice.value, str):
+        return p.slice.value
+    if isinstance(p, ast.Call):
+        if isinstance(p.func, ast.Attribute) and p.func.attr == 'get' and p.args and isinstance(p.args[0], ast.Constant) \
+                and isinstance(p.args[0].value, str):
+            return p.args[0].value
+        if p.args and depth < 2:
+            return compared_field(p.args[0], depth + 1)
+    return None
+
+
 def language_of(path: str) -> str | None:
     return detect_conventions.LANG_EXT.get(PurePosixPath(path).suffix.lower())
 
@@ -536,6 +573,32 @@ class Scanner:
         # where this skill stops: product code is read for clock and locale calls only
         self.notes.append(SCOPE_NOTE)
         self.progress = False
+        # sample projects (repo_layout): a time-bomb link and a near-duplicate comparison stay inside one of them
+        fp_list = inventory.get('fixture_projects')
+        if fp_list is None:
+            fp_list = repo_layout.fixture_projects(root)
+        self.projects = sorted((p['dir'] for p in fp_list), key=len, reverse=True)
+        self._roots = inv.package_roots(self.files)
+        self.duplicate_pair_cap = int(RULES.get('duplicate_max_pairs', 2000))
+        self.duplicate_stats: dict = {}
+        self._components: set[str] | None = None
+
+    def component_of(self, path: str) -> str | None:
+        """The top-level folder of path when it is a component with product code of its own (a tool's skill or
+        service folder: Python or JS/TS outside test areas and sample projects), else None. Data in such a component
+        is read by that component's code, not another's; a top-level tests/ or examples/ folder holds no product code
+        and links anywhere in the host."""
+        if '/' not in path:
+            return None
+        if self._components is None:
+            self._components = {f.split('/', 1)[0] for f in self.sources + [j for j in self.js_files if not inv.in_test_area(j)]
+                                if '/' in f and not self.scope_of(f)}
+        top = path.split('/', 1)[0]
+        return top if top in self._components else None
+
+    def scope_of(self, path: str) -> str | None:
+        """The sample project path lies in (a fixture project), or None for the host repository's own files."""
+        return repo_layout.is_fixture(path, self.projects)
 
     def add(self, category: str, rule: str, file: str, line: int, why: str, field: str | None = None, data_type: str | None = None,
             value=None, auto_dismiss: str | None = None, details: dict | None = None, tests: list[str] | None = None):
@@ -688,20 +751,32 @@ class Scanner:
                 tree = ast.parse((self.root / rel).read_text(encoding='utf-8', errors='replace'))
             except SyntaxError:
                 continue
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Compare):
-                    continue
-                parts = [node.left] + node.comparators
-                has_now = any(isinstance(n, ast.Call) and getattr(n.func, 'attr', getattr(n.func, 'id', None)) in nows
-                              for p in parts for n in ast.walk(p))
-                if not has_now:
-                    continue
-                for i, p in enumerate(parts):
-                    name = p.attr if isinstance(p, ast.Attribute) else \
-                        p.slice.value if isinstance(p, ast.Subscript) and isinstance(p.slice, ast.Constant) else None
-                    if isinstance(name, str):
-                        op = type(node.ops[0 if i == 0 else i - 1]).__name__
-                        out.setdefault(name, []).append({'file': rel, 'line': node.lineno, 'op': op, 'field_left': i == 0})
+            seen: set[int] = set()
+            # each function (and the module) with the names it binds to the clock: today = date.today()
+            scopes = [tree] + [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+            for scope in scopes:
+                clock_vars = {t.id for st in ast.walk(scope) if isinstance(st, ast.Assign)
+                              and any(isinstance(n, ast.Call) and getattr(n.func, 'attr', getattr(n.func, 'id', None)) in nows
+                                      for n in ast.walk(st.value))
+                              for t in st.targets if isinstance(t, ast.Name)} if scope is not tree else set()
+
+                def is_clock(p: ast.AST) -> bool:
+                    return any((isinstance(n, ast.Call) and getattr(n.func, 'attr', getattr(n.func, 'id', None)) in nows)
+                               or (isinstance(n, ast.Name) and n.id in clock_vars) for n in ast.walk(p))
+                for node in ast.walk(scope):
+                    if not isinstance(node, ast.Compare) or id(node) in seen:
+                        continue
+                    parts = [node.left] + node.comparators
+                    if not any(is_clock(p) for p in parts):
+                        continue
+                    seen.add(id(node))
+                    for i, p in enumerate(parts):
+                        if is_clock(p):
+                            continue       # the clock side (datetime.now(timezone.utc) names no field)
+                        name = compared_field(p)
+                        if isinstance(name, str):
+                            op = type(node.ops[0 if i == 0 else i - 1]).__name__
+                            out.setdefault(name, []).append({'file': rel, 'line': node.lineno, 'op': op, 'field_left': i == 0})
         return out
 
     def time_bombs(self, rec: dict, file: str, comparisons: dict):
@@ -716,6 +791,13 @@ class Scanner:
             if d < self.today:
                 continue
             cmp = comparisons.get(k, []) + (comparisons.get(snake(k), []) if snake(k) != k else [])
+            # only a comparison in the same sample project (or, for the host's own data, in the host's code) reads this
+            # file: a field name shared with another project's code links nothing; the nearest comparison is cited first
+            scope = self.scope_of(file)
+            comp = self.component_of(file)
+            cmp = sorted((c for c in cmp if self.scope_of(c['file']) == scope
+                          and (comp is None or c['file'].startswith(comp + '/'))),
+                         key=lambda c: (-common_depth(file, c['file']), c['file'], c['line']))
             fails = None
             if cmp:
                 c = cmp[0]
@@ -1381,6 +1463,7 @@ class Scanner:
     # ---------------- files
     def snapshots_and_duplicates(self):
         items = [i for i in self.inv['inventory'] if i['status'] == 'scanned']
+        by_commands = 0
         for i in items:
             if i['kind'] == 'snapshot':
                 p = PurePosixPath(i['path'])
@@ -1397,11 +1480,18 @@ class Scanner:
                              details={'lines': i['lines']})
             elif i['kind'] in ('fixture', 'recording', 'seed') and not i['loaded_by'] and not MIGRATION_SEED.search(i['path']) \
                     and not self.no_tests:
+                if i.get('used_by_commands'):
+                    by_commands += 1       # read by a documented command or a script: used, though not by a test
+                    continue
                 self.add('unused_or_duplicate', 'unused', i['path'], 1, 'no test loads this file (its name appears in no test, '
                          'fixture or loader)', None, None)
+        if by_commands:
+            self.notes.append(f'{by_commands} data file(s) are used by commands, not tests: no test loads them, but a documented '
+                              'command (a README, the repository guide, a commands.sh, a Makefile or CI step) or a folder it '
+                              'names reads them (used_by_commands in the inventory); they are not called unused')
         data = [i for i in items if i['kind'] in ('fixture', 'recording', 'seed') and i.get('lines', 0) >= RULES['duplicate_min_lines']]
-        # a directory with more files of one format than duplicate_max_files is not compared pair by pair (the pairs grow
-        # with the square of the files); its files are checked for exact copies only, and the notes say so
+        # a directory with more files of one format than duplicate_max_files is a templated tree, near-duplicate by design:
+        # its files are checked for exact copies only, and the notes say so
         cap = RULES.get('duplicate_max_files', 200)
         groups: dict[tuple[str, str], list[dict]] = {}
         for i in data:
@@ -1422,32 +1512,115 @@ class Scanner:
                 self.notes.append(f'near-duplicate check not run pair by pair in {d}/ ({len(g)} {fmt} files, over the '
                                   f'{cap}-file limit): only exact copies were looked for there')
             data = [i for i in data if (PurePosixPath(i['path']).parent.as_posix(), i['format']) not in big]
-        texts = {i['path']: re.sub(r'\s+', ' ', datafiles.text_of(self.root / i['path'])) for i in data}
-        for a in range(len(data)):
-            for b in range(a + 1, len(data)):
-                x, y = data[a], data[b]
-                if x['format'] != y['format']:
+        self.near_duplicates(data)
+
+    def project_of(self, path: str) -> str:
+        """Where a near-duplicate comparison stays: the sample project, else the nearest package root."""
+        return self.scope_of(path) or inv.root_of(path, self._roots)
+
+    def near_duplicates(self, data: list[dict]):
+        """Near-duplicate files within one project and format, at a cost that grows with the files, not their pairs.
+
+        Each file is reduced to a sketch (one-permutation MinHash over 4-token shingles of its whitespace-normalised
+        text, DUP_BINS values) and an exact hash; the text itself is not kept. Files whose sketches agree on a whole band
+        of DUP_ROWS values are candidate pairs (locality-sensitive hashing: a pair at 90% similarity shares a band
+        almost surely, an unrelated pair almost never). A bucket larger than DUP_BUCKET_MAX (a cluster of look-alikes)
+        pairs each member with its neighbour in path order only. Candidates are confirmed with the real measure
+        (SequenceMatcher ratio, or the Jaccard of their line sets for large pairs), most similar first, up to
+        duplicate_pair_cap pairs; the rest are counted and the notes say the cap was reached."""
+        import zlib
+        threshold = RULES['duplicate_similarity']
+        sketches: dict[str, tuple] = {}
+        groups: dict[tuple[str, str], list[str]] = {}
+        for i in data:
+            try:
+                text = re.sub(r'\s+', ' ', datafiles.text_of(self.root / i['path']))
+            except (OSError, datafiles.NotAssessed):
+                continue
+            if not text.strip():
+                continue
+            toks = text.split(' ')
+            bins = [None] * DUP_BINS
+            shingles = (' '.join(toks[k:k + 4]) for k in range(max(1, len(toks) - 3)))
+            for sh in shingles:
+                h = zlib.crc32(sh.encode('utf-8', 'replace'))
+                b, v = h % DUP_BINS, h // DUP_BINS
+                if bins[b] is None or v < bins[b]:
+                    bins[b] = v
+            filled = [k for k in range(DUP_BINS) if bins[k] is not None]
+            for k in range(DUP_BINS):          # densify: an empty bin borrows the next filled one (rotation)
+                if bins[k] is None:
+                    nxt = next((j for j in filled if j > k), filled[0])
+                    bins[k] = (bins[nxt], nxt - k)
+            sketches[i['path']] = (len(text), hashlib.sha1(text.encode('utf-8', 'replace')).hexdigest(), tuple(bins))
+            groups.setdefault((self.project_of(i['path']), i['format']), []).append(i['path'])
+        cand: dict[tuple[str, str], float] = {}
+        for (_proj, _fmt), paths in groups.items():
+            if len(paths) < 2:
+                continue
+            buckets: dict[tuple, list[str]] = {}
+            for pth in sorted(paths):
+                sk = sketches[pth][2]
+                for b in range(0, DUP_BINS, DUP_ROWS):
+                    buckets.setdefault((b, sk[b:b + DUP_ROWS]), []).append(pth)
+                buckets.setdefault(('exact', sketches[pth][1]), []).append(pth)
+            for members in buckets.values():
+                if len(members) < 2:
                     continue
-                tx, ty = texts[x['path']], texts[y['path']]
-                # cheap upper bounds first: the length bound, then quick_ratio; full matching is quadratic on large files
-                if not tx or not ty or 2 * min(len(tx), len(ty)) / (len(tx) + len(ty)) < RULES['duplicate_similarity']:
+                if len(members) > DUP_BUCKET_MAX:
+                    pairs = zip(members, members[1:])
+                else:
+                    pairs = ((members[a], members[b]) for a in range(len(members)) for b in range(a + 1, len(members)))
+                for x, y in pairs:
+                    if (x, y) in cand:
+                        continue
+                    lx, ly = sketches[x][0], sketches[y][0]
+                    if 2 * min(lx, ly) / (lx + ly) < threshold:
+                        continue       # the length bound: they cannot reach the threshold
+                    est = sum(1 for p, q in zip(sketches[x][2], sketches[y][2]) if p == q) / DUP_BINS
+                    if sketches[x][1] == sketches[y][1]:
+                        est = 1.0
+                    if est >= threshold - DUP_EST_SLACK:
+                        cand[(x, y)] = est
+        ranked = sorted(cand.items(), key=lambda kv: (-kv[1], kv[0]))
+        cap = self.duplicate_pair_cap
+        todo, skipped = ranked[:cap], len(ranked) - min(len(ranked), cap)
+        texts: dict[str, str] = {}
+
+        def text(pth: str) -> str:
+            if pth not in texts:
+                if len(texts) > 64:
+                    texts.clear()          # a small cache: confirmation never holds the whole tree
+                texts[pth] = re.sub(r'\s+', ' ', datafiles.text_of(self.root / pth))
+            return texts[pth]
+        found = 0
+        for (x, y), est in todo:
+            if sketches[x][1] == sketches[y][1]:
+                ratio, method = 1.0, 'exact'
+            elif sketches[x][0] + sketches[y][0] > RULES.get('duplicate_max_chars', 400_000):
+                lx = set(datafiles.text_of(self.root / x).splitlines())
+                ly = set(datafiles.text_of(self.root / y).splitlines())
+                ratio, method = (len(lx & ly) / len(lx | ly) if lx | ly else 0.0), 'line_jaccard'
+            else:
+                sm = difflib.SequenceMatcher(None, text(x), text(y), autojunk=False)
+                if sm.real_quick_ratio() < threshold or sm.quick_ratio() < threshold:
                     continue
-                sm = difflib.SequenceMatcher(None, tx, ty, autojunk=False)
-                if sm.real_quick_ratio() < RULES['duplicate_similarity'] or sm.quick_ratio() < RULES['duplicate_similarity']:
-                    continue
-                if len(tx) + len(ty) > RULES.get('duplicate_max_chars', 400_000):
-                    # very large files: compare their line sets instead (Jaccard), and say so
-                    lx = set(datafiles.text_of(self.root / x['path']).splitlines())
-                    ly = set(datafiles.text_of(self.root / y['path']).splitlines())
-                    ratio = len(lx & ly) / len(lx | ly) if lx | ly else 0.0
-                    if ratio >= RULES['duplicate_similarity']:
-                        self.add('unused_or_duplicate', 'near_duplicate', y['path'], 1, f'{ratio:.0%} of distinct lines shared with {x["path"]}',
-                                 None, None, details={'similar_to': x['path'], 'similarity': round(ratio, 3), 'method': 'line_jaccard'})
-                    continue
-                ratio = sm.ratio()
-                if ratio >= RULES['duplicate_similarity']:
-                    self.add('unused_or_duplicate', 'near_duplicate', y['path'], 1, f'{ratio:.0%} similar to {x["path"]}', None, None,
-                             details={'similar_to': x['path'], 'similarity': round(ratio, 3)})
+                ratio, method = sm.ratio(), 'sequence'
+            if ratio >= threshold:
+                found += 1
+                what = (f'an exact copy of {x}' if method == 'exact' else f'{ratio:.0%} of distinct lines shared with {x}'
+                        if method == 'line_jaccard' else f'{ratio:.0%} similar to {x}')
+                det = {'similar_to': x, 'similarity': round(ratio, 3)}
+                if method != 'sequence':
+                    det['method'] = method
+                self.add('unused_or_duplicate', 'near_duplicate', y, 1, what, None, None, details=det)
+        self.duplicate_stats = {'files': len(sketches), 'groups': len([g for g in groups.values() if len(g) > 1]),
+                                'candidate_pairs': len(ranked), 'pairs_compared': len(todo), 'pairs_skipped': skipped,
+                                'pair_cap': cap, 'near_duplicates': found, 'method': 'minhash-lsh within a project and format'}
+        if skipped:
+            self.notes.append(f'near-duplicate check: {len(ranked)} candidate pairs, over the cap of {cap} '
+                              f'(duplicate_max_pairs); the {cap} most similar were compared and {skipped} were not, so '
+                              'near copies among them are not ruled out')
 
     def run(self) -> dict:
         comparisons = self.now_comparisons()
@@ -1491,6 +1664,7 @@ class Scanner:
                 item['status'], item['reason'] = 'not_assessed', str(exc)
                 continue
             structured = {(r_line) for r in records for r_line in [v['line'] for v in r['fields'].values()]}
+            prose = item.get('format') in PROSE_FORMATS
             for n, line in enumerate(text.split('\n'), 1):
                 self.secrets(rel, n, line)
                 self.environment(rel, n, line)
@@ -1499,6 +1673,11 @@ class Scanner:
                         key = JS_KEY_BEFORE.search(line[:m.start()]) if jsparse.is_js(rel) else \
                             ATTR_BEFORE.search(line[:m.start()]) if rel.lower().endswith(MARKUP_EXT) else None
                         self.personal_value(rel, n, key.group(1) if key else None, m.group(1) or m.group(2), loose=bool(key))
+                    if prose:
+                        # pages, tickets, notes and patches carry people in their running text, not only in quotes
+                        bare = re.sub(r'"[^"\n]{3,200}"|\'[^\'\n]{3,200}\'', lambda q: ' ' * len(q.group(0)), line)
+                        if bare.strip():
+                            self.personal_value(rel, n, None, bare)
             if jsparse.is_js(rel) and size_mb <= RULES['large_file_mb']:
                 covered = {c['line'] for c in self.cands[n_before:] if c['category'] == 'time_bomb'}
                 self.js_test_rules(rel, item, comparisons, seeds, covered)
@@ -1552,7 +1731,7 @@ class Scanner:
                 'inventory_status': {i['path']: {'status': i['status'], 'reason': i['reason']} for i in self.inv['inventory']},
                 'summary': {'candidates': len(out), 'auto_dismissed': len([c for c in out if c['auto_dismiss']]),
                             'by_category': {k: len([c for c in out if c['category'] == k]) for k in sorted({c['category'] for c in out})}},
-                'language_coverage': self.language_coverage, 'notes': self.notes}
+                'language_coverage': self.language_coverage, 'duplicates': self.duplicate_stats, 'notes': self.notes}
 
 
 def main(argv=None) -> int:
