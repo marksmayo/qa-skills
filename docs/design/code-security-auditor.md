@@ -1,6 +1,6 @@
 # Design: `code-security-auditor-skill`
 
-Status: Built (v1.8.0), see the "As built" sections at the end. Build order: 5.
+Status: Built (v1.9.0), see the "As built" sections at the end. Build order: 5.
 
 ## Mission
 
@@ -615,3 +615,64 @@ web framework and the language census thrown off by vendored code.
 - **Tested** (written to fail first): `self_test.py` (`poc_and_report_rules`) holds the three review cases
   plus `python.exe -c`, `node --eval=`, `wsl`, and `rmtree`/`unlinkSync` inside a PoC file; the guard-check
   case now runs its probe from `files`. The example PoCs and report are unchanged.
+
+## As built: tool repositories, samples and copies (v1.9.0)
+
+Running the skill on this repository (a tool repository whose `examples/` hold deliberately broken sample
+projects and whose shared scripts are copied into many skills) showed recon and the scans reading strings as
+code, samples as the product and every copy as new code.
+
+- **Code inside strings.** recon matched its line patterns (CLI, queue consumers, uploads, secret configuration,
+  global auth hooks, Node CLIs, MCP tools, listeners, config loading, agent permission handlers, Python
+  listeners, and Python framework detection) on raw lines, so docstring usage examples, its own pattern tables
+  and a fixture string holding sample server code became 95 CLI entry points the validator then rejected, two
+  queue consumers, two agent-permission leads and an internet-facing MCP tool. Both recon and the pattern scan
+  now use the shared `code_mask.py` for Python and JavaScript/TypeScript: a match wholly inside a string,
+  docstring or comment is not code (one that starts in a string and runs on into code, `claims["roles"] =
+  os.getenv(...)`, still is). Pitfalls that read string values by design (the `security_headers` pack) carry
+  `match_in_strings`; `string_regex` matches inside strings on purpose (a Jinja `|safe` in a Python template
+  string). The MCP-file test in recon held literal backspace characters where `\b` was meant, so only the
+  package name matched; it is now `MCP_FILE`, matched on code.
+- **Sample and fixture projects.** recon, the pattern scan, `run_scanners.py` (inventory, Semgrep `--exclude`,
+  Bandit `-x`) and `merge_findings.py` leave out the fixture projects the shared `repo_layout.py` finds (through
+  `lang_census.census(exclude_fixtures=True)` where the walker uses the census) and list them under
+  `fixtures_excluded`; `--include-fixtures` and `--fixture-dir` override. Next.js projects inside a fixture are
+  dropped from the model, so a sample site's missing headers are no longer repository-wide leads (with
+  `--include-fixtures` those leads say they come from example code). The secret scan still reads samples (a
+  real key there is exposed) but sets aside low-entropy literals in them, and in any file under a fixture
+  parent folder (`examples/`, `fixtures/` ...), like test-file literals. Lockfiles in samples are listed under
+  `fixture_lockfiles` and do not decide `dependency_advisories`. `merge_findings.py` sets aside any tool's code
+  candidate inside a sample (`fixture_candidates_set_aside`). `seed_report.py` names each sample in
+  `target.excluded` and the limitations, and the validator's `--recon` rejects a report that does not.
+- **Copies.** Files kept identical in several places (`repo_layout.copy_groups`, with a declared
+  `check_shared.py` mapping) are read once: the pattern scan scans the canonical copy and lists the others as
+  `copies` on each hit; recon folds entry points, outbound calls, secret configuration and data stores onto the
+  canonical copy; the secret scan folds a secret at the same line of a copy; `merge_findings.py` moves any tool's
+  hit on a copy to the canonical file, so it joins the same candidate. `scripts/audit_scope.py` holds the
+  skill's side of this (representative copy, fixture parent, home redaction).
+- **Pattern false positives.** `PY-XXE` no longer fires in a file that only imports the standard library XML
+  parsers (no lxml, no `feature_external_ges` turned on): they do not resolve external entities on CPython
+  3.7.1+ (the fix text names the expat entity-expansion caveat). `PY-SSRF`'s `urlopen` forms count only in a
+  file that serves requests (a web framework import, `BaseHTTPRequestHandler`, request data); in a CLI the user
+  names the URL. `PY-MARKSAFE` matches `mark_safe`/`Markup` in code and `|safe` only inside a template string.
+  `PY-EVAL` skips `def eval(`. `PY-FILE-SEND`'s `open(`/`os.path.join(` forms need a web request's own data,
+  not a urllib `Request`. The secret scan skips a detection rule's regular expression in a rule catalogue (two
+  kinds of regex syntax in the value) and treats `fake` as a placeholder word.
+- **New rules from the review's manual findings.** `PY-CMD-SPLIT` (a command line split with `shlex.split` and
+  run), `PY-WIN-CMD-SHIM` (arguments to an `npx`/`npm` `.cmd` shim, or `shutil.which(argv[0])` on Windows),
+  `PY-AUTH-REDIRECT` (an Authorization header with urllib and no redirect handler), `PY-PATH-JOIN-INPUT` (an
+  API object's name or title joined into a path in a file that makes network calls) and `PY-GIT-REV-ARG` (a
+  revision variable passed to git with no `--`/`--end-of-options`). Catalogue 1.8.0, 157 patterns.
+- **Dependencies.** A requirements file with version ranges listed 0 packages (only `==` pins were read), so
+  the product's own Python dependencies were never counted. Every requirement is now listed, with `constraint`,
+  `version` null when it is not pinned, and an `unpinned` count on the lockfile row.
+- **Report.** The validator rejects priority claims in the headline that the counts contradict ("all P3", "only
+  P3", "no P1", "2 P1"), home-directory paths anywhere except `verification.local_copy` and `files_written`
+  (`seed_report.py` writes `~`, and the dependency-output check expands it), and names the report's own entry
+  point list in the `entry_points_total` error. No schema change.
+- **Tested** (written to fail first): `examples/lathe-tools/`, a synthetic tool repository, with its
+  `expected.json` (`self_test.py`: `lathe`, `lathe_recon`, `lathe_secrets`, `lathe_deps`, `lathe_merge`), and
+  `report_scope_rules` for the validator and the seed. `quill-cli/expected.json` now expects its sample Next.js
+  app left out (and the "examples only" label with `--include-fixtures`).
+- **Not done:** `confirmed` still needs `run_poc.py` evidence, so a harmless manual check in a scratch copy can
+  only be described in the limitations; the run_poc lint (F-8) was already fixed in v1.8.0.
