@@ -93,7 +93,8 @@ def self_test() -> int:
     check('rate_band: bands from real intervals (2/20 -> 2, 19/20 -> 4, 0/20 -> 1)', got == (2, 4, 1), got)
 
     lines = {(2, 20): '2/20 = 10.0% (95% CI 2.8%-30.1%)', (0, 20): '0/20 = 0.0% (95% CI 0.0%-16.1%)',
-             (1, 3): '1/3 = 33.3% (95% CI 6.2%-79.2%)', (0, 0): '0/0 = n/a (95% CI 0.0%-100.0%)'}
+             (1, 3): '1/3 = 33.3% (95% CI 6.2%-79.2%)', (19, 20): '19/20 = 95.0% (95% CI 76.4%-99.1%)',
+             (0, 0): '0/0 = n/a (95% CI 0.0%-100.0%)'}
     got = {kn: fmt(*kn) for kn in lines}
     check('fmt: the rate and the interval as percentages to one place; n = 0 is n/a', got == lines, got)
 
