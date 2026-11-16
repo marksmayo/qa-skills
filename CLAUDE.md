@@ -473,6 +473,15 @@ python qa-orchestrator-skill/scripts/orchestrate.py status --state qa-orchestrat
 
 Run these and `commands.sh` from the repo root: the run records report paths and validator commands relative to it. The run hashes the readiness, test case, CI suite, triage and release gate example reports, so editing any of them makes the validator report the change until `commands.sh` is rerun. A real run keeps its state in a temporary folder; the example uses `--state-dir` so it can be committed.
 
+Checks (every runnable command in this file's bash blocks, the way CI runs them in `.github/workflows/checks.yml`):
+
+```bash
+python tools/run_checks.py [--only PATTERN] [--skip-browser]
+python tools/run_checks.py --self-test
+```
+
+`run_checks.py` runs each command one at a time in a scratch copy of the working tree (nothing is left behind; a command that changes a committed file fails) and exits 1 on any failure. It skips, with the reason, commands with `<placeholders>` or `...`, downloads (fetchers run only with `--check`), commands that need a served app, a device, real CI or a person, bare input files the user supplies, and commands whose toolchain (node, pytest, a Playwright browser) or pinned downloads (the fetchers' `--check` and `browserslist_lite.py`; CI fetches them first) are missing; `--require node,pytest,browser,downloads` makes a missing one a failure. Lines in which a self-test reports skipping a check inside (no Go, no browser), or any command one left out because a download is not cached, are listed in the summary. `--list` shows the classification, `--browser-only` runs only the commands that drive Playwright, `--shard K/N` runs one of N balanced groups of blocks, `--json`/`--markdown` write the summary (also appended to `$GITHUB_STEP_SUMMARY`). When you add a command to this file, CI runs it.
+
 Shared files:
 
 ```bash

@@ -70,6 +70,20 @@ test-convention detector and the JUnit results parser). The
 canonical copy lives in `shared/` and each skill carries an identical copy so it stays
 self-contained. `python tools/check_shared.py` checks the copies; `--fix` syncs them.
 
+## Checks
+
+Every skill ships self-tests and example reports with validators; [CLAUDE.md](CLAUDE.md) lists the commands.
+`tools/run_checks.py` runs all the runnable ones, one at a time in a scratch copy, and lists anything it skipped with
+the reason (a placeholder, a network download, a missing toolchain such as node or a Playwright browser, or a
+missing pinned download). CI runs it on every push to main and every pull request ([checks.yml](.github/workflows/checks.yml)).
+
+```
+python tools/run_checks.py                      # everything (about 30-40 minutes)
+python tools/run_checks.py --only flaky-test    # one skill
+python tools/run_checks.py --skip-browser       # without the Playwright self-tests
+python tools/run_checks.py --list               # what would run, and why anything is skipped
+```
+
 ## Benchmarks
 
 `benchmarks/` holds performance benchmarks for the shared scripts and the heavier skill scanners
