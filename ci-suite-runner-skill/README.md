@@ -42,12 +42,15 @@ python scripts/render_report.py runs/checkout-staging/suite_run.json
 `examples/suites.json` catalogues two suites (a GitHub workflow and an Azure DevOps pipeline), and
 `examples/preauth.json` grants staging and UAT runs until 2026-11-30. `examples/ci-stub/server.py` stands in
 for both CI APIs on loopback and runs the requested tests for real with pytest. `examples/runs/` holds two
-real runs against it, made by `examples/commands.sh`, and the log of what the stub received.
+real runs against it, made by `examples/commands.sh`, and the log of what the stub received. The staging
+trigger passes `--as-of 2026-11-11`, so the grant is judged on the example's date and `commands.sh` still
+works after the grant expires; `run_suite.py` accepts `--as-of` only for a loopback stub.
 `examples/README.md` has the answer key.
 
 ```bash
 python scripts/validate_suite_run.py examples/runs/checkout-staging/suite_run.json --preauth examples/preauth.json --stub-log examples/runs/stub_log.json
 python scripts/render_report.py examples/runs/checkout-staging/suite_run.json examples/runs/smoke-production/suite_run.json
+python scripts/self_test.py
 ```
 
 ## Files
@@ -56,6 +59,8 @@ python scripts/render_report.py examples/runs/checkout-staging/suite_run.json ex
 - `schemas/suites.schema.json`, `schemas/preauth.schema.json`, `schemas/suite_run.schema.json`
 - `scripts/run_suite.py`: `plan`, `trigger`, `poll`, `collect`
 - `scripts/validate_suite_run.py`, `scripts/render_report.py`
+- `scripts/self_test.py`: the example's triggers still get the same decisions with the clock 90 days and ten
+  years ahead; `--as-of` is honoured only for a loopback stub and checked by the validator
 - `scripts/parse_results.py`: shared copy (edit it in `shared/`)
 
 ## Design principles

@@ -1,7 +1,7 @@
 ---
 name: ci-suite-runner
 description: Run a catalogued test suite in CI (GitHub Actions workflow_dispatch or an Azure DevOps pipeline run) on a chosen environment with chosen test tags, then poll it to completion and collect the results and artifacts - JUnit totals and failed tests, artifacts, failed jobs' logs - into one record. Every trigger is confirmed unless a pre-authorisation covers that suite and environment and hasn't expired; protected environments such as production always need a confirmation. Triggers once per request, never re-triggers on a timeout, accepts only the catalogue's suites, environments and tags, and hands failures to the CI failure triager.
-version: 1.0.0
+version: 1.1.0
 ---
 
 # CI suite runner
@@ -17,7 +17,9 @@ tags.
 
 1. **No trigger without authority.** Either a grant in `preauth.json` that names the suite and the
    environment and hasn't expired, or a confirmation of this exact request (who, how, when) passed as
-   `--confirmed-by`. Without one, show the exact request and stop. Never treat silence as yes.
+   `--confirmed-by`. Without one, show the exact request and stop. Never treat silence as yes. A grant's
+   expiry is judged on today's date; `--as-of` (recorded in the authorisation) judges it on another date
+   and is accepted only for a loopback CI stub, so an example can be regenerated after its grant expires.
 2. **Protected environments** (production by default) always need a confirmation for the run; a
    pre-authorisation never covers them, even if a grant lists them.
 3. **Only the catalogue**: the suite, environment and tag markers must be in `suites.json`. Anything else is
@@ -51,6 +53,7 @@ python scripts/run_suite.py poll --run run/
 python scripts/run_suite.py collect --run run/
 python scripts/validate_suite_run.py run/suite_run.json --preauth preauth.json
 python scripts/render_report.py run/suite_run.json
+python scripts/self_test.py      # the example stays regenerable on any date; the --as-of rules
 ```
 
 1. **Plan** and show the user the request when no grant covers it; ask for the confirmation, and pass their
