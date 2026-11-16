@@ -1,6 +1,6 @@
 # Design: `mutation-tester-skill`
 
-Status: Built (v1.7.0), see "As built" at the end. Build order: 9.
+Status: Built (v1.9.0), see "As built" at the end. Build order: 9.
 
 ## Mission
 
@@ -465,3 +465,47 @@ Agreed with the user before the build.
   scope's paths were inside `--repo`: `../x.py` or an absolute path would have been mutated in place. It now
   refuses such a scope before anything runs (Python and Go). Tested in `self_test.py`
   (`builtin_scope_outside_repo`, written to fail first).
+
+### Running it on a tool repository (v1.9.0)
+
+Running the skill on this repository's own shared scripts (benchmarks configured by `benchmarks/pytest.ini`,
+scripts tested by their own `--self-test`, sample projects under `examples/`) showed six gaps. Each is fixed with a
+self-test case written to fail first:
+
+- **Covering-test ids from another rootdir** (`builtin_rootdir_of_ids`). With the tests in `benchmarks/` and its own
+  `pytest.ini`, pytest's rootdir was `benchmarks/` and its node ids (`bench_x.py::test_y`) did not resolve from
+  `--repo`, where every mutant run starts: every mutant was a `runtime_error`. The coverage plugin now records each
+  test's id relative to `--repo` (from the item's path), `coverage.json` records pytest's `rootdir` and `inifile`,
+  and before the first mutant the engine collects the covering ids from `--repo`; if pytest cannot, it stops with
+  exit 2. A mutant run in which pytest cannot find a covering test (exit 4, "not found") stops the engine
+  (`stopped.kind: engine_error`); a conftest that fails to import under a mutant (also exit 4) stays a `runtime_error`.
+- **Tree checked after every mutant** (`builtin_tree_checked_per_mutant`, `report_names_engine_stop`). A mutant
+  that turned a dry-run `check` into a write patched a sample project, and every later result read the changed
+  tree; the engine only said so at the end. It now hashes the tree after each mutant (a stat walk with the shared
+  snapshot cache), and on a change records `wrote_outside_scope` on the mutant, `stopped` and `tree.stopped` in
+  `builtin.json`, leaves every later mutant `not_run` with a note, and exits 3. `normalize_results.py` copies the
+  record onto the engine (schema 1.4.0 `stopped`, shown as STOPPED by the renderer), and the validator wants a
+  limitation naming the mutant; the
+  changed files may then stand in `files_changed` without `write_tests`. An engine whose tree changed without a
+  per-mutant record (older runs) gets a warning that later results may read the changed tree.
+- **Stopping the engine restores the source** (`builtin_restores_on_interrupt`). Ctrl-C, SIGTERM, SIGHUP and
+  SIGBREAK kill the test run, put the originals back, and write `builtin.json` with `interrupted: true` (exit 130);
+  an `atexit` hook covers other exits. A run killed outright cannot restore: the next run into the same run
+  directory finds a backup that differs from the source and refuses until `--restore`.
+- **The `__main__` guard** (`builtin_main_guard`). The guard is not mutated (that ran `main()` with pytest's argv at
+  import), and a module-level statement that never ran (the guard's body under pytest) is `no_coverage`; before,
+  every module-level line counted as covered by every test of the file, so the body showed as survivors.
+- **Self-tests as the tests** (`builtin_selftest_runner`). `--runner selftest` takes scripts (`--tests x.py` runs
+  `python x.py --self-test`) and `--selftest-cmd` commands; each is one test. A `sitecustomize` tracer on
+  `PYTHONPATH` records the scoped lines in every Python process the command starts, so a script run as a child
+  process is covered. Check lines are read with the shared `run_tests.parse_selftest_output()`; a failing check or a
+  non-zero exit kills (`<script>::<check>` or `<script>::(exit status)`).
+- **Fixtures are not the product** (`detect_tools_leaves_out_fixtures`). `detect_tools.py` listed TypeScript, Go
+  and Rust tools because of sample projects under `examples/`. It now leaves the shared
+  `repo_layout.fixture_projects()` out of the walk and the census (`fixtures_excluded`; `--include-fixtures`,
+  `--fixture-dir`), and the report's `language_coverage` is computed without them.
+- **A `scripts/` folder can be the product** (`report_declared_product`). `normalize_results.py --product-path DIR`
+  declares it; the scoped files there are not `tooling_scope_files`, the declaration is recorded
+  (`declared_product`), and the validator's fresh census agrees.
+
+The validator still cannot check that an `equivalent` argument is true; that stays a reviewer's job.
