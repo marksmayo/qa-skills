@@ -12,6 +12,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sarif  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 RESET = "\033[0m"; BOLD = "\033[1m"; DIM = "\033[2m"
 RED = "\033[31m"; GREEN = "\033[32m"; YELLOW = "\033[33m"; CYAN = "\033[36m"
@@ -57,7 +59,7 @@ def main() -> int:
     ap.add_argument('--sarif', type=Path)
     ap.add_argument('--contract', type=Path, help='contract.json, to place SARIF results on operation lines')
     a = ap.parse_args()
-    d = json.loads(a.report.read_text(encoding='utf-8'))
+    d = load_json(a.report)
     color = supports_color(a.color)
     P = (lambda s, st: f'{st}{s}{RESET}') if color else (lambda s, st: s)
     sc, md, hl = d['scope'], d['metadata'], d['headline']
@@ -181,7 +183,7 @@ def write_sarif(a, d) -> int:
     if a.sarif:
         lines = {}
         if a.contract:
-            lines = {o['operation_id']: o.get('line') for o in json.loads(a.contract.read_text(encoding='utf-8'))['operations']}
+            lines = {o['operation_id']: o.get('line') for o in load_json(a.contract)['operations']}
         a.sarif.write_text(json.dumps(to_sarif(d, lines), indent=2) + '\n', encoding='utf-8')
         print(f"\nSARIF ({len(d['findings'])} result(s)) -> {a.sarif}", file=sys.stderr)
     return 0

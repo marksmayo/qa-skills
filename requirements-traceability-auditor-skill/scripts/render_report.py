@@ -9,6 +9,8 @@ evidence kinds, result, fresh, status) for a spreadsheet.
 from __future__ import annotations
 import argparse, csv, io, json, sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 
 def main() -> int:
@@ -19,7 +21,7 @@ def main() -> int:
     a = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
-    d = json.loads(a.trace.read_text(encoding='utf-8'))
+    d = load_json(a.trace)
     if a.csv:
         buf = io.StringIO()
         w = csv.writer(buf, lineterminator='\n')

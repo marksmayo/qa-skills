@@ -4,8 +4,12 @@
     python net_guard.py --self-test
 
 Loaded as a pytest plugin (`-p net_guard`, or `PYTEST_ADDOPTS="-p net_guard"`), it patches
-`socket.socket.connect`, `connect_ex` and `socket.create_connection` before any test runs, so
-connections to anything other than 127.0.0.0/8, ::1 and localhost raise ConnectionRefusedError.
+`socket.socket.connect`, `connect_ex`, `sendto`, `sendmsg` and `socket.create_connection` before any test
+runs, so connections and UDP datagrams to anything other than 127.0.0.0/8, ::1 and localhost raise
+ConnectionRefusedError. The C type `_socket.socket` is replaced by a guarded subclass, so code that builds
+the C socket directly is guarded too, and on Windows the asyncio Proactor loop's own connect (ConnectEx) and
+sendto (WSASendTo) are guarded, since they never call socket.connect. Not covered: ctypes or other native
+code calling the OS directly.
 DNS is guarded too: `socket.getaddrinfo`, `gethostbyname` and `gethostbyname_ex` refuse any name that
 is not loopback (localhost, *.localhost) or an IP literal with socket.gaierror before the lookup
 reaches the resolver, and log `net_guard: refused lookup <name>:<port>`, so the log names the host
@@ -172,9 +176,93 @@ def _create_connection(address, *args, **kwargs):
     return _real_create_connection(address, *args, **kwargs)
 
 
+def _send_address(args):
+    """The destination of sendto(data, [flags,] address) / sendmsg(buffers, ancdata, flags, address), if given."""
+    return args[-1] if args and isinstance(args[-1], tuple) else None
+
+
+def _sendto(self, data, *args):
+    _check(self, _send_address(args))
+    return _real_sendto(self, data, *args)
+
+
+def _sendmsg(self, buffers, *args):
+    if len(args) >= 3:
+        _check(self, args[2])
+    return _real_sendmsg(self, buffers, *args)
+
+
+_real_sendto = socket.socket.sendto
+_real_sendmsg = getattr(socket.socket, 'sendmsg', None)
 socket.socket.connect = _connect
 socket.socket.connect_ex = _connect_ex
+socket.socket.sendto = _sendto
+if _real_sendmsg is not None:
+    socket.socket.sendmsg = _sendmsg
 socket.create_connection = _create_connection
+
+# The C socket type (`_socket.socket`) cannot be patched, so code that builds one directly would skip the guard:
+# the module attribute is replaced by a guarded subclass. socket.socket keeps working (its __init__ calls
+# `_socket.socket.__init__`, which the subclass inherits unchanged).
+import _socket  # noqa: E402
+_RealCSocket = _socket.socket
+
+
+class _GuardedCSocket(_RealCSocket):
+    __slots__ = ()
+
+    def connect(self, address):
+        _check(self, address)
+        return _RealCSocket.connect(self, address)
+
+    def connect_ex(self, address):
+        try:
+            _check(self, address)
+        except ConnectionRefusedError:
+            import errno
+            return errno.ECONNREFUSED
+        return _RealCSocket.connect_ex(self, address)
+
+    def sendto(self, data, *args):
+        _check(self, _send_address(args))
+        return _RealCSocket.sendto(self, data, *args)
+
+    if hasattr(_RealCSocket, 'sendmsg'):
+        def sendmsg(self, buffers, *args):
+            if len(args) >= 3:
+                _check(self, args[2])
+            return _RealCSocket.sendmsg(self, buffers, *args)
+
+
+_socket.socket = _socket.SocketType = _GuardedCSocket
+
+
+def _guard_proactor() -> None:
+    """Windows' default asyncio loop (Proactor) connects with ConnectEx and sends datagrams with WSASendTo, never
+    through socket.connect/sendto, so an IP literal would pass. Guard the proactor's own connect and sendto."""
+    try:
+        from asyncio import windows_events
+    except ImportError:
+        return
+    iocp = windows_events.IocpProactor
+    if getattr(iocp, '_net_guard', False):
+        return
+    real_connect, real_sendto = iocp.connect, iocp.sendto
+
+    def connect(self, conn, address):
+        _check(conn, address)
+        return real_connect(self, conn, address)
+
+    def sendto(self, conn, buf, flags=0, addr=None):
+        if addr is not None:
+            _check(conn, addr)
+        return real_sendto(self, conn, buf, flags, addr)
+
+    iocp.connect, iocp.sendto, iocp._net_guard = connect, sendto, True
+
+
+if sys.platform == 'win32':
+    _guard_proactor()
 socket.getaddrinfo = _getaddrinfo
 socket.gethostbyname = _gethostbyname
 socket.gethostbyname_ex = _gethostbyname_ex
@@ -204,10 +292,48 @@ def _self_test() -> int:
             'import os; os.environ["PYTEST_CURRENT_TEST"] = "tests/test_links.py::test_head[a] (call)"\n'
             'try:\n    socket.create_connection(("203.0.113.9", 80), timeout=1)\n'
             'except ConnectionRefusedError:\n    pass\n')
+    # Escapes found by the security review: each path must consult the guard. Loopback-only probe: the guard is told
+    # to treat one loopback listener's ports as "outside", so a path that skips the guard reaches the listener (an
+    # escape) and one that consults it is refused; nothing leaves the machine. The non-loopback targets are RFC 5737
+    # TEST-NET addresses.
+    escapes = ('import socket, _socket, asyncio, net_guard\n'
+               'srv = socket.socket(); srv.bind(("127.0.0.1", 0)); srv.listen(5); tport = srv.getsockname()[1]\n'
+               'u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); u.bind(("127.0.0.1", 0)); uport = u.getsockname()[1]\n'
+               'u.settimeout(1)\n'
+               'real = net_guard._check\n'
+               'def strict(sock, address):\n'
+               '    if isinstance(address, tuple) and address[1] in (tport, uport):\n'
+               '        raise ConnectionRefusedError("net_guard: refused (probe)")\n'
+               '    return real(sock, address)\n'
+               'net_guard._check = strict\n'
+               'def t(name, fn):\n'
+               '    try:\n        fn(); print(name, "ESCAPED")\n'
+               '    except OSError as e:\n        print(name, "refused" if "net_guard" in str(e) else "error:" + type(e).__name__)\n'
+               't("_socket.connect", lambda: _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM).connect(("127.0.0.1", tport)))\n'
+               't("_socket.connect_ex", lambda: _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM).connect_ex(("127.0.0.1", tport)) == 0 or (_ for _ in ()).throw(OSError("net_guard: connect_ex refused")))\n'
+               'def udp():\n'
+               '    socket.socket(socket.AF_INET, socket.SOCK_DGRAM).sendto(b"x", ("127.0.0.1", uport)); u.recvfrom(10)\n'
+               't("udp.sendto", udp)\n'
+               'def cudp():\n'
+               '    _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM).sendto(b"x", ("127.0.0.1", uport)); u.recvfrom(10)\n'
+               't("_socket.udp.sendto", cudp)\n'
+               'async def a():\n'
+               '    r, w = await asyncio.open_connection("127.0.0.1", tport); w.close()\n'
+               't("asyncio.open_connection", lambda: asyncio.run(a()))\n'
+               'async def ad():\n'
+               '    loop = asyncio.get_running_loop()\n'
+               '    tr, _ = await loop.create_datagram_endpoint(asyncio.DatagramProtocol, remote_addr=("127.0.0.1", uport))\n'
+               '    tr.sendto(b"x"); await asyncio.sleep(0.2); tr.close(); u.recvfrom(10)\n'
+               't("asyncio.datagram", lambda: asyncio.run(ad()))\n'
+               'net_guard._check = real\n'
+               't("testnet._socket", lambda: _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM).connect(("192.0.2.10", 9)))\n'
+               't("testnet.udp", lambda: socket.socket(socket.AF_INET, socket.SOCK_DGRAM).sendto(b"x", ("198.51.100.10", 9)))\n')
     with tempfile.TemporaryDirectory() as d:
         log = os.path.join(d, 'guard.log')
         env = {**os.environ, 'QA_NET_GUARD_LOG': log, 'PYTHONPATH': here}
         r = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=60)
+        esc = subprocess.run([sys.executable, '-c', escapes], env=env, capture_output=True, text=True, timeout=60)
+        esc_lines = dict(line.rsplit(' ', 1) for line in esc.stdout.splitlines() if ' ' in line)
         text = open(log, encoding='utf-8').read() if os.path.exists(log) else ''
         bare_env = {k: v for k, v in env.items() if k != 'QA_NET_GUARD_LOG'}
         bare = subprocess.run([sys.executable, '-c', 'import net_guard'], env=bare_env, capture_output=True, text=True, timeout=60)
@@ -225,6 +351,10 @@ def _self_test() -> int:
                'refused 203.0.113.9:80' in text and 'test=tests/test_links.py::test_head[a]' in text, text),
               ('with a log set, stderr stays empty', 'net_guard:' not in r.stderr, r.stderr),
               ('without a log, the loaded line goes to stderr', 'net_guard: loaded pid=' in bare.stderr, bare.stderr)]
+    for path in ('_socket.connect', '_socket.connect_ex', 'udp.sendto', '_socket.udp.sendto', 'asyncio.open_connection',
+                 'asyncio.datagram', 'testnet._socket', 'testnet.udp'):
+        checks.append((f'{path} consults the guard', esc_lines.get(path) == 'refused', esc.stdout + esc.stderr[-400:]))
+    checks.append(('the log names the TEST-NET targets of _socket and UDP', '192.0.2.10:9' in text and '198.51.100.10:9' in text, text))
     failed = 0
     for name, ok, extra in checks:
         failed += not ok

@@ -166,6 +166,20 @@ def case_builtin_go_engine(tmp: Path) -> None:
     assert (repo / 'rates' / 'rates.go').read_text(encoding='utf-8') == GO_SRC
 
 
+def case_builtin_scope_outside_repo(tmp: Path) -> None:
+    """A scope naming a file outside --repo (../ or an absolute path) is refused before anything is mutated, so the
+    mutator never writes a mutant into a file it was not asked to test."""
+    repo = py_shop(tmp / 'repo')
+    outside = tmp / 'outside.py'
+    outside.write_text('def f(a, b):\n    return a + b\n', encoding='utf-8')
+    for name in ('../outside.py', outside.as_posix()):
+        scope = write_json(tmp / 'scope.json', scope_for({name: [[1, 2]]}))
+        res = run('builtin_mutator.py', '--repo', repo, '--scope', scope, '--run-dir', tmp / 'run', '--minutes', '1')
+        text = res.stderr + res.stdout
+        assert res.returncode != 0 and 'outside --repo' in text and not (tmp / 'run' / 'coverage.json').exists(), \
+            f'{name}: exit {res.returncode}, {text[-400:]}'
+
+
 def case_builtin_unsupported_language(tmp: Path) -> None:
     """A scope with only Rust source fails loudly and names the files it could not mutate."""
     repo = tmp / 'repo'
@@ -384,6 +398,37 @@ def case_prove_kill_unsupported(tmp: Path) -> None:
     assert 'Traceback' not in text and '.java' in text and 'no runner' in text, text[-600:]
     assert 'not run' not in text and not (tmp / 'proofs.json').exists(), 'ran a runner on a Java test file'
     assert not (tmp / 'run').exists() or not any((tmp / 'run').iterdir()), 'wrote a scratch copy before refusing'
+
+
+def cmd_shim_fixture(tmp: Path) -> tuple[Path, Path, Path, str]:
+    """A folder for PATH holding a stand-in npx.cmd (it only echoes its arguments) and qa_marker.cmd (which writes
+    marker.txt beside itself when cmd.exe runs it), a package folder, and a test file name that would make cmd.exe
+    run the marker: a&qa_marker&.test.ts."""
+    shim = tmp / 'shim'
+    shim.mkdir()
+    (shim / 'npx.cmd').write_text('@echo off\r\necho shim got: %*\r\n', encoding='ascii')
+    (shim / 'qa_marker.cmd').write_text('@echo ran> "%~dp0marker.txt"\r\n', encoding='ascii')
+    pkg = tmp / 'pkg'
+    pkg.mkdir()
+    return shim, pkg, shim / 'marker.txt', 'a&qa_marker&.test.ts'
+
+
+def case_prove_kill_cmd_shim_metacharacters(tmp: Path) -> None:
+    """A test file name with cmd.exe metacharacters never reaches cmd.exe through the npx .cmd shim (Windows only)."""
+    if os.name != 'nt':
+        raise Skip('the .cmd shim re-parsing only happens on Windows (cmd.exe)')
+    import prove_kill
+    shim, pkg, marker, name = cmd_shim_fixture(tmp)
+    (pkg / name).write_text('test("x", () => {})\n', encoding='utf-8')
+    old = os.environ.get('PATH', '')
+    os.environ['PATH'] = str(shim) + os.pathsep + old
+    try:
+        env = {**os.environ}
+        rec = prove_kill.run_test(pkg, 'vitest', name, 'x', tmp / 'junit.xml', env, 30, [])
+    finally:
+        os.environ['PATH'] = old
+    assert not marker.exists(), 'cmd.exe ran a second command taken from the test file name'
+    assert rec['test_status'] == 'not_run', rec
 
 
 # A tiny Python package ("tea shop prices") whose rate table is loaded once, while conftest is imported:
@@ -952,9 +997,9 @@ def case_prove_kill_rust(tmp: Path) -> None:
         shutil.rmtree(shared, ignore_errors=True)
 
 
-CASES = [case_builtin_go_engine, case_builtin_unsupported_language, case_ranges_go_only, case_mte_engine_label,
+CASES = [case_builtin_go_engine, case_builtin_scope_outside_repo, case_builtin_unsupported_language, case_ranges_go_only, case_mte_engine_label,
          case_gremlins_operators, case_duplicate_mutants_merged, case_proximity_go, case_proximity_unparsed,
-         case_completeness_external_engine, case_prove_kill_go, case_prove_kill_unsupported,
+         case_completeness_external_engine, case_prove_kill_go, case_prove_kill_unsupported, case_prove_kill_cmd_shim_metacharacters,
          case_builtin_import_time_coverage, case_builtin_budget_uses_covering_tests, case_prove_kill_original_timeout,
          case_prove_kill_default_timeout, case_prove_kill_collection_error,
          case_detect_tools_unscripted_dominant, case_report_language_limitation, case_headline_names_p0,

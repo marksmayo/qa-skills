@@ -25,7 +25,7 @@ def from_tickets(path: Path) -> list[dict]:
         out.append({'id': t['key'], 'source': 'jira', 'title': t['summary'], 'priority': t.get('priority'), 'type': t.get('type'),
                     'status': t.get('status'), 'statement': (t.get('description_md') or '')[:600],
                     'criteria': [{'id': f'{t["key"]}/{a["id"]}', 'text': a['text']} for a in t.get('acceptance_criteria', [])],
-                    'links': t.get('links', []), 'comments': [{'author': c.get('author'), 'created': c.get('created'), 'text': c.get('body_md', '')} for c in t.get('comments', [])],
+                    'links': t.get('links', []), 'comments': [{'created': c.get('created'), 'text': c.get('body_md', '')} for c in t.get('comments', [])],
                     'attachments': [a.get('filename') for a in t.get('attachments', [])], 'content_sha256': t.get('content_sha256')})
     return out
 

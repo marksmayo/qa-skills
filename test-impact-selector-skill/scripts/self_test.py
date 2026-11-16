@@ -179,6 +179,37 @@ def case_replay_from_git_commits(tmp: Path) -> None:
     assert res['failures_missed'] == 0, res['misses']
 
 
+def case_history_commit_is_never_an_option(tmp: Path) -> None:
+    """A history change whose commit or base is a git option (`--output=<file>`) is refused before git runs,
+    and nothing is written: commit ids reach git only as revisions."""
+    if shutil.which('git') is None:
+        raise Skip('git is not on PATH')
+    import select_tests
+    repo = make_repo(tmp / 'repo')
+    git(repo, 'init', '-q')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-q', '-m', 'base')
+    marker = tmp / 'qa_marker_written_by_git.txt'
+    for field, value in (('commit', f'--output={marker.as_posix()}'), ('base', f'--output={marker.as_posix()}')):
+        ch = {'id': 'H1', 'commit': 'HEAD', 'runs': []}
+        ch[field] = value
+        hist = write(tmp / 'hist' / 'history.json', json.dumps({'changes': [ch]}))
+        try:
+            select_tests.load_history(hist, repo)
+            refused = False
+        except SystemExit as e:
+            refused = 'not a commit' in str(e)
+        assert not marker.exists(), f'{field} {value!r} reached git as an option and wrote {marker.name}'
+        assert refused, f'a history {field} that is a git option should be refused'
+    # a real commit (full hash, short hash, or a ref) still works
+    write(repo / 'pkg/fares/fares.go', FARES_CHANGED)
+    git(repo, 'commit', '-q', '-am', 'change')
+    for c in (git(repo, 'rev-parse', 'HEAD').strip(), git(repo, 'rev-parse', '--short', 'HEAD').strip(), 'HEAD'):
+        hist = write(tmp / 'hist' / 'history.json', json.dumps({'changes': [{'id': 'H1', 'commit': c, 'runs': []}]}))
+        got = select_tests.load_history(hist, repo)
+        assert got[0]['changed'] == ['pkg/fares/fares.go'], (c, got[0]['changed'])
+
+
 def case_baseline_failures(tmp: Path) -> None:
     """Tests that already fail at the base are left out of co-failure evidence and of replay's recall."""
     import replay, select_tests
@@ -755,7 +786,7 @@ CASES = [case_import_graph_go, case_select_go_change, case_unmapped_go_widens_wi
          case_history_gotestsum_files, case_replay_skips_and_counts_packages, case_replay_from_git_commits,
          case_baseline_failures, case_coverage_map_go_profiles, case_coverage_map_go_run, case_render_go_run_line,
          case_template_render_links_views, case_static_reaches_rendering_tests, case_data_file_in_root_package,
-         case_coverage_core_ctrace, case_normalise_refuses_lost_contexts, case_committed_only_hashes_head,
+         case_coverage_core_ctrace, case_normalise_refuses_lost_contexts, case_committed_only_hashes_head, case_history_commit_is_never_an_option,
          case_rust_graph, case_select_rust_change, case_rust_exact_ids, case_rust_bench_and_fixture,
          case_rust_bin_module_selects_integration_tests, case_rust_parameterised_tests_prefix_matched,
          case_rust_default_features_transitive, case_rust_cfg_keyed_by_target, case_rust_files_scanned_once,

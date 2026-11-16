@@ -527,6 +527,18 @@ def main() -> int:
     rust_run_checks(fails)
     agent_test_and_local_runs_checks(fails)
     owning_change_checks(fails)
+    # report text quotes CI logs: a terminal escape sequence in it must never reach the terminal
+    with tempfile.TemporaryDirectory() as td:
+        t = json.loads((HERE.parent / 'examples' / 'triage.example.json').read_text(encoding='utf-8'))
+        t['summary']['headline'] += '\x1b]8;;https://evil.example.test\x07click\x1b]8;;\x07\x1b]0;qa-marker\x07'
+        p = Path(td) / 'triage.json'
+        p.write_text(json.dumps(t), encoding='utf-8')
+        for args in (['--brief'], []):
+            r = subprocess.run([sys.executable, str(HERE / 'render_report.py'), str(p), *args, '--color', 'never'],
+                               capture_output=True, text=True, encoding='utf-8')
+            if '\x1b' in r.stdout or '\x07' in r.stdout or 'qa-marker' not in r.stdout:
+                fails.append(f'render_report.py {" ".join(args)}: terminal control sequences from the report reached the '
+                             f'output (rc {r.returncode}, {r.stderr.strip()[-200:]})')
     for mod in (fetch_run, extract_failures):
         import io, contextlib
         buf = io.StringIO()

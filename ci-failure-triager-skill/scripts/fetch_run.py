@@ -35,56 +35,17 @@ fetch_problems[]}. Logs and JUnit are copied into <out>/logs and <out>/junit, so
 self-contained.
 """
 from __future__ import annotations
-import argparse, base64, io, ipaddress, json, os, shutil, subprocess, sys, urllib.error, urllib.request, zipfile
+import argparse, base64, io, json, os, shutil, subprocess, sys, urllib.error, urllib.request, zipfile
 from pathlib import Path
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 
 GH_API = 'https://api.github.com'
-CREDENTIAL_HEADERS = ('authorization', 'cookie', 'proxy-authorization')
 
 
-def _loopback(host: str | None) -> bool:
-    if not host:
-        return False
-    if host == 'localhost':
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
-
-
-def _origin(url: str) -> tuple:
-    u = urlsplit(url)
-    return (u.scheme, (u.hostname or '').lower(), u.port or (443 if u.scheme == 'https' else 80))
-
-
-class SafeRedirect(urllib.request.HTTPRedirectHandler):
-    """Follow redirects, but send credentials only to the origin they were given for.
-
-    urllib copies every header onto the redirected request, so a bearer token for api.github.com would be
-    sent to the storage host a log download redirects to (which then rejects the request, and should never
-    see the token). On any change of scheme, host or port the credential headers are dropped; an https URL
-    is never followed to plain http unless both ends are loopback.
-    """
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        new = super().redirect_request(req, fp, code, msg, headers, newurl)
-        if new is None:
-            return None
-        old, nu = _origin(req.full_url), _origin(newurl)
-        if old[0] == 'https' and nu[0] != 'https' and not (_loopback(old[1]) and _loopback(nu[1])):
-            raise urllib.error.HTTPError(newurl, code, 'refusing a redirect from https to plain http', headers, fp)
-        if old != nu:
-            for k in list(new.headers):
-                if k.lower() in CREDENTIAL_HEADERS:
-                    del new.headers[k]
-            for k in list(new.unredirected_hdrs):
-                if k.lower() in CREDENTIAL_HEADERS:
-                    del new.unredirected_hdrs[k]
-        return new
-
-
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+# SafeRedirect (shared/scripts/safe_http.py): credentials are sent only to the origin they were given for; an https
+# URL is never followed to plain http except on loopback. OPENER is module-level so the self-test can swap it.
+from safe_http import CREDENTIAL_HEADERS, SafeRedirect, _loopback, origin as _origin  # noqa: E402,F401
 OPENER = urllib.request.build_opener(SafeRedirect)
 
 
@@ -586,6 +547,10 @@ def self_test() -> int:
                 self.send_response(302); self.send_header('Location', f'http://localhost:{sport}/blob/log'); self.end_headers(); return
             self.send_response(404); self.end_headers()
 
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get('Content-Length') or 0))
+            self.do_GET()
+
     api = http.server.HTTPServer(('127.0.0.1', 0), Api)
     aport = api.server_address[1]
     for s in (st, api):
@@ -601,6 +566,14 @@ def self_test() -> int:
         z = _get(f'{base}/artifacts/1/zip', h, binary=True)
         check(z[:2] == b'PK', 'cross-host redirect: artifact zip not downloaded')
         check(_get(f'{base}/jobs/2/logs', h) == 'same-host log', 'same-host redirect: Authorization was not kept')
+        # rerun.py's POST: a redirect to another origin must not carry the token either
+        import rerun
+        seen['storage'] = []
+        try:
+            rerun._send(f'{base}/jobs/1/logs', 'POST', h)
+        except urllib.error.HTTPError:
+            pass
+        check(seen['storage'] == [None], f'rerun._send: cross-host redirect forwarded Authorization to the storage host ({seen["storage"]})')
         # the unfixed behaviour: a plain urllib opener forwards the header and the storage host rejects it
         seen['storage'] = []
         try:

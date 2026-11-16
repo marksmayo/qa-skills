@@ -57,6 +57,9 @@ python scripts/render_report.py examples/state
 ```
 
 Run these from the repository root: the recorded reports and validator commands use paths from there.
+`--rerun` runs only the configured validators (`python <skill>/scripts/validate_*.py`, rebuilt from the
+config file and checked against its recorded hash), never a command written in the state; on any mismatch
+it refuses and runs nothing. `python scripts/validate_run.py --self-test` checks those refusals.
 
 ## Files
 

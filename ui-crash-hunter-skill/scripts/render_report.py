@@ -11,6 +11,8 @@ from pathlib import Path
 sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sarif  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 RESET = "\033[0m"; BOLD = "\033[1m"; DIM = "\033[2m"
 RED = "\033[31m"; GREEN = "\033[32m"; YELLOW = "\033[33m"; MAGENTA = "\033[35m"; CYAN = "\033[36m"
@@ -97,7 +99,7 @@ def main() -> int:
     ap.add_argument('--sarif', type=Path, help='also write the findings as SARIF 2.1.0')
     args = ap.parse_args()
     try:
-        d = json.loads(args.json_file.read_text(encoding='utf-8'))
+        d = load_json(args.json_file)
     except Exception as exc:
         print(f"Unable to read report: {exc}", file=sys.stderr)
         return 2

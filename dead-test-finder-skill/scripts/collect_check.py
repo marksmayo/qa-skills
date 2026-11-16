@@ -55,7 +55,7 @@ literal, describe.each) is matched by its name pattern. A list command that fail
 errored, and its tests stay not_assessed.
 """
 from __future__ import annotations
-import argparse, contextlib, hashlib, json, os, re, shutil, subprocess, sys
+import argparse, contextlib, hashlib, json, os, re, subprocess, sys
 from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
@@ -170,11 +170,14 @@ def map_pytest_path(path: str, cwd: Path, known: set[str]) -> str:
 
 
 def run(cmd: list[str], cwd: Path, env_extra: dict) -> tuple[int, str]:
-    exe = cmd
-    if os.name == 'nt':
-        found = shutil.which(cmd[0])
-        exe = [found, *cmd[1:]] if found else cmd
     env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', 'NO_COLOR': '1', 'FORCE_COLOR': '0', **env_extra}
+    # On Windows npx is a .cmd shim that cmd.exe re-parses, and the arguments include test file names from the
+    # repository being audited: run_tests.resolve_exe starts the runner's JS entry with node, or refuses, when an
+    # argument holds a character cmd.exe would act on (a file named a&<command>&.test.ts must not run <command>)
+    try:
+        exe = run_tests.resolve_exe(cmd, env, Path(cwd))
+    except SystemExit as exc:
+        return 126, f'not run: {exc}'
     try:
         res = subprocess.run(exe, cwd=cwd, capture_output=True, text=True, encoding='utf-8', errors='replace', env=env)
     except OSError as exc:

@@ -1,6 +1,6 @@
 # Design: `ci-suite-runner-skill`
 
-Status: Built (v1.0.0); see "As built" at the end. Build order: 31.
+Status: Built (v1.1.0); see "As built" at the end. Build order: 31.
 
 ## Mission
 
@@ -141,7 +141,7 @@ Agreed with the user before the build (`decisions-26-32.md`).
 2. **Confirmation?** Each trigger, unless pre-authorised.
 3. **Collection?** Poll to completion, then collect results and artifacts.
 
-## As built (v1.0.0)
+## As built (v1.1.0)
 
 Where the build differs from the design above, and what the example showed.
 
@@ -159,6 +159,23 @@ Where the build differs from the design above, and what the example showed.
 - **Example results:** `checkout-regression` on staging ran under the QA lead's grant: 2 of 3 passed, one
   failure handed to the triager. `smoke` on production was refused under the grant, then ran with the
   release manager's confirmation: 2 of 2 passed. The stub received exactly two triggers.
+- **An as-of date for the example (v1.1.0).** A grant's expiry is judged on today's date, so the example's
+  grant (until 2026-11-30) would stop `commands.sh` from regenerating the staging run after that date.
+  `trigger --as-of DATE` judges the grant on DATE and records `as_of` in the authorisation; it is accepted
+  only when the API base and the trigger URL are on loopback (the stub), and the validator judges the
+  expiry on the recorded `as_of` and rejects one on a record whose CI is not on loopback. A real CI is
+  always judged on the real date. `scripts/self_test.py` replays the triggers in `commands.sh` with the
+  clock 90 days and ten years ahead and fails if any decision changes.
 - **Testing:** 19 of 19 seeded violations are caught, including an expired or non-covering grant, a
   production run under a grant, a second trigger, a refused request that still reached the CI, edited
   totals, and a token in the record.
+
+### Security hardening (v1.1.0)
+
+- **Redirects keep tokens home.** `collect` downloads artifacts and logs through `safe_http.py` (shared), so
+  a 302 to blob storage no longer carries the GitHub or Azure DevOps token to the storage host.
+- **CI-supplied names are file names.** Job and artifact names (and zip entry names) go through `safe_name`
+  (no separators, no `..`, no Windows device names; a clash gets the job id) and every write is checked to
+  resolve inside the run folder. A job named `../../escape` used to write two folders above the run.
+- **Tested** (written to fail first): `python scripts/run_suite.py --self-test` runs `collect` against a
+  loopback API that redirects to a second loopback port and names a job and an artifact with `../../`.

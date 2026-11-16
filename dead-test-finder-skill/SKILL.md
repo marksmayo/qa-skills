@@ -1,7 +1,7 @@
 ---
 name: dead-test-finder
 description: Find tests that give false assurance - tests the framework never collects, tests that pass whatever the code does, tests that only check their own mocks, un-awaited async assertions, swallowed failures, duplicates, and skips whose reason has gone - and prove the important ones with real runs. Never-runs is confirmed by the framework's own collect output; can't-fail by neutralising the code under test in a scratch copy and seeing the test still pass; duplicates by identical coverage and values. Each finding gets a patch, and every strengthening patch is proved to pass on the code and fail when it's neutralised. Never deletes or merges tests, never commits, and never claims a suite has "no dead tests".
-version: 1.5.0
+version: 1.7.0
 ---
 
 # Dead test finder
@@ -76,7 +76,9 @@ Output:
     files it could touch are kept byte for byte and compared afterwards (with `git status` of the
     directory). A command that changed one (an option that took the next argument as its output
     file, as `vitest list --json <file>` does) has them put back, and the script stops with exit
-    code 3 and records nothing. Never pass a runner an option with an optional value followed by
+    code 3 and records nothing. A tracked file outside the guarded set that `git status` shows
+    changed cannot be put back: the stop message names it as NOT put back, so check it with
+    `git diff`. Never pass a runner an option with an optional value followed by
     a path: write `--json=<file in the run directory>`.
 - **No "no dead tests" claim.** The report lists what was scanned, collected and neutralised,
   and what couldn't be (no collect command, services needed). The validator rejects "no dead
@@ -218,6 +220,11 @@ pattern).
   Vitest escapes a double quote in a name a second time in that listing; names are compared with
   the escapes undone. The runner comes from the package's dependencies, then its scripts, then the
   nearest workspace root's.
+- **Windows and `npx`.** `npx` is a `.cmd` shim there, and cmd.exe would re-parse the test file
+  names passed to it: a file named `a&<command>&.test.ts` in the audited repository would run
+  `<command>`. When a name holds `^ & | < > ( ) % ! "`, the list command starts the runner's own
+  JS entry with node (from `node_modules`) or, without one, is not run and the package's listing is
+  recorded as errored with the reason.
 - **No list command.** `node:test`, a repository's own runner (`framework: custom`) and a package
   whose `package.json` names no runner are recorded as `no_list_command`; their tests are
   `not_assessed` with that reason, never `not_collected`. Confirm a never-runs finding there by

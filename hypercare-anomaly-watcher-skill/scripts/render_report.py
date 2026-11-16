@@ -13,6 +13,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from watch import draft_md  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 COL = {'confirmed': '31;1', 'suspected': '33', 'recovering': '36', 'recovered': '32', 'normal': '2', 'not_assessed': '35', 'bold': '1'}
 
@@ -26,7 +28,7 @@ def main() -> int:
     a = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
-    st = json.loads((a.state / 'watch.json').read_text(encoding='utf-8'))
+    st = load_json((a.state / 'watch.json'))
     if a.write_drafts:
         for d in st['drafts']:
             (a.state / 'incidents' / f'{d["id"]}.md').write_text(draft_md(d), encoding='utf-8', newline='\n')
@@ -38,7 +40,7 @@ def main() -> int:
     last = st['ticks'][-1] if st['ticks'] else None
     labels = {f'datadog:{q["id"]}': q.get('label', q['id']) for q in cfg['sources'].get('datadog', {}).get('queries', [])}
     if st['ticks']:
-        lt = json.loads((a.state / 'ticks' / f'{st["ticks"][-1]["n"]:03d}.json').read_text(encoding='utf-8'))
+        lt = load_json((a.state / 'ticks' / f'{st["ticks"][-1]["n"]:03d}.json'))
         labels.update({ev['key']: f'Sentry {ev["short_id"]}' for ev in lt['evaluations'] if ev['source'] == 'sentry' and ev.get('short_id')})
     out = [c(f'# Hypercare: {r["service"]} {r["version"]}', 'bold'), '',
            f'Deployed {r["deployed_at"]}; window to {st["window"]["to"]}; {len(st["ticks"])} tick(s) every {cfg["tick_minutes"]} minutes'

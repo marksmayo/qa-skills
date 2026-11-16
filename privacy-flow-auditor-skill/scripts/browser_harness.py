@@ -21,6 +21,11 @@ Config (dict):
                           reason write, its method, and site same_site (the target's own site) or third_party.
                           allow_form_submission is the older name: allow_form_submission true == read_only
                           false. Giving both with opposite meanings is an error. Only a login recipe posts.
+                          WebSockets (routed with route_web_socket): under read_only a socket opens only to the
+                          site under test (a host the run opened, a target, or their registrable domain); others
+                          are closed before they connect (reason write, method WEBSOCKET). Messages the page sends
+                          over an allowed socket are passed through and counted, since read_only cannot tell a
+                          read from a write in them: metadata()['websockets'] says so.
     bypass_csp            true (default): pages run with Content-Security-Policy bypassed, so styles and scripts
                           the skills inject (freeze CSS, engines, probes) work under hash- or nonce-based CSPs.
                           h.metadata() records it, so a report can say the page's CSP was not enforced; set
@@ -41,6 +46,8 @@ Config (dict):
                           host_map hosts), a host the run navigated to with goto(), a host in targets, or a
                           host in allowed_hosts is aborted and logged in h.blocked with reason third_party,
                           GETs included, so a run never sends analytics hits or ad requests from a test page.
+                          WebSockets to such hosts are closed before they connect (method WEBSOCKET); sockets
+                          that workers open are not routed.
                           The page still attempts the request, so it shows in request logs. allow lets them out.
     dns_guard             true (default): with third_party block, speculative connections can't leak either.
                           Preconnect and dns-prefetch hints are resolved outside request interception, so
@@ -106,7 +113,9 @@ reads it on demand. A page that went fullscreen (requestFullscreen) or resized i
 size, so box and layout comparisons across runs must check matches_planned first.
 
 Request accounting: h.requests counts every request the browser routed through the harness
-({seen, sent, blocked: {write, third_party, budget}, by_method, budget, budget_exhausted}).
+({seen, sent, blocked: {write, third_party, budget}, by_method, budget, budget_exhausted}); WebSocket
+upgrades count under by_method WEBSOCKET, and metadata()['websockets'] adds {guarded, seen, blocked,
+messages_sent, note}.
 Requests the page's own CSP stopped never reach the harness (unless bypass_csp), and service
 worker fetches may not be routed. h.metadata() returns the run settings a report should state
 (browser, version, read_only, bypass_csp, third_party, allowed hosts, request budget, init
@@ -350,6 +359,7 @@ class Harness:
         self._cdp: dict[int, object] = {}
         self._fetch_guarded: set[int] = set()   # CDP sessions carrying the Fetch guard (http_cache keep)
         self._inflight: dict[int, dict] = {}       # page -> {request: start time} for settle()
+        self.websockets = {'seen': 0, 'blocked': {}, 'messages_sent': 0, 'guarded': None}
         self._long_lived_noted: set[str] = set()
         self.settle_cap_s = float(cfg.get('settle_seconds', 8))
         cache = cfg.get('http_cache', 'route')
@@ -447,7 +457,7 @@ class Harness:
                                                       'by_method': dict(self.requests['by_method'])},
                 'auth': dict(self.auth_info) if self.auth_info else None, 'trace_with_auth': self.trace_with_auth,
                 'dns_guard': dict(self.dns_guard), 'http_cache': self.http_cache_info(),
-                'service_workers': self.service_worker_info(),
+                'service_workers': self.service_worker_info(), 'websockets': self.websocket_info(),
                 'blocked_urls': sorted({b['url'] for b in self.blocked if b['reason'] == 'third_party'})}
 
     def service_worker_info(self) -> dict:
@@ -470,6 +480,21 @@ class Harness:
         else:
             info['note'] = ('service workers allowed: Chromium routes their requests through the guard; workers_seen '
                             'lists the ones that started')
+        return info
+
+    def websocket_info(self) -> dict:
+        """How WebSockets were guarded: sockets seen, blocked by reason, messages the page sent over allowed ones."""
+        w = self.websockets
+        info = {'guarded': w['guarded'] is not False, 'method': 'Playwright route_web_socket' if w['guarded'] is not False else None,
+                'seen': w['seen'], 'blocked': dict(w['blocked']), 'messages_sent': w['messages_sent']}
+        if w['guarded'] is False:
+            info['note'] = ('this Playwright has no route_web_socket (1.48+): WebSockets bypassed the third-party and '
+                            'read_only guards; upgrade Playwright')
+        else:
+            info['note'] = ('WebSockets follow the request rules: a third-party socket is closed before it connects, and '
+                            'under read_only only sockets to the site under test open. read_only cannot tell a read from '
+                            'a write in WebSocket messages: the messages the page sent over an allowed socket were passed '
+                            'through and counted (messages_sent). Sockets opened by workers are not routed.')
         return info
 
     def blocked_by_harness(self, url_or_message: str) -> bool:
@@ -539,6 +564,11 @@ class Harness:
         reason = None
         if self.third_party == 'block' and not self.host_allowed(url):
             reason = 'third_party'
+        elif method == 'WEBSOCKET':
+            # the upgrade is a GET, but the messages can change state and are not requests: under read_only a socket
+            # is opened only to the site under test (a host the run opened, a target, or their registrable domain)
+            if not self.allow_post and self.site(url) != 'same_site':
+                reason = 'write'
         elif method not in SAFE_METHODS and not self.allow_post:
             reason = 'write'
         elif r['budget'] is not None and r['sent'] >= r['budget']:
@@ -560,6 +590,28 @@ class Harness:
         if reason:
             return route.abort('blockedbyclient')
         return route.continue_()
+
+    def guard_websocket(self, ws):
+        """Playwright route_web_socket handler: the same rule as guard() (third_party, read_only, budget) for the
+        upgrade; a refused socket is closed before it reaches the server. An allowed socket is connected to the server
+        and the messages the page sends are passed through and counted: read_only cannot tell a read from a write in
+        WebSocket messages, which metadata()['websockets'] says."""
+        w = self.websockets
+        w['seen'] += 1
+        reason = self.decide('WEBSOCKET', ws.url)
+        if reason:
+            w['blocked'][reason] = w['blocked'].get(reason, 0) + 1
+            try:
+                ws.close(code=1008, reason=f'blocked by the test harness ({reason})')
+            except Exception as e:   # noqa: BLE001  (the page went away meanwhile)
+                self.events.append({'url': ws.url.split('?')[0], 'event': f'WebSocket guard: {e}', 'at': now()})
+            return
+        server = ws.connect_to_server()
+
+        def from_page(message):
+            w['messages_sent'] += 1
+            server.send(message)
+        ws.on_message(from_page)
 
     def _fetch_paused(self, cdp, ev: dict):
         """The CDP Fetch guard (http_cache keep): the same rule as guard(), without Playwright routing, so the
@@ -610,6 +662,11 @@ class Harness:
             ctx.on('page', lambda p: self._attach_fetch_guard(ctx, p) if p.opener() else None)
         else:
             ctx.route('**/*', self.guard)   # Playwright routing disables the HTTP cache (metadata says so)
+        if hasattr(ctx, 'route_web_socket'):   # Playwright 1.48+: context.route never sees WebSockets
+            ctx.route_web_socket(lambda url: True, self.guard_websocket)
+            self.websockets['guarded'] = self.websockets['guarded'] is not False
+        else:
+            self.websockets['guarded'] = False
         if self._session_script:
             ctx.add_init_script(script=self._session_script)
         page_scripts = self.init_scripts + [self._script_source(s) for s in init_scripts or []]
@@ -1072,6 +1129,108 @@ def _sw_block_blank_checks() -> list:
     return checks
 
 
+def _websocket_checks() -> list:
+    """WebSockets go through the same rules as requests. Without a browser: the decision for a third-party socket, a
+    socket to an allowed host that isn't the site (refused under read_only) and one to the site. With Chromium (skipped
+    when Playwright or the browser is missing): a loopback page opens a WebSocket to a second loopback port the run
+    treats as third party, then one to the site that sends a message; a stdlib WebSocket server counts handshakes."""
+    import base64, hashlib, http.server, re, socket, threading
+    checks = []
+    h = Harness({'read_only': True, 'targets': ['https://shop.example.com/'], 'allowed_hosts': ['cdn.example.net']})
+    try:
+        got = [h.decide('WEBSOCKET', u) for u in ('wss://tracker.example.org/live', 'wss://cdn.example.net/live',
+                                                   'wss://shop.example.com/live')]
+    except Exception as e:   # noqa: BLE001
+        got = [repr(e)]
+    checks.append(('WebSockets: third party blocked, another allowed host refused under read_only, the site allowed',
+                   got == ['third_party', 'write', None], got))
+    h2 = Harness({'read_only': False, 'allowed_hosts': ['cdn.example.net']})
+    got2 = h2.decide('WEBSOCKET', 'wss://cdn.example.net/live') if hasattr(h2, 'decide') else 'missing'
+    checks.append(('WebSockets: with read_only off an allowed host may be opened', got2 is None, got2))
+    try:
+        import playwright  # noqa: F401
+    except ImportError:
+        return checks + [('WebSockets in a real browser (SKIPPED: Playwright is not installed)', True, '')]
+    seen = {'handshakes': 0, 'messages': []}
+    wss = socket.socket()
+    wss.bind(('127.0.0.1', 0)); wss.listen(5)
+    wport = wss.getsockname()[1]
+
+    def handle(c):
+        with c:
+            data = b''
+            c.settimeout(5)
+            try:
+                while b'\r\n\r\n' not in data:
+                    chunk = c.recv(4096)
+                    if not chunk:
+                        return
+                    data += chunk
+                key = re.search(rb'(?i)sec-websocket-key:\s*(\S+)', data).group(1)
+                acc = base64.b64encode(hashlib.sha1(key + b'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest())
+                c.sendall(b'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
+                          b'Sec-WebSocket-Accept: ' + acc + b'\r\n\r\n')
+                seen['handshakes'] += 1
+                hdr = c.recv(2)
+                n, mask = hdr[1] & 0x7f, c.recv(4)
+                payload = c.recv(n)
+                seen['messages'].append(bytes(b ^ mask[i % 4] for i, b in enumerate(payload)).decode('utf-8', 'replace'))
+            except (OSError, AttributeError, IndexError):
+                pass
+
+    def accept():
+        while True:
+            try:
+                c, _ = wss.accept()
+            except OSError:
+                return
+            threading.Thread(target=handle, args=(c,), daemon=True).start()
+    threading.Thread(target=accept, daemon=True).start()
+    page_html = ('<!doctype html><title>ws</title><script>const ws = new WebSocket("ws://127.0.0.1:%d/live");'
+                 'ws.onopen = () => ws.send("qa-marker-hello");</script>' % wport).encode()
+
+    class Pages(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+
+        def do_GET(self):
+            self.send_response(200); self.send_header('Content-Type', 'text/html'); self.end_headers(); self.wfile.write(page_html)
+    web = http.server.HTTPServer(('127.0.0.1', 0), Pages)
+    threading.Thread(target=web.serve_forever, daemon=True).start()
+    base = f'http://127.0.0.1:{web.server_address[1]}'
+    try:
+        try:
+            hb = Harness({'read_only': True, 'rate_limit_seconds': 0})
+            hb.__enter__()
+        except Exception as e:   # noqa: BLE001
+            return checks + [(f'WebSockets in a real browser (SKIPPED: Chromium did not start: {str(e)[:80]})', True, '')]
+        try:
+            real_allowed = hb.host_allowed
+            hb.host_allowed = lambda url: f':{wport}' not in url and real_allowed(url)   # the socket's port is "third party"
+            page = hb.new_page()
+            hb.goto(page, f'{base}/third')
+            page.wait_for_timeout(800)
+            hb.close_page(page)
+            blocked = [b for b in hb.blocked if b['url'].startswith('ws://')]
+            checks.append(('a WebSocket to a third-party host never reaches it, and is logged as blocked',
+                           seen['handshakes'] == 0 and blocked and blocked[0]['reason'] == 'third_party',
+                           {'handshakes': seen['handshakes'], 'blocked': blocked}))
+            hb.host_allowed = real_allowed
+            page = hb.new_page()
+            hb.goto(page, f'{base}/same')
+            page.wait_for_timeout(800)
+            hb.close_page(page)
+            meta = hb.metadata().get('websockets') or {}
+            checks.append(('a same-site WebSocket under read_only connects, and the messages the page sent are counted',
+                           seen['handshakes'] == 1 and seen['messages'] == ['qa-marker-hello'] and meta.get('guarded') is True
+                           and meta.get('messages_sent') == 1 and meta.get('blocked', {}).get('third_party') == 1
+                           and 'cannot tell' in (meta.get('note') or ''), {'seen': seen, 'meta': meta}))
+        finally:
+            hb.__exit__(None, None, None)
+    finally:
+        web.shutdown(); web.server_close(); wss.close()
+    return checks
+
+
 def tempfile_dir() -> str:
     import tempfile
     return tempfile.mkdtemp(prefix='harness-')
@@ -1130,6 +1289,7 @@ def self_test() -> int:
                    res))
     checks += _cache_and_viewport_checks()
     checks += _sw_block_blank_checks()
+    checks += _websocket_checks()
     failed = 0
     for name, ok, extra in checks:
         failed += not ok

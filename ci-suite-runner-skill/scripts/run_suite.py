@@ -2,7 +2,7 @@
 """Run a catalogued test suite in CI: plan, trigger (only with authority), poll to completion, collect (stdlib only).
 
     python run_suite.py plan --catalogue suites.json --suite NAME --environment ENV [--tags EXPR] [--ref REF] --out run/
-    python run_suite.py trigger --run run/ (--preauth preauth.json | --confirmed-by "who, how, when")
+    python run_suite.py trigger --run run/ (--preauth preauth.json [--as-of YYYY-MM-DD] | --confirmed-by "who, how, when")
     python run_suite.py poll --run run/ [--timeout-minutes 60] [--poll-seconds 20]
     python run_suite.py collect --run run/ [--download PATTERN ...]
     (all take --api-base to point at another API host, such as the example's loopback stub)
@@ -12,7 +12,9 @@ catalogue's markers with and/or/not and parentheses) and writes the exact reques
 trigger sends it once, and only with authority: a pre-authorisation grant that covers the suite and the
 environment and hasn't expired, or a confirmation of this request. A protected environment always needs
 --confirmed-by. Without authority it records the refusal, prints the request, and exits 2. A run that was
-already triggered is never triggered again.
+already triggered is never triggered again. A grant's expiry is judged on today's date; --as-of judges it on
+another date, recorded in the authorisation, and is accepted only when the CI is a loopback stub (so a
+committed example can be regenerated after its grant has expired, and a real CI never can be).
 GitHub dispatches return no run id: the run is the newest workflow_dispatch run on the ref created at or
 after the trigger. Azure DevOps returns the run id.
 poll follows the run with backoff (x1.5 up to 120 s) until it completes or the timeout passes (timed_out;
@@ -21,13 +23,14 @@ totals the results with the shared parse_results.py, and fetches failed jobs' lo
 Tokens come from GITHUB_TOKEN / GH_TOKEN or AZURE_DEVOPS_EXT_PAT and are never written.
 """
 from __future__ import annotations
-import argparse, base64, fnmatch, io, json, os, re, shutil, subprocess, sys, time, urllib.error, urllib.request, zipfile
+import argparse, base64, fnmatch, io, ipaddress, json, os, re, shutil, subprocess, sys, time, urllib.error, urllib.parse, urllib.request, zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from parse_results import parse_junit  # noqa: E402
+from safe_http import open_url  # noqa: E402  (credentials are never sent to another origin on a redirect)
 
 DEFAULT_API = {'github': 'https://api.github.com', 'azure': 'https://dev.azure.com'}
 TAG_WORDS = {'and', 'or', 'not'}
@@ -70,7 +73,7 @@ def call(method: str, url: str, system: str, body: dict | None = None, raw: bool
     if body is not None:
         req.add_header('Content-Type', 'application/json')
     try:
-        with urllib.request.urlopen(req, timeout=60) as r:
+        with open_url(req, timeout=60) as r:
             data, code = r.read(), r.status
     except urllib.error.HTTPError as e:
         data, code = e.read(), e.code
@@ -98,7 +101,7 @@ def cmd_plan(a) -> int:
         plan = {'method': 'POST', 'url': f'{api}/{s["org"]}/{s["project"]}/_apis/pipelines/{s["pipeline_id"]}/runs?api-version=7.1',
                 'body': {'resources': {'repositories': {'self': {'refName': ref}}}, 'templateParameters': inputs}}
         pipeline = f'{s["org"]}/{s["project"]} pipeline {s["pipeline_id"]}'
-    d = {'schema_version': '1.0.0', 'skill': {'name': 'ci-suite-runner', 'version': '1.0.0'}, 'catalogue': a.catalogue.as_posix(),
+    d = {'schema_version': '1.0.0', 'skill': {'name': 'ci-suite-runner', 'version': '1.1.0'}, 'catalogue': a.catalogue.as_posix(),
          'request': {'suite': a.suite, 'system': s['system'], 'pipeline': pipeline, 'environment': a.environment, 'protected': a.environment in s.get('protected', []),
                      'tags': tags, 'ref': ref, 'inputs': {k: ('[redacted]' if k in s.get('secret_inputs', []) else v) for k, v in inputs.items()}},
          'api_base': api, 'plan': plan, 'authorisations': [], 'trigger': None, 'run': None, 'polling': [], 'outcome': {'status': 'not_started', 'conclusion': None},
@@ -106,6 +109,17 @@ def cmd_plan(a) -> int:
     save(a.out, d)
     print(f'plan: {plan["method"]} {plan["url"]}\n      {json.dumps(plan["body"])}' + ('\n      environment is protected: needs --confirmed-by' if d['request']['protected'] else ''))
     return 0
+
+
+def is_loopback(url: str) -> bool:
+    """True when the URL's host is localhost or a loopback address (the example's CI stub)."""
+    host = (urllib.parse.urlsplit(url).hostname or '').lower()
+    if host == 'localhost':
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def covering(grants: list[dict], suite: str, env: str, on: date) -> dict | None:
@@ -121,6 +135,16 @@ def cmd_trigger(a) -> int:
     if d.get('trigger') and d['trigger'].get('sent'):
         raise SystemExit(f'already triggered at {d["trigger"]["at"]} (run {(d.get("run") or {}).get("id")}); poll it instead of triggering again')
     today = datetime.now(timezone.utc).date()
+    as_of = None
+    if a.as_of:
+        if not a.preauth or a.confirmed_by:
+            raise SystemExit("--as-of judges a grant's expiry: it goes with --preauth only")
+        if not (is_loopback(d['api_base']) and is_loopback(d['plan']['url'])):
+            raise SystemExit(f'--as-of is accepted only for a loopback CI stub, not {d["api_base"]}: a real CI is judged on the real date')
+        try:
+            as_of = today = date.fromisoformat(a.as_of)
+        except ValueError:
+            raise SystemExit(f'--as-of takes a date (YYYY-MM-DD), not {a.as_of!r}')
     auth, reason = None, None
     if a.confirmed_by:
         auth = {'kind': 'confirmation', 'by': a.confirmed_by, 'at': now()}
@@ -132,6 +156,8 @@ def cmd_trigger(a) -> int:
         elif g:
             auth = {'kind': 'preauth', 'by': g['granted_by'], 'at': now(), 'grant_id': g['id'], 'scope': {'suites': g['suites'], 'environments': g['environments']},
                     'expires': g['expires'], 'preauth_file': a.preauth.as_posix()}
+            if as_of:
+                auth['as_of'] = as_of.isoformat()
         else:
             reason = f'no grant in {a.preauth.as_posix()} covers {r["suite"]} on {r["environment"]} on {today}'
     else:
@@ -211,6 +237,22 @@ def cmd_poll(a) -> int:
     return 0 if d['outcome']['status'] == 'completed' else 3
 
 
+def safe_name(name: str, fallback: str = 'item') -> str:
+    """A CI-supplied job or artifact name as one plain file name: no separators, no '..', no drive or device."""
+    s = re.sub(r'[^A-Za-z0-9._ ()+=,@-]', '_', str(name)).strip(' .')
+    s = re.sub(r'\.{2,}', '_', s)[:120].strip(' .')
+    if re.fullmatch(r'(?i)(con|prn|aux|nul|com\d|lpt\d)(\..*)?', s):
+        s = '_' + s
+    return s or fallback
+
+
+def inside(root: Path, p: Path) -> Path:
+    """p, after checking it resolves inside root (a CI-supplied name must never write elsewhere)."""
+    if not p.resolve().is_relative_to(root.resolve()):
+        raise SystemExit(f'refusing to write {p}: it is outside {root}')
+    return p
+
+
 def cmd_collect(a) -> int:
     d = load(a.run)
     if d['outcome']['status'] != 'completed':
@@ -239,11 +281,11 @@ def cmd_collect(a) -> int:
     for x in arts:
         if any(fnmatch.fnmatch(x['name'], p) for p in want):
             code, data = call('GET', x['url'], r['system'], raw=True)
-            dest = out / x['name']
+            dest = inside(out, out / safe_name(x['name'], 'artifact'))
             if code == 200:
                 with zipfile.ZipFile(io.BytesIO(data)) as z:
                     for n in z.namelist():
-                        p = dest / Path(n).name
+                        p = inside(dest, dest / safe_name(Path(n).name, 'file'))
                         p.parent.mkdir(parents=True, exist_ok=True)
                         p.write_bytes(z.read(n))
                         if p.suffix == '.xml' and x['name'] in cat.get('junit_artifacts', ['junit']):
@@ -263,11 +305,15 @@ def cmd_collect(a) -> int:
         d['results'] = {'status': 'not_collected', 'reason': 'no JUnit artifact in the run', 'junit': [], 'totals': None, 'failed_tests': []}
     d['jobs'] = [{k: v for k, v in j.items() if k != 'log_id'} for j in jobs]
     d['logs'] = []
+    used: set[str] = set()
     for j in jobs:
         if j['conclusion'] not in ('success', None):
             code, data = call('GET', log_url(j), r['system'], raw=True)
             if code == 200:
-                p = a.run / 'logs' / f'{j["name"]}.txt'
+                stem = safe_name(j['name'], 'job')
+                stem = stem if stem.lower() not in used else f'{stem}-{safe_name(j["id"], "id")}'
+                used.add(stem.lower())
+                p = inside(a.run / 'logs', a.run / 'logs' / f'{stem}.txt')
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_bytes(data)
                 d['logs'].append({'job': j['name'], 'path': p.relative_to(a.run).as_posix()})
@@ -278,12 +324,98 @@ def cmd_collect(a) -> int:
     return 0
 
 
+def self_test() -> int:
+    """A loopback GitHub-shaped API whose log and artifact downloads redirect to a "storage" server on another
+    port (another origin). Checks the token never reaches the storage server, and that a job or artifact
+    named with ../ writes inside the run folder only. Fake token; nothing leaves the machine."""
+    import http.server, tempfile, threading
+    FAKE = 'fake-token-0000'
+    seen: dict = {'storage': []}
+
+    def zipped() -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w') as z:
+            z.writestr('junit.xml', '<testsuite name="s" tests="1"><testcase classname="a" name="b"/></testsuite>')
+            z.writestr('../../zip-escape.xml', '<testsuite name="z" tests="0"/>')
+        return buf.getvalue()
+
+    class Storage(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+
+        def do_GET(self):
+            seen['storage'].append(self.headers.get('Authorization'))
+            body = zipped() if self.path.startswith('/zip') else b'##[error]Process completed with exit code 1.\n'
+            self.send_response(200); self.end_headers(); self.wfile.write(body)
+
+    st = http.server.HTTPServer(('127.0.0.1', 0), Storage)
+    storage = f'http://127.0.0.1:{st.server_address[1]}'
+
+    class Api(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+
+        def do_GET(self):
+            p = self.path.split('?')[0]
+            if p.endswith('/actions/runs/7/jobs'):
+                body = {'jobs': [{'id': 1, 'name': '../../escape', 'conclusion': 'failure'}, {'id': 2, 'name': 'ok', 'conclusion': 'success'}]}
+            elif p.endswith('/actions/runs/7/artifacts'):
+                body = {'artifacts': [{'name': 'junit', 'size_in_bytes': 10, 'archive_download_url': f'http://127.0.0.1:{self.server.server_address[1]}/dl/junit'},
+                                      {'name': '../../junit-escape', 'size_in_bytes': 10, 'archive_download_url': f'http://127.0.0.1:{self.server.server_address[1]}/dl/x'}]}
+            elif p.startswith('/dl/') or p.endswith('/logs'):
+                self.send_response(302); self.send_header('Location', f'{storage}/{"zip" if p.startswith("/dl/") else "log"}?sig=fake'); self.end_headers(); return
+            else:
+                self.send_response(404); self.end_headers(); return
+            self.send_response(200); self.end_headers(); self.wfile.write(json.dumps(body).encode())
+
+    api = http.server.HTTPServer(('127.0.0.1', 0), Api)
+    for s in (st, api):
+        threading.Thread(target=s.serve_forever, daemon=True).start()
+    fails: list[str] = []
+    check = lambda cond, what: None if cond else fails.append(what)  # noqa: E731
+    saved = {k: os.environ.get(k) for k in ('GITHUB_TOKEN', 'GH_TOKEN')}
+    os.environ['GITHUB_TOKEN'] = FAKE
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            top = Path(td)
+            run = top / 'a' / 'b' / 'run'
+            cat = top / 'suites.json'
+            cat.write_text(json.dumps({'suites': {'s': {'junit_artifacts': ['junit', '*escape*']}}}), encoding='utf-8')
+            base = f'http://127.0.0.1:{api.server_address[1]}/repos/acme/x'
+            save(run, {'catalogue': cat.as_posix(), 'request': {'suite': 's', 'system': 'github'}, 'run': {'id': 7},
+                       'plan': {'url': f'{base}/actions/workflows/w.yml/dispatches'}, 'outcome': {'status': 'completed', 'conclusion': 'failure'}})
+            import contextlib
+            with contextlib.redirect_stdout(io.StringIO()):
+                cmd_collect(argparse.Namespace(run=run, download=None))
+            d = load(run)
+            check(seen['storage'] and all(x is None for x in seen['storage']),
+                  f'cross-origin redirect: the token reached the storage server ({sum(x is not None for x in seen["storage"])} of {len(seen["storage"])} requests)')
+            outside = [p.relative_to(top).as_posix() for p in top.rglob('*') if p.is_file() and run not in p.parents and p != cat]
+            check(not outside, f'a CI-supplied name wrote outside the run folder: {outside}')
+            check(all(not Path(x['path']).is_absolute() and '..' not in Path(x['path']).parts for x in d['logs']) and len(d['logs']) == 1,
+                  f'failed-job log not kept inside logs/: {d["logs"]}')
+            check(d['results']['totals'] and d['results']['totals']['tests'] == 1, f'JUnit not collected: {d["results"]}')
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        st.shutdown(); api.shutdown(); st.server_close(); api.server_close()
+    if fails:
+        print('run_suite self-test: FAILED'); [print('  -', f) for f in fails]
+        return 1
+    print('run_suite self-test: ok (token not sent across origins; CI-supplied job and artifact names stay inside the run folder)')
+    return 0
+
+
 def main() -> int:
+    if sys.argv[1:] == ['--self-test']:
+        return self_test()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest='cmd', required=True)
     p = sub.add_parser('plan'); p.add_argument('--catalogue', type=Path, required=True); p.add_argument('--suite', required=True)
     p.add_argument('--environment', required=True); p.add_argument('--tags'); p.add_argument('--ref'); p.add_argument('--out', type=Path, required=True); p.add_argument('--api-base')
     t = sub.add_parser('trigger'); t.add_argument('--run', type=Path, required=True); t.add_argument('--preauth', type=Path); t.add_argument('--confirmed-by')
+    t.add_argument('--as-of', help="judge the grant's expiry on this date (YYYY-MM-DD) instead of today; loopback stubs only")
     o = sub.add_parser('poll'); o.add_argument('--run', type=Path, required=True); o.add_argument('--timeout-minutes', type=float, default=60); o.add_argument('--poll-seconds', type=float, default=20)
     c = sub.add_parser('collect'); c.add_argument('--run', type=Path, required=True); c.add_argument('--download', action='append')
     a = ap.parse_args()

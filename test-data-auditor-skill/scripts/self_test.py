@@ -15,7 +15,8 @@ pairwise duplicate check bounded), cwd-relative data paths in tests, and the lea
 personal-data finding's basis line, a served folder and a source tree named with --data-dir (site assets are not
 fixtures, a records module is a data module, other code is recorded), no "unused" files without tests, the no-tests
 statement, metadata.tests_found (schema 1.1), a runs file for run_tests.py, schema_drift.py with nothing to check,
-and --write-summary keeping line endings. Every fixture value is invented; the
+--write-summary keeping line endings, and the example's baseline in examples/run/commands.sh pinned to the
+audit date (it still passes with the real clock 90 days and ten years ahead). Every fixture value is invented; the
 secret-looking strings are assembled at run time so none sits in this file whole.
 """
 from __future__ import annotations
@@ -676,8 +677,72 @@ def write_summary_line_endings() -> None:
               f'validator: --write-summary keeps {"LF" if nl == chr(10) else "CRLF"} line endings (got {crlf} CRLF of {lf} lines)')
 
 
+def baseline_on_audit_date() -> None:
+    """The example's baseline is pinned to the audit date, so examples/run/commands.sh can be rerun on any date.
+
+    The planted membership expiry fails on the real clock after 2026-12-01 (that is the point of it), so a
+    baseline on the real clock would stop passing. The baseline line in commands.sh is run as written, on a
+    copy, with the real clock moved 90 days and ten years ahead underneath it; every test must still pass.
+    """
+    import re, shlex, shutil, subprocess
+    ex = HERE.parent / 'examples'
+    text = (ex / 'run' / 'commands.sh').read_text(encoding='utf-8').replace('\\\n', ' ')
+    today = re.search(r'scan_data\.py .*--today (\d{4}-\d{2}-\d{2})', text)
+    check(bool(today), 'commands.sh: the scan names its audit date (--today)')
+    if not today:
+        return
+    vars_: dict[str, str] = {}
+    base = None
+    for line in text.splitlines():
+        line = line.strip()
+        m = re.fullmatch(r'([A-Z_]+)=(?:"([^"]*)"|(\S+))', line)
+        if m:
+            vars_[m.group(1)] = m.group(2) if m.group(2) is not None else m.group(3)
+            continue
+        if '--label baseline' in line:
+            for _ in range(5):   # variables defined through other variables
+                for k in sorted(vars_, key=len, reverse=True):
+                    line = line.replace('$' + k, vars_[k])
+            base = line
+    check(base is not None, 'commands.sh: a baseline run (--label baseline) is listed')
+    if base is None:
+        return
+    words = shlex.split(base)
+    args = words[words.index('scripts/run_tests.py') + 1:] if 'scripts/run_tests.py' in words else words[2:]
+    envs = [w for i, w in enumerate(args) if i and args[i - 1] == '--env']
+    pinned = f'TDA_CLOCK_DATE={today.group(1)}' in envs and '-p clock_shift' in base
+    check(pinned, f'commands.sh: the baseline runs with clock_shift on the audit date (TDA_CLOCK_DATE={today.group(1)}), '
+                  f'not on the real clock (got: {base.split("run_tests.py")[-1].strip()[:160]})')
+    try:
+        import pytest  # noqa: F401
+    except ImportError:
+        print('skip  baseline on a moved clock: pytest is not installed')
+        return
+    for days in (90, 3650):
+        with tempfile.TemporaryDirectory() as d:
+            copy = Path(d) / 'clinic-api'
+            shutil.copytree(ex / 'clinic-api', copy)
+            shutil.copy(HERE / 'clock_shift.py', copy / 'clock_shift.py')
+            a = list(args)
+            for flag, value in (('--cwd', str(copy)), ('--out', str(Path(d) / 'runs.json')), ('--repeat', '1')):
+                if flag in a:
+                    a[a.index(flag) + 1] = value
+                else:
+                    a += [flag, value]
+            a += ['--env', 'PYTEST_PLUGINS=clock_shift', f'TDA_CLOCK_SHIFT=+{days}d']
+            r = subprocess.run([sys.executable, str(HERE / 'run_tests.py')] + a, capture_output=True, text=True, timeout=300)
+            try:
+                run = json.loads((Path(d) / 'runs.json').read_text(encoding='utf-8'))['runs'][-1]
+                tot = run['totals']
+            except (OSError, ValueError, KeyError, IndexError):
+                run, tot = {}, {}
+            ok = bool(tot) and tot.get('tests', 0) > 0 and tot.get('passed') == tot.get('tests') and not run.get('errored')
+            check(ok, f'commands.sh: the baseline still passes with the real clock {days} days ahead '
+                      f'(got {tot or r.stderr.strip()[-200:]})')
+
+
 def main() -> int:
-    for t in (go_rules, url_credentials_and_cards, placeholders, coverage_and_drift, residue_outside_tree, live_endpoint_severity,
+    for t in (baseline_on_audit_date, go_rules, url_credentials_and_cards, placeholders, coverage_and_drift, residue_outside_tree, live_endpoint_severity,
               big_data_tree, cwd_relative_paths, agent_personal_data_leak, empty_repository, data_dir_unknown_format,
               served_data_dir, data_dir_code, no_tests_statement, tests_found_field, runs_required, drift_nothing_to_check,
               write_summary_line_endings):

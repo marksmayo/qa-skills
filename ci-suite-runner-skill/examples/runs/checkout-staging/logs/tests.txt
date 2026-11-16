@@ -22,4 +22,4 @@ tests/test_checkout.py:26: AssertionError
 - generated xml file: /home/runner/work/_temp/junit.xml -
 =========================== short test summary info ===========================
 FAILED tests/test_checkout.py::test_discount_code_is_case_insensitive - Asser...
-================== 1 failed, 2 passed, 4 deselected in 0.33s ==================
+================== 1 failed, 2 passed, 4 deselected in 0.60s ==================

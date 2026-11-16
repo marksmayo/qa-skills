@@ -46,7 +46,8 @@ def load_flaky(path: Path | None) -> set[str]:
 def checkout(repo: Path, ref: str, dest: Path) -> Path:
     """A fresh copy of the repository at ref (git archive), for a change whose diff applies to that ref."""
     dest.mkdir(parents=True)
-    select_tests.extract(select_tests.git(repo, 'archive', '--format=tar', ref, binary=True), dest)
+    sha = select_tests.checked_rev(repo, ref, 'replay base')   # never an option, and a commit of this repository
+    select_tests.extract(select_tests.git(repo, 'archive', '--format=tar', sha, binary=True), dest)
     return dest
 
 

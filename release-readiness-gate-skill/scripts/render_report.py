@@ -10,6 +10,8 @@ only. --markdown writes the same page without colour, for a release ticket or ch
 from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 COL = {'no_go': '31;1', 'not_established': '33;1', 'go': '32;1', 'P0': '31;1', 'P1': '31', 'dim': '2', 'bold': '1'}
 
@@ -71,7 +73,7 @@ def main() -> int:
     a = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
-    d = json.loads(a.report.read_text(encoding='utf-8'))
+    d = load_json(a.report)
     if a.markdown:
         a.markdown.write_text('\n'.join(page(d, a.brief, lambda t, k: str(t))) + '\n', encoding='utf-8', newline='\n')
         print(f'wrote {a.markdown}')

@@ -1,7 +1,7 @@
 ---
 name: privacy-flow-auditor
 description: Map where personal data goes in a web app - what it collects, where it stores it, what it logs, and which third parties receive it, and whether that happens before the user consents or after they reject. Combines a static scan of the code (collection points, logging, analytics, session replay, storage, SDKs, mobile permissions) with a live browser capture in three consent states (before a choice, after "Reject all", after "Accept all"), typing synthetic canary values and searching every request, cookie and storage entry for them raw, URL-encoded, Base64 and hashed. Produces a data inventory, recipients, a consent matrix and ranked findings with GDPR, UK GDPR and Australian Privacy Principles references for a privacy professional. Never types or stores real personal data, and never says an app is compliant.
-version: 1.8.0
+version: 1.9.0
 ---
 
 # Privacy flow auditor
@@ -80,7 +80,7 @@ breach; this is not legal advice.
 The capture needs Playwright with Chromium (`pip install -r requirements.txt`; ask first). The rest is stdlib.
 
 ```bash
-python scripts/fetch_lists.py                       # download the lists at their pinned commits, verify -> ~/.cache/qa-skills/privacy-lists/domains.json
+python scripts/fetch_lists.py                       # download the lists at their pinned commits, verify (before caching) -> ~/.cache/qa-skills/privacy-lists/domains.json
 python scripts/fetch_lists.py --update --write-lock <run>/lists.lock.json   # newer lists: pin the latest commits in a scratch lock
 python scripts/match_canaries.py new --out <run>/canaries.json [--key-length 5]
 python scripts/scan_privacy.py <repo> --out <run>/static.json [--exclude vendor] [--include dist] [--semgrep semgrep.sarif]

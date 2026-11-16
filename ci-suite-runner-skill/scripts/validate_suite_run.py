@@ -5,7 +5,8 @@
 
 Checks: the suite, environment, tags and inputs are the catalogue's; a sent trigger has exactly one
 authorisation - a grant that covers the suite and environment and hadn't expired on the trigger date, or a
-confirmation naming who and how - and a protected environment has a confirmation; a refused trigger sent
+confirmation naming who and how - and a protected environment has a confirmation; a grant judged on a
+recorded as-of date (run_suite.py trigger --as-of) is accepted only for a loopback CI stub; a refused trigger sent
 nothing; with --stub-log, the CI received exactly as many triggers for this pipeline as were sent; the
 outcome follows the polling (completed only after a completed poll); the totals and failed tests equal the
 JUnit files; results are claimed only from JUnit; failed tests are handed to the CI failure triager;
@@ -19,7 +20,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from parse_results import parse_junit  # noqa: E402
-from run_suite import tags_ok  # noqa: E402
+from run_suite import is_loopback, tags_ok  # noqa: E402
 
 BANNED = re.compile(r'(?i)\b(all green|everything passed|all tests pass(ed)?|fully passing|no problems|build is (fine|healthy|green))\b')
 
@@ -61,6 +62,10 @@ def main() -> int:
             e(f'{len(sent)} sent authorisations: a request is triggered exactly once')
         au = sent[-1] if sent else {}
         on = date.fromisoformat(trig['at'][:10])
+        if au.get('as_of'):
+            if not (is_loopback(d['api_base']) and is_loopback(trig.get('url') or d['plan']['url'])):
+                e(f'the grant was judged on an as-of date ({au["as_of"]}), which only a loopback CI stub may use; this CI is {d["api_base"]}')
+            on = date.fromisoformat(au['as_of'])
         if au.get('kind') == 'preauth':
             if r['protected']:
                 e(f'{r["environment"]} is protected: a pre-authorisation cannot cover it')
@@ -72,7 +77,7 @@ def main() -> int:
                 if r['suite'] not in g['suites'] or r['environment'] not in g['environments']:
                     e(f'grant {g["id"]} does not cover {r["suite"]} on {r["environment"]}')
                 if date.fromisoformat(g['expires']) < on:
-                    e(f'grant {g["id"]} expired on {g["expires"]}, before the trigger on {on}')
+                    e(f'grant {g["id"]} expired on {g["expires"]}, before the trigger on {on}' + (' (the recorded as-of date)' if au.get('as_of') else ''))
                 if g['granted_by'] != au.get('by'):
                     e('the recorded grantor differs from the grant')
         elif au.get('kind') == 'confirmation':

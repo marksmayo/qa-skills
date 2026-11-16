@@ -1,6 +1,6 @@
 # Design: `wcag-auditor-skill`
 
-Status: Built (v1.0.0), see "As built" at the end. Build order: 6.
+Status: Built (v1.7.0), see "As built" at the end. Build order: 6.
 
 ## Mission
 
@@ -499,3 +499,15 @@ Differences from the draft above, and decisions made while building:
   - The example run (schema 1.0 report) was not re-captured: items and candidates were regenerated
     from it and the report validates unchanged. Not done: `link-in-text-block` still has no ACT rule,
     so a measured failure of it alone stays medium confidence (by design).
+
+### Unpinned engine files (v1.7.0)
+
+- The optional `vnu.jar` has no SHA-256 in `data/engines.lock.json` (no copy was at hand to compute one, and
+  the fix did not download one). `verify_cached` used to accept whatever `verified.json` in the same cache
+  folder said, trust on first use. Now a file without a pinned SHA-256 is never checked against the cache's
+  own manifest: `fetch_engines.py` caches the npm tarball (whose SHA-512 integrity is pinned) beside the jar,
+  and every check re-reads the jar from that tarball; without the tarball the refusal says the hash is not
+  pinned. Pinning the jar SHA-256 in the lock (once a verified copy exists) removes the need for the tarball.
+- Tested in `self_test.py` (`unpinned_engine_checks`, written to fail first): a swapped jar vouched for by
+  `verified.json` is refused, a jar from a tarball matching the pinned integrity verifies, and a jar changed
+  afterwards fails. The lock's note changed only; the rule map does not depend on it.

@@ -6,6 +6,8 @@
 from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 RESET = "\033[0m"; BOLD = "\033[1m"; DIM = "\033[2m"
 RED = "\033[31m"; GREEN = "\033[32m"; YELLOW = "\033[33m"; CYAN = "\033[36m"
@@ -38,7 +40,7 @@ def main() -> int:
     ap.add_argument('--color', choices=['auto', 'always', 'never'], default='auto')
     ap.add_argument('--brief', action='store_true')
     a = ap.parse_args()
-    d = json.loads(a.report.read_text(encoding='utf-8'))
+    d = load_json(a.report)
     P = (lambda s, st: f'{st}{s}{RESET}') if supports_color(a.color) else (lambda s, st: s)
     sc, hl = d['scope'], d['headline']
     verdict = {'differences_found': P('DIFFERENCES FOUND', RED + BOLD),

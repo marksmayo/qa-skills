@@ -1,7 +1,7 @@
 ---
 name: test-impact-selector
 description: Given a change (a branch, a commit range or a diff), pick which tests to run, give every selected test its reasons and evidence (coverage of a changed line, an import chain, a journey link, naming, co-failure history), and list every change that no evidence can bound as a blind spot that widens the selection (strict by default). Outputs ready-to-run commands per package and framework, an optional CI snippet for the user to add, and, when past runs are available, measured recall with a Wilson interval from replaying history. Never calls unselected tests "safe to skip".
-version: 1.5.0
+version: 1.6.0
 ---
 
 # Test impact selector
@@ -247,7 +247,9 @@ For JaCoCo per-test data, convert it to the coverage.py JSON shape, or leave cov
 applies to the repo, unless the change names a `base` git ref it applies to; or name a `commit`
 instead of a `diff` (the diff is the commit against its parent, replayed on a fresh checkout of
 the parent), which makes real git history usable while the repo is at HEAD. Each run is that
-package's full suite after the change, as JUnit.
+package's full suite after the change, as JUnit. A `commit` or `base` must be a commit id or ref name
+(never starting with `-`); a commit must resolve with `git rev-parse --verify`, and git gets the resolved
+id after `--end-of-options`, so a history file can never pass git an option such as `--output`.
 
 **Failures at the base.** Tests that fail before any change (only in this environment, a port
 already in use, a missing SDK) are not evidence. List them in a JSON file
