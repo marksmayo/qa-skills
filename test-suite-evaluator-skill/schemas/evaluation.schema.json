@@ -325,6 +325,7 @@
                   "not_executable",
                   "secret_or_production_data",
                   "systematic_false_pass",
+                  "ci_runs_no_tests",
                   "static_only"
                 ]
               },
@@ -503,9 +504,10 @@
               "secret_exposure",
               "production_data_exposure",
               "systematic_false_pass",
+              "ci_runs_no_tests",
               "other"
             ],
-            "description": "secret_exposure and production_data_exposure must be severity critical and cap the overall at 4 until remediated; systematic_false_pass (broad error swallowing, globally excessive retries, systematic false passes) caps it at 4."
+            "description": "secret_exposure and production_data_exposure must be severity critical and cap the overall at 4 until remediated; systematic_false_pass (broad error swallowing, globally excessive retries, systematic false passes) caps it at 4; ci_runs_no_tests (tests exist but no CI job runs the behaviour tests: no CI at all, CI that runs only lint, builds or benchmarks, or CI that ignores the tests' exit code) is severity high or critical, needs ci scored 1 or 2, and caps the overall at 5."
           },
           "remediated": {
             "type": "boolean"
