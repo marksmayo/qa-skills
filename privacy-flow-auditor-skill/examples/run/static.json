@@ -1,7 +1,7 @@
 {
  "repo": "privacy-flow-auditor-skill/examples/clinic-signup",
  "files_scanned": 7,
- "seconds": 0.0,
+ "seconds": 1.3,
  "skipped": [
   {
    "file": "stub-vendors/",
@@ -478,6 +478,7 @@
   }
  ],
  "outbound_hosts": [],
+ "outbound_unresolved": [],
  "build_output_dirs": [],
  "language_coverage": {
   "tool": "scan_privacy.py",
@@ -501,13 +502,18 @@
   "unsupported": {},
   "supported_files": 4,
   "unsupported_files": 0,
-  "dominant": "JavaScript",
+  "dominant": "Python",
   "excluded_source_files": 5,
   "status": "ok",
   "warning": null,
   "needs_limitation": [],
   "needs_limitation_dirs": []
  },
+ "fixtures": [],
+ "fixtures_excluded": [],
+ "home_paths": [],
+ "git_tracked": true,
+ "copies_folded": 0,
  "host_mentions": [
   {
    "file": "site/static/consent.js",

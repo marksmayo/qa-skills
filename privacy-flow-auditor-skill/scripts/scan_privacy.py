@@ -67,11 +67,19 @@ request headers into an outbound call is a header_passthrough candidate.
 Files larger than --max-bytes (default 2 MB) are skipped; minified or generated files (*.min.js, bundles, or
 very long lines) are scanned for SDK hosts only. Both are listed in the output under "skipped".
 
+Matches that start inside a string, docstring or comment (Python, JavaScript, TypeScript, Go; shared code_mask.py) are
+text describing code, not sinks, loaders or sends. Everyday property names (generic_property_names: name, title,
+reason) count on a sink only with personal-data context (collected in the same file, beside a non-generic personal
+field, or read from a person-like object). Committed text and data files are read for home-directory paths naming an
+account (identifier_in_artifact, home_path_in_artifact; the account is never written out). Sample and fixture projects
+nested in the repository (shared repo_layout.py) are left out and listed unless --include-fixtures; collection points
+in identical copies of a file are listed once.
+
 Every candidate carries file and line; no value from the code beyond the matched line (truncated) is kept,
 and string literals that look like personal data are redacted.
 """
 from __future__ import annotations
-import argparse, bisect, json, os, re, sys, time
+import argparse, bisect, json, os, re, subprocess, sys, time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -82,6 +90,8 @@ import next_app  # noqa: E402
 from domains import registrable  # noqa: E402
 import lang_census  # noqa: E402
 import cargo_project  # noqa: E402
+import code_mask  # noqa: E402
+import repo_layout  # noqa: E402
 
 DATA = HERE.parent / 'data'
 CATS = json.loads((DATA / 'categories.json').read_text(encoding='utf-8'))
@@ -149,8 +159,9 @@ IDENTITY_KEYS = {'email': 'contact', 'phone': 'contact', 'name': 'identity', 'us
 # identity keys that count when read from any object into an outbound request or a log (profile.email in a URL)
 OBJECT_IDENTITY_KEYS = ('email', 'phone', 'ip_address')
 # a whole user or profile object handed to a log call (not one property of it)
-PROFILE_OBJECT = re.compile(r'(?<![\w$.])(profile|userProfile|user_profile|currentUser|current_user|userInfo|user_info|userData|'
-                            r'user_data|accountInfo|account_info)(?![\w$])(?!\s*(?:\??\.|\[))')
+# (a key in a subscript, w["profile"] -> w[ profile ] in the code view, is one property, not the object)
+PROFILE_OBJECT = re.compile(r'(?<![\w$.])(?<!\[)(?<!\[ )(profile|userProfile|user_profile|currentUser|current_user|userInfo|user_info|userData|'
+                            r'user_data|accountInfo|account_info)(?![\w$])(?!\s*(?:\??\.|\[|\]))')
 # the visitor's request headers (cookies, Authorization, Referer) copied into an outbound call: a proxy forwarding them
 HEADER_PASS = re.compile(r'\b(?:request|req)\.headers\.(?:items|raw|entries)\(\)|\bdict\(\s*(?:request|req)\.headers\s*\)'
                          r'|\bheaders\s*[=:]\s*(?:request|req)\.headers\b(?!\s*\.\s*get)|\{\s*(?:\*\*|\.\.\.)\s*(?:request|req)\.headers\b'
@@ -238,7 +249,108 @@ RELATIVE_URL = re.compile(r'''["'`](?:\.{0,2}/(?!/)|https?://(?:localhost|127\.0
 LONG_LINE = 2000
 WINDOW = 600
 NOT_RECIPIENT = re.compile(r'(^|\.)(localhost|example\.(com|org|net)|[\w-]+\.(test|invalid|local|localhost|example))$|^127\.|^0\.0\.0\.0$'
-                           r'|(^|\.)(w3\.org|xmlsoap\.org|json-schema\.org)$|^schemas\.', re.I)
+                           r'|(^|\.)(w3\.org|xmlsoap\.org|json-schema\.org)$|^schemas\.'
+                           # documentation address blocks (RFC 5737 TEST-NET-1/2/3, RFC 3849): a network guard's self-test
+                           # aims at them precisely because nothing answers there
+                           r'|^192\.0\.2\.\d+$|^198\.51\.100\.\d+$|^203\.0\.113\.\d+$|^2001:db8:', re.I)
+# Names data/categories.json lists as everyday property names (name, title, reason) are personal data on a sink line only
+# with personal-data context: the same file collects the field (a form or request read), the line also names a personal
+# field that is not generic, or the value is read from an object that holds a person (patient['reason'], user.name). A
+# tool printing a check's name or a skip reason is not logging a person.
+PERSON_OBJECT = (r'(?:user|users|customer|patient|member|person|people|profile|account|applicant|contact|client|visitor|employee|'
+                 r'student|guest|signup|sign_up|registration|booking|appointment|subscriber|recipient|sender|owner|holder|'
+                 r'request\.(?:form|json|args|values|data|POST|GET)|req\.(?:body|query|params)|form|form_data|formData)')
+# a home-directory path with an account name in it (C:\Users\<name>\, /Users/<name>/, /home/<name>/), written into a committed
+# file: anyone who reads the repository reads the account name. A path inside a URL (https://host/home/x/) is not one.
+HOME_PATH = re.compile(r'(?<![\w.:/\\%$-])(?:[A-Za-z]:(?:\\\\|\\|/)+Users(?:\\\\|\\|/)+|/Users/|/home/)'
+                       r'(?P<user>[^\\/\s"\'<>{}$%*`|:;,()\[\]]{1,64})(?=\\|/)')
+# accounts that name no person: CI and container defaults, documentation placeholders, Windows shared profiles
+GENERIC_ACCOUNTS = {'user', 'username', 'user1', 'runner', 'runneradmin', 'vsts', 'vssadministrator', 'vscode', 'travis', 'node', 'jenkins',
+                    'gitpod', 'codespace', 'codespaces', 'circleci', 'appveyor', 'ubuntu', 'ec2-user', 'admin', 'administrator', 'dev',
+                    'developer', 'app', 'site', 'test', 'tester', 'me', 'you', 'name', 'example', 'someone', 'somebody', 'public', 'default',
+                    'default user', 'all users', 'shared', 'guest', 'root', 'docker', 'build', 'builder', 'ci', 'pi', 'vagrant', 'nobody',
+                    'www-data', 'home', 'foo', 'bar', 'x', 'xxx', 'yourname', 'your-name', 'your_name', 'myname', 'my-name', 'pwuser'}
+# text and data files a tool or a run writes and the repository keeps: read for home-directory paths only
+ARTIFACT_EXT = ('.json', '.jsonl', '.ndjson', '.txt', '.md', '.csv', '.tsv', '.log', '.xml', '.yaml', '.yml', '.sarif', '.toml',
+                '.har', '.ini', '.cfg', '.out', '.lcov', '.html', '.htm', '.ipynb')
+# a constant holding the base URL of an API the code calls (GH_API = 'https://...'), in a file that sends
+URL_CONST = re.compile(r'''^[ \t]*(?:export\s+)?(?:const\s+|let\s+|var\s+)?(?P<name>[A-Za-z_$][\w$]*)\s*(?::[^=\n]+)?=\s*[fFrRbBuU]{0,2}'''
+                       r'''(?P<url>["'`](?:https?:)?//[^"'`\s]+["'`])''', re.M)
+URL_CONST_NAME = re.compile(r'^[A-Z][A-Z0-9_]*$|(?i:api|url|base|host|endpoint|server|origin|mirror|registry)')
+NOT_VARS = {'fetch', 'await', 'const', 'let', 'var', 'new', 'return', 'urllib', 'request', 'Request', 'urlopen', 'timeout', 'headers',
+            'data', 'method', 'json', 'self', 'with', 'as', 'f', 'r', 'requests', 'httpx', 'open'}
+MASK_LANG = {'py': 'python', 'js': 'javascript', 'ts': 'javascript', 'go': 'c', 'java': 'c', 'kt': 'c', 'swift': 'c', 'rs': 'c'}
+
+
+def masked_kind(spans: list, off: int) -> str | None:
+    """The kind of blanked range (string, docstring, fstring, template, regex, comment) offset off lies in, else None."""
+    if not spans:
+        return None
+    i = bisect.bisect_right(spans, (off, float('inf'), '')) - 1
+    return spans[i][2] if i >= 0 and spans[i][0] <= off < spans[i][1] else None
+
+
+def inside_literal(spans: list, off: int) -> bool:
+    """A quoted literal starting at off lies INSIDE another string, a docstring or a comment (a URL in a fixture string or
+    a docstring), as opposed to being a literal of the code itself (whose opening quote is code, or opens the range: a
+    Python f-string's range starts at its quote)."""
+    if not spans:
+        return False
+    i = bisect.bisect_right(spans, (off, float('inf'), '')) - 1
+    return i >= 0 and spans[i][0] < off < spans[i][1]
+
+
+def tracked_files(repo: Path) -> set[str] | None:
+    """Repository-relative paths git tracks under repo, or None when repo is not in a git work tree (or git is missing)."""
+    try:
+        r = subprocess.run(['git', '-C', str(repo), 'ls-files', '-z'], capture_output=True, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode:
+        return None
+    return {x for x in r.stdout.decode('utf-8', 'replace').split('\0') if x}
+
+
+def home_path_hits(repo: Path, rels: list[str], tracked: set[str] | None, max_bytes: int) -> list[dict]:
+    """Home-directory paths holding an account name in text and data files ([{file, line, account, excerpt}]; the excerpt
+    has the account name replaced, and the account itself is only used to group, never written out). Only files git
+    tracks count when the repository is a git work tree."""
+    out = []
+    for rel in rels:
+        if tracked is not None and rel not in tracked:
+            continue
+        p = repo / rel
+        try:
+            if max_bytes and p.stat().st_size > max_bytes:
+                continue
+            text = p.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        if 'Users' not in text and '/home/' not in text:
+            continue
+        T = None
+        for m in HOME_PATH.finditer(text):
+            acct = m.group('user')
+            low = acct.lower()
+            if low in GENERIC_ACCOUNTS or low.startswith(('your', 'my-', 'my_')) or '...' in acct or not re.search(r'[a-z]', low) \
+                    or (acct.isupper() and len(acct) > 1):   # placeholders: <you>, $USER, %USERNAME%, USERNAME
+                continue
+            T = T or Text(text)
+            n = T.line_of(m.start())
+            line = T.line(n) if T.line_len(n) <= LONG_LINE else T.near(n, m.start(), before=80, after=80)
+            excerpt = re.sub(re.escape(acct), '<account>', line.strip(), flags=re.I)
+            out.append({'file': rel, 'line': n, 'account': low, 'excerpt': REDACT.redact(excerpt)[:160]})
+    return out
+
+
+def generic_in_context(f: str, view: str, raw: str, same_file: bool, other_named: bool) -> bool:
+    """A generic field name (data/categories.json generic_property_names) counts on a sink only with personal-data context."""
+    if same_file or other_named:
+        return True
+    # patient, patients, patient_row, newPatient, currentUser, req.body: never format or formatter
+    rx = (r'(?<![\w$])(?:[a-z][a-z0-9]*(?=[A-Z]))?(?i:' + PERSON_OBJECT + r')(?:s|_\w+|[A-Z]\w*)?(?![\w$])\s*'
+          r'(?:\??\.\s*' + re.escape(f) + r'(?![\w$])|\[\s*["\']' + re.escape(f) + r'["\']\s*\]|\.get\(\s*["\']' + re.escape(f) + r'["\'])')
+    return re.search(rx, raw) is not None
 
 
 def vendor_entry(host: str | None) -> dict:
@@ -589,14 +701,18 @@ def build_output_decision(repo: Path, rel_dir: str, include: set, exclude: set) 
 
 
 def files(repo: Path, pruned: list, skip: set, tests: set = frozenset(), kept: list | None = None,
-          build_dirs: list | None = None, include: set = frozenset(), exclude: set = frozenset()):
+          build_dirs: list | None = None, include: set = frozenset(), exclude: set = frozenset(), fixture_dirs: set = frozenset()):
     """Every file under repo, pruning skipped directories while walking (each pruned directory is added to pruned).
     Directories named in tests are pruned only when test_dir() says they hold test code; the others go to kept.
-    Directories named like build output are decided by build_output_decision (each decision appended to build_dirs)."""
+    Directories named like build output are decided by build_output_decision (each decision appended to build_dirs).
+    Directories in fixture_dirs (repository-relative sample or fixture projects) are pruned."""
     for root, dirs, names in os.walk(repo):
         drop = set()
         for d in sorted(dirs):
             rel_d = (Path(root) / d).relative_to(repo).as_posix()
+            if rel_d in fixture_dirs:
+                drop.add(d)
+                continue
             if (d in BUILD_NAMES or rel_d in include) and d not in skip:
                 dec = build_output_decision(repo, rel_d, include, exclude)
                 if build_dirs is not None:
@@ -783,7 +899,7 @@ def file_point(rel: str, line: int, name: str | None, accept: str | None, kind: 
     return e
 
 
-def machine_ids(rel: str, lang: str, text: str, T, env_reads: list | None = None) -> tuple[list[dict], dict]:
+def machine_ids(rel: str, lang: str, text: str, T, env_reads: list | None = None, spans: list | None = None) -> tuple[list[dict], dict]:
     """Host-name and account-name reads in one file (MACHINE_IDS, MACHINE_ENV; Rust env reads from cargo_project), as
     machine_identifier collection points, and the names that stand for them in the file: the read itself and each variable
     assigned from it, or from an expression naming such a variable (one step: data = {"host": host}). Returns the points
@@ -799,6 +915,7 @@ def machine_ids(rel: str, lang: str, text: str, T, env_reads: list | None = None
     for e in env_reads or []:
         if e.get('name') in MACHINE_ENV and 0 < e.get('line', 0) <= len(T.starts):
             hits.append((T.starts[e['line'] - 1], e['name'], MACHINE_ENV[e['name']]))
+    hits = [h for h in hits if not masked_kind(spans or [], h[0])]   # a read named in a docstring or comment is no read
     points, seen = [], set()
     for off, f, cat in sorted(hits):
         n = T.line_of(off)
@@ -812,7 +929,12 @@ def machine_ids(rel: str, lang: str, text: str, T, env_reads: list | None = None
     assign = ASSIGN_PY if lang == 'py' else ASSIGN_JS if lang in ('js', 'ts') else None
     for _ in range(2 if assign and names else 0):
         for m in assign.finditer(text):
+            if masked_kind(spans or [], m.start(1)):
+                continue   # an assignment inside a fixture string or a docstring
             v, view = m.group(1), code_view(m.group(2))
+            # a keyword argument handing the value to a call (subprocess.run(cmd, env=env).returncode) does not make the
+            # call's result stand for it
+            view = re.sub(r'(?<![=!<>\w])([A-Za-z_]\w*)\s*=(?!=)\s*[A-Za-z_][\w.]*', ' ', view)
             got = set().union(*(fs for k, fs in names.items() if k != v and names_field(view, k)))
             if got:
                 names.setdefault(v, set()).update(got)
@@ -979,6 +1101,11 @@ def main() -> int:
                     help='a directory named like build output (dist, build, out) to scan even when it looks generated; repeatable')
     ap.add_argument('--max-bytes', type=int, default=2_000_000, help='skip files larger than this (0: no limit); skipped files are listed')
     ap.add_argument('--include-tests', action='store_true', help='scan test directories and test files too (skipped by default)')
+    ap.add_argument('--include-fixtures', action='store_true',
+                    help='scan the sample and fixture projects nested under examples/, fixtures/, testdata/, samples/ and the like '
+                         '(left out by default when auditing the repository that holds them; listed under fixtures_excluded)')
+    ap.add_argument('--fixture-dir', action='append', default=[], metavar='DIR',
+                    help='another folder name or path whose nested projects are fixtures (repeatable)')
     ap.add_argument('--log-sinks', default='', help='comma-separated function names that write to logs (app logging wrappers)')
     ap.add_argument('--analytics-sinks', default='', help='comma-separated function names that send analytics (app tracking wrappers)')
     a = ap.parse_args()
@@ -986,12 +1113,17 @@ def main() -> int:
     t0 = time.time()
     # what the repository is written in (vendored and embedded third-party trees left out): a scan that reads only some
     # languages says so, loudly, when most of the code is in another
-    cen = lang_census.census(repo, list(a.exclude))
+    # sample and fixture projects nested in the repository (a tool's examples/ with planted defects): not the repository's
+    # own code, so left out unless --include-fixtures; every one is listed either way
+    fixtures = repo_layout.fixture_projects(repo, a.fixture_dir)
+    fixture_set = set() if a.include_fixtures else {f['dir'] for f in fixtures}
+    cen = lang_census.census(repo, list(a.exclude), exclude_fixtures=not a.include_fixtures, fixture_dirs=a.fixture_dir)
     collection, sinks, sdks, permissions, scripts, rum_inits, imports, skipped = [], [], [], [], [], [], [], []
     replay_inits, server_sends, wrappers, texts_meta = [], [], {}, {}
     get_forms, consent_defaults = [], []    # GET forms with a free-text input; consent-mode defaults (file:line)
     aliases: dict[str, dict] = {}
     machine_names: dict[str, dict] = {}   # file -> {name: host-name or account-name fields it stands for}
+    spans_of: dict[str, list] = {}         # file -> its string, docstring and comment ranges (code_mask)
     sink_rx = [(s, re.compile(s['pattern'], re.M), s.get('hints') or []) for s in SINKS['sinks']]
     chint = SINKS.get('collection_hints', {})
     xhint = SINKS.get('collection_hints_extra', {})
@@ -1017,10 +1149,13 @@ def main() -> int:
     meta_csp: list[dict] = []     # CSPs set in <meta http-equiv>
     used_hosts: set[str] = set()  # hosts named outside a CSP string anywhere in the scanned code
     walked: set[str] = set()
+    artifact_rels: list[str] = []   # text and data files: read for home-directory paths written into them
     next_model, next_by_file = read_next(repo)
-    for p in files(repo, pruned, SKIP | set(a.exclude), test_names, kept_dirs, build_dirs, include, set(a.exclude)):
+    for p in files(repo, pruned, SKIP | set(a.exclude), test_names, kept_dirs, build_dirs, include, set(a.exclude), fixture_set):
         rel = p.relative_to(repo).as_posix()
         walked.add(rel)
+        if p.suffix.lower() in ARTIFACT_EXT:
+            artifact_rels.append(rel)
         lang = LANG.get(p.suffix.lower())
         if not (lang or p.name in MANIFESTS or p.name in PLATFORM or p.name == 'package.json'):
             continue
@@ -1073,6 +1208,9 @@ def main() -> int:
         generated = bool(GENERATED_NAME.search(p.name))
         if not generated and lang in ('js', 'ts') and size > 20000:  # a bundle: few, very long lines
             generated = max(b - a_ for a_, b in zip(T.starts, T.starts[1:] + [len(text) + 1])) > 5000
+        # string, docstring and comment ranges: a call pattern, URL or identifier read there is text describing code (a
+        # docstring showing usage, a self-test's fixture source, a pattern table), never a sink, loader or send
+        spans = code_mask.masked_spans(text, MASK_LANG[lang]) if lang in MASK_LANG and not generated else []
         # ---- SDK hosts: script tags, injected scripts, vendor URLs (also in generated files). Every mention of a host is
         # recorded with its kind (a loader, a resource hint, a CSP allowance, another reference); the SDK inventory is
         # built from loaders and references afterwards, so a host only hinted at is not an SDK
@@ -1092,6 +1230,8 @@ def main() -> int:
             return csp_lines[n_]
 
         def script(host, off, source, extra=None, literal=False):
+            if inside_literal(spans, off):
+                return   # inside a string, docstring or comment of the code: text, not a loader
             host = (urlparse('//' + host).hostname or host).lower()  # no port, query or fragment
             n = T.line_of(off)
             kind = source if source in HINT_KINDS else 'loader' if source in LOADER_SOURCES else 'reference'
@@ -1143,6 +1283,8 @@ def main() -> int:
                     script(m.group(1) or m.group(2), m.start(), 'injected_script')
             creates = 'createelement(' in low and CREATES_SCRIPT.search(text) is not None
             for m in (URL_LIT.finditer(text) if creates or any(d in low for d in VENDOR_DOMAINS) else ()):
+                if inside_literal(spans, m.start()):
+                    continue
                 host, path = m.group(1), m.group(2) or ''
                 ve = vendor_entry(host)
                 if ve:
@@ -1165,7 +1307,7 @@ def main() -> int:
             continue
         texts[rel] = text
         if lang in ('py', 'js', 'ts'):
-            pts, nm_ = machine_ids(rel, lang, text, T)
+            pts, nm_ = machine_ids(rel, lang, text, T, spans=spans)
             collection += pts
             if nm_:
                 machine_names[rel] = nm_
@@ -1245,12 +1387,16 @@ def main() -> int:
         aliases[rel] = alias
         for key in ('py_form_read', 'js_value_read', 'js_register'):
             for m in (coll_rx[key].finditer(text) if has(text, chint.get(key)) else ()):
+                if masked_kind(spans, m.start()) in ('comment', 'docstring'):
+                    continue
                 collection.append({'file': rel, 'line': T.line_of(m.start()), 'kind': 'code_read', 'field': m.group('name'),
                                    'category': classify(m.group('name'))})
         if lang in ('js', 'ts', 'html'):
             # identity tokens and claims read in the browser (an identity SDK's account, a decoded ID token): one point per field and file
             seen_id = set()
             for m in (coll_rx['identity_read'].finditer(text) if has(text, xhint.get('identity_read')) else ()):
+                if masked_kind(spans, m.start()):
+                    continue
                 fld = m.group('name') or m.group('claim')
                 if fld in seen_id:
                     continue
@@ -1267,6 +1413,8 @@ def main() -> int:
         # files the user picks: whatever they hold is collected (client-side parsing, uploads to an API)
         for key, kind_ in (('file_input', 'file_parse'), ('form_data_file', 'form_data_upload')):
             for m in (coll_rx[key].finditer(text) if has(text, xhint.get(key)) else ()):
+                if masked_kind(spans, m.start()):
+                    continue
                 nm = m.groupdict().get('name')
                 k2 = 'file_upload' if re.match(r'(useDropzone|request\.files|UploadFile)', m.group(0).lstrip('.')) else kind_
                 collection.append(file_point(rel, T.line_of(m.start()), nm, None, k2, m.group(0).strip()[:40]))
@@ -1274,7 +1422,8 @@ def main() -> int:
             if '.' in api and api in text:
                 i = text.find(api)
                 while i >= 0:
-                    collection.append({'file': rel, 'line': T.line_of(i), 'kind': 'device_api', 'field': api, 'category': cat})
+                    if not masked_kind(spans, i):
+                        collection.append({'file': rel, 'line': T.line_of(i), 'kind': 'device_api', 'field': api, 'category': cat})
                     i = text.find(api, T.starts[T.line_of(i)] if T.line_of(i) < len(T.starts) else len(text))
         seen_lines = set()
         for sk, rx, hints in sink_rx:
@@ -1286,6 +1435,9 @@ def main() -> int:
                 # text, not a call; patterns meant to match string text (a Set-Cookie header name) still count in strings
                 lit = in_literal(T, m.start(), lang)
                 if (sk['id'], n) in seen_lines or lit == 'regex' or (lit == 'string' and m.group(0).endswith('(')):
+                    continue
+                mk = masked_kind(spans, m.start())   # multi-line strings, docstrings and comments (shared code_mask)
+                if mk in ('comment', 'docstring', 'regex') or (mk and m.group(0).endswith('(')):
                     continue
                 seen_lines.add((sk['id'], n))
                 sinks.append(sink_entry(rel, T, text, m, n, sk['id'], sk['kind'], sk.get('vendor'), server_file))
@@ -1310,6 +1462,8 @@ def main() -> int:
         if lang == 'go':
             # command-line flags that take personal data (--email): collection points, so a log line naming them counts
             for m in (GO_FLAG.finditer(text) if 'tring' in text else ()):
+                if masked_kind(spans, m.start()):
+                    continue
                 nm = m.group('name').replace('-', '_')
                 collection.append({'file': rel, 'line': T.line_of(m.start()), 'kind': 'cli_flag', 'field': nm, 'category': classify(nm)})
                 v = re.match(r'^\s*(\w+)\s*:?=', T.line(T.line_of(m.start())))
@@ -1317,14 +1471,17 @@ def main() -> int:
                     alias[v.group(1)] = nm      # email := flag.String("email", ...) and user := flag.String("email", ...)
             pkg = go_pkgs.setdefault(Path(rel).parent.as_posix(), {'hosts': [], 'sends': [], 'env': set(), 'ids': set(), 'hash': False})
             for m in (URL_LIT.finditer(text) if '//' in text else ()):
+                if inside_literal(spans, m.start()):
+                    continue
                 host = (urlparse('//' + m.group(1)).hostname or m.group(1)).lower()
                 if not NOT_RECIPIENT.search(host) and not DOC_HOST.match(host):
                     pkg['hosts'].append((host, rel, T.line_of(m.start())))
-            pkg['sends'] += [f'{rel}:{T.line_of(m.start())}' for m in GO_SEND.finditer(text)]
+            pkg['sends'] += [f'{rel}:{T.line_of(m.start())}' for m in GO_SEND.finditer(text) if not masked_kind(spans, m.start())]
             pkg['env'] |= {m.group(1) for m in GO_ENV.finditer(text)}
             pkg['ids'] |= {k for k, rx in GO_IDENTIFIERS.items() if re.search(rx, text)}
             pkg['hash'] = pkg['hash'] or bool(GO_HASH.search(text))
         texts_meta[rel] = (lang, T, server_file)
+        spans_of[rel] = spans
     # the SDK inventory: per file and host, the loader line (else the first other reference); a host that a file only
     # hints at (preconnect, dns-prefetch) or allows in a CSP is no SDK there. Every mention stays under host_mentions.
     by_fh: dict = {}
@@ -1440,6 +1597,8 @@ def main() -> int:
             if name not in text or lang not in ('js', 'ts', 'py', 'html'):
                 continue
             for m in call.finditer(text):
+                if masked_kind(spans_of.get(rel) or [], m.start()):
+                    continue   # a call named in a string, docstring or comment
                 n = T.line_of(m.start())
                 if (rel == w['file'] and n == w['line']) or re.search(r'(function\s*\*?\s*|def\s+)$', text[max(0, m.start() - 12):m.start()]):
                     continue  # the definition itself
@@ -1451,9 +1610,28 @@ def main() -> int:
     order = {k['id']: i for i, k in enumerate(SINKS['sinks'])}
     sinks.sort(key=lambda x: (x['file'], x['line'], order.get(x['sink'], len(order)), x['sink']))
     collection.sort(key=lambda x: (x['file'], x['line']))
+    # a file kept identical in several folders (a shared helper copied into each package, vendored copies): its collection
+    # points are listed once, on the canonical copy, the other copies under also_at (candidates are grouped by their line)
+    copy_of = repo_layout.copy_index(repo_layout.copy_groups(repo, files=sorted(texts)))
+    grouped: dict = {}
+    for c in sorted(collection, key=lambda c: (c['file'] != copy_of.get(c['file'], c['file']), c['file'], c['line'])):
+        canon = copy_of.get(c['file'])
+        if not canon:
+            continue
+        key = (canon, c['line'], c['kind'], c.get('field'))
+        if key in grouped:
+            grouped[key].setdefault('also_at', []).append(f'{c["file"]}:{c["line"]}')
+            c['_folded'] = True
+        else:
+            grouped[key] = c
+    copies_folded = sum(1 for c in collection if c.get('_folded'))
     # fields known from collection points; variables in the same file that hold them are named after them here
     fields = {c['field']: c['category'] for c in collection if c.get('field') and c.get('category') and c['kind'] != 'machine_identifier'}
     machine_cat = {c['field']: c['category'] for c in collection if c['kind'] == 'machine_identifier'}
+    collected_in: dict = {}   # field -> files that collect it (a form field, a request read, an identity read)
+    for c in collection:
+        if c.get('field') and c['kind'] != 'machine_identifier':
+            collected_in.setdefault(c['field'], set()).add(c['file'])
     id_points: dict = {}
     for c in collection:
         if c['kind'] in ('identity_read', 'identity_provider'):
@@ -1486,6 +1664,10 @@ def main() -> int:
                       'or a link puts in the query reach it' + (f' (GET forms with a free-text field: {", ".join(get_forms[:3])})' if get_forms else
                       '; no GET form with a free-text field was found, so check what the app writes into its URLs'))
         names = {f for f in fields if names_field(view, f)}
+        # everyday property names (name, title, reason) need personal-data context; a field collected in the same file has it
+        plain = {f for f in names if f not in GENERIC}
+        names = plain | {f for f in names - plain if generic_in_context(f, view, s['_raw'] + '\n' + line, s['file'] in collected_in.get(f, ()),
+                                                                         bool(plain))}
         names |= {f for v, f in aliases.get(s['file'], {}).items() if f in fields and re.search(rf'(?<![\w$.]){re.escape(v)}(?![\w$])', view)}
         if s['sink'] in ('auth-token-storage', 'auth-sdk-init'):
             au = s['_auth']
@@ -1714,10 +1896,21 @@ def main() -> int:
             continue
         text = texts[s['file']]
         hosts = [m.group(1) for m in URL_LIT.finditer(s['_raw'])]
-        for v in set(re.findall(r'[A-Za-z_$][\w$]*', s['_view'])) - {'fetch', 'await', 'const', 'let', 'var', 'new', 'return'}:
+        # a variable on the call (req, url, base) assigned in the same file, followed two steps: req = Request(url) and
+        # url = f'{BASE}/runs', BASE = 'https://...'
+        todo, looked = [(v, 0) for v in set(re.findall(r'[A-Za-z_$][\w$]*', s['_view'])) - NOT_VARS], set()
+        while todo:
+            v, depth = todo.pop()
+            if v in looked:
+                continue
+            looked.add(v)
             am = re.search(r'(?m)^[ \t]*(?:export\s+)?(?:const|let|var)?\s*' + re.escape(v) + r'\s*(?::[^=\n]+)?=[^=\n][^\n]*', text)
             if am:
-                hosts += [m.group(1) for m in URL_LIT.finditer(am.group(0))]
+                found = [m.group(1) for m in URL_LIT.finditer(am.group(0))]
+                hosts += found
+                if not found and depth < 2:
+                    rhs = code_view(am.group(0).split('=', 1)[1])
+                    todo += [(w, depth + 1) for w in set(re.findall(r'[A-Za-z_$][\w$]*', rhs)) - NOT_VARS]
         if not hosts and s.get('side') == 'server' and not RELATIVE_URL.search(s['_raw']):
             # server or tool code calling out to a host the code does not spell out (read from a file, a setting or an
             # argument): a recipient nobody can name from the scan, listed so the review traces it
@@ -1729,6 +1922,23 @@ def main() -> int:
             seen_out.add((host, s['file']))
             outbound_hosts.append({'host': host, 'file': s['file'], 'line': s['line'], 'side': s.get('side') or 'client',
                                    'via': s['sink'], 'vendor': vendor_entry(host).get('vendor')})
+    # the base URL of an API, kept in a constant (GH_API = 'https://api...') of a file that sends, reaches the call through a
+    # helper the scan does not follow (_get(f'{GH_API}/runs') -> OPENER.open(Request(url))): listed at the constant
+    for rel in sorted({s['file'] for s in sinks if s['kind'] == 'http' and s['file'] in texts}):
+        text, spans = texts[rel], spans_of.get(rel) or []
+        side = 'server' if texts_meta[rel][2] else 'client'
+        for m in URL_CONST.finditer(text):
+            if not URL_CONST_NAME.search(m.group('name')) or masked_kind(spans, m.start('name')):
+                continue
+            um = URL_LIT.match(m.group('url'))
+            if not um:
+                continue
+            host = (urlparse('//' + um.group(1)).hostname or um.group(1)).lower()
+            if NOT_RECIPIENT.search(host) or DOC_HOST.match(host) or (host, rel) in seen_out:
+                continue
+            seen_out.add((host, rel))
+            outbound_hosts.append({'host': host, 'file': rel, 'line': texts_meta[rel][1].line_of(m.start('name')), 'side': side,
+                                   'via': 'url_constant', 'constant': m.group('name'), 'vendor': vendor_entry(host).get('vendor')})
     # a proxy that copies the visitor's request headers (cookies, Authorization, Referer) into an outbound call
     for rel, text in texts.items():
         lang, T_, server_file = texts_meta[rel]
@@ -1744,6 +1954,25 @@ def main() -> int:
                  note='the visitor\'s request headers are copied into an outbound request: cookies, Authorization, Referer and '
                       'User-Agent reach ' + (', '.join(to[:3]) if to else 'the upstream host') + ' unless the code drops them; '
                       'a browser capture never sees this, so point the upstream at a loopback sink to observe it')
+    # a home-directory path with an account name, written into a committed text or data file (a report, a run log, an
+    # example output): one candidate per account, the other places under also_at; the account name is never written out
+    tracked = tracked_files(repo)
+    homes = home_path_hits(repo, artifact_rels, tracked, a.max_bytes)
+    by_acct: dict = {}
+    for h in homes:
+        by_acct.setdefault(h['account'], []).append(h)
+    for i, (_, hs) in enumerate(sorted(by_acct.items(), key=lambda kv: (kv[1][0]['file'], kv[1][0]['line']))):
+        h = hs[0]
+        c = cand(type='identifier_in_artifact', subtype='home_path_in_artifact', file=h['file'], line=h['line'], excerpt=h['excerpt'],
+                 fields=['home_path'], categories=['identity'], confidence='pattern',
+                 facts={'account': f'account {i + 1}', 'occurrences': len(hs), 'files': len({x['file'] for x in hs}),
+                        'committed': None if tracked is None else True},
+                 note='a home-directory path naming an OS account is written into a file the repository keeps (a report, a run log, '
+                      'an example output): everyone who reads the repository reads the account name, which is often the person\'s '
+                      'name. Rewrite the paths relative to the repository (or a placeholder) and regenerate the file'
+                      + ('' if tracked is not None else '; the scan could not ask git whether the file is committed'))
+        if len(hs) > 1:
+            c['also_at'] = [f'{x["file"]}:{x["line"]}' for x in hs[1:21]]
     for r in rum_inits:
         if r['replay'] and r['privacy_level'] in (None, 'allow'):
             how = 'set to allow' if r['privacy_level'] else 'not set, so the SDK version\'s default applies'
@@ -1779,6 +2008,10 @@ def main() -> int:
         for r in sarif.read(a.semgrep, repo):
             cand(type='personal_data_to_third_party', file=r['file'], line=r['line'], sink=f'semgrep:{r["rule_id"]}', excerpt=REDACT.redact(r['snippet'])[:160],
                  fields=[], categories=[], confidence='pattern', note=r['message'][:200])
+    for c in candidates:   # scanned with --include-fixtures: a candidate in a sample project says so (dismissable as fixture)
+        fx = repo_layout.is_fixture(c.get('file') or '', fixtures)
+        if fx:
+            c['fixture'] = fx
     sdks += sorted(scripts, key=lambda x: (x['file'], x['line']))
     # code imports add an SDK only where no manifest declared it (a service worker or a vendored bundle)
     declared = {x.get('package') for x in sdks}
@@ -1795,13 +2028,15 @@ def main() -> int:
         x.pop('_consent', None)
         x.pop('_auth', None)
     decided = {x['dir']: x for x in build_dirs}
-    skipped += [{'file': d + '/', 'bytes': None, 'reason': decided[d + '/']['reason'] + ' (--include scans it)' if d + '/' in decided else
+    skipped += [{'file': d + '/', 'bytes': None, 'reason': 'sample or fixture project (--include-fixtures scans it)' if d in fixture_set else
+                 decided[d + '/']['reason'] + ' (--include scans it)' if d + '/' in decided else
                  'test directory skipped (--include-tests scans it)' if d.rsplit('/', 1)[-1] in test_names
                  else 'directory skipped (dependencies, caches or --exclude)'} for d in pruned]
     coverage = build_coverage(repo, cen, build_dirs)
     if tests_skipped:
         skipped.append({'file': '*.test.* / *.spec.* / test_*.py', 'bytes': None, 'reason': f'{tests_skipped} test file(s) skipped (--include-tests scans them)'})
     # in an internal business app most collection points are business parameters with no personal-data category
+    collection = [c for c in collection if not c.pop('_folded', False)]
     by_cat: dict = {}
     for c in collection:
         by_cat[c.get('category') or 'none'] = by_cat.get(c.get('category') or 'none', 0) + 1
@@ -1812,6 +2047,9 @@ def main() -> int:
                (repo / d / m).is_file() for m in PACKAGE_MANIFESTS) else 'named after a test tool but holds no test files'} for d in kept_dirs],
            'wrappers': sorted(wrappers.values(), key=lambda w: (w['file'] or '', w['line'] or 0, w['name'])), 'candidates': candidates,
            'outbound_hosts': outbound_hosts, 'outbound_unresolved': outbound_unresolved, 'build_output_dirs': build_dirs, 'language_coverage': coverage,
+           'fixtures': fixtures, 'fixtures_excluded': [f for f in fixtures if f['dir'] in fixture_set],
+           'home_paths': [{k: h[k] for k in ('file', 'line')} for h in homes], 'git_tracked': tracked is not None,
+           'copies_folded': copies_folded,
            'host_mentions': sorted(mentions, key=lambda m: (m['host'], m['file'], m['line'])), 'csp': csp_out}
     # the validator rejects any email, phone or card-like value in the evidence: redact every remaining string
     # (labels, placeholders, notes) the same way, whatever pattern put it there; paths are left alone
@@ -1835,6 +2073,9 @@ def main() -> int:
     if skipped:
         print(f'  skipped {len(skipped)} file(s) (listed under "skipped"): ' + ', '.join(f'{x["file"]} ({x["reason"].split(" (")[0]})' for x in skipped[:5])
               + (' ...' if len(skipped) > 5 else ''))
+    if fixture_set:
+        print(f'  left out {len(fixture_set)} sample or fixture project(s) (--include-fixtures scans them): '
+              + ', '.join(sorted(fixture_set)[:6]) + (' ...' if len(fixture_set) > 6 else ''))
     if kept_dirs:
         print(f'  scanned {len(kept_dirs)} test-named directorie(s) as product code (a package manifest, or no test files): '
               + ', '.join(kept_dirs[:5]) + (' ...' if len(kept_dirs) > 5 else ''))

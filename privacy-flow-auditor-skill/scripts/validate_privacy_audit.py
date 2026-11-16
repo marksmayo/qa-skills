@@ -35,7 +35,11 @@ tracking findings, the vendor category's data (data/vendors.json category_data);
 --write-summary fills the computed fields (headline counts and states; each finding's sensitivity, flow, score,
 priority, floor and cap when they are missing) and writes the audit back; --fix-ratings also rewrites computed
 rating fields that are wrong, printing each change (the categories, flow basis, reach and confidence stay yours).
---recompute re-runs merge_candidates.py from the recorded inputs and compares.
+--recompute re-runs merge_candidates.py from the recorded inputs and compares; the inputs are found from the current
+directory or from the candidates file's folder and the folders above it, and one found nowhere is a clear error.
+The disclaimer may name the site, service, tool(s), library, code, repository or project instead of "the app"
+(data/provisions.json disclaimer_subjects). A candidate inside a sample or fixture project (the static scan's
+fixtures, or fixture on the candidate) may be dismissed as fixture, a special-category one too.
 
 An app with no consent banner (consent.banner null in flows.json) has one state, no_banner, and before, reject and
 accept are not_applicable: the headline carries consent_banner false and states_not_applicable, its third parties
@@ -81,7 +85,7 @@ def declared_covers(names: list[str], rep: dict, cfile: dict) -> bool:
     (a privacy policy or README section quoted by name) names the vendor or the domain."""
     norm = lambda s: re.sub(r'[^a-z0-9]', '', (s or '').lower())  # noqa: E731
     meta = ((rep.get('metadata') or {}).get('declared_processors') or '').lower()
-    path = (cfile.get('inputs') or {}).get('declared')
+    path = (cfile.get('_resolved') or {}).get('declared') or (cfile.get('inputs') or {}).get('declared')
     procs = []
     if path and Path(path).is_file():
         try:  # a JSON list of processors, or a policy page in the repository (the vendors its text names)
@@ -107,6 +111,21 @@ def declared_covers(names: list[str], rep: dict, cfile: dict) -> bool:
     return False
 
 
+def resolve_input(rec, cand_file: Path) -> Path | None:
+    """A path the merge recorded (relative to the directory it ran in): absolute as is, else under the current directory,
+    else under the candidates file's directory or one of its parents (the merge usually runs from the repository root, with
+    the candidates file somewhere below it). None when it is found nowhere."""
+    if not rec:
+        return None
+    p = Path(rec)
+    if p.is_absolute():
+        return p if p.exists() else None
+    for base in (Path.cwd(), *cand_file.resolve().parents):
+        if (base / p).exists():
+            return base / p
+    return None
+
+
 ORDER = ['P0', 'P1', 'P2', 'P3']
 FLOW = {'undeclared_third_party': 3, 'before_consent': 3, 'after_reject': 3, 'declared_unexpected': 2, 'logs': 2,
         'insecure_storage': 2, 'url': 2, 'committed': 2, 'no_use': 1}
@@ -118,7 +137,7 @@ DEFAULT_ON_TYPES = ('telemetry', 'first_party_beacon')
 URL_USERINFO = re.compile(r'\b[A-Za-z][A-Za-z0-9+.-]*://[^\s/@"\'<>]*$')
 JUDGMENT = {'excess_collection'}
 DISMISS = {'strictly_necessary', 'functional_no_identifier', 'constant_in_source', 'pii_disabled', 'duplicate', 'false_match',
-           'not_personal_data', 'random_per_load_id'}
+           'not_personal_data', 'random_per_load_id', 'fixture'}
 BANNED = re.compile(r'\b(is|are|fully|now|be)\s+compliant\b|\bGDPR[- ]ready\b|\bmeets the APPs\b|\bcompliant with\b|\bprivacy[- ]safe\b', re.I)
 SECRET = re.compile(r'AKIA[0-9A-Z]{16}|sk_live_[0-9a-zA-Z]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|xox[bp]-[0-9A-Za-z-]{10,}|ghp_[0-9A-Za-z]{30,}')
 CSRF_COOKIE = re.compile(r'csrf|xsrf', re.I)
@@ -304,6 +323,21 @@ def main() -> int:
     cands = {c['id']: c for c in cfile['candidates']}
     errs: list[str] = []
     e = errs.append
+    # the inputs the merge recorded, found wherever the merge ran (the repository root, usually): --recompute and the
+    # checks below read them
+    recorded = {'static': cfile.get('static'), 'capture': cfile.get('capture'), **{k: v for k, v in (cfile.get('inputs') or {}).items()
+                                                                                 if k in ('flows', 'lists', 'declared')}}
+    cfile['_resolved'] = resolved = {k: resolve_input(v, a.candidates) for k, v in recorded.items()}
+    st_ = None
+    if resolved['static']:
+        try:
+            st_ = json.loads(resolved['static'].read_text(encoding='utf-8'))
+        except (OSError, ValueError) as exc:
+            e(f'the static scan {recorded["static"]} could not be read: {exc}')
+    fixture_dirs = [f.get('dir') for f in (st_ or {}).get('fixtures') or [] if isinstance(f, dict) and f.get('dir')]
+
+    def in_fixture(path: str) -> bool:
+        return any(path == d or path.startswith(d + '/') for d in fixture_dirs)
 
     for k in ('schema_version', 'skill', 'scope', 'metadata', 'inventory', 'recipients', 'consent_matrix', 'findings', 'triage', 'headline', 'limitations'):
         if k not in rep:
@@ -658,8 +692,12 @@ def main() -> int:
                       'consent state (a fresh browser context): the candidate\'s facts do not show that')
             if code == 'pii_disabled' and facts.get('default_pii') is not False and facts.get('masked_by_default') is not True:
                 e(f'{cid}: pii_disabled, but the candidate does not show default PII off or SDK-default masking')
-            if any(x in CATS['special'] for x in c.get('categories', [])) and code != 'false_match':
-                e(f'{cid}: a special-category candidate can only be dismissed as a false match')
+            if code == 'fixture' and not (c.get('fixture') or in_fixture(c.get('file') or '')):
+                e(f'{cid}: fixture is for a candidate inside a sample or fixture project (the static scan lists them under fixtures and marks '
+                  'such candidates with fixture when run with --include-fixtures); this one is not')
+            if any(x in CATS['special'] for x in c.get('categories', [])) and code not in ('false_match', 'fixture'):
+                e(f'{cid}: a special-category candidate can only be dismissed as a false match, or as a fixture (a flow planted in a '
+                  'sample project)')
         else:
             e(f'{cid}: decision must be promoted, inventory or dismissed')
     missing = sorted(set(cands) - set(seen))
@@ -671,9 +709,7 @@ def main() -> int:
                 e(f'{f["id"]}: lists {cid}, but triage does not promote it there')
 
     # --- file uploads the static scan found: what the files hold is unknown until someone says
-    static_path = Path(cfile['static']) if cfile.get('static') else None
-    if static_path and static_path.is_file():
-        st_ = json.loads(static_path.read_text(encoding='utf-8'))
+    if st_ is not None:
         # a language the scan does not analyse that holds much of the code: nothing it found there, so the report must say so
         cov = st_.get('language_coverage') or {}
         lims = ' '.join(rep['limitations'])
@@ -718,8 +754,11 @@ def main() -> int:
     m = BANNED.search(blob)
     if m:
         e(f'the audit says {m.group(0)!r}: never call an app compliant or private')
-    if PROV['disclaimer'] not in rep['headline'].get('disclaimer', ''):
-        e('headline.disclaimer must carry the disclaimer from data/provisions.json')
+    # the disclaimer names what was audited: "the app" by default, or the tool, code, repository, library... it was run on
+    forms = [PROV['disclaimer'].replace('the app', subj) for subj in PROV.get('disclaimer_subjects') or ['the app']]
+    if not any(x in rep['headline'].get('disclaimer', '') for x in forms):
+        e('headline.disclaimer must carry the disclaimer from data/provisions.json (naming the app, or one of '
+          f'{", ".join((PROV.get("disclaimer_subjects") or ["the app"])[1:])} instead)')
     want = summary(rep, cfile)
     if a.write_summary:
         rep['headline'].update(want)
@@ -777,29 +816,31 @@ def main() -> int:
 
     if a.recompute:
         inp = cfile['inputs']
-        with tempfile.TemporaryDirectory() as d:
-            out = Path(d) / 'c.json'
-            cmd = [sys.executable, str(HERE / 'merge_candidates.py'), '--regions', inp['regions'], '--out', str(out)]
-            if cfile.get('capture'):
-                cmd += ['--capture', cfile['capture'], '--flows', inp['flows'], '--lists', inp['lists']]
-            else:
-                cmd += ['--run-status-reason', cfile.get('run_status_reason') or '']
-                if inp.get('lists'):
-                    cmd += ['--lists', inp['lists']]
-                if inp.get('flows'):
-                    cmd += ['--flows', inp['flows']]
-            if cfile.get('static'):
-                cmd += ['--static', cfile['static']]
-            if inp.get('declared'):
-                cmd += ['--declared', inp['declared']]
-            r = subprocess.run(cmd, capture_output=True, text=True)
-            if r.returncode:
-                e(f'recompute failed: {r.stderr.strip()[-300:]}')
-            else:
-                again = json.loads(out.read_text(encoding='utf-8'))
-                for k in ('candidates', 'recipients', 'consent_matrix', 'run_status'):
-                    if again.get(k) != cfile.get(k):
-                        e(f'recompute: {k} differ from the candidates file')
+        need = [k for k in ('static', 'capture', 'flows', 'lists', 'declared') if recorded.get(k)]
+        lost = [k for k in need if resolved.get(k) is None]
+        if lost:
+            for k in lost:
+                e(f'recompute: the recorded {k} input {recorded[k]} was not found (looked in the current directory and in '
+                  f'{a.candidates.resolve().parent} and the folders above it): run from the directory merge_candidates.py ran in')
+        else:
+            arg = {k: str(resolved[k]) for k in need}
+            with tempfile.TemporaryDirectory() as d:
+                out = Path(d) / 'c.json'
+                cmd = [sys.executable, str(HERE / 'merge_candidates.py'), '--regions', inp['regions'], '--out', str(out)]
+                if cfile.get('capture'):
+                    cmd += ['--capture', arg['capture'], '--flows', arg['flows'], '--lists', arg['lists']]
+                else:
+                    cmd += ['--run-status-reason', cfile.get('run_status_reason') or '']
+                    cmd += [x for k in ('lists', 'flows') if k in arg for x in ('--' + k, arg[k])]
+                cmd += [x for k in ('static', 'declared') if k in arg for x in ('--' + k, arg[k])]
+                r = subprocess.run(cmd, capture_output=True, text=True)
+                if r.returncode:
+                    e(f'recompute failed: {r.stderr.strip()[-300:]}')
+                else:
+                    again = json.loads(out.read_text(encoding='utf-8'))
+                    for k in ('candidates', 'recipients', 'consent_matrix', 'run_status'):
+                        if again.get(k) != cfile.get(k):
+                            e(f'recompute: {k} differ from the candidates file')
 
     if errs:
         print(f'{a.audit}: {len(errs)} problem(s)')
