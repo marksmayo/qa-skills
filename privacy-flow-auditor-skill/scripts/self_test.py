@@ -924,6 +924,28 @@ def regex_literal_not_sink() -> None:
     check(lines == [4], f'scan: a regex or string literal naming fetch( is no HTTP sink; a real fetch is (got lines {lines})')
 
 
+def literal_ranges() -> None:
+    """inside_literal follows code_mask's rule for every string kind: a range starts after the opening quote, so a
+    match at the opening quote is the code's own literal and a match on a quote inside the string is inside it."""
+    import code_mask
+    import scan_privacy
+    text = ('u = f"\'https://x.test/a\'"\n'
+            'v = "\'https://x.test/b\'"\n'
+            'w = "https://x.test/c"\n'
+            'z = f"https://x.test/{p}"\n')
+    spans = code_mask.masked_spans(text, 'python')
+    at = text.index
+    got = {'inner quote of an f-string': scan_privacy.inside_literal(spans, at("'https://x.test/a"), text),
+           'inner quote of a string': scan_privacy.inside_literal(spans, at("'https://x.test/b"), text),
+           'opening quote of a string': scan_privacy.inside_literal(spans, at('"https://x.test/c'), text),
+           'opening quote of an f-string': scan_privacy.inside_literal(spans, at('"https://x.test/{'), text),
+           'text inside a string': scan_privacy.inside_literal(spans, at('https://x.test/c'), text)}
+    want = {'inner quote of an f-string': True, 'inner quote of a string': True, 'opening quote of a string': False,
+            'opening quote of an f-string': False, 'text inside a string': True}
+    check(got == want, f'scan: a match on a quote inside a string or f-string is inside the literal, one on the opening '
+                       f'quote is the code\'s own literal (got {got})')
+
+
 def minified_speed() -> None:
     parts = ['<!doctype html><html><head><meta charset="utf-8"></head><body><div id="app">']
     i = 0
@@ -1249,7 +1271,7 @@ def tool_values_not_identifiers() -> None:
 def main() -> int:
     for t in (tool_values_not_identifiers, generic_names_need_context,strings_not_sinks, home_path_in_artifact, outbound_opener_constants, fixtures_excluded,
               fixture_dismissal, disclaimer_subject, recompute_elsewhere, copies_grouped,
-              fetch_lists_checks_before_write,rust_dominant_by_lines, host_and_account_names, outbound_constant, subtitles_not_title, regex_literal_not_sink,
+              literal_ranges, fetch_lists_checks_before_write,rust_dominant_by_lines, host_and_account_names, outbound_constant, subtitles_not_title, regex_literal_not_sink,
               minified_speed, by_the_code_statement, artifact_finding, go_scan, unanalysed_language, template_loaders, fonts_not_tracker, undeclared_without_canary, telemetry_before_consent, declared_must_name, inventory_and_headline,
               observed_with_runtime_evidence, url_credentials_message, language_limitation, committed_dist, static_front_end_flows,
               agent_undeclared_third_party, console_and_key_canaries, next_script_loaders, csp_compared, vendors_added, policy_mismatch,
