@@ -1,5 +1,5 @@
 {
-  "pitfalls_version": "1.7.0",
+  "pitfalls_version": "1.8.0",
   "smells": [
     {
       "id": "SM-1",
@@ -119,6 +119,8 @@
       "mitigation": null
     }
   ],
+  "fixtures_excluded": [],
+  "excluded": [],
   "pytest_collection": {
     "config": "pyproject.toml",
     "testpaths": [

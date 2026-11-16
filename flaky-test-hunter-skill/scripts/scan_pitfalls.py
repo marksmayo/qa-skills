@@ -1,12 +1,25 @@
 #!/usr/bin/env python3
 """List static flake smells in a repository's tests (stdlib only).
 
-    python scan_pitfalls.py <repo> [--out smells.json]
+    python scan_pitfalls.py <repo> [--out smells.json] [--include-fixtures] [--fixture-dir NAME|PATH ...]
+                            [--exclude DIR ...]
 
 Applies data/pitfalls.json to test files (and, for smells with scope "source", to non-test
 source files that tests import). Every hit is a lead with a file, line and the cause class it
 usually leads to. A smell is never a flake on its own: it becomes one only when runs show a
 pass and a fail. Smells whose tests never failed stay in the report as smells.
+
+What is scanned: nested sample and fixture projects (repo_layout.fixture_projects: a project with its own
+manifest under examples/, fixtures/, testdata/, samples/ ...) are left out by default and listed under
+`fixtures_excluded` (their planted flakes are not this repository's tests; --include-fixtures scans them,
+--fixture-dir names another fixture folder); --exclude DIR leaves out any other directory (listed under
+`excluded`). A file kept identical in several folders (repo_layout.copy_groups: a declared shared-file mapping, or
+the same content) is scanned once, on its canonical copy, and each of its smells lists the other paths under
+`copies`. Patterns match code only: a match that starts inside a string literal, docstring or comment (a fixture
+source held in a string, a usage example) is not a smell (code_mask.py). Test code is what the test-name patterns
+name, what a pytest configuration's python_files collects below it (benchmarks/pytest.ini with bench_*.py), every
+self-test script, and the body of a script's own self_test() function (detect_conventions.find_self_tests); the
+self-tests are also their own suite in `suites` (preset `selftest`) and listed under `self_tests`.
 
 For JavaScript and TypeScript tests a smell's `test` is the describe chain and title joined with
 " > ", the way Vitest and Jest name tests in JUnit ("checkout > applies a code"), so a smell can
@@ -17,7 +30,7 @@ file while the tests run in worker threads, where the assignment does not change
 """
 from __future__ import annotations
 import argparse, json, os, re, sys, tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE.parent / 'data' / 'pitfalls.json'
@@ -48,12 +61,162 @@ LANG_BY_SUFFIX_BROAD = {
     '.cpp': 'cpp', '.cc': 'cpp', '.cxx': 'cpp', '.hpp': 'cpp', '.c': 'c', '.h': 'c', '.m': 'objc'}
 
 
-def files(root: Path):
-    """Every file under root, pruning SKIP directories before descending into them."""
+def files(root: Path, skip_dirs=frozenset()):
+    """Every file under root, pruning SKIP directories (and the repository-relative directories in skip_dirs: fixture
+    projects, --exclude) before descending into them."""
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in SKIP)
+        if skip_dirs:
+            rel = os.path.relpath(dirpath, root).replace(os.sep, '/')
+            pre = '' if rel == '.' else rel + '/'
+            dirnames[:] = sorted(d for d in dirnames if d not in SKIP and pre + d not in skip_dirs)
+        else:
+            dirnames[:] = sorted(d for d in dirnames if d not in SKIP)
         for f in sorted(filenames):
             yield Path(dirpath) / f
+
+
+def _import_sibling(name: str):
+    if str(HERE) not in sys.path:
+        sys.path.insert(0, str(HERE))
+    return __import__(name)
+
+
+def prepare_layout(root: Path, include_fixtures: bool = False, fixture_dirs=(), exclude=()) -> dict:
+    """What the scan leaves out: {fixtures: [{dir, reason, markers}] (left out unless include_fixtures), excluded:
+    [dir] (--exclude, a repository-relative path or a directory name anywhere), skip: set of relative dirs}."""
+    root = Path(root)
+    fixtures = []
+    if not include_fixtures:
+        try:
+            fixtures = _import_sibling('repo_layout').fixture_projects(root, fixture_dirs)
+        except Exception:             # noqa: BLE001 - repo_layout.py missing: nothing is left out, and it says so
+            fixtures = []
+    excluded, skip = [], {f['dir'] for f in fixtures}
+    for e in exclude or ():
+        e = str(e).replace('\\', '/').strip('/')
+        if not e:
+            continue
+        excluded.append(e)
+        if '/' in e or (root / e).is_dir():
+            skip.add(e)
+        else:   # a bare name: every directory of that name
+            for dp, dns, _ in os.walk(root):
+                dns[:] = [d for d in dns if d not in SKIP]
+                for d in dns:
+                    if d == e:
+                        skip.add(os.path.relpath(os.path.join(dp, d), root).replace(os.sep, '/'))
+    return {'fixtures': fixtures, 'excluded': sorted(set(excluded)), 'skip': skip}
+
+
+def pytest_config_tests(root: Path, all_files: list[Path], rel_of) -> set[str]:
+    """Python files a pytest configuration collects by its python_files below its own folder (root or nested, the
+    nearest config deciding; within its testpaths when it sets them): bench_*.py under a benchmarks/pytest.ini."""
+    import fnmatch
+    cfg_dirs = {}
+    for p in all_files:
+        if p.name in ('pytest.ini', 'pyproject.toml', 'tox.ini', 'setup.cfg'):
+            d = rel_of(p).rpartition('/')[0]
+            if d not in cfg_dirs:
+                cfg = pytest_collection(p.parent)
+                if cfg:
+                    cfg_dirs[d] = cfg
+    if not cfg_dirs:
+        return set()
+    out = set()
+    for p in all_files:
+        if p.suffix != '.py':
+            continue
+        rel = rel_of(p)
+        d = rel.rpartition('/')[0]
+        while True:                                     # the nearest folder at or above the file with a config
+            if d in cfg_dirs:
+                break
+            if not d:
+                d = None
+                break
+            d = d.rpartition('/')[0]
+        if d is None:
+            continue
+        cfg = cfg_dirs[d]
+        sub = rel[len(d) + 1:] if d else rel
+        if cfg['testpaths'] and not any(sub == t or sub.startswith(t + '/') for t in cfg['testpaths']):
+            continue
+        if any(fnmatch.fnmatch(p.name, g) for g in cfg['python_files']):
+            out.add(rel)
+    return out
+
+
+PY_IMPORT = re.compile(r'^\s*from\s+\.*([\w.]*)\s+import\s+\(?([\w\s,.*]+)|^\s*import\s+([\w\s,.]+)', re.M)
+PY_IMPORT_MODULE = re.compile(r'\bimport_module\(\s*[\'"]([\w.]+)|\b__import__\(\s*[\'"]([\w.]+)')
+
+
+def python_imports(text: str) -> set[str]:
+    """Every name a Python file imports: each part of a dotted module path, the names taken `from` it (a module of a
+    package), and literal importlib.import_module / __import__ arguments."""
+    out = set()
+    for m in PY_IMPORT.finditer(text):
+        mods = m.group(1) if m.group(1) is not None else ''
+        names = m.group(2) if m.group(2) is not None else m.group(3) or ''
+        out.update(x for x in mods.split('.') if x)
+        for n in re.split(r'[\s,]+', names):
+            out.update(x for x in n.split('.') if x and x not in ('as', '*'))
+    for m in PY_IMPORT_MODULE.finditer(text):
+        out.update((m.group(1) or m.group(2)).split('.'))
+    return out
+
+
+SELF_TEST_FUNC = re.compile(r'^(\s*)(?:async\s+)?def\s+(_?(?:run_)?self_?tests?|_?selftest\w*|_?self_test\w*)\s*\(')
+
+
+def self_test_lines(lines: list[str]) -> set[int]:
+    """Line indexes of a script's own self-test function bodies (def self_test(), _self_test(), run_self_test())."""
+    out = set()
+    for j, line in enumerate(lines):
+        m = SELF_TEST_FUNC.match(line)
+        if not m:
+            continue
+        ind = len(m.group(1))
+        out.add(j)
+        for k in range(j + 1, len(lines)):
+            s = lines[k]
+            if s.strip() and _indent(s) <= ind:
+                break
+            out.add(k)
+    return out
+
+
+def find_self_tests(root: Path, rels: list[str]) -> list[dict]:
+    """detect_conventions.find_self_tests: [{file, command, kind, line}] ([] when detect_conventions.py is missing)."""
+    key = (str(Path(root).resolve()), tuple(sorted(rels)))
+    if key not in _SELF_TESTS:
+        try:
+            _SELF_TESTS[key] = _import_sibling('detect_conventions').find_self_tests(root, rels)
+        except Exception:             # noqa: BLE001
+            _SELF_TESTS[key] = []
+    return [dict(s) for s in _SELF_TESTS[key]]
+
+
+_SELF_TESTS: dict = {}
+
+
+def copy_representatives(root: Path, rels: list[str]) -> tuple[dict[str, str], dict[str, list[str]]]:
+    """({path: the copy that is scanned}, {scanned copy: [the other copies]}) for files kept identical in several
+    folders among rels. The canonical copy is scanned when it is among rels, else the first copy that is."""
+    try:
+        groups = _import_sibling('repo_layout').copy_groups(root, rels)
+    except Exception:                 # noqa: BLE001
+        return {}, {}
+    have = set(rels)
+    rep_of, copies_of = {}, {}
+    for g in groups:
+        members = [m for m in [g['canonical'], *g['copies']] if m in have]
+        if len(members) < 2:
+            continue
+        rep = members[0]
+        for m in members:
+            rep_of[m] = rep
+        copies_of[rep] = sorted(members[1:])
+    return rep_of, copies_of
 
 
 def _split_ini_list(value) -> list[str]:
@@ -358,10 +521,12 @@ def test_bodies(lines: list[str], lang: str, test_lines: set[int] | None = None)
     return out
 
 
-def body_hits(lines: list[str], lang: str, sm: dict) -> list[tuple[int, str]]:
+def body_hits(lines: list[str], lang: str, sm: dict, code_lines: list[str] | None = None) -> list[tuple[int, str]]:
     """(line index, test name) for a test-body smell. count_over_duration: a lower bound on a count asserted in a test
     whose body also runs or waits for a fixed duration (one hit per test). py_helper: a module-level def test_* that
-    other code in the file calls (pytest would collect the helper as a test)."""
+    other code in the file calls or refers to (`for t in (test_a, test_b): t(tmp)`): pytest would collect the helper
+    as a test. code_lines: the lines with strings and comments blanked (code_mask), so a def or a call inside a
+    fixture string does not count."""
     rx = re.compile(sm['pattern'])
     code = lambda s: not s.strip().startswith(('#', '//'))  # noqa: E731
     hits = []
@@ -375,15 +540,17 @@ def body_hits(lines: list[str], lang: str, sm: dict) -> list[tuple[int, str]]:
             if k is not None:
                 hits.append((k, name))
     elif sm['scope'] == 'py_helper' and lang == 'python':
-        for j, line in enumerate(lines):
+        src = code_lines if code_lines is not None else lines
+        joined = '\n'.join(src)
+        for j, line in enumerate(src):
             m = rx.match(line)
             if not m:
                 continue
             name = m.group(1)
-            if re.search(r'\b' + re.escape(name) + r'\.__test__\s*=\s*False', '\n'.join(lines)):
+            if re.search(r'\b' + re.escape(name) + r'\.__test__\s*=\s*False', joined):
                 continue
-            call = re.compile(r'(?<![\w.])' + re.escape(name) + r'\s*\(')
-            if any(k != j and code(l) and call.search(l) for k, l in enumerate(lines)):
+            ref = re.compile(r'(?<![\w.])' + re.escape(name) + r'\b(?!\s*=[^=])')
+            if any(k != j and code(l) and ref.search(l) for k, l in enumerate(src)):
                 hits.append((j, name))
     return hits
 
@@ -473,7 +640,10 @@ def thread_pool(root: Path, pools: dict[str, str]) -> str | None:
     return None
 
 
-def scan(root: Path, data: dict) -> list[dict]:
+def scan(root: Path, data: dict, layout: dict | None = None, info: dict | None = None) -> list[dict]:
+    """The smells of root. layout: prepare_layout()'s result (default: fixture projects left out). info, when given,
+    receives fixtures_excluded, excluded, self_tests and copy_groups (the copies scanned once)."""
+    layout = prepare_layout(root) if layout is None else layout
     test_rx = [re.compile(p) for p in data['test_file_patterns']]
     smells = [{**s, 'rx': re.compile(s['pattern']),
                'prev_rx': re.compile(s['skip_if_prev']) if s.get('skip_if_prev') else None,
@@ -488,7 +658,7 @@ def scan(root: Path, data: dict) -> list[dict]:
     go_body = {s['scope']: s for s in data['smells'] if s.get('scope') in GO_SCOPES}
     project = [s for s in data['smells'] if s.get('scope') == 'thread_setup']
     reload_targets = [s for s in data['smells'] if s.get('scope') == 'reload_target']
-    all_files = list(files(root))
+    all_files = list(files(root, layout['skip']))
     rels: dict[Path, str] = {}
 
     def rel_of(p: Path) -> str:                  # each file's relative path, worked out once per scan
@@ -497,6 +667,16 @@ def scan(root: Path, data: dict) -> list[dict]:
             r = rels[p] = p.relative_to(root).as_posix()
         return r
     not_collected = set(collection_excluded(root, all_files, data, rel_of))
+    config_tests = pytest_config_tests(root, all_files, rel_of)
+    lang_rels = [rel_of(p) for p in all_files if data['language_by_suffix'].get(p.suffix)]
+    self_tests = find_self_tests(root, [r for r in lang_rels if r.endswith('.py')])
+    st_kind = {s['file']: s['kind'] for s in self_tests}
+    rep_of, copies_of = copy_representatives(root, lang_rels)
+    if info is not None:
+        info.update({'fixtures_excluded': layout['fixtures'], 'excluded': layout['excluded'],
+                     'self_tests': [{**s, **({'copies': copies_of[s['file']]} if s['file'] in copies_of else {})}
+                                    for s in self_tests if rep_of.get(s['file'], s['file']) == s['file']],
+                     'copy_groups': [{'scanned': r, 'copies': c} for r, c in sorted(copies_of.items())]})
     raw: dict[str, str | None] = {}
 
     def read_raw(p: Path) -> str | None:
@@ -534,17 +714,60 @@ def scan(root: Path, data: dict) -> list[dict]:
 
     out = []
     by_lang: dict[str, list[dict]] = {}
+    cm = None
+    try:
+        cm = _import_sibling('code_mask')
+    except Exception:                 # noqa: BLE001 - code_mask.py missing: the per-line string check stands in
+        cm = None
+
+    def test_file(rel: str) -> bool:
+        return ((any(rx.search(rel) for rx in test_rx) and rel not in not_collected and rel not in helpers)
+                or rel in config_tests or st_kind.get(rel) == 'script')
+    # Python modules the tests import (or that test themselves): module state elsewhere is never shared by tests
+    imported: set[str] = set()
+    for p in all_files:
+        if p.suffix == '.py' and (test_file(rel_of(p)) or rel_of(p) in st_kind):
+            imported |= python_imports(read_raw(p) or '')
+
+    def tests_import(rel: str) -> bool:
+        stem = PurePosixPath(rel).stem
+        return rel in st_kind or (PurePosixPath(rel).parent.name if stem == '__init__' else stem) in imported
     for p in all_files:
         lang = data['language_by_suffix'].get(p.suffix)
         if not lang:
             continue
         rel = rel_of(p)
-        is_test = any(rx.search(rel) for rx in test_rx) and rel not in not_collected and rel not in helpers
+        if rep_of.get(rel, rel) != rel:
+            continue                  # a copy of a file scanned once, on its canonical copy
+        is_test = test_file(rel)
+        py_source_skip = lang == 'python' and not is_test and not tests_import(rel)
         lines = read(p)
         if lines is None:
             continue
         # Rust unit tests live in #[cfg(test)] modules of source files: those lines are test code
         test_lines = rust_test_lines(lines) if lang == 'rust' and not is_test else set()
+        if lang == 'python' and not is_test and rel in st_kind:
+            test_lines = self_test_lines(lines)       # a script's own self_test() body is test code
+        # strings, docstrings and comments blanked with every offset kept: a match must start in code
+        spans, offs, code_lines = None, None, lines
+        cm_lang = cm.lang_of(p) if cm else None
+        if cm_lang:
+            text = read_raw(p) or ''
+            spans = cm.masked_spans(text, cm_lang)
+            if spans:
+                offs = [0]
+                for ln in text.splitlines(keepends=True):
+                    offs.append(offs[-1] + len(ln))
+                code_lines = cm._blank(text, spans).splitlines() if lang == 'python' else lines
+                if len(code_lines) != len(lines):
+                    code_lines = lines
+            else:
+                spans = None
+
+        def in_code(i: int, pos: int, line: str) -> bool:
+            if spans is not None and offs is not None and i < len(offs):
+                return not cm.in_masked(spans, offs[i] + pos)
+            return not in_string(line, pos, lang)
         lang_smells = by_lang.get(lang)
         if lang_smells is None:                  # the line smells of this language, in catalogue order
             lang_smells = by_lang[lang] = [sm for sm in smells if lang in sm['languages']]
@@ -557,9 +780,11 @@ def scan(root: Path, data: dict) -> list[dict]:
             for sm in lang_smells:
                 if (sm.get('scope') == 'source') == line_test:
                     continue
-                if sm.get('code_only'):
-                    if not any(not in_string(line, mm.start(), lang) for mm in sm['rx'].finditer(line)):
-                        continue          # only inside a string: a command for a child process, a message
+                if py_source_skip and sm.get('scope') == 'source':
+                    continue          # module state in a module no test imports: no two tests share it
+                if spans is not None or sm.get('code_only'):
+                    if not any(in_code(i, mm.start(), line) for mm in sm['rx'].finditer(line)):
+                        continue          # only inside a string or comment: a fixture source, a child's command
                 elif not sm['rx'].search(line):
                     continue
                 if sm['skip_rx'] is not None:
@@ -592,7 +817,7 @@ def scan(root: Path, data: dict) -> list[dict]:
                         n = first_match(sm['mit_rx'], lines)
                         local_mit[sm['id']] = f'{sm["mitigation"]} in this file (line {n})' if n else None
                     mitigation = global_mit.get(sm['id']) or local_mit[sm['id']]
-                test = enclosing_test(lines, i, lang in JS_LANGS, lang) if line_test else None
+                test = enclosing_test(code_lines, i, lang in JS_LANGS, lang) if line_test else None
                 if sm.get('once_per_test'):
                     if (sm['id'], test) in once:
                         continue          # one lead per test: the first read is enough to point at it
@@ -608,7 +833,7 @@ def scan(root: Path, data: dict) -> list[dict]:
             for sm in body_smells:
                 if lang not in sm['languages']:
                     continue
-                for k, name in body_hits(lines, lang, sm):
+                for k, name in body_hits(lines, lang, sm, code_lines if lang == 'python' else None):
                     if is_test or k in test_lines:
                         out.append({'id': f'SM-{len(out) + 1}', 'smell': sm['id'], 'file': rel, 'line': k + 1,
                                     'excerpt': lines[k].strip()[:160], 'cause': sm['cause'], 'message': sm['message'],
@@ -648,8 +873,10 @@ def scan(root: Path, data: dict) -> list[dict]:
                 for m in [RELOAD_ARG.search(h['excerpt'])] if m}
     if reload_targets and reloaded:
         for p in all_files:
-            rel = p.relative_to(root).as_posix()
-            if p.suffix != '.py' or p.stem not in reloaded or any(re.compile(x).search(rel) for x in data['test_file_patterns']):
+            if p.suffix != '.py' or p.stem not in reloaded:
+                continue
+            rel = rel_of(p)
+            if rep_of.get(rel, rel) != rel or any(re.compile(x).search(rel) for x in data['test_file_patterns']):
                 continue
             for sm in reload_targets:
                 rx = re.compile(sm['pattern'])
@@ -659,7 +886,18 @@ def scan(root: Path, data: dict) -> list[dict]:
                                     'excerpt': line.strip()[:160], 'cause': sm['cause'],
                                     'message': f"{sm['message']} ({p.stem} is reloaded by a test)", 'fix': sm['fix'],
                                     'test': None, 'in_test_file': False, 'mitigation': None})
+    for h in out:          # a smell in a file kept identical elsewhere: reported once, the copies listed
+        if h['file'] in copies_of:
+            h['copies'] = copies_of[h['file']]
     return out
+
+
+def scan_repo(root: Path, data: dict, include_fixtures: bool = False, fixture_dirs=(), exclude=()) -> dict:
+    """{smells, fixtures_excluded, excluded, self_tests, copy_groups} for root (see scan())."""
+    layout = prepare_layout(root, include_fixtures, fixture_dirs, exclude)
+    info: dict = {}
+    smells = scan(root, data, layout, info)
+    return {'smells': smells, **info, 'layout': layout}
 
 
 GO_SCOPES = ('go_parallel', 'go_goroutine')
@@ -677,17 +915,23 @@ STATIC_TEST = {'python': re.compile(r'^\s*(?:async\s+)?def\s+test\w*\s*\('),
                'typescript': re.compile(r'^\s*(?:it|test)(?:\.\w+)*\s*\(\s*[\'"`]')}
 
 
-def suite_inventory(root: Path, data: dict | None = None) -> list[dict]:
+def suite_inventory(root: Path, data: dict | None = None, layout: dict | None = None) -> list[dict]:
     """One entry per language that has tests: {language, test_files, tests, count_source, presets, ci_gates}. The
-    languages and test files come from detect_conventions.py (lines, test files, CI gates); Rust tests are counted
-    from the Cargo model (cargo_project.py: #[test] functions in #[cfg(test)] modules and tests/*.rs, doc tests
-    apart), other languages by a static count of test definitions in test files. A report covers each of these
-    suites in metadata.suites, as run or not run with the reason, so a language half of the suite with no
+    languages and CI gates come from detect_conventions.py (fixture projects left out as the scan leaves them out);
+    test files are the ones the scan reads as tests; Rust tests are counted from the Cargo model (cargo_project.py:
+    #[test] functions in #[cfg(test)] modules and tests/*.rs, doc tests apart), other languages by a static count of
+    test definitions in test files. Scripts with their own self-test are a suite of their own, language
+    `self-test` with preset `selftest`: test_files is the number of scripts (copies of one script counted once) and
+    tests is null, because their checks are printed, not declared (the selftest runs count them). A report covers
+    each of these suites in metadata.suites, as run or not run with the reason, so a half of the suite with no
     per-test runs lowers evidence completeness instead of disappearing."""
     data = data or json.loads(DATA.read_text(encoding='utf-8'))
+    layout = prepare_layout(root) if layout is None else layout
     try:
         import detect_conventions
-        res = detect_conventions.Detector(root, 50_000).run(None)
+        fx_names = [f['dir'] for f in layout['fixtures']] + list(layout['skip'])
+        res = detect_conventions.Detector(root, 50_000, exclude_fixtures=bool(fx_names),
+                                          fixture_dirs=sorted(set(fx_names))).run(None)
     except Exception as exc:                  # noqa: BLE001 - the inventory is a lead, never fatal
         res = {'languages': {}, 'ci_gates': [], 'error': repr(exc)}
     langs = res.get('languages') or {}
@@ -703,8 +947,15 @@ def suite_inventory(root: Path, data: dict | None = None) -> list[dict]:
         except Exception:                     # noqa: BLE001
             rust = None
     test_rx = [re.compile(p) for p in data['test_file_patterns']]
-    all_files = list(files(root))
+    all_files = list(files(root, layout['skip']))
     raw: dict[Path, str | None] = {}
+    rels: dict[Path, str] = {}
+
+    def rel_of(p: Path) -> str:
+        r = rels.get(p)
+        if r is None:
+            r = rels[p] = p.relative_to(root).as_posix()
+        return r
 
     def read_raw(p: Path) -> str | None:
         if p not in raw:
@@ -713,20 +964,36 @@ def suite_inventory(root: Path, data: dict | None = None) -> list[dict]:
             except OSError:
                 raw[p] = None
         return raw[p]
-    helpers = helper_programs(root, data, all_files, read_raw)
+    helpers = helper_programs(root, data, all_files, read_raw, rel_of)
+    not_collected = set(collection_excluded(root, all_files, data, rel_of))
+    config_tests = pytest_config_tests(root, all_files, rel_of)
+    py_rels = [rel_of(p) for p in all_files if p.suffix == '.py']
+    self_tests = find_self_tests(root, py_rels)
+    rep_of, _ = copy_representatives(root, [s['file'] for s in self_tests])
+    st_files = {s['file'] for s in self_tests}
     counts: dict[str, int] = {}
+    test_files: dict[str, int] = {}
     for p in all_files:
         lang = data['language_by_suffix'].get(p.suffix)
-        rel = p.relative_to(root).as_posix()
-        if lang not in STATIC_TEST or rel in helpers or not any(rx.search(rel) for rx in test_rx):
+        if not lang:
+            continue
+        rel = rel_of(p)
+        if rel in st_files or rel in helpers:
+            continue                  # self-test scripts are their own suite; helper programs are not tests
+        if not ((any(rx.search(rel) for rx in test_rx) and rel not in not_collected) or rel in config_tests):
+            continue
+        test_files[lang] = test_files.get(lang, 0) + 1
+        if lang not in STATIC_TEST:
             continue
         text = read_raw(p)
         if text is None:
             continue
         counts[lang] = counts.get(lang, 0) + sum(bool(STATIC_TEST[lang].match(l)) for l in text.splitlines())
     out = []
-    for lang, info in langs.items():
-        tf = (info or {}).get('test_files', 0)
+    for lang in sorted(set(langs) | set(test_files), key=lambda l: (l not in langs, list(langs).index(l) if l in langs else 0, l)):
+        tf = test_files.get(lang, 0)
+        if lang == 'rust':            # unit tests live in #[cfg(test)] modules of source files too
+            tf = max(tf, (langs.get('rust') or {}).get('test_files', 0) or 0)
         if lang == 'rust' and rust is not None and (rust['tests'] or tf):
             entry = {'language': lang, 'test_files': tf, 'tests': rust['tests'], 'doc_tests': rust['doc_tests'],
                      'ignored': rust['ignored'], 'count_source': 'cargo_project.py (#[test] fns; doc tests apart)'}
@@ -739,7 +1006,16 @@ def suite_inventory(root: Path, data: dict | None = None) -> list[dict]:
         entry['ci_gates'] = [f"{g.get('file')}:{g.get('line')} {g.get('command')}" for g in gates
                              if GATE_LANG.get(g.get('runner')) == lang]
         out.append(entry)
+    scripts = sorted({rep_of.get(s['file'], s['file']) for s in self_tests})
+    if scripts:
+        cmds = {s['file']: s['command'] for s in self_tests}
+        out.append({'language': 'self-test', 'test_files': len(scripts), 'tests': None,
+                    'count_source': 'checks are printed, not declared: the selftest runs count them '
+                                    f'({len(self_tests) - len(scripts)} identical copies counted once)',
+                    'presets': ['selftest'], 'commands': [cmds[s] for s in scripts], 'ci_gates': []})
     return out
+
+
 GO_TEST_FUNC = re.compile(r'^func\s+(Test\w*|Benchmark\w*|Fuzz\w*|Example\w*)\s*\(')
 GO_WAITS = re.compile(r'\.Wait\(\)|<-|\berrgroup\b|\bEventually\w*\(|\bsynctest\.(?:Run|Test|Wait)\(')
 GO_GOROUTINE = re.compile(r'^\s*go\s+(?:func\b|[\w.]+\()')
@@ -1105,10 +1381,121 @@ PY_LOGGER = {
 }
 
 
+# A synthetic tool repository: a sample project with planted flakes under examples/, a helper kept identical in two
+# folders, a self_test.py whose fixture string holds a network call and whose checks time themselves through a
+# check() helper, a script with its own --self-test function, and a benchmarks folder whose pytest.ini collects
+# bench_*.py.
+CACHE_UTIL = ('"""Small in-process cache shared by the tool scripts."""\n\n'
+              '_CACHE = {}\n\n\ndef remember(key, value):\n    _CACHE[key] = value\n    return value\n')
+TOOL_REPO = {
+    'README.md': '# toolbox\n',
+    'examples/sample-shop/requirements.txt': 'flask\n',
+    'examples/sample-shop/shop.py': 'def total(items):\n    return sum(items)\n',
+    'examples/sample-shop/tests/test_cart.py': (
+        'import time\n\nfrom shop import total\n\n\ndef test_total_after_sync():\n    time.sleep(0.5)\n'
+        '    assert total([1, 2]) == 3\n'),
+    'shared/scripts/cache_util.py': CACHE_UTIL,
+    'tool-a/scripts/cache_util.py': CACHE_UTIL,
+    'tool-a/scripts/self_test.py': (
+        'import time\nfrom pathlib import Path\n\nfrom cache_util import remember\n\n'
+        "INSTALL_PY = '''\nimport urllib.request\n\n\ndef fetch(package):\n"
+        '    with urllib.request.urlopen(package["url"]) as resp:\n        return resp.read()\n'
+        "'''\n\n\n"
+        "def check(cond, name):\n    print(('ok   ' if cond else 'FAIL ') + name)\n\n\n"
+        'class FakePage:\n    def reload(self, timeout=None):\n        return timeout\n\n\n'
+        "def test_render(tmp: Path) -> None:\n    check((tmp / 'out').exists() is False, 'render: no output yet')\n\n\n"
+        "def test_parse(tmp: Path) -> None:\n    check(INSTALL_PY.count('def ') == 1, 'parse: one function')\n\n\n"
+        'def estimate_matches(est, actual):\n    assert 0.7 <= est / actual <= 1.6, f"estimate {est} for {actual}"\n\n\n'
+        'def main():\n    tmp = Path(".")\n    t0 = time.perf_counter()\n    build = sorted(range(1000))\n'
+        '    took = time.perf_counter() - t0\n'
+        "    check(took < 2.0, f'build: sorts in under 2 s (took {took:.1f} s)')\n"
+        '    for t in (test_render, test_parse):\n        t(tmp)\n\n\n'
+        "if __name__ == '__main__':\n    main()\n"),
+    'tool-b/report.py': (
+        'import argparse\nimport time\n\n\ndef render(rows):\n    return "\\n".join(rows)\n\n\n'
+        "def self_test():\n    time.sleep(0.2)\n    print('ok   render: joins rows' if render(['a']) == 'a' else 'FAIL render')\n\n\n"
+        "def main():\n    ap = argparse.ArgumentParser()\n    ap.add_argument('--self-test', action='store_true')\n"
+        '    if ap.parse_args().self_test:\n        self_test()\n\n\n'
+        "if __name__ == '__main__':\n    main()\n"),
+    'tool-a/replays/replay_1.py': 'HEADERS = {}\n\nprint(HEADERS)\n',
+    'benchmarks/pytest.ini': '[pytest]\npython_files = bench_*.py\n',
+    'benchmarks/bench_speed.py': 'import time\n\n\ndef test_render_speed():\n    time.sleep(1)\n    assert True\n',
+}
+
+
+def tool_repo_checks(data: dict) -> list[tuple[str, bool, str]]:
+    """The tool-repository fixture: sample projects left out by default (and recorded), copies reported once on the
+    canonical file, code inside strings ignored, helper-based elapsed-time assertions, test_* helpers called from a
+    loop, self-test functions read as tests, a nested pytest.ini's python_files, and the suite inventory."""
+    out = []
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for rel, text in TOOL_REPO.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        res = scan_repo(root, data)
+        hits = res['smells']
+        got = {(h['smell'], h['file']) for h in hits}
+        fx = [f['dir'] for f in res.get('fixtures_excluded') or []]
+        out.append(('fixture projects are left out by default and recorded',
+                    not any(h['file'].startswith('examples/') for h in hits) and fx == ['examples/sample-shop'],
+                    f'fixtures_excluded {fx}, fixture smells {[h for h in got if h[1].startswith("examples/")]}'))
+        inc = scan_repo(root, data, include_fixtures=True)['smells']
+        out.append(('--include-fixtures scans them again',
+                    ('fixed-sleep', 'examples/sample-shop/tests/test_cart.py') in {(h['smell'], h['file']) for h in inc},
+                    'no fixed-sleep in the sample project'))
+        cache = [h for h in hits if h['smell'] == 'module-global-state']
+        out.append(('a file kept identical in two folders is reported once, on the canonical copy, with its copies',
+                    len(cache) == 1 and cache[0]['file'] == 'shared/scripts/cache_util.py'
+                    and cache[0].get('copies') == ['tool-a/scripts/cache_util.py'],
+                    f'got {[(h["file"], h.get("copies")) for h in cache]}'))
+        out.append(('module state in a module no test imports (a generated replay script) is not a smell',
+                    not any(h['file'] == 'tool-a/replays/replay_1.py' for h in hits),
+                    f'got {[h for h in hits if h["file"] == "tool-a/replays/replay_1.py"]}'))
+        out.append(('a method named reload is not a module reload',
+                    not any(h['smell'] == 'module-reload' for h in hits),
+                    f'got {[h["excerpt"] for h in hits if h["smell"] == "module-reload"]}'))
+        out.append(('a network call inside a fixture string is not a smell',
+                    not any(h['smell'].startswith('real-network') for h in hits),
+                    f'got {[h for h in hits if h["smell"].startswith("real-network")]}'))
+        wall = sorted(h['excerpt'][:20] for h in hits if h['smell'] == 'wall-time-assertion')
+        out.append(('an elapsed-time bound inside check(...) or a two-sided ratio is a wall-time assertion',
+                    wall == ['assert 0.7 <= est / ', 'check(took < 2.0, f\''], f'got {wall}'))
+        helpers = sorted(h['test'] for h in hits if h['smell'] == 'pytest-collects-helper')
+        out.append(('test_* helpers that the file runs from a loop are pytest-collects-helper',
+                    helpers == ['test_parse', 'test_render'], f'got {helpers}'))
+        sleeps = [(h['file'], h['in_test_file']) for h in hits if h['smell'] == 'fixed-sleep']
+        out.append(('a sleep in a script\'s self_test() and in a bench_*.py its pytest.ini collects are test smells',
+                    sorted(sleeps) == [('benchmarks/bench_speed.py', True), ('tool-b/report.py', True)],
+                    f'got {sleeps}'))
+        exc = scan_repo(root, data, exclude=['tool-b'])
+        out.append(('--exclude leaves a directory out and records it',
+                    not any(h['file'].startswith('tool-b/') for h in exc['smells']) and exc.get('excluded') == ['tool-b'],
+                    f"excluded {exc.get('excluded')}"))
+        inv = suite_inventory(root, data)
+        by = {s['language']: s for s in inv}
+        st = by.get('self-test') or {}
+        py = by.get('python') or {}
+        out.append(('the suite inventory leaves the sample project out and lists the self-tests as their own suite',
+                    st.get('presets') == ['selftest'] and st.get('test_files') == 2 and st.get('tests') is None
+                    and py.get('tests') == 1,
+                    f'inventory {inv}'))
+    return out
+
+
 def self_test() -> int:
     data = json.loads(DATA.read_text(encoding='utf-8'))
     ok = True
     lines = []
+
+    # 8) A tool repository: fixtures, copies, strings, helper-based assertions, self-tests, nested pytest config.
+    try:
+        tool = tool_repo_checks(data)
+    except Exception as exc:          # noqa: BLE001 - a crash is a failed check, not a traceback
+        tool = [('tool repository checks ran', False, repr(exc))]
+    for name, good, detail in tool:
+        lines.append(f'{name}: ' + ('ok' if good else f'FAILED, {detail}'))
+        ok = ok and good
 
     # 6) Rust in a realistic layout: unique-name clock reads, helper binaries under tests/fixtures, unit tests in a
     #    #[cfg(test)] module, a sample count over a fixed duration, an elapsed-time budget, a scratch folder never
@@ -1305,8 +1692,15 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('repo', type=Path, nargs='?')
     ap.add_argument('--out', type=Path)
+    ap.add_argument('--include-fixtures', action='store_true',
+                    help='also scan nested sample and fixture projects (left out by default, listed under '
+                         'fixtures_excluded)')
+    ap.add_argument('--fixture-dir', action='append', default=[], metavar='NAME|PATH',
+                    help='also treat this directory as a fixture parent (repeatable)')
+    ap.add_argument('--exclude', action='append', default=[], metavar='DIR',
+                    help='leave out this directory: a repository-relative path, or a name anywhere (repeatable)')
     ap.add_argument('--self-test', action='store_true',
-                    help='run the built-in Rust-pack and coverage-warning checks and exit')
+                    help='run the built-in checks and exit')
     args = ap.parse_args(argv)
     if args.self_test:
         return self_test()
@@ -1314,15 +1708,23 @@ def main(argv=None) -> int:
         ap.error('repo is required')
     data = json.loads(DATA.read_text(encoding='utf-8'))
     root = args.repo.resolve()
-    hits = scan(root, data)
-    result = {'pitfalls_version': data['version'], 'smells': hits}
+    res = scan_repo(root, data, args.include_fixtures, args.fixture_dir, args.exclude)
+    hits = res['smells']
+    layout = res['layout']
+    result = {'pitfalls_version': data['version'], 'smells': hits,
+              'fixtures_excluded': res['fixtures_excluded'], 'excluded': res['excluded']}
+    if res['copy_groups']:
+        result['copies_scanned_once'] = res['copy_groups']
+    if res['self_tests']:
+        result['self_tests'] = res['self_tests']
     cfg = pytest_collection(root)
     if cfg:
-        result['pytest_collection'] = {**cfg, 'not_collected': collection_excluded(root, None, data)}
-    helpers = sorted(helper_programs(root, data))
+        result['pytest_collection'] = {**cfg, 'not_collected': collection_excluded(
+            root, list(files(root, layout['skip'])), data)}
+    helpers = sorted(helper_programs(root, data, list(files(root, layout['skip']))))
     if helpers:
         result['helper_programs'] = helpers
-    result['suites'] = suite_inventory(root, data)
+    result['suites'] = suite_inventory(root, data, layout)
     text = json.dumps(result, indent=2, ensure_ascii=False) + '\n'
     if args.out:
         args.out.write_text(text, encoding='utf-8')
@@ -1338,6 +1740,16 @@ def main(argv=None) -> int:
         print(f"\n{bar}\n{warning}\n{bar}", file=sys.stderr)
     print(f"{len(hits)} smell(s): " + (', '.join(f'{v} {k}' for k, v in sorted(by.items())) or 'none')
           + (f'; {mitigated} with a mitigation noted' if mitigated else ''), file=sys.stderr)
+    if res['fixtures_excluded']:
+        fx = [f['dir'] for f in res['fixtures_excluded']]
+        print(f"{len(fx)} sample or fixture project(s) left out (--include-fixtures scans them): "
+              + ', '.join(fx[:5]) + (' ...' if len(fx) > 5 else ''), file=sys.stderr)
+    if res['excluded']:
+        print('left out by --exclude: ' + ', '.join(res['excluded']), file=sys.stderr)
+    if res['copy_groups']:
+        print(f"{len(res['copy_groups'])} file(s) kept identical in "
+              f"{sum(len(g['copies']) for g in res['copy_groups'])} further place(s) scanned once (smells list "
+              f"their copies)", file=sys.stderr)
     return 0
 
 
