@@ -61,8 +61,13 @@ jobs:
           cache: pip
           cache-dependency-path: benchmarks/requirements.txt
 
+      # Node 22 LTS, pinned, so the node:test and JUnit paths are checked on it (not on whichever Node the image ships)
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "22"
+
       # pytest is the only package the non-browser checks need (the examples' sample packages are tested with it);
-      # node, go and cargo come with the runner image
+      # go and cargo come with the runner image
       - name: Install pytest
         run: pip install -r benchmarks/requirements.txt
 
