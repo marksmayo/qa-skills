@@ -339,6 +339,12 @@ CI_THRESHOLDS = [
 ]
 
 def rel(p: Path, root: Path) -> str:
+    s, b = str(p), str(root)
+    if s.startswith(b):   # the common case, by string (Path.relative_to is costly): the same result
+        if len(s) == len(b):
+            return '.'
+        if b.endswith(os.sep) or s[len(b)] == os.sep:
+            return s[len(b):].lstrip(os.sep).replace(os.sep, '/')
     return PurePosixPath(p.relative_to(root)).as_posix()
 
 def read(p: Path, limit: int = 400_000) -> str:
@@ -407,7 +413,7 @@ def code_search(rx, text: str, path: str):
     key = (path, len(text))
     if key not in _SPANS:
         _SPANS.clear()
-        _SPANS[key] = _cm.masked_spans(text, lang)
+        _SPANS[key] = _cm.masked_spans(text, lang, kinds=False)
     return _cm.code_search(rx, text, lang, _SPANS[key])
 
 

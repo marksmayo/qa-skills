@@ -136,6 +136,7 @@ def walk(root: Path, include_tests: bool = False, census: dict | None = None, da
             elif p.is_file() and (include_tests or not TEST_FILE.search(p.name)):
                 yield p
 
+
 def compile_pitfall(p: dict) -> dict:
     q = dict(p)
     q['_rx'] = re.compile(p['regex'], re.M)
@@ -328,7 +329,7 @@ def scan_file(path: Path, rel: str, pitfalls: list[dict], include_tests: bool = 
             for raw in text.splitlines(keepends=True):
                 starts.append(off)
                 off += len(raw)
-            spans = code_mask.masked_spans(text, lang)
+            spans = code_mask.masked_spans(text, lang, kinds=False)
             touched: set[int] = set()
             for s, e, _ in spans:
                 touched.update(range(bisect.bisect_right(starts, s) - 1, bisect.bisect_right(starts, e - 1)))

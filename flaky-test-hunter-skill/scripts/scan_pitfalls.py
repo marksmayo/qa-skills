@@ -654,7 +654,7 @@ def scan(root: Path, data: dict, layout: dict | None = None, info: dict | None =
               for s in data['smells']
               if s.get('scope') not in ('thread_setup', 'reload_target', 'module_let', *GO_SCOPES, *BODY_SCOPES)]
     module_let = [s for s in data['smells'] if s.get('scope') == 'module_let']
-    body_smells = [s for s in data['smells'] if s.get('scope') in BODY_SCOPES]
+    body_smells = [{**s, '_rx': re.compile(s['pattern'])} for s in data['smells'] if s.get('scope') in BODY_SCOPES]
     go_body = {s['scope']: s for s in data['smells'] if s.get('scope') in GO_SCOPES}
     project = [s for s in data['smells'] if s.get('scope') == 'thread_setup']
     reload_targets = [s for s in data['smells'] if s.get('scope') == 'reload_target']
@@ -749,22 +749,29 @@ def scan(root: Path, data: dict, layout: dict | None = None, info: dict | None =
         if lang == 'python' and not is_test and rel in st_kind:
             test_lines = self_test_lines(lines)       # a script's own self_test() body is test code
         # strings, docstrings and comments blanked with every offset kept: a match must start in code
-        spans, offs, code_lines = None, None, lines
+        # worked out on first use (a line a smell matches, a hit's test name, a body smell), so a file nothing matches
+        # is never lexed: (spans or None, line offsets or None, code_lines)
         cm_lang = cm.lang_of(p) if cm else None
-        if cm_lang:
-            text = read_raw(p) or ''
-            spans = cm.masked_spans(text, cm_lang)
-            if spans:
-                offs = [0]
-                for ln in text.splitlines(keepends=True):
-                    offs.append(offs[-1] + len(ln))
-                code_lines = cm._blank(text, spans).splitlines() if lang == 'python' else lines
-                if len(code_lines) != len(lines):
-                    code_lines = lines
-            else:
-                spans = None
+        view: list = []
+
+        def masked(p=p, lines=lines, cm_lang=cm_lang, lang=lang, view=view) -> list:
+            if not view:
+                spans, offs, code_lines = None, None, lines
+                if cm_lang:
+                    text = read_raw(p) or ''
+                    spans = cm.masked_spans(text, cm_lang, kinds=False) or None
+                    if spans:
+                        offs = [0]
+                        for ln in text.splitlines(keepends=True):
+                            offs.append(offs[-1] + len(ln))
+                        code_lines = cm._blank(text, spans).splitlines() if lang == 'python' else lines
+                        if len(code_lines) != len(lines):
+                            code_lines = lines
+                view.extend([spans, offs, code_lines])
+            return view
 
         def in_code(i: int, pos: int, line: str) -> bool:
+            spans, offs, _ = masked()
             if spans is not None and offs is not None and i < len(offs):
                 return not cm.in_masked(spans, offs[i] + pos)
             return not in_string(line, pos, lang)
@@ -784,7 +791,7 @@ def scan(root: Path, data: dict, layout: dict | None = None, info: dict | None =
                     continue          # module state in a module no test imports: no two tests share it
                 if not sm['rx'].search(line):
                     continue
-                if spans is not None or sm.get('code_only'):
+                if sm.get('code_only') or (cm_lang and masked()[0] is not None):
                     if not any(in_code(i, mm.start(), line) for mm in sm['rx'].finditer(line)):
                         continue          # only inside a string or comment: a fixture source, a child's command
                 if sm['skip_rx'] is not None:
@@ -817,7 +824,7 @@ def scan(root: Path, data: dict, layout: dict | None = None, info: dict | None =
                         n = first_match(sm['mit_rx'], lines)
                         local_mit[sm['id']] = f'{sm["mitigation"]} in this file (line {n})' if n else None
                     mitigation = global_mit.get(sm['id']) or local_mit[sm['id']]
-                test = enclosing_test(code_lines, i, lang in JS_LANGS, lang) if line_test else None
+                test = enclosing_test(masked()[2], i, lang in JS_LANGS, lang) if line_test else None
                 if sm.get('once_per_test'):
                     if (sm['id'], test) in once:
                         continue          # one lead per test: the first read is enough to point at it
@@ -833,7 +840,12 @@ def scan(root: Path, data: dict, layout: dict | None = None, info: dict | None =
             for sm in body_smells:
                 if lang not in sm['languages']:
                     continue
-                for k, name in body_hits(lines, lang, sm, code_lines if lang == 'python' else None):
+                # py_helper reads the masked lines, but masking only blanks text: when no plain line matches, no masked
+                # line can, and the file need not be lexed
+                needs_mask = lang == 'python' and sm['scope'] == 'py_helper' \
+                    and any(sm['_rx'].match(ln) for ln in lines)
+                src = masked()[2] if needs_mask else (lines if lang == 'python' else None)
+                for k, name in body_hits(lines, lang, sm, src):
                     if is_test or k in test_lines:
                         out.append({'id': f'SM-{len(out) + 1}', 'smell': sm['id'], 'file': rel, 'line': k + 1,
                                     'excerpt': lines[k].strip()[:160], 'cause': sm['cause'], 'message': sm['message'],

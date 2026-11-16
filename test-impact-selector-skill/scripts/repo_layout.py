@@ -150,9 +150,10 @@ def fixture_projects(root, extra=()) -> list[dict]:
             names.add(e)
     ws = _workspace_globs(root)
     out: list[dict] = []
-    for dp, dns, fns in os.walk(root):
-        rel = Path(dp).relative_to(root).as_posix()
-        rel = '' if rel == '.' else rel
+    base = str(root)
+    cut = len(base) + (0 if base.endswith(os.sep) else 1)
+    for dp, dns, fns in os.walk(base):
+        rel = dp[cut:].replace(os.sep, '/') if len(dp) > len(base) else ''   # as relative_to().as_posix(), cheaply
         dns[:] = sorted(d for d in dns if d not in PRUNE and not d.endswith('.egg-info'))
         if not rel:
             continue
@@ -317,23 +318,32 @@ def declared_shared(root) -> dict[str, list[str]]:
 def walk_files(root) -> list[str]:
     """Every file under root, repository-relative and '/'-separated, sorted per folder; VCS, dependency, cache and
     virtual-environment folders (PRUNE) and *.egg-info are not walked."""
-    root = Path(root)
+    base = str(Path(root))
+    cut = len(base) + (0 if base.endswith(os.sep) else 1)
     out = []
-    for dp, dns, fns in os.walk(root):
+    for dp, dns, fns in os.walk(base):
         dns[:] = sorted(d for d in dns if d not in PRUNE and not d.endswith('.egg-info'))
-        rel = Path(dp).relative_to(root).as_posix()
+        rel = dp[cut:].replace(os.sep, '/') if len(dp) > len(base) else ''   # as relative_to().as_posix(), cheaply
         for f in sorted(fns):
-            out.append(f if rel == '.' else f'{rel}/{f}')
+            out.append(f'{rel}/{f}' if rel else f)
     return out
 
 
-def _digest(p) -> tuple[str, int] | None:
+def _hash_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _normalised(p) -> bytes | None:
     try:
         with open(p, 'rb') as fh:
-            data = fh.read().replace(b'\r\n', b'\n')
+            return fh.read().replace(b'\r\n', b'\n')
     except OSError:
         return None
-    return hashlib.sha256(data).hexdigest(), len(data)
+
+
+def _digest(p) -> tuple[str, int] | None:
+    data = _normalised(p)
+    return None if data is None else (_hash_bytes(data), len(data))
 
 
 def _boilerplate(name: str) -> bool:
@@ -352,6 +362,14 @@ def copy_groups(root, files=None, declared=None) -> list[dict]:
     by_hash: dict[str, list[str]] = {}
     digests: dict[str, str] = {}
     base = str(root)
+    # Identical files have the same normalised length, so a file is hashed only once another shares its length; the
+    # first file of each length waits with its content (or, over 1 MB, its hash) until one does.
+    first: dict[int, tuple[str, bytes | str]] = {}
+
+    def add(rel: str, payload: bytes | str) -> None:
+        h = payload if isinstance(payload, str) else _hash_bytes(payload)
+        digests[rel] = h
+        by_hash.setdefault(h, []).append(rel)
     for rel in rels:
         if _boilerplate(rel.rsplit('/', 1)[-1]):
             continue
@@ -362,11 +380,18 @@ def copy_groups(root, files=None, declared=None) -> list[dict]:
             continue
         if not stat.S_ISREG(st.st_mode) or st.st_size < MIN_BYTES:
             continue
-        d = _digest(p)
-        if not d or d[1] < MIN_BYTES or not d[0]:
+        data = _normalised(p)
+        if data is None or len(data) < MIN_BYTES:
             continue
-        digests[rel] = d[0]
-        by_hash.setdefault(d[0], []).append(rel)
+        payload = _hash_bytes(data) if len(data) > 1_000_000 else data
+        seen = first.get(len(data))
+        if seen is None:
+            first[len(data)] = (rel, payload)
+            continue
+        if seen[0]:
+            add(*seen)
+            first[len(data)] = ('', '')
+        add(rel, payload)
     groups = []
     used = set()
     for canonical, copies in sorted(declared.items()):
@@ -543,6 +568,24 @@ def self_test() -> int:
         only = copy_groups(root, files=['vendor_a/helper.py', 'libs/b/helper.py', 'src/app.py'], declared={})
         checks.append(('copy_groups can be limited to given files and an explicit (empty) mapping',
                        [x['canonical'] for x in only] == ['vendor_a/helper.py'], only))
+        body = ''.join(f'line {k} of a shared table\n' for k in range(12))
+        for rel, data in (('eol/lf.txt', body.encode()), ('eol/crlf.txt', body.replace('\n', '\r\n').encode()),
+                          ('eol/same_len.txt', body.replace('table', 'tabla').encode()),
+                          ('eol/unique.txt', (body + 'one more line\n').encode())):
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_bytes(data)
+        hashed = []
+        real = globals()['_hash_bytes']
+        globals()['_hash_bytes'] = lambda data: hashed.append(len(data)) or real(data)
+        try:
+            eol = copy_groups(root, files=['eol/lf.txt', 'eol/crlf.txt', 'eol/same_len.txt', 'eol/unique.txt'],
+                              declared={})
+        finally:
+            globals()['_hash_bytes'] = real
+        checks.append(('an LF and a CRLF copy are one group, a same-length file with other content is not, and a file '
+                       'whose length no other file shares is never hashed',
+                       [(x['canonical'], x['copies']) for x in eol] == [('eol/lf.txt', ['eol/crlf.txt'])]
+                       and len(hashed) == 3, (eol, hashed)))
     finally:
         shutil.rmtree(root, ignore_errors=True)
     failed = 0

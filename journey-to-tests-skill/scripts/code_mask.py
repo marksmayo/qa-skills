@@ -164,11 +164,11 @@ def _python_items(text: str) -> list[tuple]:
         return _python_fallback(text)
 
 
-# one token per match: a run of plain code (names, numbers, operators; it starts with a non-blank character), a
-# quote, a comment, a newline, a bracket, ';' or a backslash continuation
-_PY_LEX = re.compile(r'(?P<ws>[ \t\f]+)|(?P<code>[^"\'#\r\n()\[\]{};\\ \t\f][^"\'#\r\n()\[\]{};\\]*)|(?P<q>["\'])'
-                     r'|(?P<com>#[^\r\n]*)|(?P<nl>\r\n|\n|\r)|(?P<open>[(\[{])|(?P<close>[)\]}])|(?P<semi>;)'
-                     r'|(?P<cont>\\(?:\r\n|\n|\r))')
+# one token per match: a run of plain code (names, numbers, operators and brackets, with any blanks before it; it
+# holds at least one non-blank character), blanks alone, a quote, a comment, a newline, ';' or a backslash
+# continuation. Brackets are counted inside a run, so a typical line is one or two tokens plus its strings.
+_PY_LEX = re.compile(r'(?P<code>[ \t\f]*[^"\'#\r\n;\\ \t\f][^"\'#\r\n;\\]*)|(?P<ws>[ \t\f]+)|(?P<q>["\'])'
+                     r'|(?P<com>#[^\r\n]*)|(?P<nl>\r\n|\n|\r)|(?P<semi>;)|(?P<cont>\\(?:\r\n|\n|\r))')
 _PY_PREFIX_TAIL = re.compile(r'(?<![\w])[A-Za-z]{1,2}$')
 _PY_BAD_CODE = re.compile(r'[$?`]')
 _PY_NAME = re.compile(r'[^\W\d]\w*')
@@ -280,13 +280,7 @@ def _python_fast_spans(text: str, docstrings_only: bool = False):
     n, i, depth, line_start = len(text), 0, 0, True
     strings: list[list] = []   # [start, end, kind, prev_is_break, next_is_break]
     spans: list[tuple[int, int, str]] = []
-    pending = None
-
-    def settle(is_break: bool) -> None:
-        nonlocal pending
-        if pending is not None:
-            pending[4] = is_break
-            pending = None
+    pending = None   # the last string, until the next significant token says whether a break follows it
 
     match = _PY_LEX.match
     while i < n:
@@ -294,65 +288,69 @@ def _python_fast_spans(text: str, docstrings_only: bool = False):
         if m is None:
             return None
         g, j = m.lastgroup, m.end()
-        if g == 'ws' or g == 'cont':
-            i = j
-            continue
-        if g == 'com':
-            if not docstrings_only:
-                spans.append((i, j, 'comment'))
-            i = j
-            continue
-        if g == 'nl':
-            if depth == 0:
-                settle(True)
-                line_start = True
-            i = j
-            continue
-        if g == 'semi':
-            settle(True)
-            line_start = False
-            i = j
-            continue
         prefix = ''
         if g == 'code':
             run = m.group()
             if not run.isascii() or _PY_BAD_CODE.search(run):
                 return None   # characters tokenize refuses outside strings: let it (and its hand lexer) decide
+            start = j
             if j < n and text[j] in '\'"':
                 t = _PY_PREFIX_TAIL.search(run)
-                word = t.group().lower() if t else ''
-                if word in _PY_T_PREFIXES:
-                    return None
-                if word in _PY_PREFIXES:
-                    prefix = word
-                    if run[:t.start()].strip(' \t\f'):
-                        settle(False)
-                        line_start = False
-                    i = j - len(word)
-                    g = 'q'
-        if g != 'q':
-            settle(False)
-            line_start = False
-            if g == 'open':
-                depth += 1
-            elif g == 'close':
-                depth -= 1
+                if t is not None:
+                    word = t.group().lower()
+                    if word in _PY_T_PREFIXES:
+                        return None
+                    if word in _PY_PREFIXES:
+                        prefix, start, run = word, j - len(word), run[:t.start()]
+            if run.strip(' \t\f'):
+                if pending is not None:
+                    pending[4] = False
+                    pending = None
+                line_start = False
+                depth += run.count('(') + run.count('[') + run.count('{') \
+                    - run.count(')') - run.count(']') - run.count('}')
                 if depth < 0:
                     return None
+            if not prefix:
+                i = j
+                continue
+            i = start
+        elif g == 'ws' or g == 'cont':
             i = j
             continue
-        qpos = i + len(prefix)
-        e = _py_string_end(text, qpos, 'f' in prefix)
+        elif g == 'com':
+            if not docstrings_only:
+                spans.append((i, j, 'comment'))
+            i = j
+            continue
+        elif g == 'nl':
+            if depth == 0:
+                if pending is not None:
+                    pending[4] = True
+                    pending = None
+                line_start = True
+            i = j
+            continue
+        elif g == 'semi':
+            if pending is not None:
+                pending[4] = True
+                pending = None
+            line_start = False
+            i = j
+            continue
+        e = _py_string_end(text, i + len(prefix), 'f' in prefix)
         if e < 0:
             return None
-        settle(False)
+        if pending is not None:
+            pending[4] = False
         pending = [i, e, 'fstring' if 'f' in prefix else 'string', line_start and depth == 0, False]
         strings.append(pending)
         line_start = False
         i = e
     if depth:
         return None
-    settle(True)
+    if pending is not None:
+        pending[4] = True
     for s, e, kind, prev_break, next_break in strings:
         statement = prev_break and next_break
         a, b = _py_string_inner(text[s:e])
@@ -557,9 +555,49 @@ def _clike_spans(text: str, js: bool) -> list[tuple[int, int, str]]:
     return _merge(spans)
 
 
-def masked_spans(text: str, lang: str | None) -> list[tuple[int, int, str]]:
-    """The ranges mask() blanks, sorted: [(start, end, kind)], end exclusive. Unknown lang: none."""
+_PY_NEXT = re.compile(r'["\'#]')
+_PY_COMMENT = re.compile(r'#[^\r\n]*')
+
+
+def _python_ranges(text: str):
+    """The ranges _python_spans gives, without telling docstrings from other strings (every string is 'string' or
+    'fstring'): one regex search from each string or comment to the next, so lines of plain code cost nothing. None
+    for input the full lexer must judge (an unterminated string, a t-string)."""
+    spans, i, search = [], 0, _PY_NEXT.search
+    while True:
+        m = search(text, i)
+        if m is None:
+            return _merge(spans)
+        k = m.start()
+        if text[k] == '#':
+            e = _PY_COMMENT.match(text, k).end()
+            spans.append((k, e, 'comment'))
+            i = e
+            continue
+        j = k
+        while j > 0 and (text[j - 1].isalnum() or text[j - 1] == '_'):
+            j -= 1
+        word = text[j:k].lower()
+        if word in _PY_T_PREFIXES:
+            return None
+        prefix = word if word in _PY_PREFIXES else ''
+        e = _py_string_end(text, k, 'f' in prefix)
+        if e < 0:
+            return None
+        q = 3 if text.startswith(text[k] * 3, k) else 1   # the content lies between the quotes (as _py_string_inner)
+        spans.append((k + q, e - q, 'fstring' if 'f' in prefix else 'string'))
+        i = e
+
+
+def masked_spans(text: str, lang: str | None, kinds: bool = True) -> list[tuple[int, int, str]]:
+    """The ranges mask() blanks, sorted: [(start, end, kind)], end exclusive. Unknown lang: none. kinds=False is for
+    callers that only ask whether a position is masked: the same ranges, found faster, with Python docstrings
+    labelled 'string'."""
     if lang == 'python':
+        if not kinds:
+            fast = _python_ranges(text)
+            if fast is not None:
+                return fast
         return _python_spans(text)
     if lang in ('javascript', 'typescript', 'js', 'ts'):
         return _clike_spans(text, js=True)
@@ -665,6 +703,10 @@ def self_test() -> int:
                    not diffs, diffs[:2]))
     checks.append(('the single-pass lexer hands odd input (an unterminated string) back to tokenize',
                    _python_fast_spans('x = "open\ny = 1\n') is None, None))
+    rdiff = [t for t in tricky + [py, fs] if [(s, e) for s, e, _ in masked_spans(t, 'python', kinds=False)]
+             != [(s, e) for s, e, _ in masked_spans(t, 'python')]]
+    checks.append(('kinds=False (ranges only, for callers that only ask whether a position is masked) blanks exactly '
+                   'the ranges the full lexer does', not rdiff, rdiff[:2]))
     checks.append(('string delimiters stay, so the code still shows where a string was',
                    m.splitlines()[2].startswith('RULES = [r"') and '"' in m.splitlines()[2], m.splitlines()[2]))
     doc = mask_python_docstrings_only(py)
