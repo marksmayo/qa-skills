@@ -1,7 +1,7 @@
 ---
 name: test-impact-selector
 description: Given a change (a branch, a commit range or a diff), pick which tests to run, give every selected test its reasons and evidence (coverage of a changed line, an import chain, a journey link, naming, co-failure history), and list every change that no evidence can bound as a blind spot that widens the selection (strict by default). Outputs ready-to-run commands per package and framework, an optional CI snippet for the user to add, and, when past runs are available, measured recall with a Wilson interval from replaying history. Never calls unselected tests "safe to skip".
-version: 1.6.0
+version: 1.7.0
 ---
 
 # Test impact selector
@@ -79,6 +79,7 @@ Output:
 | Journeys | none | journey-mapper's `journey_map.json` |
 | Related tests | none | Output of the repo's own related-tests tool (below) |
 | Flaky list | none | Test files or ids known to be flaky, for replay |
+| Fixture projects | left out | `--include-fixtures` counts their tests; `--fixture-dir NAME` names another fixture folder; `--exclude DIR` leaves out any folder |
 
 ## Step 1: Recon
 
@@ -106,6 +107,29 @@ A directory named `e2e`, `test`, `tests` or `spec` is test code unless it is a p
 own `tests/` are tests, with levels judged inside the package (its `tests/unit/` are unit tests).
 The graph notes such packages; check them, since a misread package turns every change into a
 shared-fixture blind spot.
+
+**What counts as a test.** Not file names alone:
+- **Fixture projects are left out.** Sample projects under `examples/`, `fixtures/`, `testdata/`,
+  `samples/` (and the like) that hold their own manifest, expected outputs or an app of their own
+  are the repository's test data, not its tests: their planted failing tests, their lockfiles and
+  their packages are not counted. `selection.json` lists them under `excluded` (copy it into the
+  report; the validator rejects a selected test inside one). `--include-fixtures` counts them,
+  `--fixture-dir NAME` adds a folder name, `--exclude DIR` leaves out any folder.
+- **Python test files are decided by configuration and content.** A file is a pytest or unittest
+  test when its governing pytest configuration's `python_files` (or the default `test_*.py` /
+  `*_test.py`) matches and it defines a test function or class (`python_functions`,
+  `python_classes`, a `unittest.TestCase` subclass). A `benchmarks/pytest.ini` with
+  `python_files = bench_*.py` makes the benchmarks tests; a product module named
+  `test_paths.py` that defines no test is source (listed in the notes).
+- **Scripts that test themselves are tests.** detect_conventions' `self_tests` (a script with an
+  argparse `--self-test` flag, a `self_test()` run under `__main__`, a `self_test.py`) are tests run
+  by their command from the repository root. A script with its own `--self-test` is also source,
+  so a change to it selects its own self-test, and every self-test that imports it.
+- **The guide's checks are tests.** `python <script> ...` lines in shell code blocks of root-level
+  Markdown (the contributor or agent guide, the README) that run a validator or checker
+  (`validate*`, `check*`, `verify*`, `--check`, `--self-test`) on files that exist, with no
+  placeholder, pipe or output flag, are tests with the id `<guide>:<line>`. Each depends on its
+  script and on every file or folder it names, so a change to a sample it validates selects it.
 
 Languages without a parser (Java, Kotlin, C#, Swift, Dart and others) are listed as
 `no_parser`. Their files rely on the other evidence sources, and on blind spots. `graph.json`
@@ -284,6 +308,7 @@ repo. It then classifies each changed file:
 | `non_code` | Styles, templates, translations, images |
 | `docs` | Documentation |
 | `bench` | A Rust bench target's file (`cargo test` does not run benches; noted, nothing selected) |
+| `fixture` | A file inside an excluded fixture project or folder |
 
 Evidence is collected for source files:
 
@@ -320,6 +345,15 @@ had only one weak reason are listed under `considered_not_selected`.
 | `deleted_or_renamed` | A removed or renamed module | Tests that imported it in the base tree |
 | `non_code` | A style, template, translation or image | E2E and visual tests that reach it; otherwise every e2e and visual test in the package; otherwise the tests that reach it through the views and templates that render or link it; otherwise the package |
 | `huge_change` | More than 30% of source files changed | The full suite: selection would save little |
+| `fixture_project` | A file in an excluded fixture project (its lockfile too: it is fixture-local, never `global_config`) | `fixture_host`: the tests under the folder that owns the sample (`tool/` for `tool/examples/app/`) and every test that names or imports it |
+
+A repository root with no manifest (a tool repository of folders with scripts) is not one package:
+for a file in a top-level folder that holds tests, "the package" is that folder's tests, the
+guide checks that run its scripts and every test that reaches the file; the note says so.
+
+Dynamic loading sites are matched in code only: `import(` inside a JavaScript string or template
+literal is text. A site only reaches files its language can load (a JavaScript `import()` never a
+`.py` module, Python's importlib never a `.js` file).
 
 How the other modes handle blind spots:
 - **`balanced`** widens only `global_config`, `shared_fixture`, `dynamic_reference`,
@@ -353,8 +387,14 @@ tests would run the previous build. A package with no build script gets a note i
 
 Python tests run with the package's runner (`detect_conventions.py`'s `python_runner`): when CI
 runs `unittest` and no test uses pytest, the command is `python -m unittest <files>`, and for the
-whole suite the CI's own command (`command_from` names the CI line). Otherwise `python -m
-pytest`. Rust commands are described under Step 1. A test file with no runner this selector
+whole suite the CI's own command (`command_from` names the CI line), run from the repository root
+because its paths are repository-relative. Otherwise `python -m pytest`, from the folder of the
+pytest configuration that governs the tests when that is not the package (`benchmarks/`). A
+command without test arguments is only given when no excluded fixture project lies below its
+folder; otherwise the selected files are named, so a bare `pytest` never collects planted failing
+tests. Self-tests (framework `selftest`) and guide checks (framework `command`) run one command
+each from the repository root; to run them with JUnit results, give the commands to
+`run_tests.py --preset selftest --selftest-cmd "<command>"`. Rust commands are described under Step 1. A test file with no runner this selector
 knows is in `no_runner`, with the reason in `no_runner_reasons`.
 
 ## Step 6: Replay (when there is history)
@@ -441,6 +481,7 @@ Show the user:
 | `changes[]` | Path, status, kind, line ranges, rename |
 | `selected[]` | Test file, package, level, strength, reasons, journey priority, past failures, the blind spots that widened to it, order |
 | `blind_spots[]` | Kind, action, required scope, widened_to, would_widen_to, note, your comment |
+| `excluded` | Fixture projects and folders left out of the tests, with the reason (when any) |
 | `command` | Commands per package and framework (`command_from` when it is the CI's own line, `test_ids` for cargo), split count, `no_runner` and reasons, `feature_gated` Rust tests |
 | `language_coverage` | Parsed and unparsed languages, changed files in unparsed ones, and the warning to name in limitations |
 | `replay` | Counts, recall, interval, mean share selected, misses with why and fix, flaky failures |

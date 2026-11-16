@@ -76,6 +76,8 @@ python scripts/coverage_map.py normalise coverage.json --repo <repo> --package a
 #   Go self-test (synthetic module): python scripts/self_test.py
 python scripts/select_tests.py --repo <repo> --base main --coverage run/coverage_map.json \
     --journeys journey_map.json --history history.json --out run/selection.json
+#   sample projects under examples/, fixtures/, testdata/ ... are left out (listed under `excluded`);
+#   --include-fixtures counts their tests, --fixture-dir NAME and --exclude DIR add folders
 python scripts/replay.py --repo <repo> --history history.json --coverage run/coverage_map.json --out run/replay.json
 python scripts/build_command.py run/selection.json [--ci github --ci-out run/ci_snippet.yml]
 python scripts/validate_impact_report.py run/impact_report.json --selection run/selection.json \
@@ -98,6 +100,7 @@ python scripts/render_report.py run/impact_report.json [--brief]
 | `sources` | Each evidence source: ran, not run, stale or not applicable, with the reason |
 | `changes` | Each changed file and its kind |
 | `selected` | Test files in run order, with strength and reasons |
+| `excluded` | Fixture projects and folders left out of the tests (their planted tests are not the repository's) |
 | `blind_spots` | Kind, action, the tests it widened to |
 | `command` | Commands per package and framework |
 | `replay` | Recall with its interval, and every miss with why and the fix |
