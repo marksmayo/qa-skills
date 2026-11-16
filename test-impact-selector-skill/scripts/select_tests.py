@@ -210,6 +210,8 @@ def classify(entry: dict, g_new, g_base) -> str:
     graph = g_base if entry['status'] == 'deleted' else g_new
     node = graph.files.get(path, {})
     pkg = graph.package_of(path)
+    if node.get('fixture') or graph.excluded_dir(path):
+        return 'fixture'
     if import_graph.match(path, KINDS['snapshot']):
         return 'snapshot'
     if entry['kind'] == 'docs' or import_graph.match(path, KINDS['docs']):
@@ -218,7 +220,8 @@ def classify(entry: dict, g_new, g_base) -> str:
         return 'bench'
     if node.get('test_level') and not node.get('inline_tests'):
         return 'test'
-    if import_graph.match(path, KINDS['fixture']) or entry['kind'] == 'test':
+    named_only = any(x['file'] == path for x in graph.not_tests)   # test_paths.py: a module named like a test
+    if import_graph.match(path, KINDS['fixture']) or (entry['kind'] == 'test' and not named_only):
         return 'shared_fixture'
     if import_graph.match(path, KINDS['lockfiles']) or import_graph.match(path, KINDS['ci']):
         return 'global_config'
@@ -277,10 +280,30 @@ def naming_matches(path: str, tests: list[str], package_of) -> list[str]:
     return sorted(t for t in tests if package_of(t) == pkg and (PurePosixPath(t).name in names or js.match(PurePosixPath(t).name)))
 
 
+def can_load(site: dict, path: str) -> bool:
+    """Whether a dynamic loading site's language can load the file: Python's importlib loads .py modules, a
+    JavaScript import()/require() loads JavaScript, JSON, styles and the like, never Python, Go or Rust."""
+    ext = PurePosixPath(path).suffix.lower()
+    if site.get('lang') == 'python':
+        return ext == '.py'
+    return ext not in ('.py', '.go', '.rs')
+
+
+def fixture_host(fixture_dir: str) -> str:
+    """The folder whose tool a fixture project serves: the part of its path before the examples/, fixtures/,
+    testdata/ ... folder that holds it (tool/examples/app -> tool), or its parent folder."""
+    import repo_layout
+    parts = fixture_dir.split('/')
+    for i, part in enumerate(parts):
+        if part in repo_layout.FIXTURE_PARENTS:
+            return '/'.join(parts[:i]) or '.'
+    return '/'.join(parts[:-1]) or '.'
+
+
 class Selector:
     def __init__(self, repo: Path, base_dir: Path, new_dir: Path, scope: dict, mode: str, coverage: list[dict],
                  journeys: list[dict], history: list[dict], related: dict | None, history_given: bool,
-                 cargo_metadata: dict | None = None):
+                 cargo_metadata: dict | None = None, include_fixtures: bool = False, fixture_dirs=(), exclude=()):
         self.repo, self.base_dir, self.new_dir, self.scope, self.mode = repo, base_dir, new_dir, scope, mode
         self.coverage, self.journeys, self.history, self.related = coverage, journeys, history, related
         self.history_given = history_given
@@ -293,10 +316,11 @@ class Selector:
         same_layout = all(f['status'] == 'modified' for f in scope['files']) and not any(
             import_graph.match(p, KINDS['build_config']) or import_graph.match(p, KINDS['lockfiles'])
             or import_graph.match(p, KINDS['ci']) for p in changed)
-        self.g_new = import_graph.Graph(new_dir, cargo_metadata=cargo_metadata).build()
+        layout = {'include_fixtures': include_fixtures, 'fixture_dirs': fixture_dirs, 'exclude': exclude}
+        self.g_new = import_graph.Graph(new_dir, cargo_metadata=cargo_metadata, **layout).build()
         import_graph.js_dynamic_targets(self.g_new)
         self.g_base = import_graph.Graph(base_dir, reuse=self.g_new, changed=changed, reuse_packages=same_layout,
-                                         cargo_metadata=cargo_metadata).build()
+                                         cargo_metadata=cargo_metadata, **layout).build()
         import_graph.js_dynamic_targets(self.g_base)
         self.tests = self.g_new.tests()
         self.test_set = set(self.tests)
@@ -458,8 +482,36 @@ class Selector:
         if path.endswith('.go') and self.g_new.go_mods:
             return self.go_package_tests(path)
         pkg = self.g_new.package_of(path)
+        folder = self.root_folder(path)
+        if folder:
+            # a manifest-less root is not one package: the top-level folder that holds tests is the scope, with the
+            # guide checks that run its scripts and every test that reaches the file
+            g = self.g_new
+            mine = [t for t in self.tests if t.startswith(folder + '/') or
+                    any(i['via'] == 'runs' and i['path'].startswith(folder + '/') for i in g.files[t]['imports']
+                        if g.files[t].get('command_test'))]
+            reach = set(self.g_new.tests_reaching(path)) | set(self.g_base.tests_reaching(path))
+            return import_graph.same_family(path, sorted(set(mine) | reach))
         mine = self.tests if pkg == '.' else [t for t in self.tests if self.g_new.package_of(t) == pkg]
         return import_graph.same_family(path, mine)
+
+    def root_folder(self, path: str) -> str | None:
+        """The top-level folder that stands in for a package: path's package is a repository root with no manifest
+        (a tool repository of folders with scripts), path lies in a top-level folder, and that folder holds tests.
+        None otherwise."""
+        g = self.g_new
+        if g.package_of(path) != '.' or '/' not in path:
+            return None
+        root = next((p for p in g.packages if p['root'] == '.'), None)
+        if root is None or root.get('manifests'):
+            return None
+        top = path.split('/', 1)[0]
+        return top if any(t.startswith(top + '/') for t in self.tests) else None
+
+    def scope_name(self, path: str) -> str:
+        folder = self.root_folder(path)
+        return (f'its folder {folder}/ (the repository root has no manifest, so each top-level folder with tests '
+                'stands in for a package)') if folder else 'its package'
 
     def go_package_tests(self, path: str) -> list[str]:
         """A Go package is a directory: its own _test.go files and the tests that import it; when there are none,
@@ -488,6 +540,8 @@ class Selector:
                 if e['package'] != pkg or src == path:
                     continue
                 for d in e['dynamic']:
+                    if not can_load(d, path):
+                        continue            # a JavaScript import() cannot load a Python module, nor the reverse
                     if (d['targets'] is not None and path in d['targets']) or (d['targets'] is None and not static_importers):
                         out.append(f'{src}:{d["line"]} {d["text"]}')
         return sorted(set(out))
@@ -529,8 +583,24 @@ class Selector:
                     self.blind_spot(entry, 'shared_fixture', 'Snapshot whose test file could not be found.', 'package',
                                     self.package_tests(path))
                 continue
-            if kind in ('source', 'unknown'):
+            if kind in ('source', 'unknown', 'fixture'):
                 self.evidence(entry)
+            if kind == 'fixture':
+                graph = self.g_base if entry['status'] == 'deleted' else self.g_new
+                fx = graph.excluded_dir(entry.get('old_path') or path if entry['status'] == 'deleted' else path) or \
+                    graph.excluded_dir(path) or path
+                host = fixture_host(fx)
+                why = next((x['reason'] for x in graph.excluded if x['dir'] == fx), 'excluded')
+                mine = [t for t in self.tests if host == '.' or t.startswith(host + '/')]
+                reach = sorted(set(self.g_new.tests_reaching(path)) | set(self.g_base.tests_reaching(entry.get('old_path') or path)))
+                note = (f'File in {fx} ({why}), left out of the repository\'s tests: a sample the repository\'s own '
+                        f'tests read. {len(reach)} test(s) name or import it; it widens to the {len(mine)} test(s) of '
+                        f'{host if host != "." else "the repository"}, the tool that owns the sample.')
+                if not mine and not reach:
+                    mine = self.package_tests(path)
+                    note += ' No test under that folder, so its package.'
+                self.blind_spot(entry, 'fixture_project', note, 'fixture_host', sorted(set(mine) | set(reach)))
+                continue
             if kind == 'shared_fixture':
                 if PurePosixPath(path).name == 'conftest.py':
                     reach = self.g_new.conftest_reach(path) if entry['status'] != 'deleted' else self.g_base.conftest_reach(path)
@@ -570,7 +640,7 @@ class Selector:
             elif kind == 'data_or_schema':
                 contract = [t for t in self.tests if import_graph.match(t, KINDS['contract_tests'])]
                 self.blind_spot(entry, 'data_or_schema', 'Data, schema or migration file: code reads it at run time, which '
-                                'imports do not show.' + (f' Plus {len(contract)} contract test file(s).' if contract else
+                                f'imports do not show. Widened to the tests of {self.scope_name(path)}.' + (f' Plus {len(contract)} contract test file(s).' if contract else
                                                           ' No contract tests found.'),
                                 'package_and_contract', self.package_tests(path) + contract)
             elif kind == 'non_code':
@@ -642,7 +712,7 @@ class Selector:
             parts.append(f'Its package has no test file this selector could find and {lang} has no import parser, '
                          'so it widens to the full suite')
         elif tests:
-            parts.append(f'It widens to the {len(tests)} test file(s) of its package')
+            parts.append(f'It widens to the {len(tests)} test file(s) of {self.scope_name(path)}')
         elif not linked and not importers:
             parts.append('No tests found for it: hand it to ticket-to-tdd or journey-to-tests')
         else:
@@ -708,11 +778,23 @@ class Selector:
                 go_flags, go_from = shlex.split(self.go_test_flags), '--go-test-flags'
             else:
                 go_flags, go_from = build_command.ci_go_flags(self.new_dir)
+        g = self.g_new
+        self_tests = {t: {'command': g.files[t]['self_test'],
+                          'framework': 'command' if g.files[t].get('command_test') else 'selftest'}
+                      for t in self.tests if g.files[t].get('self_test')}
+        run_roots = {}
+        for t in self.tests:
+            if t.endswith('.py') and t not in self_tests:
+                cfg = g.pytest_config_of(t)
+                d, pkg = (cfg or {}).get('dir') or '.', g.package_of(t)
+                if d != pkg and (pkg == '.' or d.startswith(pkg + '/')):
+                    run_roots[t] = d
         command = build_command.build(selected, packages, full, {p['root']: p['test_files'] for p in packages},
                                       {t: self.g_new.files[t]['test_level'] for t in self.tests}, self.max_chars,
                                       scripts=scripts, builds=self.builds_first(changes, selected),
                                       go_flags=go_flags, go_flags_from=go_from, cargo=self.cargo_info(),
-                                      python_runners=self.g_new.python_runners)
+                                      python_runners=self.g_new.python_runners, self_tests=self_tests,
+                                      run_roots=run_roots, excluded=[x['dir'] for x in g.excluded])
         sources = self.sources(changes, cov)
         n_docs = len([c for c in changes if c['kind'] == 'docs'])
         out = {
@@ -725,6 +807,13 @@ class Selector:
         lc = self.language_coverage(changes)
         if lc:
             out['language_coverage'] = lc
+        if self.g_new.excluded:
+            out['excluded'] = [dict(x) for x in self.g_new.excluded]
+        if self.g_new.not_tests:
+            nt = self.g_new.not_tests
+            self.notes.append(f'{len(nt)} Python file(s) named like tests define no test function or class, so they '
+                              'are not counted as tests: ' + ', '.join(x['file'] for x in nt[:5]) +
+                              (' and more' if len(nt) > 5 else '') + '.')
         return out
 
     def language_coverage(self, changes: list[dict]) -> dict | None:
@@ -924,7 +1013,8 @@ def select(repo: Path, diff: Path | None = None, diff_applied: bool = False, bas
            mode: str = 'strict', coverage: list[Path] | None = None, journeys: Path | None = None,
            history: Path | None = None, related: Path | None = None, max_chars: int = 8000,
            history_entries: list[dict] | None = None, baseline_failures: Path | None = None,
-           go_test_flags: str | None = None, cargo_metadata: Path | None = None) -> dict:
+           go_test_flags: str | None = None, cargo_metadata: Path | None = None, include_fixtures: bool = False,
+           fixture_dirs: list[str] | None = None, exclude: list[str] | None = None) -> dict:
     """Run a selection. history_entries overrides the entries read from --history (replay passes earlier ones only)."""
     repo = repo.resolve()
     cov = load_coverage(coverage or [])
@@ -938,7 +1028,8 @@ def select(repo: Path, diff: Path | None = None, diff_applied: bool = False, bas
         base_dir, new_dir, scope, change = prepare_trees(repo, Path(tmp), diff, diff_applied, base, committed_only)
         sel = Selector(repo, base_dir, new_dir, scope, mode, cov, journey_links(journeys), hist,
                        json.loads(related.read_text(encoding='utf-8')) if related else None, history_given,
-                       json.loads(cargo_metadata.read_text(encoding='utf-8')) if cargo_metadata else None)
+                       json.loads(cargo_metadata.read_text(encoding='utf-8')) if cargo_metadata else None,
+                       include_fixtures=include_fixtures, fixture_dirs=fixture_dirs or (), exclude=exclude or ())
         sel.max_chars = max_chars
         sel.go_test_flags = go_test_flags
         sel.baseline_failures = load_baseline_failures(baseline_failures)
@@ -978,7 +1069,10 @@ def select(repo: Path, diff: Path | None = None, diff_applied: bool = False, bas
                        'file_kinds_sha256': kinds_sha,
                        **({'baseline_failures': rel_input(baseline_failures)} if baseline_failures else {}),
                        **({'go_test_flags': go_test_flags} if go_test_flags is not None else {}),
-                       **({'cargo_metadata': rel_input(cargo_metadata)} if cargo_metadata else {})},
+                       **({'cargo_metadata': rel_input(cargo_metadata)} if cargo_metadata else {}),
+                       **({'include_fixtures': True} if include_fixtures else {}),
+                       **({'fixture_dirs': list(fixture_dirs)} if fixture_dirs else {}),
+                       **({'exclude': list(exclude)} if exclude else {})},
             'repo_code_hash': code_hash, 'change': change, 'mode': mode, **res}
 
 
@@ -989,7 +1083,8 @@ def args_from_inputs(inputs: dict) -> dict:
             'coverage': [Path(c) for c in inputs.get('coverage', [])], 'journeys': p(inputs.get('journeys')),
             'history': p(inputs.get('history')), 'related': p(inputs.get('related')), 'max_chars': inputs.get('max_chars', 8000),
             'baseline_failures': p(inputs.get('baseline_failures')), 'go_test_flags': inputs.get('go_test_flags'),
-            'cargo_metadata': p(inputs.get('cargo_metadata'))}
+            'cargo_metadata': p(inputs.get('cargo_metadata')), 'include_fixtures': inputs.get('include_fixtures', False),
+            'fixture_dirs': inputs.get('fixture_dirs'), 'exclude': inputs.get('exclude')}
 
 
 def main(argv=None) -> int:
@@ -1011,11 +1106,19 @@ def main(argv=None) -> int:
                     'Makefile `go test` line, e.g. "-race -timeout 25m"); "" for none')
     ap.add_argument('--cargo-metadata', type=Path, help='`cargo metadata --format-version 1 --no-deps` output: the '
                     'targets of the crates and features from cargo itself instead of the static reading of the manifests')
+    ap.add_argument('--include-fixtures', action='store_true', help='count the tests of sample and fixture projects '
+                    '(examples/, fixtures/, testdata/ ... with their own manifest) as the repository\'s tests; by '
+                    'default they are left out and listed under `excluded`')
+    ap.add_argument('--fixture-dir', action='append', default=[], help='another folder name or path that holds '
+                    'fixture projects (repeatable)')
+    ap.add_argument('--exclude', action='append', default=[], help='a folder to leave out of the tests and the graph '
+                    '(repeatable); a change inside it is a fixture_project blind spot')
     ap.add_argument('--out', type=Path, required=True)
     args = ap.parse_args(argv)
     res = select(args.repo, args.diff, args.diff_applied, args.base, args.committed_only, args.mode, args.coverage,
                  args.journeys, args.history, args.related, args.max_chars, baseline_failures=args.baseline_failures,
-                 go_test_flags=args.go_test_flags, cargo_metadata=args.cargo_metadata)
+                 go_test_flags=args.go_test_flags, cargo_metadata=args.cargo_metadata,
+                 include_fixtures=args.include_fixtures, fixture_dirs=args.fixture_dir, exclude=args.exclude)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(res, indent=2) + '\n', encoding='utf-8')
     s = res['summary']
@@ -1023,6 +1126,10 @@ def main(argv=None) -> int:
           f'{s["blind_spots"]} blind spot(s), evidence completeness {s["evidence_completeness"]} -> {args.out}')
     for c in res['command']['commands']:
         print(f'  (cd {c["cwd"]} && {" ".join(c["argv"])})')
+    if res.get('excluded'):
+        print(f'  {len(res["excluded"])} fixture project(s) or folder(s) left out: '
+              + ', '.join(x['dir'] for x in res['excluded'][:6]) + (' ...' if len(res['excluded']) > 6 else '')
+              + ' (--include-fixtures to count their tests)', file=sys.stderr)
     for g in res['command'].get('feature_gated', []):
         print(f'  note: {len(g["tests"])} selected test(s) of {g["crate"]} need --features {g["feature"]}; the commands '
               'above do not run them', file=sys.stderr)

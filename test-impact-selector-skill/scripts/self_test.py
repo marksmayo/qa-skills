@@ -782,7 +782,213 @@ def case_selection_speed(tmp: Path) -> None:
     assert elapsed < 60, f'{elapsed:.1f} s'
 
 
-CASES = [case_import_graph_go, case_select_go_change, case_unmapped_go_widens_within_go, case_naming_same_package,
+# A tool repository ("scantool"): scripts with their own --self-test, a self_test.py that embeds fixture source in
+# strings, a product module named like a test (test_paths.py), benchmarks collected through pytest.ini python_files,
+# a guide whose example validations are the repository's checks, and an examples/ folder of sample projects with
+# planted red tests and their own lockfile, which are not the repository's tests.
+SYS_PATH = 'import sys\nfrom pathlib import Path\n\nHERE = Path(__file__).resolve().parent\nsys.path.insert(0, str(HERE))\n'
+TOOL = {
+    'GUIDE.md': ('# Scantool\n\n```bash\npython tool/scripts/validate_report.py tool/examples/sample-app/report.json\n'
+                 'python tool/scripts/scanner.py <repo> --out findings.json\npython tool/scripts/scanner.py --self-test\n'
+                 'python tool/scripts/validate_report.py tool/examples/sample-app/report.json --write-summary\n```\n'),
+    'tool/scripts/helpers.py': 'def norm(p):\n    return p.replace("\\\\", "/")\n',
+    'tool/scripts/test_paths.py': ('import re\n\nTEST_DIR = re.compile(r"(^|/)tests?/")\n\n\n'
+                                   'def is_test_path(p):\n    return bool(TEST_DIR.search(p))\n'),
+    'tool/scripts/scanner.py': (SYS_PATH + 'import argparse\n\nfrom helpers import norm  # noqa: E402\n'
+                                'from test_paths import is_test_path  # noqa: E402\n\n\n'
+                                'def scan(paths):\n    return [norm(p) for p in paths if not is_test_path(p)]\n\n\n'
+                                'def main(argv=None):\n    ap = argparse.ArgumentParser()\n'
+                                '    ap.add_argument("--self-test", action="store_true")\n    args = ap.parse_args(argv)\n'
+                                '    if args.self_test:\n        print("ok scan" if scan(["a/b.py"]) == ["a/b.py"] else "FAIL scan")\n'
+                                '    return 0\n\n\nif __name__ == "__main__":\n    sys.exit(main())\n'),
+    'tool/scripts/report.py': ('import sys\n\n\ndef total(xs):\n    return sum(xs)\n\n\n'
+                               'if __name__ == "__main__":\n    if "--self-test" in sys.argv:\n'
+                               '        print("ok total" if total([1, 2]) == 3 else "FAIL total")\n'),
+    'tool/scripts/validate_report.py': (SYS_PATH + 'import json\n\nfrom helpers import norm  # noqa: E402\n\n\n'
+                                        'def main():\n    data = json.loads(Path(norm(sys.argv[1])).read_text())\n'
+                                        '    print("VALID" if "findings" in data else "INVALID")\n\n\n'
+                                        'if __name__ == "__main__":\n    main()\n'),
+    'tool/scripts/self_test.py': (SYS_PATH + 'import scanner  # noqa: E402\n\n'
+                                  'NODE_FIXTURE = "import { test } from \'node:test\'\\ntest(\'x\', () => {})\\n"\n'
+                                  'GO_FIXTURE = "package x\\nimport \\"testing\\"\\nfunc TestX(t *testing.T) {}\\n"\n\n\n'
+                                  'def main():\n    print("ok scan" if scanner.scan(["x.py"]) == ["x.py"] else "FAIL scan")\n'
+                                  '    return 0\n\n\nif __name__ == "__main__":\n    sys.exit(main())\n'),
+    'tool/scripts/loader.mjs': ('// runs a module in a child process\n'
+                                'export const code = (p) => `await import(${JSON.stringify(p)})`;\n'),
+    'tool/examples/sample-app/requirements.txt': 'flask\n',
+    'tool/examples/sample-app/app.py': 'def total(xs):\n    return sum(xs)\n',
+    'tool/examples/sample-app/tests/test_app.py': ('from app import total\n\n\ndef test_total():\n'
+                                                   '    assert total([1, 2]) == 4  # planted: red on purpose\n'),
+    'tool/examples/sample-app/report.json': '{"findings": []}\n',
+    'tool/examples/crate/Cargo.toml': '[package]\nname = "crate"\nversion = "0.1.0"\n',
+    'tool/examples/crate/Cargo.lock': 'version = 3\n',
+    'tool/examples/crate/src/lib.rs': ('pub fn one() -> u32 { 1 }\n\n#[cfg(test)]\nmod tests {\n    #[test]\n'
+                                       '    fn one_is_one() { assert_eq!(super::one(), 1); }\n}\n'),
+    'benchmarks/pytest.ini': '[pytest]\npython_files = bench_*.py\n',
+    'benchmarks/bench_scan.py': ('import sys\nfrom pathlib import Path\n\n'
+                                 'sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tool" / "scripts"))\n'
+                                 'import scanner  # noqa: E402\n\n\ndef test_scan_speed():\n'
+                                 '    assert scanner.scan(["a.py"] * 100)\n'),
+}
+TOOL_TESTS = ['GUIDE.md:4', 'benchmarks/bench_scan.py', 'tool/scripts/report.py', 'tool/scripts/scanner.py',
+              'tool/scripts/self_test.py']
+
+
+def tool_select(tmp: Path, rel: str, new: str, files: dict[str, str] = TOOL, **kw) -> dict:
+    import select_tests
+    repo = make_repo(tmp / 'repo', files)
+    d = write(tmp / f'{rel.replace("/", "_")}.diff', diff_of(rel, files[rel], new))
+    return select_tests.select(repo, d, **kw)
+
+
+def case_tool_repo_tests(tmp: Path) -> None:
+    """In a tool repository the tests are its self-test scripts, its --self-test flags, its pytest.ini benchmarks and
+    the guide's example validations; the planted tests of the sample projects under examples/ are not (they are
+    listed as excluded fixture projects), and a product module named test_paths.py that defines no test is not."""
+    import import_graph
+    g = import_graph.build(make_repo(tmp / 'repo', TOOL))
+    assert g.tests() == TOOL_TESTS, g.tests()
+    assert sorted(x['dir'] for x in g.excluded) == ['tool/examples/crate', 'tool/examples/sample-app'], g.excluded
+    assert g.files['tool/scripts/scanner.py'].get('self_test') == 'python tool/scripts/scanner.py --self-test'
+    assert g.files['GUIDE.md:4'].get('self_test', '').startswith('python tool/scripts/validate_report.py'), g.files['GUIDE.md:4']
+    frameworks = {fw for p in g.packages for fw in p['frameworks']}
+    assert not frameworks & {'node-test', 'go-testing', 'cargo-test'}, frameworks
+    g2 = import_graph.build(make_repo(tmp / 'repo', TOOL), include_fixtures=True)
+    assert 'tool/examples/sample-app/tests/test_app.py' in g2.tests() and not g2.excluded, g2.tests()
+    g3 = import_graph.build(make_repo(tmp / 'repo', TOOL), exclude=['benchmarks'])
+    assert 'benchmarks/bench_scan.py' not in g3.tests() and any(x['dir'] == 'benchmarks' for x in g3.excluded), g3.excluded
+
+
+def case_tool_repo_selection(tmp: Path) -> None:
+    """A change to a script selects its own --self-test, the self-test script and the benchmark that import it, with
+    commands that run them (never a bare pytest at the root, which would collect the planted red tests)."""
+    rel = 'tool/scripts/test_paths.py'
+    sel = tool_select(tmp / 'a', rel, TOOL[rel].replace('tests?', 'tests?|spec'))
+    assert next(c for c in sel['changes'] if c['path'] == rel)['kind'] == 'source', sel['changes']
+    files = sorted(s['file'] for s in sel['selected'])
+    assert files == ['benchmarks/bench_scan.py', 'tool/scripts/scanner.py', 'tool/scripts/self_test.py'], files
+    assert sel['total_tests'] == len(TOOL_TESTS), sel['total_tests']
+    cmds = {(c['cwd'], ' '.join(c['argv'])) for c in sel['command']['commands']}
+    assert ('.', 'python tool/scripts/scanner.py --self-test') in cmds, cmds
+    assert ('.', 'python tool/scripts/self_test.py') in cmds, cmds
+    assert ('benchmarks', 'python -m pytest bench_scan.py') in cmds or ('benchmarks', 'python -m pytest') in cmds, cmds
+    assert not any(cwd == '.' and 'pytest' in argv for cwd, argv in cmds), cmds
+    assert sel.get('excluded') and {x['dir'] for x in sel['excluded']} == {'tool/examples/crate', 'tool/examples/sample-app'}
+
+
+def case_tool_repo_fixture_changes(tmp: Path) -> None:
+    """A fixture project's lockfile is fixture-local: it never forces the full suite. A changed sample file selects
+    the guide's validation that names it (import-graph evidence) and widens to the tests of the tool that owns the
+    sample, not to every test."""
+    rel = 'tool/examples/crate/Cargo.lock'
+    sel = tool_select(tmp / 'a', rel, 'version = 4\n')
+    ch = next(c for c in sel['changes'] if c['path'] == rel)
+    assert ch['kind'] == 'fixture', ch
+    assert not any(b['kind'] == 'global_config' or b['required_scope'] == 'full_suite' for b in sel['blind_spots']), sel['blind_spots']
+    spot = next(b for b in sel['blind_spots'] if b['path'] == rel)
+    assert spot['kind'] == 'fixture_project' and spot['required_scope'] == 'fixture_host', spot
+    assert 'benchmarks/bench_scan.py' not in spot['widened_to'] and 'tool/scripts/self_test.py' in spot['widened_to'], spot
+    rel = 'tool/examples/sample-app/report.json'
+    sel = tool_select(tmp / 'b', rel, '{"findings": [1]}\n')
+    reasons = {s['file']: [r['source'] for r in s['reasons']] for s in sel['selected']}
+    assert 'import_graph' in reasons.get('GUIDE.md:4', []), reasons
+    cmd = next(c for c in sel['command']['commands'] if c['framework'] == 'command')
+    assert cmd['cwd'] == '.' and cmd['argv'] == ['python', 'tool/scripts/validate_report.py',
+                                                  'tool/examples/sample-app/report.json'], cmd
+
+
+def case_bare_root_widens_to_top_folder(tmp: Path) -> None:
+    """With no manifest at the root, a top-level folder that holds tests is the scope a data file or an unmapped
+    script widens to (its tests and the guide checks that run its scripts), not every test of the repository."""
+    files = dict(TOOL)
+    files['tool/data/rules.json'] = '{"rules": []}\n'
+    files['other/scripts/lint.py'] = ('import sys\n\n\ndef lint(s):\n    return s.strip()\n\n\n'
+                                      'if __name__ == "__main__":\n    if "--self-test" in sys.argv:\n'
+                                      '        print("ok lint" if lint(" a ") == "a" else "FAIL lint")\n')
+    rel = 'tool/data/rules.json'
+    sel = tool_select(tmp, rel, '{"rules": [1]}\n', files=files)
+    spot = next(b for b in sel['blind_spots'] if b['path'] == rel)
+    assert 'other/scripts/lint.py' not in spot['widened_to'], spot
+    assert 'benchmarks/bench_scan.py' not in spot['widened_to'], spot
+    assert {'tool/scripts/self_test.py', 'GUIDE.md:4'} <= set(spot['widened_to']), spot
+    assert 'tool/' in spot['note'], spot['note']
+
+
+def case_js_template_string_is_not_a_dynamic_import(tmp: Path) -> None:
+    """`import(` inside a JavaScript template literal is text, not a computed import, and a JavaScript dynamic
+    import can never load a Python module: no dynamic_reference blind spot on a Python script."""
+    import import_graph
+    g = import_graph.build(make_repo(tmp / 'repo', TOOL))
+    assert not g.files['tool/scripts/loader.mjs']['dynamic'], g.files['tool/scripts/loader.mjs']['dynamic']
+    files = dict(TOOL)
+    files['tool/scripts/plugins.mjs'] = 'export async function load(name) {\n  return import(name);\n}\n'
+    rel = 'tool/scripts/report.py'
+    sel = tool_select(tmp / 'b', rel, TOOL[rel].replace('sum(xs)', 'sum(xs) + 0'), files=files)
+    assert not any(b['kind'] == 'dynamic_reference' for b in sel['blind_spots']), sel['blind_spots']
+
+
+def case_unittest_discover_runs_from_root(tmp: Path) -> None:
+    """detect_conventions gives the unittest discover command relative to the repository root, so it runs from the
+    root, not from the package directory (where `-s pkg/tests` would name pkg/pkg/tests)."""
+    files = {'svc/requirements.txt': 'requests\n', 'svc/tally.py': 'def add(a, b):\n    return a + b\n',
+             'svc/util.py': 'K = 1\n',
+             'svc/tests/test_tally.py': ('import sys\nimport unittest\nfrom pathlib import Path\n\n'
+                                         'sys.path.insert(0, str(Path(__file__).resolve().parent.parent))\n'
+                                         'import tally  # noqa: E402\nimport util  # noqa: E402,F401\n\n\n'
+                                         'class TallyTest(unittest.TestCase):\n    def test_add(self):\n'
+                                         '        self.assertEqual(tally.add(1, 2), 3)\n')}
+    import select_tests
+    repo = make_repo(tmp / 'repo', files)
+    d = write(tmp / 'u.diff', diff_of('svc/util.py', files['svc/util.py'], 'K = 2\n'))
+    sel = select_tests.select(repo, d)
+    cmd = next(c for c in sel['command']['commands'] if c['framework'] == 'unittest')
+    if 'discover' in cmd['argv']:
+        assert cmd['cwd'] == '.' and cmd['argv'][-1] == 'svc/tests', cmd
+    else:
+        assert cmd['cwd'] == 'svc' and cmd['argv'][-1] == 'tests/test_tally.py', cmd
+
+
+def case_render_fixture_project(tmp: Path, renderer: Path | None = None) -> None:
+    """The renderer names the fixture projects left out and labels a fixture_project blind spot."""
+    rep = {'metadata': {'repo': 'scantool', 'mode': 'strict', 'change': {'diff': 'c.diff'}},
+           'summary': {'selected': 1, 'total_tests': 5, 'blind_spots': 1, 'evidence_completeness': 0.5,
+                       'headline': 'One of five test files.', 'recall_status': 'not_assessed'},
+           'command': {'commands': [{'package': '.', 'cwd': '.', 'framework': 'selftest', 'full_suite': False,
+                                     'argv': ['python', 'tool/scripts/self_test.py'], 'tests': 1}], 'split_into': 1},
+           'excluded': [{'dir': 'tool/examples/crate', 'reason': 'fixture project: its own manifest (Cargo.toml)'}],
+           'selected': [], 'sources': [], 'changes': [], 'recommendations': {'full_suite': 'on merge'},
+           'blind_spots': [{'id': 'B1', 'path': 'tool/examples/crate/Cargo.lock', 'kind': 'fixture_project',
+                            'action': 'fixture_host', 'required_scope': 'fixture_host',
+                            'widened_to': ['tool/scripts/self_test.py'], 'would_widen_to': ['tool/scripts/self_test.py'],
+                            'note': 'File in a fixture project.'}]}
+    p = write(tmp / 'r.json', json.dumps(rep))
+    r = subprocess.run([sys.executable, str(renderer or HERE / 'render_report.py'), str(p), '--color', 'never'],
+                       capture_output=True, text=True)
+    out = r.stdout + r.stderr
+    assert r.returncode == 0 and 'tool/examples/crate' in out and 'fixture project' in out, out[-600:]
+
+
+def case_validator_rejects_excluded_tests(tmp: Path) -> None:
+    """The validator rejects a report that selects a test inside a fixture project it says it excluded."""
+    import validate_impact_report as v
+    reason = {'source': 'blind_spot', 'strength': 0, 'evidence': 'B1 unmapped_source: package', 'changed_path': 'a.py'}
+    rep = {'metadata': {'mode': 'strict', 'change': {}}, 'sources': [], 'changes': [], 'total_tests': 1,
+           'selected': [{'test_id': 'tool/examples/app/tests/test_a.py', 'file': 'tool/examples/app/tests/test_a.py',
+                         'package': '.', 'strength': 0, 'reasons': [reason], 'order': 1}],
+           'blind_spots': [{'id': 'B1', 'path': 'a.py', 'kind': 'unmapped_source', 'action': 'package',
+                            'required_scope': 'package', 'widened_to': [], 'would_widen_to': [], 'note': 'No evidence.'}],
+           'not_selected_count': 0, 'command': {'commands': [], 'split_into': 0},
+           'excluded': [{'dir': 'tool/examples/app', 'reason': 'fixture project'}],
+           'recommendations': {'full_suite': 'Run the full suite on merge.'}, 'limitations': ['Coverage was not given.'],
+           'summary': {'headline': 'One: 1 of 1 test files.'}}
+    errs = v.check(rep, None, None, None)
+    assert any('excluded' in e for e in errs), errs
+
+
+CASES = [case_tool_repo_tests, case_tool_repo_selection, case_tool_repo_fixture_changes, case_bare_root_widens_to_top_folder,
+         case_js_template_string_is_not_a_dynamic_import, case_unittest_discover_runs_from_root,
+         case_validator_rejects_excluded_tests, case_render_fixture_project,
+         case_import_graph_go,case_select_go_change, case_unmapped_go_widens_within_go, case_naming_same_package,
          case_history_gotestsum_files, case_replay_skips_and_counts_packages, case_replay_from_git_commits,
          case_baseline_failures, case_coverage_map_go_profiles, case_coverage_map_go_run, case_render_go_run_line,
          case_template_render_links_views, case_static_reaches_rendering_tests, case_data_file_in_root_package,

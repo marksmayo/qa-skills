@@ -19,10 +19,11 @@ SOURCE_STYLE = {'ran': GREEN, 'stale': YELLOW, 'not_run': YELLOW, 'errored': RED
 BRIEF_ITEMS = 20     # --brief lists at most this many selected files and test arguments per command
 KIND_LABEL = {'global_config': 'global config', 'shared_fixture': 'shared fixture', 'dynamic_reference': 'dynamic reference',
               'data_or_schema': 'data or schema', 'unmapped_source': 'unmapped source', 'deleted_or_renamed': 'deleted or renamed',
-              'non_code': 'non-code', 'huge_change': 'huge change'}
+              'non_code': 'non-code', 'huge_change': 'huge change', 'fixture_project': 'fixture project'}
 SCOPE_LABEL = {'full_suite': 'full suite', 'language': 'every test of its language', 'package': 'whole package', 'fixture_reach': "fixture's reach",
                'package_and_contract': 'package + contract tests', 'importers': 'former importers',
-               'e2e_and_visual': 'e2e and visual tests', 'labelled': 'labelled only (not widened)'}
+               'e2e_and_visual': 'e2e and visual tests', 'fixture_host': 'tests of the tool that owns the sample',
+               'labelled': 'labelled only (not widened)'}
 
 
 def supports_color(mode: str) -> bool:
@@ -65,6 +66,10 @@ def main() -> int:
     warning = (d.get('language_coverage') or {}).get('warning')
     if warning:
         out.append(P(f'WARNING: {warning}', RED))
+    if d.get('excluded'):
+        xs = d['excluded']
+        out.append(f'Left out of the tests: {len(xs)} fixture project(s) or folder(s) ('
+                   + ', '.join(x['dir'] for x in xs[:4]) + (', ...' if len(xs) > 4 else '') + ')')
     out.append('')
 
     if not args.brief:
