@@ -1,6 +1,6 @@
 # Design: `dead-test-finder-skill`
 
-Status: Built (v1.6.0), see "As built" at the end. Build order: 12.
+Status: Built (v1.8.0), see "As built" at the end. Build order: 12.
 
 ## Mission
 
@@ -524,3 +524,43 @@ Where the build differs from the design above, and what the example showed.
   every change was "restored byte for byte". A tracked file outside the guarded set is now named in
   `GuardError.not_restored`, `restored` is false, and the message says it was NOT put back (check it with git
   diff). Tested in `tree_guard.py --self-test` (written to fail first, on a scratch git repository).
+
+### Tool repositories: configured suites, script self-tests and their runner (v1.8.0)
+
+Found by running the skill on this repository (a tool repository whose `examples/` hold planted sample projects, whose
+scripts carry their own `--self-test` and `self_test.py` runners, and whose CI runs a `benchmarks/` pytest suite
+configured only by `benchmarks/pytest.ini`). Each fix was written to fail first in `scripts/self_test.py`
+(`tool_repo_checks`, a synthetic tool repository, and `report_checks`).
+
+- **Configured suites.** Discovery read only test directories and default test-file names; `python_files = bench_*.py`
+  in `benchmarks/pytest.ini` was read later and only for files already chosen, so CI's only test job was invisible with
+  no warning. Each Python file is now judged by the nearest pytest configuration at or above it, files matching a
+  configuration's own `python_files` (under its `testpaths`) are tests, and their definitions carry `runner: pytest` and
+  `pytest_root`; collect_check lists such a configuration from its own directory.
+- **Script self-tests** are suites of their own runner (`framework`/`runner: selftest`, `selftest_command`, from the
+  shared `detect_conventions.py` `self_tests`): their tests are the functions the runner loops over or calls. A same-file
+  helper that records a failed check instead of raising (`check(cond, what)` appending to `FAILS`), a raise, a FAIL line,
+  or a failures list returned to the runner counts as a check, so these are no longer `no_assertion`. collect_check
+  records them as `no_list_command`.
+- **Neutralisation with the suite's own runner.** `neutralise.py` ran every Python test with pytest; a self-test whose
+  `check()` records failures passed under pytest with the code neutralised, a false confirmed can't-fail
+  (`test_text_and_keyboard`, while the script printed FAIL and exited 1). Self-tests now run with `run_tests.py --preset
+  selftest`, one test at a time (the script's other tests silenced), a crash counting as a failure; a test no known
+  runner runs is `not_run` with the reason (`--runner` overrides). The validator reads selftest runs the same way.
+- **Targets imported through `sys.path`.** Modules are also looked up from the directories the test file adds to
+  `sys.path`, its own directory and its parents, and a target may name a file (`scripts/x.py:func`).
+- **Product code named `test_*.py`** that product modules import is listed under `product_files`, not scanned.
+- **Fixture projects** (shared `repo_layout.py`) are left out by default (`fixtures_excluded`, `--include-fixtures`,
+  `--fixture-dir`).
+- **Copies.** A file kept identical in several folders (a declared shared copy or the same bytes; shared
+  `repo_layout.py`) is scanned once, on its canonical copy; the others are listed under `copies_skipped`.
+- **`--copy-ignore`** takes several globs per flag.
+- **Validator:** dismissing a candidate whose test passed with its code neutralised needs the counter-evidence as an
+  evidence file in its basis.
+- On this repository (the review clone): 169 definitions and 47 candidates before (0 of 34 benchmarks, 35 self-test
+  functions read as pytest tests with 34 false `no_assertion`, 133 fixture definitions with 11 candidates, `test_paths.py`
+  scanned); after, 259 definitions (214 self-test tests in 54 scripts, 34 benchmarks, 11 regression tests under an
+  `examples/regression/` folder with no manifest of its own; 99 identical copies and 32 fixture projects left out and
+  listed) and 14 candidates (the benchmark with no assertion, a benchmark duplicate pair, 12 loops over expected data),
+  no fixture candidates. The three sampled
+  self-tests that ended `passed_neutralised` (false) or `not_run` now end `failed_neutralised`.

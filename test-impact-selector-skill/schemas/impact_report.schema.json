@@ -66,7 +66,7 @@
           "path": {"type": "string"},
           "old_path": {"type": ["string", "null"]},
           "status": {"enum": ["added", "modified", "deleted", "renamed"]},
-          "kind": {"enum": ["source", "test", "snapshot", "shared_fixture", "global_config", "data_or_schema", "non_code", "docs", "bench", "unknown"]},
+          "kind": {"enum": ["source", "test", "snapshot", "shared_fixture", "global_config", "data_or_schema", "non_code", "docs", "bench", "fixture", "unknown"]},
           "kind_reason": {"type": ["string", "null"]},
           "line_ranges": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}}},
           "renamed_from": {"type": ["string", "null"]}
@@ -115,9 +115,9 @@
           "id": {"type": "string", "pattern": "^B\\d+$"},
           "path": {"type": "string"},
           "kind": {"enum": ["global_config", "shared_fixture", "dynamic_reference", "data_or_schema", "unmapped_source",
-                            "deleted_or_renamed", "non_code", "huge_change"]},
-          "action": {"enum": ["full_suite", "language", "package", "fixture_reach", "package_and_contract", "importers", "e2e_and_visual", "labelled"]},
-          "required_scope": {"enum": ["full_suite", "language", "package", "fixture_reach", "package_and_contract", "importers", "e2e_and_visual"]},
+                            "deleted_or_renamed", "non_code", "huge_change", "fixture_project"]},
+          "action": {"enum": ["full_suite", "language", "package", "fixture_reach", "package_and_contract", "importers", "e2e_and_visual", "fixture_host", "labelled"]},
+          "required_scope": {"enum": ["full_suite", "language", "package", "fixture_reach", "package_and_contract", "importers", "e2e_and_visual", "fixture_host"]},
           "widened_to": {"type": "array", "items": {"type": "string"}},
           "would_widen_to": {"type": "array", "items": {"type": "string"}},
           "note": {"type": "string", "minLength": 10},
@@ -250,6 +250,12 @@
         "changed_unparsed_files": {"type": "object"},
         "warning": {"type": ["string", "null"]}
       }
+    },
+    "excluded": {
+      "type": "array",
+      "description": "Copied from the selection (1.7): fixture projects (sample projects under examples/, fixtures/, testdata/ ... with their own manifest) and --exclude folders left out of the tests and the graph. Their tests are not the repository's tests; a change inside one is a fixture_project blind spot. Absent when nothing was left out.",
+      "items": {"type": "object", "required": ["dir", "reason"],
+                "properties": {"dir": {"type": "string"}, "reason": {"type": "string"}}}
     },
     "limitations": {"type": "array", "items": {"type": "string", "minLength": 10}},
     "files_written": {"type": "array", "items": {"type": "string"}},

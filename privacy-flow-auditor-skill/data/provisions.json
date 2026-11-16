@@ -23,5 +23,7 @@
     "identifier_in_artifact": {"EU": ["GDPR Art. 5(1)(c)", "GDPR Art. 5(1)(f)", "GDPR Art. 25"], "UK": ["UK GDPR Art. 5(1)(c)", "UK GDPR Art. 5(1)(f)", "UK GDPR Art. 25"], "AU": ["APP 6", "APP 11"]},
     "policy_mismatch": {"EU": ["GDPR Art. 5(1)(a)", "GDPR Art. 12", "GDPR Art. 13", "ePrivacy Art. 5(3)"], "UK": ["UK GDPR Art. 5(1)(a)", "UK GDPR Art. 12", "UK GDPR Art. 13", "PECR reg. 6"], "AU": ["APP 1", "APP 5"]}
   },
-  "disclaimer": "These are references for a qualified privacy professional, who decides whether there is a breach. This report is not legal advice and does not say the app is or isn't compliant."
+  "disclaimer": "These are references for a qualified privacy professional, who decides whether there is a breach. This report is not legal advice and does not say the app is or isn't compliant.",
+  "disclaimer_subjects": ["the app", "the site", "the service", "the tool", "the tools", "the library", "the code", "the repository", "the project"],
+  "disclaimer_subjects_note": "The disclaimer names what was audited: \"the app\" may be replaced by one of these (a repository of command-line tools is not an app); nothing else in it may change."
 }

@@ -26,6 +26,9 @@ WEIGHT = {'critical': 4, 'serious': 3, 'moderate': 2, 'minor': 1}
 DOWN = {'critical': 'serious', 'serious': 'moderate', 'moderate': 'minor', 'minor': 'minor'}
 BANDS = [(9, 'P0'), (6, 'P1'), (3, 'P2'), (0, 'P3')]
 CONFIRMABLE = ('time_bomb', 'shared_mutable', 'locale_assumption')
+# a headline left as written by a template or a draft
+PLACEHOLDER_HEADLINE = re.compile(r'\bplaceholder\b|\bTODO\b|\bTBD\b|lorem ipsum|\bdraft headline\b|to be (?:replaced|written)'
+                                  r'|\bheadline here\b|^\s*$', re.I)
 GENERIC_LOCAL = {'admin', 'administrator', 'contact', 'demo', 'example', 'hello', 'info', 'noreply', 'no-reply', 'postmaster',
                  'sample', 'support', 'test', 'tester', 'testing', 'user', 'users', 'webmaster', 'no.reply', 'do-not-reply',
                  'donotreply', 'test.user', 'first.last', 'john.doe', 'jane.doe'}
@@ -146,7 +149,18 @@ def fill(rep: dict, cands: dict) -> None:
         f['priority'] = priority(f)
 
 
-def completeness(rep: dict) -> float:
+def arithmetic_confirmed(f: dict, cands: dict | None) -> bool:
+    """A time bomb confirmed by date arithmetic: scan_data.py itself computed its fail date from a comparison with now.
+    Without the candidates the report's own word is taken (check() then rejects the confirmed claim it cannot verify)."""
+    if f['category'] != 'time_bomb' or f.get('confidence') != 'confirmed' or not f.get('fails_on_date'):
+        return False
+    if cands is None:
+        return True
+    return any(cands[c]['details'].get('compared_with_now') and cands[c]['details'].get('fails_on_date') == f['fails_on_date']
+               for c in f.get('candidates', []) if c in cands)
+
+
+def completeness(rep: dict, cands: dict | None = None) -> float:
     inv = rep['inventory']
     if not inv:
         # nothing inventoried (a repository with no tests, or no test data): nothing was assessed, so the evidence is
@@ -159,18 +173,20 @@ def completeness(rep: dict) -> float:
     if not conf:
         # nothing to confirm is not evidence that experiments ran: the share is left out, not counted as complete
         return round((scanned + ran) / 2, 4)
-    exp = len([f for f in conf if (f.get('experiment') or {}).get('result') in ('failed_as_predicted', 'passed')]) / len(conf)
+    # a time bomb confirmed by date arithmetic is evidenced by the arithmetic: no run could add to it
+    exp = len([f for f in conf if (f.get('experiment') or {}).get('result') in ('failed_as_predicted', 'passed')
+               or arithmetic_confirmed(f, cands)]) / len(conf)
     return round((scanned + exp + ran) / 3, 4)
 
 
-def summary(rep: dict) -> dict:
+def summary(rep: dict, cands: dict | None = None) -> dict:
     fs = rep['findings']
     bombs = [f['fails_on_date'] for f in fs if f['category'] == 'time_bomb' and f.get('fails_on_date')]
     count = lambda key: {k: len([f for f in fs if f[key] == k]) for k in sorted({f[key] for f in fs})}  # noqa: E731
     return {'files_scanned': len([i for i in rep['inventory'] if i['status'] == 'scanned']),
             'not_assessed': len([i for i in rep['inventory'] if i['status'] == 'not_assessed']),
             'findings_by_category': count('category'), 'by_priority': count('priority'), 'by_severity': count('severity'),
-            'earliest_time_bomb_date': min(bombs) if bombs else None, 'evidence_completeness': completeness(rep),
+            'earliest_time_bomb_date': min(bombs) if bombs else None, 'evidence_completeness': completeness(rep, cands),
             'dismissed': len(rep['dismissed']), 'handoffs': len(rep['handoffs'])}
 
 
@@ -622,9 +638,7 @@ def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, e
         exp = f.get('experiment')
         if f['confidence'] == 'confirmed':
             # date arithmetic counts only where scan_data.py itself computed the fail date (a fixed expiry compared with now)
-            arithmetic = f['category'] == 'time_bomb' and f.get('fails_on_date') and cands is not None and any(
-                cands[c]['details'].get('compared_with_now') and cands[c]['details'].get('fails_on_date') == f['fails_on_date']
-                for c in f['candidates'] if c in cands)
+            arithmetic = cands is not None and arithmetic_confirmed(f, cands)
             # residue is shown by the tree diff itself (an evidence file the validator checks exists)
             residue = f['category'] == 'residue' and any('evidence' in b for b in f.get('basis') or [])
             if not (exp and exp['result'] == 'failed_as_predicted') and not arithmetic and not residue:
@@ -677,6 +691,8 @@ def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, e
         if m:
             errs.append(f'{where}: "{m.group(0)}" — say which files and formats were scanned, never that the data is clean')
     headline = rep['summary'].get('headline', '')
+    if PLACEHOLDER_HEADLINE.search(headline):
+        errs.append('summary.headline is a placeholder: write it yourself, naming the findings that matter')
     if any(f['priority'] == 'P0' for f in fs) and 'P0' not in headline:
         errs.append('summary.headline: name the P0 findings')
     m = re.search(r'\b(\d+) findings?\b', headline)
@@ -713,7 +729,7 @@ def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, e
             for k in ('severity', 'reach', 'score', 'priority'):
                 if a[k] != b[k]:
                     errs.append(f'{a["id"]}.{k}: {a[k]!r} but computed {b[k]!r} (run --write-summary)')
-    want_s = summary(rep)
+    want_s = summary(rep, cands)
     for k, v in want_s.items():
         if rep['summary'].get(k) != v:
             errs.append(f'summary.{k}: {rep["summary"].get(k)!r} but computed {v!r} (run --write-summary)')
@@ -738,7 +754,7 @@ def main(argv=None) -> int:
             return 1
         try:
             fill(rep, cands)
-            rep['summary'] = {'headline': (rep.get('summary') or {}).get('headline', ''), **summary(rep)}
+            rep['summary'] = {'headline': (rep.get('summary') or {}).get('headline', ''), **summary(rep, cands)}
         except (KeyError, TypeError, ValueError) as exc:
             print(f'INVALID: cannot compute the summary ({exc!r}); fix the report structure first')
             return 1

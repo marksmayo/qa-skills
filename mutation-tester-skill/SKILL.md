@@ -1,7 +1,7 @@
 ---
 name: mutation-tester
 description: Run mutation testing on the code that changed (or a path you name) and turn the surviving mutants into a short, ranked list of weak assertions and missing cases, each naming the test that should have caught it and the assertion or input that would. Uses the repo's own mutation tool when it is configured, the standard open-source tool otherwise (from a scratch config, never added to the repo), and a stdlib engine for Python (pytest or unittest) and Go as a fallback; reads cargo-mutants for Rust. It says loudly when the product language was not mutated or the mutated code is tooling. Every score is shown with its counts and scope; equivalent mutants need a checkable reason; timeouts and errors are never counted as kills; no-coverage mutants are coverage gaps, not weak assertions. Never claims code is "well tested".
-version: 1.8.0
+version: 1.9.0
 ---
 
 # Mutation tester
@@ -58,8 +58,12 @@ Output:
   scope stays untested.
 - **The baseline must be green twice** before any mutant runs. A failing or flaky baseline stops
   the run.
-- **Product code is restored after every mutant**, and the working tree is hashed before and
-  after each engine run. External engines run in a scratch copy.
+- **Product code is restored after every mutant**, also when the engine is stopped (Ctrl-C,
+  SIGTERM; a run killed outright is caught by the next run, which refuses to start until
+  `--restore`). The working tree is hashed before and after each engine run, and the builtin
+  engine also checks it after every mutant: a mutant whose test run writes outside the scoped
+  files stops the run there, so no later result reads a changed tree. External engines run in a
+  scratch copy.
 - **Tests are proposed, not written, by default.** Proofs run in a scratch copy. With
   `write_tests: true`, add the test to the repo, prove it, and list the file in
   `files_changed`. Never commit, and never write back to Jira.
@@ -137,7 +141,15 @@ helper scripts beside a Rust product). Both are in `tools.json` (`language_cover
 say what it covered: `normalize_results.py` records `language_coverage` in `mutants.json`
 (copy it into `metadata.language_coverage`), and the validator requires a limitation naming the
 product language when no mutant is in it (`unmutated_dominant`) and one saying the mutated files
-are tooling (`tooling_scope_files`).
+are tooling (`tooling_scope_files`). When the folder is the product despite its name (a
+repository whose product is its `scripts/`), pass `normalize_results.py --product-path scripts`:
+the declaration is recorded (`declared_product`) and no tooling limitation is asked for.
+
+Nested sample and fixture projects (a folder under `examples/`, `fixtures/`, `testdata/`,
+`samples/` with its own manifest or app) are not the product: `detect_tools.py` leaves them out
+of the languages and the census and lists them under `fixtures_excluded` (`--include-fixtures`
+counts them, `--fixture-dir DIR` names another fixture folder), and the report's
+`language_coverage` is computed without them.
 
 **Rust / cargo-mutants.** cargo-mutants is never installed by this skill; ask first
 (`cargo install --locked cargo-mutants`). Once it is installed:
@@ -245,6 +257,15 @@ and timing runs (both must pass unmutated) are the only green runs, which the ba
 For Rust, the baseline is `run_tests.py --preset cargo` (cargo-mutants also runs its own
 baseline and stops when it fails).
 
+**Self-tests and other pytest configurations.** `detect_conventions.py` also lists `self_tests`
+(scripts with a `--self-test` flag, a `self_test()` function or a `self_test.py`) and, per area,
+`pytest_configs`: a `pytest.ini` in a folder with no manifest (`benchmarks/` with
+`python_files = bench_*.py`) and the command that collects it. When the scoped code is tested by
+a script's own self-test, take the baseline with `run_tests.py --preset selftest --selftest-cmd
+"python tools/x.py --self-test" --repeat 2` and mutate with `builtin_mutator.py --runner
+selftest` and the same commands (Step 4). When it is tested by such a benchmark folder, pass that
+folder with `--tests benchmarks` (the engine records ids relative to `--repo`).
+
 **Flaky tests.** If a test in the baseline set passes in one run and fails in the other, the
 baseline is flaky: list it in `baseline.flaky_tests`, set `passed: false`, and stop; a mutant
 "killed" by a flaky test proves nothing. Don't drop the flaky test to get a green baseline unless
@@ -260,7 +281,7 @@ python scripts/run_engine.py mutmut --repo <repo> --scope <run>/scope.json --run
 ```
 
 Give the builtin engine the same test files as the baseline with `--tests` (repeatable: files,
-directories or node ids). Every run it makes (the coverage run, the timing run and each
+directories or node ids, relative to `--repo`). Every run it makes (the coverage run, the timing run and each
 mutant's run) is limited to them, and `--pytest-args` is added to each. Without `--tests`,
 pytest collects whatever the repo's configuration collects, which may include integration
 tests that need services, take minutes, or fail without them; the engine then stops with "the
@@ -269,7 +290,18 @@ suite does not pass unmutated".
 The engine checks that the tests imported the scoped files themselves. If they imported another
 copy (a virtual environment with an editable install pointing at another clone, or the package
 installed from a wheel), it stops: no mutant in this checkout could be seen. Install this
-checkout into the environment, or put it first on `PYTHONPATH`. Its mutant ids (B1..) follow
+checkout into the environment, or put it first on `PYTHONPATH`.
+
+Covering-test ids are recorded relative to `--repo`, where every mutant run starts, whatever
+rootdir pytest chose: a `pytest.ini` in a subfolder (`benchmarks/pytest.ini` with
+`python_files = bench_*.py`) makes pytest write node ids relative to that folder.
+`coverage.json` records pytest's `rootdir` and `inifile`. Before the first mutant the engine
+collects the covering ids from `--repo`; if pytest cannot (an id that does not resolve), it stops
+with exit 2 instead of recording every mutant as a `runtime_error`, and a mutant run in which
+pytest cannot find a covering test stops the engine the same way (`stopped.kind: engine_error`);
+a conftest that fails to import under a mutant stays a `runtime_error`.
+
+Its mutant ids (B1..) follow
 file, line and column and are kept by `normalize_results.py`, so the console, `builtin.json` and
 the report agree; other engines' ids are renumbered, and the renderer shows the engine's own id
 beside the report's.
@@ -341,6 +373,32 @@ classified. The per-mutant timeout is 3 times one untraced suite run, at least 1
   traced per TestCase method; test ids are `tests/test_x.py::Class::test_method`, and `--tests`
   takes test files, folders or such ids. A test module that fails to import under a mutant is a
   `runtime_error`, never a kill. `--runner auto` (the default) uses pytest when it imports.
+- **Scripts tested by their own `--self-test`.** `--runner selftest --tests tools/x.py` runs
+  `python tools/x.py --self-test` (a `self_test.py` runs as it is), and `--selftest-cmd "python
+  tools/check_all.py"` (repeatable) names any other command that runs a Python script. Each
+  command is one test, run from `--repo`. Coverage is traced in every Python process the command
+  starts (a `sitecustomize` module on `PYTHONPATH`), so a script the self-test runs as a child
+  process is covered too. A mutant is killed when a check fails (`killed_by` is
+  `<script>::<check>`, the check names `run_tests.py --preset selftest` reads) or the command
+  exits non-zero (`<script>::(exit status)`); it survives when every covering command passes.
+  The baseline is the same commands through `run_tests.py --preset selftest`.
+- **`if __name__ == '__main__':`.** The guard is never mutated (that would run `main()` with the
+  test runner's argv at import), and a module-level statement that never ran, such as the guard's
+  body under pytest, is `no_coverage`, not covered by every test of the file.
+- **Tree check after every mutant.** After each mutant the engine hashes the tree again (a stat
+  walk; unchanged files are not re-read). When a mutant's test run changed a file outside the
+  scoped files (a dry run that the mutant turned into a write, run on a real fixture), the
+  mutant gets `wrote_outside_scope`, `builtin.json` records `stopped` (`kind: tree_changed`,
+  the mutant and the files) and `tree.stopped`, every later mutant is `not_run` with a note
+  naming it, and the engine exits 3. Restore those files (git checkout, or a fresh copy), make
+  the test hermetic (copy the fixture to a temporary folder), and run again. The report keeps the
+  engine's `stopped` record, lists the changed files in `files_changed`, and a limitation names
+  the mutant.
+- **Stopping the engine.** Ctrl-C, SIGTERM, SIGHUP (and SIGBREAK on Windows) kill the test run,
+  put the original source back and write `builtin.json` with `interrupted: true` (the mutants not
+  finished are `not_run`); the engine exits 130. A run killed outright cannot restore anything:
+  the next run into the same run directory finds originals in `<run>/backup` that differ from the
+  source and refuses (exit 2) until `--restore` has put them back.
 - **Code run only in a child process.** A test that runs a script with `subprocess` (`sys.executable
   scripts/report.py`) exercises it out of the tracer's sight, so its mutants are `no_coverage`.
   The engine notes each such mutant with the test lines that launch the file
@@ -476,7 +534,9 @@ python scripts/render_report.py <run>/mutation_report.json [--brief]
 `--write-summary` computes each ranked finding's kind factor, proximity, score and priority, and
 every count, score and score text in the summary, and sorts the findings by priority; errors
 name the finding id as well as its index. `render_report.py` needs the computed summary, so
-run `--write-summary` first. Write `"schema_version": "1.3.0"`. Write the headline yourself: it
+run `--write-summary` first. Write `"schema_version": "1.4.0"`. When an engine record carries
+`stopped`, a limitation names it (the mutant id, and for `tree_changed` the files its run
+changed, which also go in `files_changed`). Write the headline yourself: it
 names every P0 finding by id (`F1`), and a placeholder is rejected. Copy
 `metadata.language_coverage` from `mutants.json`; when it names an `unmutated_dominant`
 language, a limitation says that language was not mutated (and why: no engine installed, out of

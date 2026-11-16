@@ -16,7 +16,11 @@ personal-data finding's basis line, a served folder and a source tree named with
 fixtures, a records module is a data module, other code is recorded), no "unused" files without tests, the no-tests
 statement, metadata.tests_found (schema 1.1), a runs file for run_tests.py, schema_drift.py with nothing to check,
 --write-summary keeping line endings, and the example's baseline in examples/run/commands.sh pinned to the
-audit date (it still passes with the real clock 90 days and ten years ahead). Every fixture value is invented; the
+audit date (it still passes with the real clock 90 days and ten years ahead), and a tool repository whose test data is
+sample projects under examples/ (read by default as fixture folders, files used by commands and self-tests not
+unused, HTML/Markdown/diff/TOML/CSS read as text, time-bomb links kept inside one project, decorators in fixture
+strings not emails, a near-duplicate check over 751 fixtures that is fast, small and capped, placeholder headlines
+rejected, a time bomb confirmed by date arithmetic counted as evidenced). Every fixture value is invented; the
 secret-looking strings are assembled at run time so none sits in this file whole.
 """
 from __future__ import annotations
@@ -768,8 +772,316 @@ def baseline_on_audit_date() -> None:
                   f'{", ".join(env_failures)}')
 
 
+# ---------------------------------------------------------------- a tool repository whose fixtures are sample projects
+def tool_mailbox(who: str) -> str:
+    # invented mailboxes at an invented domain, assembled at run time
+    return who + '@' + 'quaymail' + '.co'
+
+
+def tool_repo(root: Path) -> None:
+    """A small linting tool: scripts/ with a --self-test, a pytest suite (and benchmarks under python_files =
+    bench_*.py), and examples/ holding two sample projects with planted defects plus a recorded run that the README's
+    commands and examples/run/commands.sh read."""
+    files = {
+        'README.md': ('# linttool\n\nCheck a project and write a report:\n\n```bash\n'
+                      'python scripts/check.py examples/shop --out examples/run/report.json\n'
+                      'python scripts/check.py --self-test\n```\n'),
+        'pytest.ini': '[pytest]\ntestpaths = tests benchmarks\npython_files = test_*.py bench_*.py\n',
+        'scripts/check.py': ('import sys\nfrom pathlib import Path\n\nHERE = Path(__file__).resolve().parent\n\n\n'
+                             'def self_test():\n    shop = HERE.parent / "examples" / "shop"\n'
+                             '    assert (shop / "data" / "customers.json").exists()\n\n\n'
+                             'if __name__ == "__main__":\n    if "--self-test" in sys.argv:\n        self_test()\n'),
+        'scripts/test_paths.py': ('def is_test_path(p):\n    """True for files under tests/."""\n'
+                                  '    return p.startswith("tests/")\n'),
+        # two components of the tool with their own code: a field name shared between them links nothing
+        'notify/send.py': 'def send(window):\n    return window["channel"]\n',
+        'notify/examples/window.json': '{\n  "channel": "mail",\n  "expires": "2027-05-01"\n}\n',
+        'billing/plans.py': ('from datetime import date\n\n\ndef lapsed(plan):\n'
+                             '    return plan.expires < date.today()\n'),
+        'scripts/seed_report.py': ('import json\n\n\ndef seed_report(findings):\n'
+                                   '    return json.dumps({"findings": findings})\n'),
+        'scripts/grants.py': ('from datetime import date\n\n\ndef active(grant):\n'
+                              '    return date.fromisoformat(grant["valid_until"]) >= date.today()\n\n\n'
+                              'def lapsed(card):\n    today = date.today()\n'
+                              '    return date.fromisoformat(card["valid_thru"]) < today\n'),
+        'examples/run/card.json': '{\n  "card": "K-2",\n  "valid_thru": "2027-02-01"\n}\n',
+        'tests/test_check.py': ('from pathlib import Path\n\nORDERS = Path("examples/shop/data/orders.json")\n\n\n'
+                                'def test_orders():\n    assert ORDERS.exists()\n'),
+        'tests/test_strings.py': ('ROUTER_SRC = "from api import router\\n@router.get(\'/items\')\\ndef items():\\n    return []"\n'
+                                  'FIXTURE_SRC = "import pytest\\n@pytest.fixture\\ndef db():\\n    return {}"\n\n\n'
+                                  'def test_sources():\n    assert ROUTER_SRC and FIXTURE_SRC\n'),
+        'benchmarks/bench_speed.py': 'def test_speed():\n    assert sum(range(10)) == 45\n',
+        'examples/shop/package.json': '{"name": "shop", "private": true}\n',
+        'examples/shop/src/app.js': 'export const total = (xs) => xs.reduce((a, b) => a + b, 0);\n',
+        'examples/shop/data/customers.json': ('[\n  {"id": 1, "contact": "%s", "expires": "2027-03-01"},\n'
+                                              '  {"id": 2, "contact": "", "expires": "2027-03-01"}\n]\n' % tool_mailbox('rhoda.vane')),
+        'examples/shop/data/orders.json': '[\n  {"id": 1, "total": 12},\n  {"id": 2, "total": 7}\n]\n',
+        'examples/other/package.json': '{"name": "other", "private": true}\n',
+        'examples/other/src/expiry.py': ('from datetime import date\n\n\ndef lapsed(item):\n'
+                                         '    return item.expires < date.today()\n'),
+        # a test that lists a temporary folder with a bare "*" glob, in a module that says "run": it loads no fixture
+        'tests/test_listing.py': ('MODE = "run"\n\n\ndef test_listing(tmp_path):\n    (tmp_path / "a.txt").write_text("x")\n'
+                                  '    assert list(tmp_path.glob("*"))\n'),
+        'examples/run/commands.sh': ('#!/usr/bin/env bash\nset -euo pipefail\nRUN=examples/run\n'
+                                     'python scripts/check.py examples/shop --baseline $RUN/baseline.json\n'),
+        'examples/run/report.json': '{"findings": [], "evidence": ["exchanges/list-001.json"]}\n',
+        'examples/run/exchanges/list-001.json': '{"status": 200, "body": []}\n',
+        'examples/run/baseline.json': '{"findings": [], "taken": "baseline"}\n',
+        'examples/run/stale.json': '{"findings": [], "taken": "before the rename"}\n',
+        'examples/run/preauth.json': '{\n  "grant": "G-1",\n  "valid_until": "2027-01-15"\n}\n',
+        'examples/run/page.html': '<!doctype html>\n<p>Write to %s for a refund.</p>\n' % tool_mailbox('olwen.marsh'),
+        'examples/run/ticket.md': '# SHOP-7\n\nReported by %s on the checkout page.\n' % tool_mailbox('idris.fenn'),
+        'examples/run/change.diff': '--- a/owners.txt\n+++ b/owners.txt\n@@ -1 +1 @@\n-owner: nobody\n+owner: %s\n' % tool_mailbox('bea.lusk'),
+        'examples/run/settings.toml': '[owner]\ncontact = "%s"\n' % tool_mailbox('cai.morrow'),
+        'examples/run/site.css': '/* maintained by %s */\nbody { margin: 0; }\n' % tool_mailbox('dov.harte'),
+    }
+    write(root, files)
+
+
+def fixture_dirs_by_default() -> None:
+    """The default inventory offers the sample projects' fixture trees (examples/) as data trees, says so, and can be told
+    not to; a product script named seed_* is not a seed, and a test_*.py helper with no tests is not a test file."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        tool_repo(root)
+        invd = inv.build(root, None, {})
+        paths = {i['path']: i for i in invd['inventory']}
+        check('examples/shop/data/customers.json' in paths and 'examples/run/preauth.json' in paths,
+              f'inventory: files under examples/ (sample projects and recorded runs) are inventoried by default '
+              f'(got {sorted(p for p in paths if p.startswith("examples/"))})')
+        fd = {f['dir']: f for f in invd.get('fixture_dirs') or []}
+        check('examples' in fd and bool(fd['examples'].get('reason')),
+              f'inventory: fixture_dirs records examples/ with its reason (got {sorted(fd)})')
+        check(any('examples' in w and 'fixture' in w for w in invd.get('warnings', [])),
+              'inventory: a warning says which fixture trees were added as data trees')
+        check('scripts/seed_report.py' not in paths, 'inventory: a product script named seed_report.py is not a seed')
+        check('scripts/test_paths.py' not in paths, 'inventory: scripts/test_paths.py with no test functions is not a test file')
+        invd = inv.build(root, None, {}, fixture_dirs=False)
+        check(not any(i['path'].startswith('examples/') for i in invd['inventory']),
+              'inventory: fixture_dirs=False (--no-fixture-dirs) leaves examples/ out')
+
+
+def commands_count_as_use() -> None:
+    """A data file a documented command (README, commands.sh) or a self-test script names is used, not "unused": the
+    inventory lists it under used_by_commands (or loaded_by for a self-test), and only files nothing names are unused."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        tool_repo(root)
+        invd = inv.build(root, None, {})
+        res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
+    unused = set(invd['summary']['unused'])
+    by_cmd = invd['summary'].get('used_by_commands') or []
+    check('examples/run/report.json' in by_cmd and 'examples/run/baseline.json' in by_cmd,
+          f'inventory: files named by the README command and by commands.sh (through $RUN) are used by commands (got {by_cmd})')
+    check(not unused & {'examples/run/report.json', 'examples/run/baseline.json', 'examples/shop/data/customers.json',
+                        'examples/shop/data/orders.json'},
+          f'inventory: files read by commands, a self-test or a test are not unused (got {sorted(unused)})')
+    check('examples/run/stale.json' in unused, 'inventory: a file nothing names is still unused')
+    ex = next((i for i in invd['inventory'] if i['path'] == 'examples/run/exchanges/list-001.json'), {})
+    check('examples/run/exchanges/list-001.json' not in unused and bool(ex.get('used_by_commands')),
+          f'inventory: evidence named by a data file a command reads (report.json lists exchanges/list-001.json) is used '
+          f'(got {ex.get("used_by_commands")})')
+    cust = next((i for i in invd['inventory'] if i['path'] == 'examples/shop/data/customers.json'), {})
+    check(any(t.startswith('scripts/check.py::') for t in cust.get('loaded_by', [])),
+          f'inventory: a self-test that builds the path of the sample project loads its files (got {cust.get("loaded_by")})')
+    flagged = {c['file'] for c in res['candidates'] if c['rule'] == 'unused'}
+    check('examples/run/report.json' not in flagged and 'examples/run/stale.json' in flagged,
+          f'scan: no unused candidate for a file a command reads (got {sorted(flagged)})')
+    check(any('used by commands' in n for n in res['notes']), 'scan: the notes count the files used by commands, not tests')
+
+
+def prose_formats() -> None:
+    """HTML, Markdown, diffs, TOML and CSS under a data tree are read, and an address in their text is a candidate."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        tool_repo(root)
+        invd = inv.build(root, None, {})
+        res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
+    st = {i['path']: i['status'] for i in invd['inventory']}
+    for ext in ('page.html', 'ticket.md', 'change.diff', 'settings.toml', 'site.css'):
+        rel = f'examples/run/{ext}'
+        check(st.get(rel) == 'scanned', f'inventory: {rel} is scanned, not an unknown format (got {st.get(rel)})')
+        check(any(c['file'] == rel and c['rule'] == 'email' and not c['auto_dismiss'] for c in res['candidates']),
+              f'scan: an address in the text of {rel} is a personal-data candidate')
+
+
+def time_bombs_stay_in_project() -> None:
+    """A fixed expiry is linked only to a comparison in the same fixture project (or, outside every sample project, in
+    the host's own code), never to another sample project's code that happens to use the same field name."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        tool_repo(root)
+        invd = inv.build(root, None, {})
+        res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
+    bombs = {c['file']: c for c in res['candidates'] if c['rule'] == 'fixed_expiry'}
+    shop = bombs.get('examples/shop/data/customers.json', {}).get('details', {})
+    check('examples/shop/data/customers.json' in bombs and not shop.get('compared_with_now'),
+          f'scan: an expiry in one sample project is not linked to another sample project\'s comparison (got {shop.get("compared_with_now")})')
+    pre = bombs.get('examples/run/preauth.json', {}).get('details', {})
+    check(any(c['file'] == 'scripts/grants.py' for c in pre.get('compared_with_now') or []),
+          f'scan: an expiry in host data is linked to the host code comparing it through date.fromisoformat (got {pre.get("compared_with_now")})')
+    win = bombs.get('notify/examples/window.json', {}).get('details', {})
+    check('notify/examples/window.json' in bombs and not win.get('compared_with_now'),
+          f'scan: an expiry in one component (notify/, with its own code) is not linked to another component\'s comparison '
+          f'(got {win.get("compared_with_now")})')
+    card = bombs.get('examples/run/card.json', {}).get('details', {})
+    check(any(c['file'] == 'scripts/grants.py' and c['line'] == 10 for c in card.get('compared_with_now') or []),
+          f'scan: a comparison with a variable that holds today (today = date.today()) is a comparison with now '
+          f'(got {card.get("compared_with_now")})')
+
+
+def code_is_not_an_email() -> None:
+    """An escaped newline before a decorator inside a fixture string ("\\n@router.get") is code, not a mailbox; a value
+    assembled from an f-string placeholder is not a secret literal."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        tool_repo(root)
+        word = 'hunter' + '2'
+        write(root, {'tests/test_login.py': 'WORD = "' + word + '"\n\n\ndef test_login():\n'
+                                            '    cfg = f\'{{"password": "{WORD}-and-more"}}\'\n    assert cfg\n'})
+        invd = inv.build(root, None, {})
+        res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
+    emails = [c for c in res['candidates'] if c['file'] == 'tests/test_strings.py' and c['rule'] == 'email']
+    check(not emails, f'scan: "\\n@router.get" and "\\n@pytest.fixture" in a fixture string are not emails (got {len(emails)})')
+    sec = [c for c in res['candidates'] if c['file'] == 'tests/test_login.py' and c['category'] == 'secret' and c['line'] == 5]
+    check(all(c['auto_dismiss'] for c in sec), 'scan: a password filled in from an f-string placeholder is a dismissed placeholder')
+
+
+DUP_SCALE_CHILD = r'''
+import json, sys, time, tracemalloc
+from datetime import date
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import scan_data
+root = Path(sys.argv[2])
+invd = json.loads(Path(sys.argv[3]).read_text(encoding='utf-8'))
+s = scan_data.Scanner(root, invd, date(2026, 11, 11))
+tracemalloc.start()
+t0 = time.process_time()
+s.snapshots_and_duplicates()
+took = time.process_time() - t0
+peak = tracemalloc.get_traced_memory()[1]
+dups = [{'file': c['file'], 'similar_to': c['details'].get('similar_to')} for c in s.cands if c['rule'] == 'near_duplicate']
+print(json.dumps({'took': took, 'peak': peak, 'dups': dups, 'stats': getattr(s, 'duplicate_stats', None), 'notes': s.notes}))
+'''
+
+
+def near_duplicates_scale() -> None:
+    """The near-duplicate check compares files within one project, finds candidate pairs by a cheap sketch instead of
+    comparing every pair, caps the pairs it confirms, and stays fast and small: 30 directories of 25 distinct fixtures
+    (about 280,000 same-format pairs) take a few seconds of CPU, where comparing every pair took far longer."""
+    import random, subprocess, time
+    rnd = random.Random(7)
+    words = ['harbour', 'ferry', 'ticket', 'pier', 'tide', 'route', 'cabin', 'deck', 'fare', 'quay', 'buoy', 'wharf']
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        files = {'tests/test_load.py': 'from pathlib import Path\n\n\ndef test_load():\n    assert Path("tests/fixtures").is_dir()\n'}
+        body = ''
+        for k in range(30):
+            for j in range(25):
+                rows = ',\n'.join('  {"id": %d, "route": "%s-%s-%d", "note": "%s"}' % (
+                    n, rnd.choice(words), rnd.choice(words), rnd.randrange(10_000),
+                    ' '.join(rnd.choice(words) for _ in range(8))) for n in range(40))
+                text = '[\n' + rows + '\n]\n'
+                files[f'tests/fixtures/d{k:02d}/f{j:02d}.json'] = text
+                if (k, j) == (3, 1):
+                    body = text
+        # planted: a copy with one row changed, in another directory of the same project
+        files['tests/fixtures/d17/copy.json'] = body.replace('"id": 5,', '"id": 505,')
+        # the same copy in a separate sample project is not compared with this one
+        files['examples/other/package.json'] = '{"name": "other"}\n'
+        files['examples/other/fixtures/copy.json'] = body
+        write(root, files)
+        invd = inv.build(root, None, {})
+        ip = Path(d) / 'inv.json'
+        ip.write_text(json.dumps(invd), encoding='utf-8')
+        t0 = time.monotonic()
+        try:
+            r = subprocess.run([sys.executable, '-c', DUP_SCALE_CHILD, str(HERE), str(root), str(ip)],
+                               capture_output=True, text=True, timeout=90)
+            out = json.loads(r.stdout.strip().splitlines()[-1]) if r.stdout.strip() else {}
+        except subprocess.TimeoutExpired:
+            out = {}
+        wall = time.monotonic() - t0
+    took = out.get('took')
+    check(took is not None and took < 15.0,
+          f'duplicates: 751 fixtures in 30 directories are compared in under 15 s of CPU time (took '
+          f'{"over 90 s wall, killed" if took is None else f"{took:.1f} s"}; {wall:.0f} s wall)')
+    check(out.get('peak', 1 << 40) < 64 * 1024 * 1024,
+          f'duplicates: peak traced memory stays under 64 MB (got {out.get("peak", 0) / 1e6:.0f} MB)')
+    dups = out.get('dups') or []
+    check(any({x['file'], x['similar_to']} == {'tests/fixtures/d03/f01.json', 'tests/fixtures/d17/copy.json'} for x in dups),
+          f'duplicates: a near copy in another directory of the same project is found (got {dups[:5]})')
+    check(not any('examples/other/fixtures/copy.json' in (x['file'], x['similar_to']) for x in dups),
+          'duplicates: a copy in a separate sample project is not compared across projects')
+    stats = out.get('stats') or {}
+    check(bool(stats) and stats.get('pairs_compared', 1 << 30) <= stats.get('pair_cap', 0),
+          f'duplicates: the scan records how many pairs it confirmed, within its cap (got {stats})')
+
+
+def capped_pairs_are_noted() -> None:
+    """When more candidate pairs than the cap turn up (a templated tree), the extra pairs are not compared and the notes
+    say so."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        files = {'tests/test_load.py': 'def test_load():\n    assert True\n'}
+        for j in range(30):
+            files[f'tests/fixtures/t{j:02d}.json'] = ('[\n' + ',\n'.join('  {"id": %d, "name": "row %d"}' % (n, n) for n in range(20))
+                                                      + ',\n  {"id": 99, "name": "variant %d"}\n]\n' % j)
+        write(root, files)
+        invd = inv.build(root, None, {})
+        s = scan_data.Scanner(root, invd, date(2026, 11, 11))
+        s.duplicate_pair_cap = 50
+        s.snapshots_and_duplicates()
+    stats = getattr(s, 'duplicate_stats', None) or {}
+    check(stats.get('pairs_compared') == 50 and stats.get('pairs_skipped', 0) > 0,
+          f'duplicates: the pair cap stops the confirmation at 50 pairs and counts the rest (got {stats})')
+    check(any('near-duplicate' in n and 'cap' in n for n in s.notes), 'duplicates: the notes say the pair cap was reached')
+
+
+def placeholder_headline() -> None:
+    """A headline left as a draft placeholder is rejected."""
+    for text in ('Draft headline to be replaced after review.', 'TODO: headline', 'Placeholder headline.', 'TBD'):
+        ex = report_with(limitations=['Static rules only.'])
+        ex['summary']['headline'] = text
+        errs = vtd.check(ex, None, None, None, None, json.dumps(ex), None, None)
+        check(any('placeholder' in e for e in errs), f'validator: the headline "{text}" is a placeholder and is rejected')
+    ex = report_with(limitations=['Static rules only.'])
+    errs = vtd.check(ex, None, None, None, None, json.dumps(ex), None, None)
+    check(not any('placeholder' in e for e in errs), 'validator: a written headline is not a placeholder')
+
+
+def arithmetic_time_bomb() -> None:
+    """A time bomb confirmed by date arithmetic (scan_data.py computed the fail date from a comparison with now) needs no
+    experiment: it counts as evidenced in the completeness, and the renderer says how it was confirmed."""
+    import subprocess
+    ex = report_with(limitations=['Static rules only.'])
+    ex['inventory'] = [{'path': 'tests/fixtures/plan.json', 'kind': 'fixture', 'format': 'json', 'loaded_by': ['t::a'],
+                        'status': 'scanned', 'reason': None}]
+    f = {'id': 'F1', 'category': 'time_bomb', 'title': 'Plan expiry fixed at 2027-01-01', 'candidates': ['C1'],
+         'location': {'file': 'tests/fixtures/plan.json', 'line': 3, 'field': 'expires'}, 'data_type': 'date',
+         'why_flagged': 'expires is fixed and compared with today', 'severity': 'serious', 'confidence': 'confirmed',
+         'fails_on_date': '2027-01-01', 'experiment': {'run_ids': [], 'variation': 'none', 'result': 'not_run'},
+         'affected_tests': ['t::a'], 'fix': 'Compute the expiry relative to today.',
+         'verification_step': 'Rerun with the clock moved past the date.', 'reach': 1, 'score': 3, 'priority': 'P1'}
+    ex['findings'] = [f]
+    cands = {'C1': {'id': 'C1', 'category': 'time_bomb', 'rule': 'fixed_expiry', 'file': 'tests/fixtures/plan.json', 'line': 3,
+                    'details': {'compared_with_now': [{'file': 'app/plan.py', 'line': 4}], 'fails_on_date': '2027-01-01'}}}
+    got = vtd.completeness(ex, cands)
+    check(got == 1.0, f'validator: a time bomb confirmed by date arithmetic counts as evidenced (got {got})')
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / 'r.json'
+        p.write_text(json.dumps(ex), encoding='utf-8')
+        out = subprocess.run([sys.executable, str(HERE / 'render_report.py'), str(p), '--color', 'never'],
+                             capture_output=True, text=True).stdout
+    check('date arithmetic' in out and 'not run ()' not in out,
+          'renderer: a bomb confirmed by date arithmetic says so, with no empty run list')
+
+
 def main() -> int:
-    for t in (baseline_on_audit_date, go_rules, url_credentials_and_cards, placeholders, coverage_and_drift, residue_outside_tree, live_endpoint_severity,
+    for t in (fixture_dirs_by_default, commands_count_as_use, prose_formats, time_bombs_stay_in_project, code_is_not_an_email,
+              near_duplicates_scale, capped_pairs_are_noted, placeholder_headline, arithmetic_time_bomb,
+              baseline_on_audit_date, go_rules, url_credentials_and_cards, placeholders, coverage_and_drift, residue_outside_tree, live_endpoint_severity,
               big_data_tree, cwd_relative_paths, agent_personal_data_leak, empty_repository, data_dir_unknown_format,
               served_data_dir, data_dir_code, no_tests_statement, tests_found_field, runs_required, drift_nothing_to_check,
               write_summary_line_endings):

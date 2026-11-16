@@ -55,6 +55,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import code_mask  # noqa: E402
 import detect_conventions  # noqa: E402
 
 READS = 0   # source files read by graphs in this process (the self-test's timing check counts them)
@@ -91,6 +92,10 @@ TEMPLATE_CALLS = {'render_template', 'render_template_string', 'get_template', '
 TEMPLATE_EXT = {'.html', '.htm', '.jinja', '.jinja2', '.j2', '.njk', '.xml', '.txt', '.tmpl', '.tpl'}
 TEMPLATE_DIRS = {'templates', 'template'}
 STATIC_DIRS = {'static', 'public', 'assets'}
+# guide lines that are not checks to run: placeholders, pipes, chaining, redirection, variables, optional parts
+COMMAND_UNSAFE = re.compile(r'[<>|;&`$\[\]{}*]')
+OUTPUT_FLAGS = ('--out', '--write', '--fix', '--markdown', '--sarif', '--csv', '--update', '--record', '--ci-out',
+                '--defects-md', '--comment', '--keep')
 TPL_REF = re.compile(r'''\{%-?\s*(extends|include|import|from|embed)\s+["']([^"']+)["']''')
 TPL_STATIC = re.compile(r'''url_for\(\s*["']static["']\s*,\s*filename\s*=\s*["']([^"']+)["']|'''
                         r'''\{%-?\s*static\s+["']([^"']+)["']|["'(=]\s*/static/([^"')?#\s{}]+)''')
@@ -261,10 +266,22 @@ def _norm(p: str) -> str | None:
 
 class Graph:
     def __init__(self, root: Path, reuse: 'Graph | None' = None, changed: set[str] | None = None,
-                 reuse_packages: bool = False, cargo_metadata: dict | None = None):
+                 reuse_packages: bool = False, cargo_metadata: dict | None = None, include_fixtures: bool = False,
+                 fixture_dirs=(), exclude=()):
         """reuse: a graph of another tree that differs from this one only in the `changed` paths; its file reads and
-        parsed ASTs are used for every other file, and with reuse_packages its package detection and Cargo model."""
+        parsed ASTs are used for every other file, and with reuse_packages its package detection and Cargo model.
+        Fixture projects (repo_layout.fixture_projects: sample projects under examples/, fixtures/, testdata/ ...,
+        plus fixture_dirs) and the folders in `exclude` are left out unless include_fixtures: their files are nodes
+        marked `fixture` with no edges and no tests, and `excluded` lists them."""
         self.root = root
+        self.include_fixtures = include_fixtures
+        self.fixture_dirs = [str(x).replace('\\', '/').strip('/') for x in fixture_dirs or ()]
+        self.exclude_dirs = [str(x).replace('\\', '/').strip('/') for x in exclude or () if str(x).strip('/.')]
+        self.excluded: list[dict] = []
+        self.self_tests: dict[str, dict] = {}
+        self.pytest_cfgs: list[dict] = []
+        self.command_tests: list[dict] = []
+        self.not_tests: list[dict] = []
         self.files: dict[str, dict] = {}
         self.languages: dict[str, str] = {}
         self._fixtures: dict[str, tuple[set[str], bool]] = {}
@@ -340,13 +357,31 @@ class Graph:
 
     def find_packages(self, paths: list[str]) -> None:
         if self.reuse is not None and self.reuse_packages:
-            self.packages = [dict(p) for p in self.reuse.packages]
-            self.python_runners, self.ci_gates = dict(self.reuse.python_runners), list(self.reuse.ci_gates)
+            o = self.reuse
+            self.packages = [dict(p) for p in o.packages]
+            self.python_runners, self.ci_gates = dict(o.python_runners), list(o.ci_gates)
+            self.excluded, self.self_tests, self.pytest_cfgs = list(o.excluded), dict(o.self_tests), list(o.pytest_cfgs)
             return
-        det = detect_conventions.Detector(self.root, 50_000)
+        det = detect_conventions.Detector(self.root, 50_000, exclude_fixtures=not self.include_fixtures,
+                                          fixture_dirs=self.fixture_dirs)
         res = det.run(None)
+        self.excluded = [{'dir': f['dir'], 'reason': f'fixture project: {f["reason"]}'}
+                         for f in res.get('fixtures_excluded') or []]
+        for d in self.exclude_dirs:
+            if not any(d == x['dir'] or d.startswith(x['dir'] + '/') for x in self.excluded):
+                self.excluded.append({'dir': d, 'reason': 'excluded with --exclude'})
+        self.excluded.sort(key=lambda x: x['dir'])
+        out = self.excluded_dir
         self.ci_gates = res.get('ci_gates') or []
+        self.self_tests = {s['file']: s for s in res.get('self_tests') or [] if not out(s['file'])}
         for a in res['areas']:
+            if a['root'] != '.' and out(a['root']):
+                continue
+            if a.get('pytest'):
+                self.pytest_cfgs.append({**a['pytest'], 'dir': a['root']})
+            for c in a.get('pytest_configs') or []:
+                if not out(c['dir']):
+                    self.pytest_cfgs.append(dict(c))
             if a.get('python_runner'):
                 self.python_runners[a['root']] = a['python_runner']
             frameworks = sorted({fw for cat in a.get('frameworks', {}).values() for fw in cat})
@@ -375,6 +410,60 @@ class Graph:
         self.product_roots.add(cut)
         return path[len(cut) + 1:]
 
+    def excluded_dir(self, path: str) -> str | None:
+        """The excluded fixture project or folder holding path, or None."""
+        for x in self.excluded:
+            if path == x['dir'] or path.startswith(x['dir'] + '/'):
+                return x['dir']
+        return None
+
+    def pytest_config_of(self, path: str) -> dict | None:
+        """The pytest configuration that governs a Python file: the deepest config folder above it."""
+        best, depth = None, -1
+        for c in self.pytest_cfgs:
+            d = c.get('dir') or '.'
+            if d == '.' or path.startswith(d + '/'):
+                k = 0 if d == '.' else d.count('/') + 1
+                if k > depth:
+                    best, depth = c, k
+        return best
+
+    def python_test_level(self, path: str, level: str | None) -> str | None:
+        """Whether a Python file is a pytest/unittest test, by framework configuration and content, not by name
+        alone: its governing config's python_files (pytest.ini `python_files = bench_*.py` makes bench files tests)
+        or the default test_*.py / *_test.py names, and a test function or class it defines (python_functions,
+        python_classes, a unittest.TestCase subclass). A file named like a test that defines none (a product module
+        called test_paths.py) is not a test; it is listed under not_tests."""
+        name = PurePosixPath(path).name
+        if name == 'conftest.py':
+            return None
+        cfg = self.pytest_config_of(path)
+        pats = (cfg or {}).get('python_files') or []
+        by_cfg = bool(pats) and any(fnmatch.fnmatch(name, p) for p in pats)
+        if level is None and not by_cfg:
+            return None
+        tree = self.tree(path)
+        if not isinstance(tree, ast.Module):
+            return level or 'unit'
+        funcs = (cfg or {}).get('python_functions') or ['test']
+        classes = (cfg or {}).get('python_classes') or ['Test']
+
+        def like(n: str, pats: list[str]) -> bool:
+            return any(fnmatch.fnmatch(n, p) if any(ch in p for ch in '*?[') else n.startswith(p) for p in pats)
+        found = level or detect_conventions.level_of(path, set())
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and like(node.name, funcs):
+                return found
+            if isinstance(node, ast.ClassDef):
+                bases = {b.attr if isinstance(b, ast.Attribute) else getattr(b, 'id', '') for b in node.bases}
+                if any(str(b).endswith('TestCase') for b in bases) or like(node.name, classes):
+                    return found
+            if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and like(t.id, funcs) for t in node.targets):
+                return found
+        self.not_tests.append({'file': path, 'reason': 'named like a test but defines no test function or class' +
+                               (f' ({cfg["config"]})' if cfg and cfg.get('config') else '')})
+        return None
+
     def package_of(self, path: str) -> str:
         for p in self.packages:
             if p['root'] == '.' or path == p['root'] or path.startswith(p['root'] + '/'):
@@ -383,8 +472,9 @@ class Graph:
 
     # ------------------------------------------------------------ build
     def build(self) -> 'Graph':
-        paths = self.walk()
-        self.find_packages(paths)
+        every = self.walk()
+        self.find_packages(every)
+        paths = [p for p in every if not self.excluded_dir(p)]
         self.py_index: dict[str, list[str]] = {}
         self.py_module: dict[str, str] = {}
         self.py_names: dict[str, list[str]] = {}   # bare module name -> files (for imports through sys.path)
@@ -411,7 +501,7 @@ class Graph:
                 self.py_module.setdefault(f, mod)
         self.js_aliases = self.tsconfig_aliases(paths)
         self.workspace_names = {p['name']: p['root'] for p in self.packages if p['name'] != p['root']}
-        self.all_paths = set(paths)
+        self.all_paths = set(every)
         # templates and static files by the name views and templates use for them (relative to their directory)
         self.template_index: dict[str, list[str]] = {}
         self.static_index: dict[str, list[str]] = {}
@@ -435,12 +525,27 @@ class Graph:
                 self.go_src.setdefault(str(PurePosixPath(path).parent), []).append(path)
         # Rust: the Cargo model (crates, targets, tests) of each top-level Cargo project
         rust_files = self.read_cargo(paths)
+        for path in every:
+            fx = self.excluded_dir(path)
+            if fx:
+                self.files[path] = {'package': self.package_of(path), 'lang': None, 'test_level': None, 'imports': [],
+                                    'unresolved': [], 'dynamic': [], 'fixture': fx}
         for path in paths:
             ext = PurePosixPath(path).suffix.lower()
             entry = {'package': self.package_of(path), 'lang': None, 'test_level': test_level(self.test_path(path)), 'imports': [],
                      'unresolved': [], 'dynamic': []}
             if ext in PY_EXT:
                 entry['lang'] = 'python'
+                st = self.self_tests.get(path)
+                if st:
+                    # a script that tests itself (`python x.py --self-test`, a self_test.py): a test run by its command;
+                    # a source file that carries its own self-test is also source (like a Rust file with inline tests)
+                    entry['test_level'] = 'unit'
+                    entry['self_test'] = st['command']
+                    if st['kind'] != 'script':
+                        entry['inline_tests'] = True
+                else:
+                    entry['test_level'] = self.python_test_level(path, entry['test_level'])
                 self.parsed(path, entry, self.python)
                 self.languages['python'] = 'parsed'
             elif ext in JS_EXT:
@@ -466,8 +571,10 @@ class Graph:
                               '. Their files are classified by their path inside the package, so only their own test '
                               'files are tests.')
         for path, entry in self.files.items():
-            if entry['lang'] == 'python' and (entry['test_level'] or PurePosixPath(path).name == 'conftest.py'):
+            if entry['lang'] == 'python' and (entry['test_level'] or PurePosixPath(path).name == 'conftest.py') and \
+                    not entry.get('self_test'):
                 self.conftests(path, entry)
+        self.add_command_tests(every)
         self.rust_edges()
         for entry in self.files.values():
             for d in entry['dynamic']:
@@ -624,6 +731,73 @@ class Graph:
                         seen.add(tf)
                         self.files[tf]['imports'].append({'path': path, 'via': f'cargo {kind} target {crate}/{target}',
                                                           'line': 0})
+
+    def add_command_tests(self, every: list[str]) -> None:
+        """The check commands a repository's guides document (root-level Markdown: a contributor or agent guide, the
+        README): `python <script> ...` lines in shell code blocks that run a validator or checker of the repository
+        (a script named validate*, check* or verify*, or a --check / --self-test flag) on files that exist, with no
+        placeholder, pipe, redirection or output flag (--out, --write..., --fix, ...). Each is a test whose id is
+        `<guide>:<line>`, run from the repository root; it depends on its script and on every file or folder it
+        names, so a change to a sample it validates selects it. Commands equal to a detected self-test are not
+        repeated."""
+        import shlex
+        known = {tuple(shlex.split(s['command'])) for s in self.self_tests.values()}
+        seen: set[tuple] = set()
+        for guide in sorted(p for p in every if '/' not in p and p.lower().endswith('.md')):
+            text = self.text(guide) or ''
+            fence = None
+            for n, line in enumerate(text.splitlines(), 1):
+                st = line.strip()
+                if st.startswith('```') or st.startswith('~~~'):
+                    lang = st.strip('`~').strip().lower()
+                    fence = None if fence is not None else (lang or 'sh')
+                    continue
+                if fence not in ('bash', 'sh', 'shell', 'console', 'zsh'):
+                    continue
+                cmd = st[2:] if st.startswith('$ ') else st
+                if not cmd or COMMAND_UNSAFE.search(cmd.split(' #')[0]):
+                    continue
+                try:
+                    argv = shlex.split(cmd, comments=True)
+                except ValueError:
+                    continue
+                if len(argv) < 2 or argv[0] not in ('python', 'python3', 'py') or not argv[1].endswith('.py'):
+                    continue
+                script = argv[1][2:] if argv[1].startswith('./') else argv[1]
+                if script not in self.files or self.files[script].get('fixture'):
+                    continue
+                flags = [a.split('=', 1)[0] for a in argv[2:] if a.startswith('-')]
+                stem = PurePosixPath(script).stem.lower()
+                if any(f.startswith(OUTPUT_FLAGS) for f in flags):
+                    continue
+                if not (stem.startswith(('validate', 'check', 'verify')) or '--check' in flags or '--self-test' in flags):
+                    continue
+                named: list[str] = []
+                ok = True
+                for a in argv[2:]:
+                    val = a.split('=', 1)[1] if a.startswith('-') and '=' in a else (None if a.startswith('-') else a)
+                    if val is None or not ('/' in val or '.' in PurePosixPath(val).name):
+                        continue
+                    val = val.rstrip('/')
+                    if val in self.all_paths:
+                        named.append(val)
+                    elif any(p.startswith(val + '/') for p in self.all_paths):
+                        named += sorted(p for p in self.all_paths if p.startswith(val + '/'))
+                    else:
+                        ok = False          # a path that does not exist: an output, or a placeholder
+                        break
+                key = tuple(argv)
+                if not ok or key in known or key in seen:
+                    continue
+                seen.add(key)
+                tid = f'{guide}:{n}'
+                imports = [{'path': script, 'via': 'runs', 'line': n}]
+                imports += [{'path': f, 'via': 'names', 'line': n} for f in dict.fromkeys(named) if f != script]
+                self.files[tid] = {'package': self.package_of(guide), 'lang': None, 'test_level': 'integration',
+                                   'imports': imports, 'unresolved': [], 'dynamic': [], 'self_test': ' '.join(argv),
+                                   'command_test': {'guide': guide, 'line': n}}
+                self.command_tests.append({'id': tid, 'command': ' '.join(argv), 'guide': guide, 'line': n,
+                                           'script': script})
 
     def is_template(self, path: str) -> bool:
         return any(part in TEMPLATE_DIRS for part in PurePosixPath(path).parts[:-1])
@@ -977,17 +1151,24 @@ class Graph:
         text = strip_js_comments(raw)
         line_of = lambda pos: text.count('\n', 0, pos) + 1  # noqa: E731
 
-        def add(spec: str, via: str, pos: int):
+        def add(spec: str, via: str, pos: int, line: int | None = None):
             target = self.resolve_js(spec, path)
+            ln = line if line is not None else line_of(pos)
             if target and target != path:
                 if not any(i['path'] == target for i in entry['imports']):
-                    entry['imports'].append({'path': target, 'via': via, 'line': line_of(pos)})
+                    entry['imports'].append({'path': target, 'via': via, 'line': ln})
             elif not target and (spec.startswith('.') or spec.startswith('/')):
-                entry['unresolved'].append({'spec': spec, 'line': line_of(pos)})
+                entry['unresolved'].append({'spec': spec, 'line': ln})
 
-        for rx, via in ((JS_STATIC, 'import'), (JS_REQUIRE, 'require'), (JS_DYN_IMPORT, 'import()')):
+        for rx, via in ((JS_STATIC, 'import'), (JS_REQUIRE, 'require')):
             for m in rx.finditer(text):
                 add(m.group(1), via, m.start(1))
+        # computed imports are matched in code only (code_mask): `import(` inside a string or template literal (a
+        # script generating code for a child process) is text, not an import. Line numbers agree: strip_js_comments
+        # keeps every newline.
+        spans = code_mask.masked_spans(raw, 'javascript')
+        for m in code_mask.code_finditer(JS_DYN_IMPORT, raw, 'javascript', spans):
+            add(m.group(1), 'import()', 0, raw.count('\n', 0, m.start(1)) + 1)
         for m in JS_GLOB.finditer(text):
             pats = re.findall(r'''["']([^"']+)["']''', m.group(1))
             here = PurePosixPath(path).parent
@@ -1007,16 +1188,17 @@ class Graph:
                 rel = cand[len(base) + 1:] if cand.startswith(base + '/') else None
                 if rel and (deep or '/' not in rel) and PurePosixPath(cand).suffix in JS_EXT:
                     entry['imports'].append({'path': cand, 'via': 'require.context', 'line': line_of(m.start())})
-        for m in JS_DYN_ANY.finditer(text):
+        for m in code_mask.code_finditer(JS_DYN_ANY, raw, 'javascript', spans):
             arg = m.group(2).strip()
             prefix = None
             tm = re.match(r'`([^`$]*)\$\{', arg)
             if tm:
                 prefix = tm.group(1)
             elif re.match(r'`[^`$]*`', arg):
-                add(arg.strip('`'), m.group(1) + '()', m.start(2))
+                add(arg.strip('`'), m.group(1) + '()', 0, raw.count('\n', 0, m.start(2)) + 1)
                 continue
-            entry['dynamic'].append({'line': line_of(m.start()), 'call': m.group(1), 'lang': entry['lang'] or 'javascript',
+            entry['dynamic'].append({'line': raw.count('\n', 0, m.start()) + 1, 'call': m.group(1),
+                                     'lang': entry['lang'] or 'javascript',
                                      'prefix': prefix, 'text': f'{m.group(1)}({arg[:60]}'})
 
     def dynamic_targets(self, d: dict, entry: dict) -> list[str] | None:
@@ -1066,7 +1248,8 @@ class Graph:
                 'languages': dict(sorted(self.languages.items())),
                 'summary': {'files': len(self.files), 'tests': len(self.tests()), 'edges': edges,
                             'dynamic_sites': sum(len(e['dynamic']) for e in self.files.values())},
-                'files': {p: e for p, e in sorted(self.files.items()) if e['lang'] or e['imports'] or e['test_level']},
+                'files': {p: e for p, e in sorted(self.files.items())
+                          if (e['lang'] or e['imports'] or e['test_level']) and not e.get('fixture')},
                 **({'cargo': [{'root': m['root'], 'workspace': m['workspace'],
                                'crates': [{'name': c['name'], 'dir': c['dir'], 'root': c['root'],
                                            'targets': [{k: t.get(k) for k in ('kind', 'name', 'path')} for t in c['targets']],
@@ -1074,7 +1257,11 @@ class Graph:
                                            'unreached_files': c['unreached_files']}
                                           for c in self.rust_crates.values() if c['root'] == m['root']],
                                'notes': m['notes']} for m in self.cargo_models]} if self.cargo_models else {}),
-                'notes': self.notes}
+                'notes': self.notes,
+                **({'excluded': self.excluded} if self.excluded else {}),
+                **({'self_tests': [{'test': p, 'command': e['self_test']} for p, e in sorted(self.files.items())
+                                   if e.get('self_test')]} if any(e.get('self_test') for e in self.files.values()) else {}),
+                **({'not_tests': self.not_tests} if self.not_tests else {})}
 
 
 def js_dynamic_targets(g: Graph) -> None:
@@ -1095,8 +1282,8 @@ def js_dynamic_targets(g: Graph) -> None:
             d['targets'] = sorted(p for p in g.all_paths if p.startswith(base) and p != path) if base else None
 
 
-def build(root: Path) -> Graph:
-    g = Graph(root).build()
+def build(root: Path, include_fixtures: bool = False, fixture_dirs=(), exclude=()) -> Graph:
+    g = Graph(root, include_fixtures=include_fixtures, fixture_dirs=fixture_dirs, exclude=exclude).build()
     js_dynamic_targets(g)
     return g
 

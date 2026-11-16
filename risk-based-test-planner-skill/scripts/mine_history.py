@@ -8,8 +8,9 @@ so the same repository always gives the same window). For every file: commits, l
 deleted, distinct authors (as pseudonyms for the run, author-1, author-2, ...: names are not kept,
 only counted), fix commits and the first commit that touched it. A commit is a fix
 when its conventional-commit type is fix, bugfix, hotfix or revert; or, without a conventional
-type, when its subject starts with fix/fixes/fixed/bugfix/hotfix/revert/regression, names a bug
-or regression, or closes an issue (fixes #12). feat:, chore: and other types are never fixes,
+type, when its subject starts with fix/fixes/fixed/bugfix/hotfix/revert (or "bug:"/"regression:"),
+or closes an issue (fixes #12, closes PROJ-7). "bug" or "regression" elsewhere in a subject is a noun
+("Add a bug reporter") and never makes a fix. feat:, chore: and other types are never fixes,
 merge commits are never fixes, and the same fix landing twice (same subject, same files) counts
 once (`duplicate_fix_of`). A merge tool's prefix is stripped before matching, so an Azure DevOps
 squash merge "Merged PR 123: fix(x): ..." is a conventional fix (the commit records
@@ -30,8 +31,10 @@ from pathlib import Path
 CONVENTIONAL = re.compile(r'^\s*(feat|feature|fix|bugfix|hotfix|revert|chore|docs?|style|refactor|perf|tests?|build|ci|deps|'
                           r'release|wip)(\([^)]*\))?!?:', re.I)
 CONV_FIX = {'fix', 'bugfix', 'hotfix', 'revert'}
-FIX_FIRST = re.compile(r'^\s*(\[[^\]]*\]\s*)?(fix(e[sd]|ing)?|bug-?fix|hot-?fix|revert(s|ed)?|regression)\b', re.I)
-FIX_ANYWHERE = re.compile(r'\b(bug|regression)\b|\b(fixes|fixed|closes|resolves)\s+#\d+', re.I)
+FIX_FIRST = re.compile(r'^\s*(\[[^\]]*\]\s*)?(fix(e[sd]|ing)?|bug-?fix|hot-?fix|revert(s|ed)?)\b|^\s*(bug|regression)\s*:', re.I)
+# Only closing an issue counts outside the first word: "bug" or "regression" as a noun names what a commit is about
+# ("Add a bug reporter", "Add visual regression checks"), not a defect it fixes.
+FIX_ANYWHERE = re.compile(r'\b(fix(es|ed)?|close[sd]?|resolve[sd]?)\s+(#|[A-Z][A-Z0-9]+-)\d+', re.I)
 # What merge tools put in front of a squash-merged pull request's own subject: Azure DevOps ("Merged PR 123:
 # fix(x): ..."), and "Merge pull request #12: ..." / "PR #12 - ..." forms. GitHub squash merges append " (#123)",
 # which needs no stripping; a two-parent merge commit is never a fix whatever its subject.
@@ -49,8 +52,9 @@ def fix_kind(subject: str, merge: bool) -> str | None:
     """Why a subject is a fix commit, or None. Merges never are (their changes are counted in the merged commits).
     A conventional-commit type decides on its own (fix:, fix(scope):, hotfix:, revert: are fixes; feat:, chore:,
     docs: and the rest are not, even when the text says "fix"). Otherwise the subject must start with fix, fixes,
-    fixed, bugfix, hotfix, revert or regression, or name a bug or regression, or close an issue (fixes #12): a
-    "Redesign the UI, fix the hero video" commit is a feature, not a defect. A merge tool's prefix ("Merged PR 123: ")
+    fixed, bugfix, hotfix or revert (or "bug:" / "regression:"), or close an issue (fixes #12, closes PROJ-7): a
+    "Redesign the UI, fix the hero video" commit is a feature, not a defect, and "Add a bug reporter" or "Add visual
+    regression checks" name a subject, not a defect. A merge tool's prefix ("Merged PR 123: ")
     is stripped first, so a squash-merged "fix(x): ..." is read by its own type."""
     if merge:
         return None
@@ -61,7 +65,7 @@ def fix_kind(subject: str, merge: bool) -> str | None:
     if FIX_FIRST.match(subject):
         return 'subject'
     if FIX_ANYWHERE.search(subject):
-        return 'mention'
+        return 'closes_issue'
     return None
 FORMAT = re.compile(r'^(style|format|chore\(format\)|lint)\b|\b(reformat|whitespace|prettier|black|isort|gofmt)\b', re.I)
 KEY = re.compile(r'\b([A-Z][A-Z0-9]+-\d+)\b')
@@ -210,6 +214,13 @@ def self_test() -> int:
         commit('fix the expiry date check', '2026-12-31T10:00:00Z', {'app/timer.js': 'let a = 2;\n'}, author='Other Person')
         commit('fix typo in README', '2026-04-01T10:00:00Z', {'README.md': 'Timer\n'})
         commit('Add the menu', '2026-05-29T10:00:00Z', {'app/menu.js': 'let m = 1;\n'})
+        # "bug" and "regression" as nouns name what a feature is about, not a defect it fixes
+        commit('Add bug reporter tool', '2026-06-01T10:00:00Z', {'app/reporter.js': 'let r = 1;\n'})
+        commit('Add visual regression checker', '2026-06-02T10:00:00Z', {'app/visual.js': 'let v = 1;\n'})
+        commit('Document the regression suite and the bug template', '2026-06-03T10:00:00Z', {'app/menu.js': 'let m = 2;\n'})
+        commit('Fix the menu crash on an empty list', '2026-06-04T10:00:00Z', {'app/menu.js': 'let m = 3;\n'})
+        commit('Handle an empty basket on save, closes #12', '2026-06-05T10:00:00Z', {'app/menu.js': 'let m = 4;\n'})
+        commit('fix(visual): compare at the same zoom', '2026-06-06T10:00:00Z', {'app/visual.js': 'let v = 2;\n'})
         res = mine(tmp, 180, None)
         text = json.dumps(res)
         if 'Sample Person' in text or 'Other Person' in text:
@@ -228,6 +239,13 @@ def self_test() -> int:
             fails.append('a fix commit touching only documentation is not counted as a fix')
         if res['files'].get('app/timer.js', {}).get('fix_commits') == []:
             fails.append('the later-dated fix counts against the file it touched')
+        for subj, want in (('Add bug reporter tool', False), ('Add visual regression checker', False),
+                           ('Document the regression suite and the bug template', False),
+                           ('Fix the menu crash on an empty list', True), ('Handle an empty basket on save, closes #12', True),
+                           ('fix(visual): compare at the same zoom', True)):
+            if bool(subjects.get(subj, {}).get('fix')) != want:
+                fails.append(f'{subj!r}: fix {not want}, expected {want} (a fix is named by a conventional type, a leading '
+                             'fix verb or a closed issue, never by "bug" or "regression" as a noun)')
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     if fails:

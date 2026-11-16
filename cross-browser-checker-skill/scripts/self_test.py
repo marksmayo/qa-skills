@@ -768,6 +768,20 @@ def verdict_checks() -> list[str]:
         if r.returncode == 0 or 'upgrade-insecure-requests' not in r.stdout or 'environment' not in r.stdout:
             fails.append(f'validate_report.py accepted a report silent about requests upgraded to https on an http site: '
                          f'{r.stdout.strip()[-200:]!r}')
+        # a limitation that names the cause in words ("fetched over https") satisfies the rule: \bhttps\b, not
+        # the backspace characters a lost escape once left in the pattern
+        rep3 = json.loads((EXAMPLES / 'report.example.json').read_text(encoding='utf-8'))
+        rep3['limitations'].append('WebKit fetched the stylesheet over https on the plain-http site and failed; '
+                                   'those runs were not compared.')
+        p3 = Path(tmp) / 'r3.json'
+        p3.write_text(json.dumps(rep3), encoding='utf-8')
+        r = subprocess.run([sys.executable, '-B', str(HERE / 'validate_report.py'), str(p3),
+                            '--runs', str(Path(tmp) / 'runs.json'), '--candidates', str(EXAMPLES / 'run' / 'candidates.json'),
+                            '--jobs', '1', '--features', str(EXAMPLES / 'run' / 'features.json')],
+                           capture_output=True, text=True, encoding='utf-8', cwd=SKILL)
+        if 'fetched the site over https' in r.stdout:
+            fails.append('validate_report.py still asks for the https environment cause when a limitation names it '
+                         f'("over https"): {r.stdout.strip()[-200:]!r}')
         # differences promoted but the agent wrote no_differences_detected: an error, never silently rewritten
         rep2 = json.loads((EXAMPLES / 'report.example.json').read_text(encoding='utf-8'))
         rep2['headline']['verdict'] = 'no_differences_detected'

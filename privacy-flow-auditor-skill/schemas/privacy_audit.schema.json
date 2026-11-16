@@ -5,7 +5,7 @@
   "type": "object",
   "required": ["schema_version", "run_status", "skill", "skill_version", "generated", "scope", "metadata", "inventory", "recipients", "consent_matrix", "findings", "triage", "headline", "limitations"],
   "properties": {
-    "schema_version": {"enum": ["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"]},
+    "schema_version": {"enum": ["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0"]},
     "run_status": {"enum": ["complete", "partial", "not_run"], "description": "The browser half: complete; partial (a consent state untested or missing, or flow steps failed); not_run (static only: no capture, so no consent state, request or canary was tested). Equals the candidates file's"},
     "run_status_reason": {"type": ["string", "null"], "description": "Why the run is partial or not_run; null when complete"},
     "skill": {"const": "privacy-flow-auditor"},
@@ -93,7 +93,7 @@
     },
     "triage": {"type": "array", "items": {"type": "object", "required": ["candidate", "decision"],
       "properties": {"candidate": {"type": "string"}, "decision": {"enum": ["promoted", "inventory", "dismissed"]}, "finding": {"type": "string"},
-                     "reason_code": {"enum": ["strictly_necessary", "functional_no_identifier", "constant_in_source", "pii_disabled", "duplicate", "false_match", "not_personal_data", "random_per_load_id"]},
+                     "reason_code": {"enum": ["strictly_necessary", "functional_no_identifier", "constant_in_source", "pii_disabled", "duplicate", "false_match", "not_personal_data", "random_per_load_id", "fixture"], "description": "fixture (schema 1.6.0): a candidate inside a sample or fixture project the static scan lists (a flow planted on purpose); special-category candidates may be dismissed only as false_match or fixture"},
                      "reason": {"type": "string"}}}},
     "headline": {"type": "object", "required": ["counts", "third_parties_before_consent", "third_parties_after_reject", "states_not_tested", "special_category_flows", "statement", "disclaimer"],
       "properties": {"counts": {"type": "object", "required": ["P0", "P1", "P2", "P3"]},

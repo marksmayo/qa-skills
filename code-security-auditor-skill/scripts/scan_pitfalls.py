@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Scan source for security pitfalls from data/pitfalls.json.
 
-    python scan_pitfalls.py <repo> [--packs python,github_actions] [--out patterns.json]
+    python scan_pitfalls.py <repo> [--packs python,github_actions] [--include-fixtures] [--fixture-dir DIR] [--out patterns.json]
 
 Every hit is a *candidate*: a line that matches a weakness pattern. It is not a finding until the
 agent traces attacker-controlled input to it. Patterns are a fallback and a cross-check for real
@@ -35,6 +35,13 @@ A pitfall can narrow its matches with:
                   Rust: unsafe blocks that carry a SAFETY: comment and call foreign code (libloading symbols,
                   raw pointers into an FFI call, CStr/CString, libc/windows-sys) become one candidate per file
                   with grouped_lines, confidence low and group_reason; any other unsafe block stays on its own
+  narrow_match    with narrow_require_file: a match whose text matches narrow_match counts only in a file
+  narrow_require_file
+                  that matches narrow_require_file (PY-SSRF's urlopen only in a file that serves requests)
+  string_regex    a second pattern allowed to match inside a string (a Jinja |safe in a Python template string)
+  match_in_strings
+                  the pitfall reads string content by design (security header values), so its matches are not
+                  limited to code
   gha_read_only_token
                   GitHub Actions: skip a match in a job whose token has no write permission (the job's
                   permissions:, else the workflow's; read-all, {} or no `: write` entry). Without a
@@ -45,6 +52,10 @@ Azure DevOps pipelines only when they are ones.
 A pack can limit itself to paths with path_contains (a substring) or path_regex (a regex over the
 relative path): the github_actions pack reads workflows and composite actions (action.yml under
 .github/, or at the root of an action repository).
+In Python and JavaScript/TypeScript a match counts only in code: one lying wholly inside a string, docstring or
+comment (a pattern table, a usage example, a fixture string) is skipped (code_mask.py). Sample and fixture
+projects (see audit_scope.py) are left out and listed under fixtures_excluded unless --include-fixtures; a file
+kept identical in several places is scanned once and its hits list the other copies (copy_groups).
 Test files, dependencies, build output, minified files and vendored trees (vendor/, third_party/,
 Pods/, PrivateHeaders/, bundled .app/.framework directories, an embedded WebDriverAgent: see
 test_paths.vendored_dir) are skipped, and vendored files never count toward the repository's main
@@ -56,7 +67,7 @@ test_paths.py): a workspace package named e2e is product code and is scanned. Da
 a file and listed under skipped_data_dirs; --scan-data-dirs reads them.
 """
 from __future__ import annotations
-import argparse, json, re, sys
+import argparse, bisect, json, re, sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -64,7 +75,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(HERE))
+import audit_scope  # noqa: E402
 import cargo_project  # noqa: E402
+import code_mask  # noqa: E402
 import data_dirs as data_dir_rule  # noqa: E402
 import lang_census  # noqa: E402
 import test_paths  # noqa: E402
@@ -123,11 +136,12 @@ def walk(root: Path, include_tests: bool = False, census: dict | None = None, da
             elif p.is_file() and (include_tests or not TEST_FILE.search(p.name)):
                 yield p
 
+
 def compile_pitfall(p: dict) -> dict:
     q = dict(p)
     q['_rx'] = re.compile(p['regex'], re.M)
     for k in ('suppress_line', 'suppress_near', 'require_near', 'require_file', 'suppress_file', 'require_path', 'suppress_above',
-              'scope_regex', 'scope_suppress', 'require_above'):
+              'scope_regex', 'scope_suppress', 'require_above', 'string_regex', 'narrow_match', 'narrow_require_file'):
         if p.get(k):
             q['_' + k] = re.compile(p[k], re.M)
     return q
@@ -303,14 +317,49 @@ def scan_file(path: Path, rel: str, pitfalls: list[dict], include_tests: bool = 
     active = [p for p in pitfalls if (not p.get('_require_file') or p['_require_file'].search(text))
               and not (p.get('_suppress_file') and p['_suppress_file'].search(text))
               and (not p.get('_require_path') or p['_require_path'].search(rel))]
+    # Python and JavaScript: a match must start in code, not inside a string, docstring or comment (a pattern table,
+    # a usage example, a fixture string). string_regex (a template inside a string) and match_in_strings are exempt.
+    lang = code_mask.lang_of(path)
+    maskable = lang in ('python', 'javascript')
+    masking: list = []   # [spans, line starts, lines a span touches], worked out on the first match that needs them
+
+    def code_view() -> list:
+        if not masking:
+            starts, off = [], 0
+            for raw in text.splitlines(keepends=True):
+                starts.append(off)
+                off += len(raw)
+            spans = code_mask.masked_spans(text, lang, kinds=False)
+            touched: set[int] = set()
+            for s, e, _ in spans:
+                touched.update(range(bisect.bisect_right(starts, s) - 1, bisect.bisect_right(starts, e - 1)))
+            masking.extend([spans, starts, touched])
+        return masking
     hits = []
+    # the per-line loop runs once per line and pitfall: look each pitfall's patterns up once per file
+    plan = [(p, p['_rx'], p.get('_string_regex'), maskable and not p.get('match_in_strings')) for p in active]
     for i, line in enumerate(lines):
         if COMMENT.match(line):
             continue
-        for p in active:
-            m = p['_rx'].search(line)
+        for p, rx, string_rx, code_only in plan:
+            m = rx.search(line)
+            if m is None:
+                if string_rx is None:
+                    continue
+                m = string_rx.search(line)
+                if m is None:
+                    continue
+            elif code_only:
+                spans, starts, touched = code_view()
+                if i in touched:   # a line no string or comment touches: the plain match already starts in code
+                    m = next((x for x in rx.finditer(line) if audit_scope.in_code(spans, starts[i] + x.start(), starts[i] + x.end())), None)
+                if m is None and string_rx is not None:
+                    m = string_rx.search(line)
             if not m or (p.get('_suppress_line') and p['_suppress_line'].search(line)):
                 continue
+            if p.get('_narrow_match') and p['_narrow_match'].search(m.group(0)) \
+                    and not (p.get('_narrow_require_file') and p['_narrow_require_file'].search(text)):
+                continue  # this form of the pattern counts only in a file that matches narrow_require_file
             w = int(p.get('window', 4))
             near = '\n'.join(lines[max(0, i - w):i + w + 1])
             if p.get('_suppress_near') and p['_suppress_near'].search(near):
@@ -366,14 +415,19 @@ def head_of(path: Path, n: int = HEAD_BYTES) -> str:
         return ''
 
 def scan(root: Path, catalogue: dict, wanted: set[str] | None = None, include_tests: bool = False,
-         exclude_dirs: list[str] | None = None, data_dirs: bool = True) -> dict:
-    """data_dirs=False turns off the data-directory rule (--scan-data-dirs); exclude_dirs are --exclude-dir paths."""
+         exclude_dirs: list[str] | None = None, data_dirs: bool = True, include_fixtures: bool = False,
+         fixture_dirs=()) -> dict:
+    """data_dirs=False turns off the data-directory rule (--scan-data-dirs); exclude_dirs are --exclude-dir paths.
+    Fixture projects are left out unless include_fixtures (listed under fixtures_excluded either way they are found);
+    a file kept identical in several places is scanned once and its hits list the other copies."""
     packs = catalogue['packs']
     wanted = wanted or set(packs)
     active = [compile_pitfall(p) for p in catalogue['pitfalls'] if p.get('regex') and p['pack'] in wanted]
     cands, files_by_pack = [], {}
-    census = lang_census.census(root)
+    census = lang_census.census(root, exclude_fixtures=not include_fixtures, fixture_dirs=tuple(fixture_dirs))
+    fixtures = census.get('fixtures_excluded') or []
     data = data_dir_rule.DataDirs(root, exclude_dirs, auto=data_dirs)
+    todo = []
     for path in walk(root, include_tests, census, data):
         rel = path.relative_to(root).as_posix()
         names = [n for n in pack_of(path, rel, packs) if n in wanted]
@@ -381,11 +435,22 @@ def scan(root: Path, catalogue: dict, wanted: set[str] | None = None, include_te
             head = head_of(path)
             names = [n for n in names if (not packs[n].get('require_content') or re.search(packs[n]['require_content'], head, re.M))
                      and not (packs[n].get('exclude_content') and re.search(packs[n]['exclude_content'], head, re.M))]
-        if not names:
-            continue
+        if names:
+            todo.append((path, rel, names))
+    rep, groups = audit_scope.representatives(root, [rel for _, rel, _ in todo])
+    names_of = {rel: names for _, rel, names in todo}
+    copies_of: dict[str, list[str]] = {}
+    for path, rel, names in todo:
         for n in names:
             files_by_pack[n] = files_by_pack.get(n, 0) + 1
+        r = rep.get(rel)
+        if r and r != rel and names_of.get(r) == names:
+            copies_of.setdefault(r, []).append(rel)  # identical content, same packs: the same hits as the representative
+            continue
         cands.extend(scan_file(path, rel, [p for p in active if p['pack'] in names], include_tests))
+    for c in cands:
+        if copies_of.get(c['file']):
+            c['copies'] = sorted(copies_of[c['file']])
     cands.sort(key=lambda c: (c['file'], c['line'], c['pitfall_id']))
     covered_exts = {e for n in wanted for e in packs[n].get('extensions', [])}
     # Loud-fail: the main language (vendored and third-party trees excluded) has no pack scanning it
@@ -402,7 +467,13 @@ def scan(root: Path, catalogue: dict, wanted: set[str] | None = None, include_te
             'note': 'Candidates are pattern-level leads, not findings. Trace a source-to-sink path or dismiss each one.',
             'warnings': warnings, 'language_coverage': cov,
             # data directories and --exclude-dir paths left out of the walk: not read, so not scanned
-            'skipped_data_dirs': data.report(), 'candidates': cands}
+            'skipped_data_dirs': data.report(),
+            # sample and fixture projects left out (a planted defect in a sample is not the repository's finding);
+            # --include-fixtures scans them
+            'fixtures_excluded': fixtures,
+            # files kept identical in several places: scanned once, each hit lists the copies
+            'copy_groups': [g for g in groups if g['canonical'] in copies_of],
+            'candidates': cands}
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -411,6 +482,7 @@ def main() -> int:
     ap.add_argument('--include-tests', action='store_true', help='also scan test files and directories')
     ap.add_argument('--catalogue', type=Path, default=CATALOGUE)
     data_dir_rule.add_arguments(ap)
+    audit_scope.add_arguments(ap)
     ap.add_argument('--out', type=Path)
     args = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
@@ -425,9 +497,12 @@ def main() -> int:
     if unknown:
         print(f"Unknown pack(s): {', '.join(sorted(unknown))}. Known: {', '.join(cat['packs'])}", file=sys.stderr)
         return 2
-    out = scan(root, cat, wanted, args.include_tests, args.exclude_dir, not args.scan_data_dirs)
+    out = scan(root, cat, wanted, args.include_tests, args.exclude_dir, not args.scan_data_dirs, args.include_fixtures,
+               args.fixture_dir)
     for s in out['skipped_data_dirs']:
         print(f"  skipped {s['dir']}/: {s['reason']}", file=sys.stderr)
+    for f in out['fixtures_excluded']:
+        print(f"  left out fixture project {f['dir']}/ ({f['reason']}; --include-fixtures scans it)", file=sys.stderr)
     for w in out.get('warnings') or []:
         print('!' * 78, file=sys.stderr)
         print(f'WARNING: {w}', file=sys.stderr)

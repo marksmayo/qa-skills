@@ -20,7 +20,8 @@ guard (tree_guard.py) that keeps the bytes of the package's test files and compa
 script stops with exit code 3, recording nothing.
 
 node:test (no list command), a repository's own test runner (definitions with framework
-`custom`, see scan_tests.py --test-files) and a package whose package.json names no runner are
+`custom`, see scan_tests.py --test-files), a script's own self-test (framework `selftest`) and a
+package whose package.json names no runner are
 recorded as `no_list_command`, and their tests are not_assessed with that reason, never
 not_collected. --split-on-error lists a package whose whole list failed again in halves, so one
 file the runner can't list (a static check of options it doesn't know) leaves the other files
@@ -38,7 +39,9 @@ Only the variable names are recorded, never the values.
 
 pytest names tests relative to its rootdir, the directory of the nearest pytest.ini /
 pyproject.toml / setup.cfg / tox.ini above the arguments, which can be an ancestor of the package
-(`services/pytest.ini` for `services/api`). Every listed id is mapped back to a path relative to
+(`services/pytest.ini` for `services/api`). A pytest configuration below the package
+(benchmarks/pytest.ini, the definitions' `pytest_root`) is listed from its own directory, and the
+package's list ignores it. Every listed id is mapped back to a path relative to
 the package by finding its file, so ids are never prefixed twice. A pytest package that contains
 another one (`services/api` inside `services`) is listed with `--ignore` for the inner one, so no
 test is collected twice.
@@ -67,12 +70,14 @@ NO_LIST = {
     'node-test': 'node:test has no list command that names tests without running them',
     'custom': "the tests use the repository's own test runner (a custom test DSL); there is no list command for it here",
     'unknown': 'no test runner found in package.json (dependencies or scripts) for this package',
+    'selftest': "a script's own self-test (python <script>, or --self-test) runs its functions itself; it has no list "
+                'command, and its tests run whenever the script runs',
 }
 
 
 def framework_of(d: dict, pkg_dir: Path, root: Path | None = None) -> str:
     if d['lang'] == 'python':
-        return 'pytest'
+        return 'selftest' if d.get('framework') == 'selftest' else 'pytest'
     if d['lang'] == 'go':
         return 'go-test'
     if d.get('framework') in ('playwright', 'node-test', 'custom'):
@@ -80,6 +85,13 @@ def framework_of(d: dict, pkg_dir: Path, root: Path | None = None) -> str:
     if d.get('framework') in ('vitest', 'jest'):
         return d['framework']
     return js_runner(pkg_dir, root)
+
+
+def list_pkg(d: dict) -> str:
+    """Where a test is listed from: its package, or for pytest the directory of a pytest configuration below the
+    package that governs the file (benchmarks/pytest.ini with python_files = bench_*.py is read only when pytest runs
+    from benchmarks/)."""
+    return d.get('pytest_root') or d['package']
 
 
 def js_runner(pkg_dir: Path, root: Path | None = None) -> str:
@@ -470,7 +482,7 @@ def main(argv=None) -> int:
     groups: dict[tuple[str, str], list[dict]] = {}
     for d in defs:
         pdir = root / d['package'] if d['package'] != '.' else root
-        groups.setdefault((d['package'], framework_of(d, pdir, root)), []).append(d)
+        groups.setdefault((list_pkg(d), framework_of(d, pdir, root)), []).append(d)
     unknown = sorted(set(pkg_env) - {p for p, _ in groups})
     if unknown:
         print(f'--package-env names no package with tests: {", ".join(unknown)}', file=sys.stderr)
@@ -523,7 +535,7 @@ def main(argv=None) -> int:
     not_collected, not_assessed, n_collected, reasons = [], [], 0, {}
     for d in defs:
         pdir = root / d['package'] if d['package'] != '.' else root
-        key = (d['package'], framework_of(d, pdir, root))
+        key = (list_pkg(d), framework_of(d, pdir, root))
         if scope is not None and d['file'] not in scope:
             not_assessed.append(d['id'])
             reasons[d['id']] = 'outside the collect scope'

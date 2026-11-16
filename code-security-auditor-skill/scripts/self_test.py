@@ -124,12 +124,149 @@ def validator_rules() -> None:
           and validator.priority(12, 'traced', None) == 'P2' and validator.priority(24, 'traced', {'kind': 'fraud', 'basis': 'x' * 20}) == 'P1',
           'business impact raises P2/P3 one level, never to P0')
 
-def run_recon(root: Path) -> dict:
+def run_recon(root: Path, *extra: str) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / 'recon.json'
-        subprocess.run([sys.executable, str(HERE / 'recon.py'), str(root), '--out', str(out)], check=True,
+        subprocess.run([sys.executable, str(HERE / 'recon.py'), str(root), '--out', str(out), *extra], check=True,
                        capture_output=True, text=True)
         return json.loads(out.read_text(encoding='utf-8'))
+
+def lathe(root: Path) -> None:
+    """A tool repository: pattern tables, docstrings and fixture strings that look like the code they describe, a
+    script kept identical in two packages (declared in tools/check_shared.py), sample projects under examples/ with
+    planted defects, a rule catalogue of secret regexes and a requirements file with version ranges."""
+    want = json.loads((root / 'expected.json').read_text(encoding='utf-8'))
+    cat = scan_pitfalls.load_catalogue()
+    print('scan_pitfalls (all packs) on lathe-tools')
+    out = scan_pitfalls.scan(root, cat)
+    got = {(c['file'], c['line'], c['pitfall_id']) for c in out['candidates']}
+    exp = {tuple(x) for x in want['patterns']}
+    for x in sorted(exp - got):
+        check(False, f'missed {x[2]} at {x[0]}:{x[1]}')
+    for x in sorted(got - exp):
+        check(False, f'unexpected {x[2]} at {x[0]}:{x[1]}')
+    check(got == exp, 'no hit in pattern tables, docstrings, banned-phrase regexes, a method named eval, stdlib ElementTree '
+                      'or a pinned download in a CLI; the copied script reported once; the sample projects left out')
+    copies = {f"{c['file']}:{c['line']}": c.get('copies') for c in out['candidates'] if c.get('copies')}
+    check(copies == want['pattern_copies'], f'the hit on the canonical copy lists the copies ({copies})')
+    fx = sorted(f['dir'] for f in out.get('fixtures_excluded') or [])
+    check(fx == want['fixtures'], f'the sample projects are listed as left out ({fx})')
+    got = {(c['file'], c['line'], c['pitfall_id']) for c in scan_pitfalls.scan(root, cat, include_fixtures=True)['candidates']}
+    exp = {tuple(x) for x in want['patterns_with_fixtures']}
+    check(got == exp, f'--include-fixtures scans the samples: send_file, SSRF in a Flask view, lxml XXE, |safe in a '
+                      f'template string (missing {sorted(exp - got)}, unexpected {sorted(got - exp)})')
+
+def lathe_recon(root: Path) -> None:
+    want = json.loads((root / 'expected.json').read_text(encoding='utf-8'))
+    print('recon on lathe-tools')
+    d = run_recon(root)
+    eps = d['entry_points']
+    for e in want['entry_points']:
+        hit = [x for x in eps if all(x.get(k) == v for k, v in e.items())]
+        check(bool(hit), f"{e['kind']} at {e['handler']}" + (f", copies {e['copies']}" if e.get('copies') else '')
+              + ('' if hit else f" (got {[(x['kind'], x['handler'], x.get('copies')) for x in eps]})"))
+    check(len(eps) == want['entry_point_count'], f"{want['entry_point_count']} entry points, none from strings, docstrings "
+          f"or the samples ({[(x['kind'], x['handler']) for x in eps]})")
+    check(sorted(f['dir'] for f in d.get('fixtures_excluded') or []) == want['fixtures'], 'recon lists the sample projects it left out')
+    check(d['frameworks'] == want['frameworks'], f"no framework from a fixture string or a sample ({d['frameworks']})")
+    leads = ' | '.join(l['why'] for l in d['review_leads'])
+    for m in want['no_lead_mentions']:
+        check(m not in leads, f'no review lead says {m!r}')
+    d2 = run_recon(root, '--include-fixtures')
+    web = [l['why'] for l in d2['review_leads'] if 'frame-ancestors' in l['why']]
+    check(bool(web) and all('examples/site' in w for w in web),
+          f'--include-fixtures: a header lead from the sample site says where it comes from ({web})')
+    for e in want['entry_points_with_fixtures']:
+        check(any(all(x.get(k) == v for k, v in e.items()) and x.get('example') for x in d2['entry_points']),
+              f"--include-fixtures: {e['kind']} {e['path']} at {e['handler']}, marked example")
+
+def lathe_secrets(root: Path) -> None:
+    want = json.loads((root / 'expected.json').read_text(encoding='utf-8'))
+    print('scan_secrets on lathe-tools')
+    found, _ = scan_secrets.scan_tree(root)
+    head, set_aside = scan_secrets.split_found(found)
+    check([(s['file'], s['line']) for s in head] == want['secrets'],
+          f'no secret from a rule catalogue of regexes or a fake:fake connection string ({[(s["file"], s["line"], s["key"]) for s in head]})')
+    check(sorted([s['file'], s['line']] for s in set_aside) == want['secret_fixture_literals'],
+          f'a low-entropy literal in a sample project is set aside ({[(s["file"], s["line"]) for s in set_aside]})')
+
+def lathe_deps(root: Path) -> None:
+    want = json.loads((root / 'expected.json').read_text(encoding='utf-8'))
+    print('run_scanners dependency inventory on lathe-tools')
+    import run_scanners  # noqa: E402
+    inv = run_scanners.inventory(root)
+    deps = run_scanners.dependency_inventory(root, inv)
+    req = next((l for l in deps['lockfiles'] if l['file'] == want['requirements']['file']), {})
+    check(all(req.get(k) == v for k, v in want['requirements'].items()),
+          f'a requirements file with version ranges lists its packages ({req})')
+    check(sorted(l['file'] for l in inv.get('fixture_lockfiles') or []) == want['fixture_lockfiles']
+          and not any(l['file'] in want['fixture_lockfiles'] for l in deps['lockfiles']),
+          f"the samples' lockfiles are listed apart, not counted as the product's ({inv.get('fixture_lockfiles')})")
+
+def report_scope_rules() -> None:
+    """The headline against the computed counts, home-directory paths, fixture projects named in the report, and the
+    seed's redaction and scope."""
+    print('validator (headline counts, home paths, fixture projects) and seed_report scope')
+    import seed_report  # noqa: E402
+    ex = json.loads((HERE.parent / 'examples' / 'security_audit.example.json').read_text(encoding='utf-8'))
+    def errs(mutate, recon: dict | None = None) -> list[str]:
+        d = json.loads(json.dumps(ex))
+        mutate(d)
+        return validator.check(d, HERE.parent / 'examples', None, None, recon)[0]
+    def headline(text: str):
+        return lambda d: d['summary'].__setitem__('headline', text)
+    check(any('headline' in e and 'P2' in e for e in errs(headline('18 findings, all P3; dependencies not covered'))),
+          'a headline that says "all P3" while the counts hold P0 to P2 findings is rejected')
+    check(any('headline' in e for e in errs(headline('18 findings: 3 P0, 2 P1; dependencies not covered'))),
+          'a headline count that differs from summary.counts (2 P1, counted 9) is rejected')
+    check(any('headline' in e for e in errs(headline('18 findings, no P0; dependencies not covered'))),
+          'a headline that says "no P0" while there are P0 findings is rejected')
+    check(not [e for e in errs(lambda d: None) if 'headline' in e], 'the example headline (3 P0, 9 P1) matches its counts')
+    home = 'C:' + '\\Users\\someone\\scans\\pip-audit.json'
+    check(any('home' in e for e in errs(lambda d: d['limitations'].append(f'pip-audit wrote {home}.'))),
+          'a home-directory path (the account name) in the report is rejected')
+    check(any('home' in e for e in errs(lambda d: d['limitations'].append('read /home/someone/.cargo/advisory-db'))),
+          'a Linux home path is rejected too')
+    recon = {'entry_points': [{'id': f"EP-{i}", **{k: e[k] for k in ('handler', 'kind', 'method')}}
+                              for i, e in enumerate(ex['recon']['entry_points'], 1)],
+             'fixtures_excluded': [{'dir': 'examples/shop', 'reason': 'its own requirements.txt', 'markers': []}]}
+    check(any('examples/shop' in e for e in errs(lambda d: None, recon)),
+          'a fixture project recon left out must be named in target.excluded or the limitations')
+    check(not [e for e in errs(lambda d: d['target']['excluded'].append('examples/shop/ (sample project)'), recon)
+               if 'examples/shop' in e], 'naming it in target.excluded satisfies the rule')
+    msg = [e for e in errs(lambda d: d['coverage'].__setitem__('entry_points_total', 99)) if 'entry_points_total' in e]
+    check(bool(msg) and 'recon.entry_points' in msg[0] and 'recon lists' not in msg[0],
+          f'the entry_points_total error names the report\'s own list, not recon\'s count ({msg})')
+    recon_in = {'repository': 'x', 'languages': {'Python': 2}, 'entry_points': [
+        {'id': 'EP-1', 'kind': 'cli', 'method': 'CLI', 'path': 'shared/x.py', 'handler': 'shared/x.py:9', 'auth': 'unknown',
+         'copies': ['pkg-a/x.py:9']}],
+        'fixtures_excluded': [{'dir': 'examples/shop', 'reason': 'its own requirements.txt', 'markers': []}],
+        'copy_groups': [{'canonical': 'shared/x.py', 'copies': ['pkg-a/x.py'], 'how': 'declared'}]}
+    scanners = {'tools': [{'name': 'cargo-audit', 'area': 'dependencies', 'status': 'ran', 'version': '0.21',
+                           'outputs': ['C:' + '\\Users\\someone\\run\\cargo-audit.json'], 'results': 0,
+                           'note': 'offline: local RustSec database /home/someone/.cargo/advisory-db', 'elapsed_s': 1.0}]}
+    s = seed_report.seed(recon_in, {'tools': [], 'candidates': []}, scanners, None)
+    text = json.dumps(s)
+    check('someone' not in text, 'the seed replaces home-directory paths with ~')
+    check(any('examples/shop' in x for x in s['target']['excluded']) and any('examples/shop' in x for x in s['limitations']),
+          'the seed names the left-out fixture project in target.excluded and the limitations')
+    check('pkg-a/x.py:9' in (s['recon']['entry_points'][0].get('note') or ''), 'the seeded entry point lists its copies')
+
+def lathe_merge(root: Path) -> None:
+    print('merge_findings layout on lathe-tools')
+    code = [merge_findings.code_candidate('pkg-b/scripts/jobfile.py', 13, ['CWE-502'], 'PY-YAML-LOAD', 'yaml', None,
+                                          {'tool': 'bandit', 'rule_id': 'B506'}),
+            merge_findings.code_candidate('shared/scripts/jobfile.py', 13, ['CWE-502'], 'PY-YAML-LOAD', 'yaml', None,
+                                          {'tool': 'scan_pitfalls', 'rule_id': 'PY-YAML-LOAD'}),
+            merge_findings.code_candidate('examples/shop/app.py', 12, ['CWE-22'], None, 'send_file', None,
+                                          {'tool': 'semgrep', 'rule_id': 'path-traversal'})]
+    kept, _, excluded = merge_findings.apply_layout(code, [], merge_findings.layout_of(root))
+    merged = merge_findings.merge_code(kept)
+    check(len(merged) == 1 and merged[0]['file'] == 'shared/scripts/jobfile.py' and merged[0].get('copies') == ['pkg-b/scripts/jobfile.py']
+          and sorted(merged[0]['tools']) == ['bandit', 'scan_pitfalls'],
+          f'a tool hit on a copy joins the canonical candidate ({[(c["file"], c.get("copies"), c["tools"]) for c in merged]})')
+    check([(x['file'], x['fixture']) for x in excluded] == [('examples/shop/app.py', 'examples/shop')],
+          f'a tool hit in a sample project is set aside with its project ({excluded})')
 
 def ferry(root: Path) -> None:
     """The FastAPI, Azure Functions, Bicep/ARM and Azure Pipelines fixture."""
@@ -206,7 +343,12 @@ def quill(root: Path) -> None:
         w = wf.get(f) or {}
         check(all(w.get(k) == v for k, v in facts.items()), f'{f}: {facts} (permissions keys and job names are not triggers)'
               + ('' if all(w.get(k) == v for k, v in facts.items()) else f' got {w}'))
-    check(d['frameworks'] == want['frameworks'], f"frameworks labelled ({d['frameworks']})")
+    check(d['frameworks'] == want['frameworks'], f"frameworks labelled; the sample Next.js app is left out ({d['frameworks']})")
+    check(sorted(f['dir'] for f in d.get('fixtures_excluded') or []) == want['fixtures_excluded'],
+          f"the sample app under examples/ is listed as left out ({d.get('fixtures_excluded')})")
+    d2 = run_recon(root, '--include-fixtures')
+    check(d2['frameworks'] == want['frameworks_with_fixtures'],
+          f"--include-fixtures: a framework seen only in examples is labelled so ({d2['frameworks']})")
     leads = ' '.join(l['why'] for l in d['review_leads'])
     check(all(m in leads for m in want['lead_mentions']), 'agent permission handler and composite-action input are review leads')
     print('scan_secrets on quill-cli')
@@ -970,6 +1112,7 @@ def main() -> int:
     ap.add_argument('--flask-fixture', type=Path, default=HERE.parent / 'examples' / 'tide-tables')
     ap.add_argument('--static-fixture', type=Path, default=HERE.parent / 'examples' / 'wren-field-guide')
     ap.add_argument('--rust-fixture', type=Path, default=HERE.parent / 'examples' / 'tidemark-cli')
+    ap.add_argument('--tool-fixture', type=Path, default=HERE.parent / 'examples' / 'lathe-tools')
     args = ap.parse_args()
     root = args.fixture.resolve()
     want = json.loads((root / 'expected.json').read_text(encoding='utf-8'))
@@ -991,6 +1134,16 @@ def main() -> int:
             step()
         except Exception as exc:  # noqa: BLE001 - a missing helper is a failure, not a crash of the whole self-test
             check(False, f'{type(exc).__name__}: {exc}')
+    tool_root = args.tool_fixture.resolve()
+    for fn in (lathe, lathe_recon, lathe_secrets, lathe_deps, lathe_merge):
+        try:
+            fn(tool_root)
+        except Exception as exc:  # noqa: BLE001 - a missing helper is a failure, not a crash of the whole self-test
+            check(False, f'lathe-tools ({fn.__name__}): {type(exc).__name__}: {exc}')
+    try:
+        report_scope_rules()
+    except Exception as exc:  # noqa: BLE001 - a missing helper is a failure, not a crash of the whole self-test
+        check(False, f'report scope rules: {type(exc).__name__}: {exc}')
     node_and_ci_rules()
     poc_and_report_rules()
     python_rules()

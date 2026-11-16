@@ -73,10 +73,12 @@ python scripts/recon.py <repo> --out recon.json                   # attack surfa
 #   agent_config (.claude/settings*.json, .mcp.json, .vscode/tasks.json ...); outbound calls matched on code, not strings
 #   every walker: data directories (200+ data files, no code) pruned unopened and listed in skipped_data_dirs;
 #   --exclude-dir DIR (repeatable) leaves out more, --scan-data-dirs reads them
+# sample and fixture projects (examples/shop with its own manifest) are left out and listed (fixtures_excluded);
+#   --include-fixtures audits them, --fixture-dir DIR names more; a file copied into several folders is read once
 python scripts/run_scanners.py <repo> --out-dir <out> [--offline] [--osv-local-db <dir>] [--cargo-audit-db <dir>]
 #   every applicable open-source scanner: status, time and results; lockfiles listed offline, each tool's covered lockfiles,
 #   advisories recorded as assessed, partial or not assessed; pnpm audit for pnpm workspaces; zizmor online audits with GH_TOKEN
-python scripts/scan_pitfalls.py <repo> --out patterns.json         # 149 CWE-mapped patterns in 18 packs (Jinja/Django templates, Express and Next.js sources, JSON-LD, Node child processes, composite actions, Azure Bicep/ARM and Azure Pipelines, CSP and Cache-Control in next.config/vercel.json/netlify.toml/_headers)
+python scripts/scan_pitfalls.py <repo> --out patterns.json         # 157 CWE-mapped patterns in 18 packs (Jinja/Django templates, Express and Next.js sources, JSON-LD, Node child processes, composite actions, Azure Bicep/ARM and Azure Pipelines, CSP and Cache-Control in next.config/vercel.json/netlify.toml/_headers)
 python scripts/scan_secrets.py <repo> --history --out secrets.json # secrets, never their values; git status and history per file
 #   large repositories: --history-budget 300 (seconds; coverage recorded as partial) --history-exclude '*.html'
 python scripts/merge_findings.py --root <repo> --patterns patterns.json --secrets secrets.json \
@@ -92,7 +94,7 @@ python scripts/cvss4.py "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/S
 python scripts/validate_security_audit.py security_audit.json --repo <repo> --candidates candidates.json --recon recon.json --write-summary
 python scripts/render_report.py security_audit.json [--brief] [--sarif findings.sarif]   # --sarif writes only the SARIF file
 python scripts/sarif.py read results.sarif                          # normalise any SARIF file
-python scripts/self_test.py                                         # built-in scanners against examples/kite-notes, ferry-ops, quill-cli, beacon-cli, tide-tables, wren-field-guide and tidemark-cli
+python scripts/self_test.py                                         # built-in scanners against examples/kite-notes, ferry-ops, quill-cli, beacon-cli, tide-tables, wren-field-guide, tidemark-cli and lathe-tools
 ```
 
 ## Output
@@ -207,13 +209,16 @@ python scripts/render_report.py examples/security_audit.example.json --brief
   string values only, with errors that name the candidate and never the value); nothing written
   inside the repository; no `TODO(seed)` placeholder left.
 - Business impact raises a P2 or P3 one level, never to P0.
-- Summary counts recomputed; headlines that call the code secure or safe rejected.
+- Summary counts recomputed; headlines that call the code secure or safe rejected, and priority
+  claims in the headline ("all P3", "no P1", "2 P1") must match the counts.
+- No home-directory path (it carries the account name); with `--recon`, every sample or fixture
+  project recon left out is named in `target.excluded` or the limitations.
 
 ## Files
 
 - `SKILL.md`: complete agent instructions
 - `RUBRIC.md`: confidence, CVSS v4.0 anchors, exposure, priority, triage, safe PoCs, secrets, catalogue
-- `data/pitfalls.json`: 149 weakness patterns by CWE, with OWASP 2025 categories, CVSS hints, fixes and tool rule mappings
+- `data/pitfalls.json`: 157 weakness patterns by CWE, with OWASP 2025 categories, CVSS hints, fixes and tool rule mappings
 - `schemas/security_audit.schema.json`: output contract
 - `scripts/recon.py`: attack-surface map
 - `scripts/nextjs_auth.py`: Next.js route handlers, server actions and middleware, with per-handler auth (used by recon)
@@ -225,17 +230,19 @@ python scripts/render_report.py examples/security_audit.example.json --brief
 - `scripts/lang_census.py`: source files per language with vendored and embedded third-party trees left out (used by recon and the pattern scan's language guard; a shared file)
 - `scripts/data_dirs.py`: tells data directories (thousands of JSON or CSV records, no code) from code, so the walkers prune them unopened and record them
 - `scripts/test_paths.py`: tells test code from product code by path (a package named `e2e` with its own manifest is product code; used by recon and the scans)
-- `scripts/scan_pitfalls.py`: pattern scan
+- `scripts/audit_scope.py`: what the audit reads: sample and fixture projects left out (and listed) unless `--include-fixtures`, files kept identical in several places read once, home paths redacted (on the shared `repo_layout.py`)
+- `scripts/repo_layout.py`, `scripts/code_mask.py`: fixture projects and copy groups; strings, docstrings and comments blanked so patterns match only code (shared files)
+- `scripts/scan_pitfalls.py`: pattern scan (Python and JavaScript patterns match code only, not text inside strings)
 - `scripts/scan_secrets.py`: secrets in the tree and git history, without values; whether each file is tracked, untracked or gitignored and was ever committed; credential files and paths to them listed separately
 - `scripts/merge_findings.py`: merges SARIF, Bandit, ESLint, dependency and built-in results into candidates; npm advisories get the installed version, range, dev flag and via chain from `package-lock.json` or `pnpm-lock.yaml`; gitleaks history hits keep their commits; govulncheck's JSON stream keeps each advisory's call-graph level (`reachability`: symbol, package or module); cargo-audit and cargo-deny JSON become crates.io rows with a `kind` (vulnerability, unmaintained, unsound, yanked)
 - `scripts/seed_report.py`: writes the report skeleton (entry points, tools, triage, dependencies) with TODO(seed) placeholders for the judgement
-- `scripts/self_test.py`: checks the built-in scanners against `examples/kite-notes/`, `examples/ferry-ops/`, `examples/quill-cli/`, `examples/beacon-cli/`, `examples/tide-tables/` (with a generated data directory), `examples/wren-field-guide/` and `examples/tidemark-cli/`, plus run_poc guard checks, observation evidence, the seeded run_poc row and the empty-findings rendering
+- `scripts/self_test.py`: checks the built-in scanners against `examples/kite-notes/`, `examples/ferry-ops/`, `examples/quill-cli/`, `examples/beacon-cli/`, `examples/tide-tables/` (with a generated data directory), `examples/wren-field-guide/` and `examples/tidemark-cli/` and `examples/lathe-tools/`, plus run_poc guard checks, observation evidence, the seeded run_poc row and the empty-findings rendering
 - `scripts/run_poc.py`: safety-linted PoC runner that records evidence: HTTP steps against a local or test target, or command steps in a copy outside the repository
 - `scripts/cvss4.py`: CVSS v4.0 calculator (port of the FIRST reference implementation, BSD-2-Clause)
 - `scripts/validate_security_audit.py`: structure and honesty checks
 - `scripts/render_report.py`: coloured terminal/Markdown report and SARIF export
 - `scripts/sarif.py`: SARIF reader and writer (shared with UI Crash Hunter)
-- `examples/`: sample app, scanner outputs, PoCs, evidence, regression tests, variant rules and report; `kite-notes/`, the Next.js fixture; `ferry-ops/`, the FastAPI, Azure Functions, Bicep/ARM and Azure Pipelines fixture; `quill-cli/`, the Node CLI, MCP server and GitHub Actions fixture; `beacon-cli/`, the Go CLI fixture; `tide-tables/`, the Flask, Jinja and Flask-Limiter fixture; `wren-field-guide/`, a static Next.js App Router content site (pages, metadata routes, a CSP and catch-all caching in next.config headers(), JSON-LD, a service worker, committed agent config); `tidemark-cli/`, the Rust clap CLI fixture (search paths, FFI, a Cargo.lock with RustSec advisories)
+- `examples/`: sample app, scanner outputs, PoCs, evidence, regression tests, variant rules and report; `kite-notes/`, the Next.js fixture; `ferry-ops/`, the FastAPI, Azure Functions, Bicep/ARM and Azure Pipelines fixture; `quill-cli/`, the Node CLI, MCP server and GitHub Actions fixture; `beacon-cli/`, the Go CLI fixture; `tide-tables/`, the Flask, Jinja and Flask-Limiter fixture; `wren-field-guide/`, a static Next.js App Router content site (pages, metadata routes, a CSP and catch-all caching in next.config headers(), JSON-LD, a service worker, committed agent config); `tidemark-cli/`, the Rust clap CLI fixture (search paths, FFI, a Cargo.lock with RustSec advisories); `lathe-tools/`, a tool repository (pattern tables, docstrings and fixture strings that look like code, a script copied into two packages, sample projects under its own `examples/`, a rule catalogue of secret regexes, a requirements file with ranges)
 
 ## Design principles
 

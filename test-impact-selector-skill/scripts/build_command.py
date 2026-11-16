@@ -19,6 +19,15 @@ repository's own CLI) gets no command, its selected tests are listed in no_runne
 no_runner_reasons says why. build_first lists workspace packages to build before the commands,
 when selected tests load a changed package through its build output (package.json main/exports
 pointing at dist/).
+
+Tests that are commands run from the repository root, one command each: a script's own self-test
+(`python x.py --self-test`, `python scripts/self_test.py`; framework `selftest`) and a check the
+repository's guide documents (`python scripts/validate_report.py examples/report.json`; framework
+`command`). Python tests governed by a pytest configuration in a folder of their own
+(benchmarks/pytest.ini) run from that folder. A command without test arguments (the whole suite)
+is given only when nothing excluded (a fixture project with planted failing tests) lies below its
+folder; otherwise the selected files are named. A unittest command taken from CI or detect_conventions
+is relative to the repository root, so it runs from there.
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -291,15 +300,22 @@ def safe_command(cmd: str | None) -> list[str] | None:
 def build(selected: list[dict], packages: list[dict], full_packages: set[str], tests_by_package: dict[str, list[str]],
           levels: dict[str, str | None], max_chars: int = 8000, scripts: dict[str, str] | None = None,
           builds: list[dict] | None = None, go_flags: list[str] | None = None, go_flags_from: str | None = None,
-          cargo: dict | None = None, python_runners: dict[str, dict] | None = None) -> dict:
+          cargo: dict | None = None, python_runners: dict[str, dict] | None = None,
+          self_tests: dict[str, dict] | None = None, run_roots: dict[str, str] | None = None,
+          excluded: list[str] | None = None) -> dict:
     """selected: [{test_id, file, package}], ordered. full_packages: packages whose whole suite is selected.
     scripts: each JS package's own `test` script (package.json), which decides the runner where it names
     one; a package whose script runs something else gets no command, and its tests go to no_runner.
     builds: workspace packages to build first (their tests load another package's build output).
     cargo: select_tests.py's cargo_info() (libtest ids per Rust test file, crates, the CI's workspace command).
     python_runners: detect_conventions' python_runner per package: unittest runs `python -m unittest <files>`
-    (the CI's own command for the whole suite), pytest `python -m pytest`."""
-    by_pkg: dict[tuple[str, str], list[str]] = {}
+    (the CI's own command for the whole suite), pytest `python -m pytest`.
+    self_tests: {test: {command, framework: selftest|command}} for tests that are commands (run from the root).
+    run_roots: {python test: folder of the pytest configuration that governs it} where that is not its package.
+    excluded: folders left out of the tests (fixture projects): no whole-suite command runs over them."""
+    self_tests, run_roots, excluded = self_tests or {}, run_roots or {}, excluded or []
+    by_pkg: dict[tuple[str, str, str], list[str]] = {}
+    own: list[dict] = []
     unknown = []
     reasons: dict[str, str] = {}
     rust: list[str] = []
@@ -307,7 +323,14 @@ def build(selected: list[dict], packages: list[dict], full_packages: set[str], t
     runners = python_runners or {}
     for s in selected:
         pkg = s['package']
-        rel = s['file'] if pkg == '.' else s['file'][len(pkg) + 1:]
+        st = self_tests.get(s['file'])
+        if st:
+            import shlex
+            own.append({'package': pkg, 'cwd': '.', 'framework': st['framework'], 'full_suite': False,
+                        'argv': shlex.split(st['command']), 'tests': 1, 'part': 1, 'parts': 1})
+            continue
+        root = run_roots.get(s['file'], pkg)
+        rel = s['file'] if root == '.' else s['file'][len(root) + 1:]
         fw = framework_for(s['file'], levels.get(s['file']), fws.get(pkg, []), (runners.get(pkg) or {}).get('runner'))
         if fw == 'cargo-test':
             if cargo:
@@ -327,23 +350,28 @@ def build(selected: list[dict], packages: list[dict], full_packages: set[str], t
             if pkg not in reasons:
                 reasons[pkg] = f'no runner this selector knows for {ext or "these"} test files: run them with the package\'s own test command'
             continue
-        by_pkg.setdefault((pkg, fw), []).append(rel)
+        by_pkg.setdefault((pkg, fw, root), []).append(rel)
     commands = []
-    for (pkg, fw), tests in by_pkg.items():
+    for (pkg, fw, root), tests in by_pkg.items():
         pr = (runners.get(pkg) or {}).get('runner')
-        all_fw = [t for t in tests_by_package.get(pkg, []) if framework_for(t, levels.get(t), fws.get(pkg, []), pr) == fw]
-        full = pkg in full_packages and len(tests) >= len(all_fw)
+        all_fw = [t for t in tests_by_package.get(pkg, []) if t not in self_tests and run_roots.get(t, pkg) == root
+                  and framework_for(t, levels.get(t), fws.get(pkg, []), pr) == fw]
+        # a bare command collects everything below its folder: never over an excluded fixture project
+        holds_excluded = any(root == '.' or d == root or d.startswith(root + '/') for d in excluded)
+        full = (pkg in full_packages or root != pkg) and len(tests) >= len(all_fw) and not holds_excluded
         flags = go_flags if fw == 'go-testing' else None
         chunks = [tests] if full else split(fw, tests, max_chars, flags)
         for i, chunk in enumerate(chunks, 1):
             argv = argv_for(fw, chunk, full, flags)
             from_ci = None
+            cwd = root
             if fw == 'unittest' and full:
-                own = safe_command((runners.get(pkg) or {}).get('command'))
-                if own:
-                    argv = own
+                ci_cmd = safe_command((runners.get(pkg) or {}).get('command'))
+                if ci_cmd:
+                    # CI's line and detect_conventions' discover command name folders from the repository root
+                    argv, cwd = ci_cmd, '.'
                     from_ci = next((e for e in (runners.get(pkg) or {}).get('evidence', []) if ':' in e), None)
-            cmd = {'package': pkg, 'cwd': pkg, 'framework': fw, 'full_suite': full,
+            cmd = {'package': pkg, 'cwd': cwd, 'framework': fw, 'full_suite': full,
                    'argv': argv, 'tests': len(chunk), 'part': i, 'parts': len(chunks)}
             if from_ci:
                 cmd['command_from'] = from_ci
@@ -353,6 +381,7 @@ def build(selected: list[dict], packages: list[dict], full_packages: set[str], t
                 if flags:
                     cmd['flags_from'] = go_flags_from
             commands.append(cmd)
+    commands += own
     gated: list[dict] = []
     if rust:
         cargo_cmds, gated, no_ids = cargo_commands(rust, cargo, max_chars)
@@ -403,10 +432,13 @@ def main(argv=None) -> int:
         flags = go['argv'][2:len(go['argv']) - go['args']] if go and 'args' in go and not go['full_suite'] else \
             (go['argv'][2:-1] if go else [])
         # cargo and unittest commands need the selection's Cargo model and runner detection: keep them as they are
-        kept = [c for c in command['commands'] if c['framework'] in ('cargo-test', 'unittest')]
-        done = {c['package'] for c in kept if c['framework'] == 'unittest'}
+        kept = [c for c in command['commands'] if c['framework'] in ('cargo-test', 'unittest', 'selftest', 'command')
+                or (c['framework'] == 'pytest' and c['cwd'] != c['package'])]
+        done = {c['package'] for c in kept if c['framework'] in ('unittest', 'pytest')}
+        own = {' '.join(c['argv']) for c in kept if c['framework'] in ('selftest', 'command')}
         rest = [s for s in sel['selected'] if not s['file'].endswith('.rs') and
-                not (s['file'].endswith('.py') and s['package'] in done)]
+                not (s['file'].endswith('.py') and s['package'] in done) and
+                not any(s['file'] in a.split() for a in own) and ':' not in s['file']]
         command = {**build(rest, sel['packages'], full, {p['root']: p.get('test_files', []) for p in sel['packages']},
                            levels, args.max_chars, go_flags=flags, go_flags_from=(go or {}).get('flags_from')),
                    **{k: v for k, v in command.items() if k in ('no_runner_reasons', 'build_first', 'feature_gated')}}

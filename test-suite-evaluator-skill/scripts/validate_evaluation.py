@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Validate a Test Suite Evaluator evaluation.json against the schema and the rubric (stdlib only).
 
-    python validate_evaluation.py evaluation.json [--interfaces interfaces.json]
+    python validate_evaluation.py evaluation.json [--interfaces interfaces.json] [--conventions conventions.json]
 
 With --interfaces (list_interfaces.py output) it also warns where interface_coverage departs from the script's
-list: a kind with no entry, a smaller total, or a tested count other than the script's reached count.
+list: a kind with no entry, a smaller total, or a tested count other than the script's reached count (sample
+projects the listing marks `fixture` are left out; interfaces marked `self_test` may count as tested when the entry
+says a self-test exercises them). With --conventions (detect_conventions.py output) it warns when CI runs none of
+the functional tests (only benchmarks, or nothing) and the evaluation records no ci_runs_no_tests finding.
 
 Beyond the schema it checks what SKILL.md and RUBRIC.md require: all fifteen dimensions with the
 rubric's weights (re-weighted only for dimensions marked not applicable), the raw weighted score
@@ -202,6 +205,8 @@ def expected_caps(rep: dict, dims: dict) -> dict[str, float]:
             caps['secret_or_production_data'] = 4
         if cat == 'systematic_false_pass':
             caps['systematic_false_pass'] = 4
+        if cat == 'ci_runs_no_tests':
+            caps['ci_runs_no_tests'] = 5
     return caps
 
 
@@ -494,6 +499,21 @@ def check(rep: dict) -> tuple[list[str], list[str]]:
     for f in rep['critical_findings']:
         if f.get('category') in ('secret_exposure', 'production_data_exposure') and f['severity'] != 'critical':
             errs.append(f'critical finding "{f["title"]}": secret or production-data exposure is severity critical')
+    # CI that runs none of the behaviour tests (none at all, only lint, builds or benchmarks, or exit codes ignored)
+    no_ci = [f for f in rep['critical_findings'] if f.get('category') == 'ci_runs_no_tests']
+    ci_score = dims.get('ci', {}).get('score')
+    for f in no_ci:
+        if execution == 'no_tests':
+            errs.append(f'critical finding "{f["title"]}": ci_runs_no_tests needs tests for CI to run; with execution '
+                        f'no_tests the absence of tests is the finding')
+        if f['severity'] not in ('high', 'critical'):
+            errs.append(f'critical finding "{f["title"]}": ci_runs_no_tests is severity high or critical')
+        if ci_score is None or ci_score > 2:
+            errs.append(f'critical finding "{f["title"]}" (ci_runs_no_tests) says no CI job runs the behaviour tests, '
+                        f'so ci scores 1 or 2 (RUBRIC CI/CD anchors), not {ci_score}')
+    if ci_score is not None and ci_score <= 2 and execution != 'no_tests' and not no_ci:
+        errs.append(f'ci scored {ci_score}: by the CI/CD anchors no CI job runs the tests (or CI ignores their exit '
+                    f'code); record it as a critical finding with category ci_runs_no_tests, which caps the overall at 5')
     want_overall = min([raw] + list(caps.values()))
     if abs(head['overall_score'] - want_overall) > TOL:
         errs.append(f'overall_score {head["overall_score"]} should be {want_overall:.1f} '
@@ -701,11 +721,22 @@ def interface_warnings(rep: dict, listing: dict) -> list[str]:
     """Differences between interface_coverage and list_interfaces.py's output (`--interfaces interfaces.json`): a
     kind the script lists with no entry, an entry total below the script's count, and a tested count that differs
     from what the script found reached. A hand mapping may rightly differ (a route the script cannot read, a test
-    that names a command without running it), but it must say how, so each difference is named."""
+    that names a command without running it), but it must say how, so each difference is named.
+
+    Interfaces the listing marks with `fixture` (a sample project read with --include-fixtures) are not the product's
+    and are never compared. A listing without `fixtures_excluded` comes from an older list_interfaces.py that counted
+    sample projects and every copy of a copied file: that is said once, so its numbers are not taken as the target.
+    Interfaces marked `self_test` (the script carries its own self-test) may be counted as tested above the reached
+    count when the entry's method or notes says a self-test exercises them."""
     out = []
+    if 'fixtures_excluded' not in listing:
+        out.append('this list_interfaces.py output predates fixture exclusion and copy folding: it may count the '
+                   'interfaces of sample projects (examples/, fixtures/...) and every copy of a copied file; re-run the '
+                   'current list_interfaces.py (sample projects are left out unless --include-fixtures) before '
+                   'comparing totals')
     by_kind: dict[str, list[dict]] = {}
     for i in listing.get('interfaces') or []:
-        if isinstance(i, dict) and i.get('kind'):
+        if isinstance(i, dict) and i.get('kind') and not i.get('fixture'):
             by_kind.setdefault(KIND_FAMILY.get(i['kind'], i['kind']), []).append(i)
     matched = 'reached' in (listing.get('summary') or {})
     entries: dict[str, list[dict]] = {}
@@ -722,10 +753,63 @@ def interface_warnings(rep: dict, listing: dict) -> list[str]:
             out.append(f'interface_coverage {kind}: total {total} but list_interfaces.py lists {len(its)}; say in the '
                        f'entry\'s method or notes which were left out and why')
         reached = sum(1 for i in its if i.get('reached'))
+        self_only = sum(1 for i in its if i.get('self_test') and not i.get('reached'))
+        says_self = any(re.search(r'self[- _]?tests?\b', f'{b.get("method", "")} {b.get("notes", "")}', re.I) for b in es)
+        if matched and says_self and reached <= tested <= reached + self_only:
+            continue
         if matched and tested != reached:
             out.append(f'interface_coverage {kind}: tested {tested} but list_interfaces.py found {reached} reached by a '
                        f'test; say in the entry\'s method or notes how the mapping differs (hits read by hand, tests the '
                        f'script cannot read, names that are not calls)')
+    return out
+
+
+BENCHMARK_CMD = re.compile(r'--codspeed\b|--benchmark-(?:only|enable|autosave|json)\b|(?:^|[\s/])bench(?:mark)?s?(?:[\s/]|$)'
+                           r'|-m\s+["\']?benchmark|\basv run\b|\bhyperfine\b|\bcargo (?:\+\S+ )?bench\b|-bench[= ]|'
+                           r'\bpytest-benchmark\b', re.I)
+SELF_TEST_CMD = re.compile(r'--self-test\b|\bself_?tests?\.py\b')
+
+
+def ci_test_commands(conv: dict) -> tuple[list[dict], list[dict]]:
+    """(functional, benchmark): CI commands that run tests, from detect_conventions output. Gates (ci_gates) whose
+    command runs benchmarks (pytest --codspeed or --benchmark-only, a benchmarks/ path, cargo bench, go test -bench)
+    are benchmarks; the rest are functional, and so is any CI command that runs a script's own self-test."""
+    functional, bench = [], []
+    for g in conv.get('ci_gates') or []:
+        (bench if BENCHMARK_CMD.search(g.get('command') or '') else functional).append(g)
+    seen = {f'{g.get("file")}:{g.get("line")}' for g in functional + bench}
+    for a in conv.get('areas') or []:
+        for c in (a.get('run_commands') or []) if isinstance(a, dict) else []:
+            src = c.get('source') or c.get('command')
+            if c.get('origin') == 'ci' and SELF_TEST_CMD.search(c.get('command') or '') and src not in seen:
+                functional.append({'command': c['command'], 'source': c.get('source')})
+                seen.add(src)
+    return functional, bench
+
+
+def conventions_warnings(rep: dict, conv: dict) -> list[str]:
+    """`--conventions` (detect_conventions.py output, run with --exclude-fixtures): warn when CI runs none of the
+    functional tests but the evaluation records no ci_runs_no_tests finding, and the reverse. Warnings, not errors:
+    the detector reads CI commands by pattern, and a wrapper script (make test, a check runner) can run tests it
+    cannot see; read the workflow and say which holds."""
+    out = []
+    if 'fixtures_excluded' not in conv:
+        out.append('--conventions: run detect_conventions.py with --exclude-fixtures, or the CI workflows of sample '
+                   'projects (examples/...) are read as the repository\'s own gates')
+    if rep['metadata'].get('execution') == 'no_tests':
+        return out
+    functional, bench = ci_test_commands(conv)
+    flagged = any(f.get('category') == 'ci_runs_no_tests' for f in rep.get('critical_findings') or [])
+    if not functional and not flagged:
+        what = ('only benchmark commands (' + '; '.join(f'{g["command"]} at {g["file"]}:{g["line"]}' for g in bench[:3])
+                + ')') if bench else ('no test command' + (f' in {len(conv.get("ci_files") or [])} CI file(s)'
+                                                          if conv.get('ci_files') else ' (no CI configuration)'))
+        out.append(f'detect_conventions finds {what} in CI and no CI step running a test suite or a self-test: if no '
+                   f'CI job runs the behaviour tests, record a critical finding with category ci_runs_no_tests (it caps '
+                   f'the overall at 5); if a wrapper runs them, name it in the ci dimension\'s evidence')
+    if functional and flagged:
+        out.append('the evaluation records ci_runs_no_tests but detect_conventions finds CI commands that run tests ('
+                   + '; '.join(g['command'] for g in functional[:3]) + '): check what they run')
     return out
 
 
@@ -828,7 +912,7 @@ def self_test() -> int:
     def listing(n_routes, reached, n_cli=0):
         its = [{'kind': 'routes', 'path': f'/r{i}', 'reached': i < reached} for i in range(n_routes)]
         its += [{'kind': 'cli', 'path': f'tool c{i}', 'reached': False} for i in range(n_cli)]
-        return {'interfaces': its, 'summary': {'total': len(its), 'reached': reached}}
+        return {'interfaces': its, 'summary': {'total': len(its), 'reached': reached}, 'fixtures_excluded': []}
     try:
         same = interface_warnings(base, listing(46, 41))
         diff = interface_warnings(base, listing(50, 30, n_cli=4))
@@ -840,6 +924,75 @@ def self_test() -> int:
             or not any('cli' in w and 'no interface_coverage entry' in w for w in diff):
         fails.append(f'--interfaces names a different total, a different tested count and a kind with no entry '
                      f'(got {diff})')
+    # a listing from before fixtures and copies were handled counts sample projects and every copy: say so, rather
+    # than pushing the mapping toward its numbers
+    old = listing(46, 41)
+    old.pop('fixtures_excluded')
+    if not any('--include-fixtures' in w or 'older' in w for w in interface_warnings(base, old)):
+        fails.append('a listing without fixtures_excluded (an older list_interfaces.py) warns that it may count sample '
+                     'projects and copies')
+    # interfaces of a sample project read with --include-fixtures are not the product's: never compared
+    fx = listing(46, 41)
+    fx['interfaces'] += [{'kind': 'cli', 'path': f'shop c{i}', 'reached': False, 'fixture': 'examples/shop'}
+                         for i in range(3)]
+    if interface_warnings(base, fx):
+        fails.append(f'fixture interfaces in the listing are not compared (got {interface_warnings(base, fx)})')
+    # a script whose own --self-test drives its commands: the mapping may count them when its method says so, up to the
+    # interfaces the listing marks self_test
+    st = listing(46, 39)
+    for i in st['interfaces'][39:41]:
+        i['self_test'] = 'python app/tool.py --self-test'
+    r2 = copy.deepcopy(base)
+    r2['interface_coverage'][0]['method'] += '; two more are exercised by the module\'s own self-test, read by hand'
+    if interface_warnings(r2, st):
+        fails.append(f'tested above reached by the self-tested interfaces, said in the method, gives no warning '
+                     f'(got {interface_warnings(r2, st)})')
+    if not interface_warnings(base, st):
+        fails.append('tested above reached without saying so in the method or notes still warns')
+
+    # CI runs none of the functional tests: a capping finding (ci_runs_no_tests, at most 5) with ci scored 1 or 2
+    pr = json.loads((HERE.parent / 'examples' / 'evaluation.partial-run.example.json').read_text(encoding='utf-8'))
+    ci_dim = lambda r: next(d for d in r['dimensions'] if d['id'] == 'ci')  # noqa: E731
+    finding = {'title': 'No CI job runs the tests', 'severity': 'high', 'category': 'ci_runs_no_tests',
+               'dimensions': ['ci'], 'evidence': ['.github/workflows/bench.yml:12 runs only pytest benchmarks'],
+               'impact': 'A change that breaks behaviour merges green.'}
+    for label, mutate, want in (
+            ('the finding with ci scored 4', lambda r: r['critical_findings'].append(dict(finding)), 'ci_runs_no_tests'),
+            ('the finding without its cap', lambda r: (r['critical_findings'].append(dict(finding)),
+                                                       ci_dim(r).update(score=2)), 'cap ci_runs_no_tests'),
+            ('ci scored 2 for a suite with no such finding', lambda r: ci_dim(r).update(score=2), 'ci_runs_no_tests')):
+        r2 = copy.deepcopy(pr)
+        mutate(r2)
+        e, _ = full(r2)
+        if not any(want in x for x in e):
+            fails.append(f'{label} is an error naming {want} (got: {"; ".join(e) or "no errors"})')
+    r2 = copy.deepcopy(none)
+    r2['critical_findings'].append(dict(finding))
+    if not any('ci_runs_no_tests' in x for x in full(r2)[0]):
+        fails.append('ci_runs_no_tests beside no_tests is an error: with no tests there is nothing for CI to run')
+    # --conventions: detect_conventions output whose only CI gate runs benchmarks
+    conv = {'ci_files': ['.github/workflows/bench.yml'], 'fixtures_excluded': [],
+            'ci_gates': [{'file': '.github/workflows/bench.yml', 'line': 12, 'command': 'pytest benchmarks --codspeed',
+                          'runner': 'pytest'}],
+            'areas': [{'root': '.', 'run_commands': [{'command': 'pytest benchmarks --codspeed', 'origin': 'ci',
+                                                      'source': '.github/workflows/bench.yml:12'}]}]}
+    try:
+        bench_only = conventions_warnings(pr, conv)
+        conv2 = copy.deepcopy(conv)
+        conv2['ci_gates'].append({'file': '.github/workflows/bench.yml', 'line': 20, 'command': 'python -m pytest tests',
+                                  'runner': 'pytest'})
+        functional = conventions_warnings(pr, conv2)
+        conv3 = copy.deepcopy(conv)
+        conv3['areas'][0]['run_commands'].append({'command': 'python tools/stamp.py --self-test', 'origin': 'ci',
+                                                  'source': '.github/workflows/bench.yml:30'})
+        selftest_ci = conventions_warnings(pr, conv3)
+    except NameError as exc:
+        bench_only, functional, selftest_ci = [], [str(exc)], [str(exc)]
+    if not any('ci_runs_no_tests' in w and 'benchmark' in w for w in bench_only):
+        fails.append(f'--conventions: CI gates that only run benchmarks warn toward ci_runs_no_tests (got {bench_only})')
+    if functional or selftest_ci:
+        fails.append(f'--conventions: a CI gate running tests, or a CI self-test command, gives no warning '
+                     f'(got {functional + selftest_ci})')
     # a note that mentions reading source for another reason does not answer the warning
     for note in ('Read the source of the fixtures folder before running the suite.',
                  'Static analysis of the source tree found no secrets.'):
@@ -863,6 +1016,9 @@ def main(argv=None) -> int:
     ap.add_argument('evaluation', type=Path)
     ap.add_argument('--interfaces', type=Path, metavar='INTERFACES_JSON',
                     help="list_interfaces.py output: warn where interface_coverage departs from it")
+    ap.add_argument('--conventions', type=Path, metavar='CONVENTIONS_JSON',
+                    help='detect_conventions.py output (--exclude-fixtures): warn when CI runs none of the functional '
+                         'tests and no ci_runs_no_tests finding is recorded, or the reverse')
     args = ap.parse_args(argv)
     try:
         rep = json.loads(args.evaluation.read_text(encoding='utf-8-sig'))
@@ -899,6 +1055,13 @@ def main(argv=None) -> int:
             print(f'INVALID: cannot read --interfaces {args.interfaces}: {exc}')
             return 1
         warns += interface_warnings(rep, listing if isinstance(listing, dict) else {})
+    if args.conventions:
+        try:
+            conv = json.loads(args.conventions.read_text(encoding='utf-8-sig'))
+        except (OSError, ValueError) as exc:
+            print(f'INVALID: cannot read --conventions {args.conventions}: {exc}')
+            return 1
+        warns += conventions_warnings(rep, conv if isinstance(conv, dict) else {})
     for w in warns:
         print('WARNING: ' + w)
     if errs:

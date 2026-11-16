@@ -185,6 +185,26 @@ def case_status(runs: dict, run_id: str, test_id: str, pattern: str | None = Non
     return merge_status(cases) if cases else None
 
 
+def script_case_status(runs: dict, run_id: str) -> str | None:
+    """A script self-test run (runner selftest): failed or error when any of its checks did, passed when all passed. The
+    script's other tests were silenced for the run, so its checks are the test's own. A run that started and exited
+    non-zero before printing a check (run_tests.py's 'no check found') crashed: an uncaught exception fails a script
+    self-test, so it is failed; one that could not start or timed out is errored."""
+    run = next((r for r in runs.get('runs', []) if r.get('id') == run_id), {})
+    if run.get('errored'):
+        crashed = str(run.get('error') or '').startswith('no check found') and not run.get('timed_out')
+        return 'failed' if crashed else 'errored'
+    mine = [c['status'] for c in runs['cases'] if c['run_id'] == run_id and c['status'] != 'skipped']
+    return merge_status(mine) if mine else None
+
+
+def rec_status(runs: dict, run_id: str, rec: dict, pattern: str | None) -> str | None:
+    """The test's status in a run of its neutralisation record, by the runner the record names."""
+    if rec.get('runner') == 'selftest':
+        return script_case_status(runs, run_id)
+    return case_status(runs, run_id, rec['test_id'], pattern)
+
+
 def neutralisation_errors(rec: dict, runs: dict, run_ids: set, pattern: str | None) -> list[str]:
     """A neutralisation result whose outcome its runs don't support: passed or failed neutralised needs the unchanged
     test passed and at least one neutral-body (return) run that ran it, each status as the runs show it."""
@@ -197,7 +217,7 @@ def neutralisation_errors(rec: dict, runs: dict, run_ids: set, pattern: str | No
     orig = rec.get('original') or {}
     if orig.get('test_status') != 'passed':
         errs.append(f'{w}: the unchanged test {orig.get("test_status")}, so the outcome is errored, not {out}')
-    elif orig.get('run_id') not in run_ids or case_status(runs, orig['run_id'], rec['test_id'], pattern) != 'passed':
+    elif orig.get('run_id') not in run_ids or rec_status(runs, orig['run_id'], rec, pattern) != 'passed':
         errs.append(f'{w}: the original run {orig.get("run_id")} does not show the test passed')
     returns = [v for t in rec['targets'] for v in t['variants'] if v['variant'] == 'return']
     ran = [v for v in returns if v['test_status'] in RAN]
@@ -209,7 +229,7 @@ def neutralisation_errors(rec: dict, runs: dict, run_ids: set, pattern: str | No
     elif out == 'failed_neutralised' and all(v['test_status'] == 'passed' for v in ran):
         errs.append(f'{w}: every neutral-body run passed, so it is passed_neutralised')
     for v in ran:
-        if v['run_id'] not in run_ids or case_status(runs, v['run_id'], rec['test_id'], pattern) != v['test_status']:
+        if v['run_id'] not in run_ids or rec_status(runs, v['run_id'], rec, pattern) != v['test_status']:
             errs.append(f'{w}: run {v["run_id"]} does not show the test {v["test_status"]}')
     return errs
 
@@ -302,8 +322,8 @@ def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
                     errs.append(f'{w}: the test must pass on the original code first')
                 for t in rec['targets']:
                     for v in t['variants']:
-                        if v['run_id'] not in run_ids or case_status(runs, v['run_id'], rec['test_id'],
-                                                                     pattern_of(rec['test_id'])) != v['test_status']:
+                        if v['run_id'] not in run_ids or rec_status(runs, v['run_id'], rec,
+                                                                    pattern_of(rec['test_id'])) != v['test_status']:
                             errs.append(f'{w}: neutralisation run {v["run_id"]} does not show {rec["test_id"]} {v["test_status"]}')
         if f['category'] == 'cant_fail' and f['confidence'] == 'confirmed':
             n = e.get('neutralisation') or {}
@@ -362,9 +382,17 @@ def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
                 want = 'proved' if ok and failed else 'not_proved'
                 if pr['result'] != want or sorted(pr['neutralised_run_ids']) != sorted(failed):
                     errs.append(f'{w}: proof must be {want}, with the failing neutralised runs {failed}')
+    passed_neut = {def_id(ev, r['test_id']) for r in neut if not r.get('patch') and r['outcome'] == 'passed_neutralised'}
     for d in rep['dismissed']:
         s = skips.get(d['candidate_id'])
         wrong = bool(d.get('scanner_error'))
+        c = cands.get(d['candidate_id']) or {}
+        if any(def_id(ev, t) in passed_neut for t in c.get('test_ids', [])) and \
+                not any(b.get('evidence') for b in d.get('basis') or []):
+            # the test passed with its code neutralised: a source line cannot outweigh that run; the dismissal needs the
+            # counter-evidence (a run of the suite's own runner failing with the same neutral body) as an evidence file
+            errs.append(f'{d["candidate_id"]}: its test passed with the code neutralised, so dismissing it needs the '
+                        'counter-evidence as an evidence file in basis (a run showing the test does fail)')
         if wrong:
             # the candidate misreads the code (a runtime skip read as a test, a name cut at a quote): the dismissal
             # must cite the lines that show it, and they are re-read

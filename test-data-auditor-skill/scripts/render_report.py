@@ -73,9 +73,16 @@ def main() -> int:
                    f'{by_review}] {f["title"]}')
         out.append(f'    {loc}' + (f'; {f["data_type"]}' if f.get('data_type') else ''))
         out.append(f'    {f["why_flagged"]}')
-        if f.get('experiment'):
-            e = f['experiment']
+        e = f.get('experiment') or {}
+        arithmetic = f['category'] == 'time_bomb' and f.get('confidence') == 'confirmed' and f.get('fails_on_date') \
+            and e.get('result') != 'failed_as_predicted'
+        if arithmetic:
+            out.append(P(f'    Confirmed by date arithmetic: the fixed date is compared with today, so it fails on '
+                         f'{f["fails_on_date"]} (no run needed)', CYAN))
+        elif e and e.get('run_ids'):
             out.append(P(f'    Experiment: {e["variation"]} -> {e["result"].replace("_", " ")} ({", ".join(e["run_ids"])})', CYAN))
+        elif e:
+            out.append(P(f'    Experiment: {e["variation"]} -> {e["result"].replace("_", " ")}', CYAN))
         if f.get('fails_on_date'):
             out.append(P(f'    Fails on {f["fails_on_date"]}', RED))
         if not args.brief:

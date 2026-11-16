@@ -1,7 +1,7 @@
 ---
 name: flaky-test-hunter
 description: Find tests that pass and fail on the same code, show why with experiments, and propose a fix for each. Reruns the suite under controlled variations (repeats, reversed and shuffled order, isolation, hash seeds, parallel workers, time zone, clock, locale, CPU load), bisects order-dependent failures to their polluter, reports every rate as failures/runs with a 95% Wilson interval, separates flakes from tests that simply fail, and ranks flakes by rate, CI gate and what they hide. Never calls a test or suite "not flaky"; never proposes a retry as the fix; never changes product code.
-version: 1.6.0
+version: 1.7.0
 ---
 
 # Flaky test hunter
@@ -78,18 +78,40 @@ Output:
 
 ```bash
 python scripts/detect_conventions.py <repo>                      # framework, run command, CI
-python scripts/scan_pitfalls.py <repo> --out <scratch>/smells.json
+python scripts/scan_pitfalls.py <repo> --out <scratch>/smells.json   # [--include-fixtures] [--exclude DIR]
 ```
 
 Note which variations the runner supports and which plugins are installed (pytest-xdist,
 pytest-randomly).
+
+**What the scan reads.** Nested sample and fixture projects (a project with its own manifest,
+app entry point or expected outputs under `examples/`, `fixtures/`, `testdata/`, `samples/` and the
+like) are left out by default and listed under `fixtures_excluded`: their planted flakes are not
+this repository's tests. `--include-fixtures` scans them, `--fixture-dir NAME|PATH` names another
+fixture folder, and `--exclude DIR` (a relative path, or a folder name anywhere) leaves out anything
+else, listed under `excluded`. Say what was left out in `limitations`. A file kept identical in
+several folders (a shared helper copied into every package, a vendored file) is scanned once, on
+its canonical copy, and its smells list the other paths under `copies` (`copies_scanned_once` lists
+the groups): one smell, one entry in `static_smells`. Patterns match code only: text inside a
+string, docstring or comment (a fixture source held in a string, a usage example) is never a smell.
+Python module state (`module-global-state`) is reported only in modules a test imports, or in a
+script that tests itself; a script no test imports shares nothing between tests.
+
+Test code is what the test-name patterns name, what a pytest configuration collects below its own
+folder by `python_files` (`benchmarks/pytest.ini` with `python_files = bench_*.py`), every
+self-test script (`self_test.py`), and the body of a script's own `self_test()` function.
+`smells.json` lists the self-test scripts under `self_tests` (with their commands and copies), and
+`suites` lists them as a suite of their own (language `self-test`, preset `selftest`); see
+**Script self-tests** below.
 
 `scan_pitfalls.py` reads pytest's own collection settings (`testpaths`, `python_files` in
 `pytest.ini`, `pyproject.toml`, `tox.ini` or `setup.cfg`): a root script named `*_test.py` that pytest
 never collects gets only the source checks, and `smells.json` lists such files under
 `pytest_collection.not_collected`. Python smells include an HTTP verb on a `requests`/`httpx`/`aiohttp`
 session the file creates (`real-network-session`), an assertion on elapsed seconds
-(`wall-time-assertion`, load-sensitive: confirm it with a `--cpu-load` variation), and a file
+(`wall-time-assertion`: `assert took < 2.0`, a helper such as `check(took < 2.0, ...)` or
+`expect(elapsed < 5)`, `self.assertLess(elapsed, 0.5)`, or a two-sided bound on a ratio of timings
+such as `0.7 <= est / actual <= 1.6`; load-sensitive: confirm it with a `--cpu-load` variation), and a file
 modification time read in a test file that also reads the wall clock (`mtime-vs-wall-clock`: two
 clocks that disagree across midnight, a month end or a moved test clock). Don't install anything without asking; a variation you can't apply is
 `not_run` with the reason.
@@ -133,14 +155,41 @@ command. Files that can't be collected
 and their tests are not counted as run.
 
 **Suites per language.** `smells.json` lists every language the repository has tests in under
-`suites`: test files from `detect_conventions.py`, the CI gates that run them, and a test count
-(Rust from the Cargo model in `cargo_project.py`: `#[test]` functions in `#[cfg(test)]` modules
-and `tests/*.rs`, doc tests apart; other languages a static count of test definitions). Copy each
-into `metadata.suites` with `status` `ran` (its runs used one of its `presets`) or `not_run` with
-the reason ("cargo was not installed", "out of budget"). Evidence completeness is multiplied by the
-share of tests in suites that ran, so a report that ran only the Python half of a Rust and Python
-repository says so in its number, not only in a limitation. The validator checks every language
-the scan found is listed (pass `--smells`), and that `ran` and `not_run` agree with the runs.
+`suites`: test files (fixture projects left out, as the scan leaves them out), the CI gates that
+run them, and a test count (Rust from the Cargo model in `cargo_project.py`: `#[test]` functions in
+`#[cfg(test)]` modules and `tests/*.rs`, doc tests apart; other languages a static count of test
+definitions), plus a `self-test` suite for script self-tests (`tests: null`: their checks are
+printed, not declared). Copy each into `metadata.suites` (keep `language`, `tests`,
+`count_source` and `presets`; the report schema takes no other inventory field) with `status` `ran` (its runs used one of
+its `presets`) or `not_run` with the reason ("cargo was not installed", "out of budget").
+Evidence completeness is multiplied by the share of tests in suites that ran, so a report that ran
+only the Python half of a Rust and Python repository says so in its number, not only in a
+limitation. A suite that ran with `tests: null` counts the distinct test ids its presets' runs
+recorded (the self-test checks), so a repository whose tests are mostly self-tests is measured by
+its checks. The validator checks every language the scan found is listed (pass `--smells`), and
+that `ran` and `not_run` agree with the runs.
+
+**Script self-tests.** Many tool repositories test themselves with scripts that print a line per
+check (`ok name`, `FAIL name`, `name: ok`) instead of a test framework. Run them with
+`--preset selftest`: `--tests scripts/a.py scripts/self_test.py ...` runs each as
+`python <script> --self-test` (or `python <script>` for a `self_test.py`), and
+`--selftest-cmd "python scripts/x.py --self-test --quick"` (repeatable) runs any other command.
+Take the scripts and commands from `smells.json` `self_tests` (or `detect_conventions.py`
+`self_tests`); run one copy of a file kept identical in several folders unless the copies import
+different neighbours. Each check line becomes a case `<script>::<check name>`, with measurements
+stripped from the name (`(took 0.6 s)`, `(got 98)`, `(ratio 0.70)`), so a check keeps one id
+across runs and pools like any test; a script with no check lines is one `<script>::(exit status)`
+case. `--repeat`, `--cpu-load`, `--tz`, `--env` and the clock variation work as for pytest. A
+script runs whole: `--tests <script>::<check>` still runs every check of the script (the named
+check must print a result, or it is listed under `tests_not_run`), so repeat a suspect by naming
+its script, and narrow it only through the script's own selector if it has one
+(`--selftest-cmd "python self_test.py --only budget"`). `--isolate`, `--order` and
+`bisect_polluter.py` don't apply: checks inside one script share its process and run in its own
+order; when only self-tests ran, record those variations `not_applicable` with that reason, and
+otherwise say in the variation's reason that it did not reach the self-tests. A smell in a self-test script names
+a function, while the cases name checks by message: the validator counts the smell's test as run
+when any check of its script ran (so `not_observed`, with the run count, or linked), never
+`not_run`.
 
 **Rust / cargo.** Both presets give per-test results, so Rust suites run, repeat and rank like any
 other:
@@ -246,7 +295,13 @@ with a scratch home: set `HOME` **and** `USERPROFILE` (Windows reads the profile
 `USERPROFILE`, so setting only `HOME` still writes into the real profile), plus `XDG_CONFIG_HOME`
 and `XDG_CACHE_HOME`, all to a directory outside the repository, and keep device and process tools
 off `PATH` unless the user agreed to them. A test that needs one of those is `not_run` with the
-reason. Check the tree after the runs too: a test that writes stray files into the source tree
+reason. Toolchains find themselves through the home directory: with a scratch home, rustup finds no
+default toolchain and cargo, Go and npm lose their caches, so tests that run them fail every run
+for a reason that is not theirs. Pass the real locations along (`--env RUSTUP_HOME=<real
+~/.rustup> CARGO_HOME=<real ~/.cargo> GOPATH=<real> GOMODCACHE=<real> npm_config_cache=<real>`;
+`rustup show home` and `go env GOPATH GOMODCACHE` print them), and if a test still fails only in
+the scratch home, record it as an environment failure in `consistently_failing` with that note,
+not as a product failure. Check the tree after the runs too: a test that writes stray files into the source tree
 changes the `code_hash` between runs (report it, and exclude only those files from the hash).
 
 ## Step 2: Baseline and repeats
@@ -283,7 +338,10 @@ Keep populations apart: a suspect-only repeat runs far fewer files than the full
 machine is less loaded. Label full-suite runs `baseline` / `repeat` and suspect-only repeats
 something else (`repeat_suspects`), so the normal rate stays one configuration. A suite that is
 green serially but red with the default workers is itself a finding: run the suspects serially
-(`--workers 1`, 3+ runs) as the off side of a `resource_contention` experiment.
+(`--workers 1`, 3+ runs) as the off side of a `resource_contention` experiment. The computed normal
+rate counts only `baseline` and `repeat` runs, so a test whose suspect-only repeats all passed can
+show "normal 0/1": spell those runs out in the headline or the flake's experiment ("0/1 normal,
+0/3 in suspect-only repeats, 2/3 under load").
 
 ## Step 3: Variations
 
@@ -500,3 +558,19 @@ Show the rendered report:
 | `static_smells[]` | Every smell from `scan_pitfalls.py` and what became of it |
 | `summary` | Headline, counts, causes, priorities, total runs (and `single_test_runs`), minutes and evidence completeness (variations ran × share of tests in suites that ran) |
 | `limitations[]`, `files_changed[]` | What the runs couldn't show; files changed by applied fixes |
+
+Values the schema fixes (each one otherwise costs a validation round):
+
+- `"schema_version": "1.3.0"` for a new report: the report schema's own version, not the skill's
+  `version` (1.0.0 to 1.2.0 reports are still accepted).
+- `"skill": {"name": "flaky-test-hunter", "version": "<the skill version>"}` is an object, not a
+  string.
+- `tools[].status` is `ran`, `not_run` or `errored` (no `not_applicable`: leave out a tool that
+  does not apply, or record it `not_run` with the reason); each tool has `name`, `version`,
+  `status` and `reason`.
+- `variations[].status` is `ran`, `not_run` or `not_applicable`, with `kind`, `labels` and `reason`.
+- `metadata.suites[].status` is `ran` or `not_run`; `static_smells[].status` is `linked_to_flake`,
+  `linked_to_failure`, `not_observed` or `not_run`.
+- Every flake carries `quarantine` (null when you propose none) and `polluter` (null unless a
+  bisection named one); the validator fills the scores, so write them as the rubric gives or run
+  `--write-summary`.

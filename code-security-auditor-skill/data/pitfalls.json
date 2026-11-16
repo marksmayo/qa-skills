@@ -1,5 +1,5 @@
 {
- "version": "1.7.0",
+ "version": "1.8.0",
  "about": "Security pitfall catalogue for scan_pitfalls.py, organised by CWE. Each entry is a pattern-level lead: a match is a candidate until a source-to-sink path is traced. cvss_hint is a typical CVSS v4.0 base vector for the weakness, to adjust per finding. tools maps rules from other scanners (tool:rule) to the entry. OWASP categories are the 2025 Top 10.",
  "owasp_2025": {
   "A01": "A01:2025 Broken Access Control",
@@ -214,7 +214,7 @@
    "owasp": "A05:2025 Injection",
    "category": "injection",
    "title": "eval/exec of a runtime string",
-   "regex": "(?<![\\w.])(eval|exec)\\s*\\(",
+   "regex": "(?<![\\w.])(?<!def )(eval|exec)\\s*\\(",
    "suppress_line": "literal_eval",
    "fix": "Parse data with json or ast.literal_eval; never evaluate input.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
@@ -279,14 +279,15 @@
    "owasp": "A05:2025 Injection",
    "category": "web",
    "title": "Auto-escaping bypassed (mark_safe / Markup)",
-   "regex": "\\b(mark_safe|Markup|format_html_join)\\s*\\(|\\|\\s*safe\\b",
+   "regex": "\\b(mark_safe|Markup|format_html_join)\\s*\\(",
    "fix": "Keep auto-escaping on; sanitise rich text with an allow-list sanitiser (bleach/nh3).",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
    "tools": [
     "bandit:B308",
     "bandit:B703",
     "semgrep:avoid-mark-safe"
-   ]
+   ],
+   "string_regex": "\\{\\{[^}\\n]*\\|\\s*safe\\b|\\{%[^%\\n]*\\|\\s*safe\\b"
   },
   {
    "id": "PY-FILE-SEND",
@@ -295,7 +296,7 @@
    "owasp": "A01:2025 Broken Access Control",
    "category": "server_side",
    "title": "File opened or served from a runtime path",
-   "regex": "\\b(send_file|FileResponse|static_file)\\s*\\(|\\bopen\\s*\\(.*request\\.|os\\.path\\.join\\s*\\(.*request\\.",
+   "regex": "\\b(send_file|FileResponse|static_file)\\s*\\(|(?<![.\\w])open\\s*\\(.*\\brequest\\.(?:args|form|files|values|json|get_json|GET|POST|FILES|data|params|query_params|path_params|headers|cookies|match_info)\\b|os\\.path\\.join\\s*\\(.*\\brequest\\.(?:args|form|files|values|json|get_json|GET|POST|FILES|data|params|query_params|path_params|headers|cookies|match_info)\\b",
    "fix": "Serve with send_from_directory / safe_join, or resolve the path and check it stays under the base directory; prefer opaque IDs.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
    "tools": [
@@ -334,7 +335,9 @@
    "tools": [
     "semgrep:ssrf-requests",
     "bandit:B310"
-   ]
+   ],
+   "narrow_match": "urlopen",
+   "narrow_require_file": "\\bfrom\\s+(?:flask|fastapi|starlette|django|aiohttp|sanic|quart|bottle|falcon|tornado|litestar)\\b|\\bimport\\s+(?:flask|fastapi|django|bottle|falcon|tornado)\\b|\\bazure\\.functions\\b|\\bfrom\\s+azure\\s+import\\s+functions\\b|\\bBaseHTTPRequestHandler\\b|\\bwsgiref\\b|\\brequest\\.(?:args|form|json|get_json|values|query_params|GET|POST|data|params|headers)\\b"
   },
   {
    "id": "PY-OPEN-REDIRECT",
@@ -438,17 +441,18 @@
    "cwe": "CWE-611",
    "owasp": "A02:2025 Security Misconfiguration",
    "category": "server_side",
-   "title": "XML parsed with a parser that may resolve entities",
+   "title": "XML parsed with a parser that may resolve entities (lxml, or the standard library with external entities on)",
    "regex": "\\b(etree|ET|lxml\\.etree)\\.(parse|fromstring|XML)\\s*\\(|\\bminidom\\.parse(String)?\\s*\\(|\\bxml\\.sax\\.parse\\s*\\(|\\bXMLParser\\s*\\(",
    "suppress_line": "defusedxml|resolve_entities\\s*=\\s*False",
-   "fix": "Use defusedxml, or lxml with resolve_entities=False and no_network=True.",
+   "fix": "Use defusedxml, or lxml with resolve_entities=False and no_network=True. The standard library parsers do not resolve external entities on CPython 3.7.1+, but expat before 2.4.1 is open to entity-expansion denial of service: check the runtime when untrusted XML is parsed.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
    "tools": [
     "bandit:B313",
     "bandit:B314",
     "bandit:B318",
     "bandit:B320"
-   ]
+   ],
+   "suppress_file": "\\A(?![\\s\\S]*\\blxml\\b)(?![\\s\\S]*feature_external_ges\\s*,\\s*(?:True|1)\\b)(?=[\\s\\S]*^\\s*(?:import\\s[^\\n]*\\bxml\\.(?:etree|dom|sax|parsers)\\b|from\\s+xml\\.(?:etree|dom|sax|parsers)\\b|from\\s+xml\\s+import\\b))"
   },
   {
    "id": "PY-JWT-NOVERIFY",
@@ -564,6 +568,75 @@
    "window": 6,
    "fix": "Cap the result count (a page size with a maximum, a minimum query length), stream or paginate large results, and rate-limit the route.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "PY-CMD-SPLIT",
+   "pack": "python",
+   "cwe": "CWE-78",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "Command line split from a string (shlex.split) and run",
+   "regex": "\\bsubprocess\\.\\w+\\s*\\(\\s*shlex\\.split\\s*\\(|\\b(?:Popen|run|call|check_call|check_output)\\s*\\(\\s*shlex\\.split\\s*\\(",
+   "fix": "Keep the program fixed and pass data as separate arguments; if a configuration file must name a command, allow-list the programs and say who can edit the file.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "PY-WIN-CMD-SHIM",
+   "pack": "python",
+   "cwe": "CWE-88",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "Arguments passed to a Windows .cmd/.bat shim (npx, npm, pnpm, yarn): cmd.exe parses them again",
+   "regex": "\\[\\s*[\"\\'](?:npx|npm|pnpm|yarn|corepack)(?:\\.cmd)?[\"\\']\\s*,|\\.(?:cmd|bat)[\"\\']\\s*[,\\])]|\\bshutil\\.which\\s*\\(\\s*\\w+\\s*\\[\\s*0\\s*\\]\\s*\\)",
+   "require_near": "\\bsubprocess\\.|\\bPopen\\s*\\(|\\bcheck_output\\s*\\(|\\bcheck_call\\s*\\(|\\bos\\.name\\s*==\\s*[\"\\']nt[\"\\']|\\bsys\\.platform\\b",
+   "window": 3,
+   "fix": "On Windows, run node with the package's JavaScript entry point instead of the .cmd shim, or reject arguments holding cmd.exe metacharacters (& | < > ^ \" %); keep shell=False.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "PY-AUTH-REDIRECT",
+   "pack": "python",
+   "cwe": "CWE-200",
+   "owasp": "A07:2025 Authentication Failures",
+   "category": "authentication",
+   "title": "Authorization header sent with urllib, whose default redirect handling forwards it to the next host",
+   "regex": "[\"\\']Authorization[\"\\']\\s*[:\\],]|\\.add_header\\s*\\(\\s*[\"\\']Authorization[\"\\']",
+   "require_file": "\\burlopen\\s*\\(|\\bbuild_opener\\s*\\(",
+   "suppress_file": "HTTPRedirectHandler|redirect_request|allow_redirects\\s*=\\s*False",
+   "fix": "Install a redirect handler that refuses redirects (or drops Authorization) when the host changes, or use a client that strips credentials on cross-host redirects.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "PY-PATH-JOIN-INPUT",
+   "pack": "python",
+   "cwe": "CWE-22",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "server_side",
+   "title": "A name from a network response (an API object's name or title) joined into a path",
+   "regex": "\\bos\\.path\\.join\\s*\\([^)\\n]*\\b\\w+\\s*(?:\\[\\s*[\"\\'](?:name|filename|file_name|title|slug)[\"\\']\\s*\\]|\\.get\\s*\\(\\s*[\"\\'](?:name|filename|file_name|title|slug)[\"\\'])|/\\s*\\w+\\s*\\[\\s*[\"\\'](?:name|filename|file_name|title|slug)[\"\\']\\s*\\]|/\\s*f[\"\\'][^\"\\'\\n]*\\{\\s*\\w+\\s*\\[\\s*[\"\\'](?:name|filename|file_name|title|slug)[\"\\']\\s*\\]",
+   "require_file": "\\burlopen\\s*\\(|\\brequests\\.\\w+\\s*\\(|\\bhttpx\\.|\\bhttp\\.client\\b|\\baiohttp\\b",
+   "suppress_near": "\\bsecure_filename\\s*\\(|\\.resolve\\s*\\(\\s*\\)\\.(?:is_relative_to|relative_to)\\s*\\(|os\\.path\\.basename\\s*\\(|commonpath",
+   "fix": "Take the base name only and reject separators and \"..\", then resolve the joined path and check it stays under the target directory.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:N/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:path-traversal-join"
+   ]
+  },
+  {
+   "id": "PY-GIT-REV-ARG",
+   "pack": "python",
+   "cwe": "CWE-88",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "A revision or ref from a variable passed to git with no -- separator (a value starting with - is an option)",
+   "regex": "\\[\\s*[\"\\']git[\"\\']\\s*,[^\\]\\n]*,\\s*(?![\"\\'])\\w*(?:rev|ref|commit|sha|base|head|branch|tag|since|until)\\w*\\s*(?:,|\\])|\\bgit\\s*\\([^)\\n]*[\"\\'](?:diff|log|show|checkout|switch|reset|rev-list|cat-file|archive|blame|merge-base|ls-tree)[\"\\'][^)\\n]*,\\s*(?:\\w+\\s*\\[\\s*[\"\\']\\w*(?:rev|ref|commit|sha|base|head|branch|tag)\\w*[\"\\']\\s*\\]|(?![\"\\'])\\w*(?:rev|ref|commit|sha|base|head|branch|tag)\\w*)\\s*[,)]",
+   "suppress_line": "[\"\\']--[\"\\']|[\"\\']--end-of-options[\"\\']|--verify",
+   "fix": "Put \"--end-of-options\" before revisions (or \"--\" before paths), or check the value matches a revision pattern such as ^[0-9a-f]{7,40}$ or an existing ref, before passing it to git.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:P/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N",
    "tools": []
   },
   {
@@ -2369,7 +2442,8 @@
    "suppress_line": "'nonce-|'sha(256|384|512)-|'strict-dynamic'",
    "fix": "Drop 'unsafe-inline' from script-src: move inline scripts to files, or use nonces (Next.js middleware) or hashes with 'strict-dynamic'. With 'unsafe-inline' the CSP does not stop an injected <script> or event handler.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
-   "tools": []
+   "tools": [],
+   "match_in_strings": true
   },
   {
    "id": "HDR-CSP-UNSAFE-EVAL",
@@ -2381,7 +2455,8 @@
    "regex": "(?i)\\b(?:script-src(?:-elem)?|default-src)\\b[^;\\n]*?'unsafe-eval'",
    "fix": "Remove 'unsafe-eval' (often only needed in development: add it only when NODE_ENV is development); find the library that needs eval or new Function.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
-   "tools": []
+   "tools": [],
+   "match_in_strings": true
   },
   {
    "id": "HDR-CSP-WILDCARD-SOURCE",
@@ -2393,7 +2468,8 @@
    "regex": "(?i)\\b(?:script-src(?:-elem)?|default-src|object-src)\\b[^;\\n]*?(?<=\\s)(?:\\*|https?:|data:|blob:)(?=[\\s;\\\"'`,]|$)",
    "fix": "Name the hosts scripts may load from (or use nonces with strict-dynamic); a bare https: or * lets an injected tag load script from any site.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
-   "tools": []
+   "tools": [],
+   "match_in_strings": true
   },
   {
    "id": "HDR-CSP-TAG-MANAGER",
@@ -2405,7 +2481,8 @@
    "regex": "(?i)\\b(?:script-src(?:-elem)?|default-src)\\b[^;\\n]*?(?:googletagmanager\\.com|tagmanager\\.google\\.com|tags\\.tiqcdn\\.com|tealiumiq\\.com|assets\\.adobedtm\\.com|cdn\\.segment\\.com)",
    "fix": "Treat tag-manager access as code deployment: limit who can publish the container, or load only the analytics script the site needs (a nonce rather than the tag-manager host). Allowing the host also allows every custom HTML tag the container serves, so the CSP no longer limits script.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:H/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
-   "tools": []
+   "tools": [],
+   "match_in_strings": true
   },
   {
    "id": "HDR-CACHE-CATCH-ALL",
@@ -2419,7 +2496,8 @@
    "window": 8,
    "fix": "Scope shared caching to the paths that are the same for everyone (static assets, public pages) and send Cache-Control: private, no-store from anything that reads cookies or the session: a catch-all rule also applies to routes added later, including signed-in or per-user ones, which a CDN would then serve to other visitors.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:L/VI:N/VA:N/SC:N/SI:N/SA:N",
-   "tools": []
+   "tools": [],
+   "match_in_strings": true
   }
  ]
 }

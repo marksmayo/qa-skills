@@ -1,6 +1,6 @@
 # Design: `risk-based-test-planner-skill`
 
-Status: Built (v1.9.0), see "As built" at the end. Build order: 13.
+Status: Built (v1.10.0), see "As built" at the end. Build order: 13.
 
 ## Mission
 
@@ -557,3 +557,32 @@ Where the build differs from the design above, and what the example showed.
   and `files[].authors` holds pseudonyms for the run (`author-1` is the newest commit's author), so the count is
   unchanged. History files from earlier versions, with names, are still read. The sample's `history.json` is
   regenerated; its scores are unchanged.
+
+### v1.10.0: found planning this repository (a tool repository with sample projects, copied files and self-tests)
+
+- **Copies counted once.** Every copy of a shared file was scored in the area holding it, so the same lines were
+  evidence in many areas. Copy groups (the shared `repo_layout.copy_groups`: a `check_shared.py`-style mapping, or
+  identical content) are now scored once, in the area of the canonical copy; the copies are `excluded` with the
+  canonical path, their scope changes are not named in `scope_outside_areas`, tests importing a copy count for the
+  scored copy's area, and `copy_groups` lists each group. `--keep-copies` restores the old behaviour.
+- **Strings that describe code.** The raw patterns (which read inside strings) matched self-test fixture pages, a
+  scanner's own pattern tables and docstrings. In Python, a script's self-test code (a `self_test()` and every
+  function or constant only it uses) is skipped whole, and docstrings and the strings of module-level tables and
+  multi-line constants are blanked with the shared `code_mask.py` before the raw patterns run.
+- **Fixture projects.** A sample's `next.config.ts` with headers made it an area of its own (runtime configuration was
+  checked before the examples rule), sample tests counted as the host's tests, a sample's lockfile drew a "classified
+  generated" warning and sample data changed in scope was "in no area". Fixture projects (`repo_layout.fixture_projects`)
+  are now left out everywhere and listed in `fixtures_excluded`; a test kept with the examples counts only for the area
+  code it imports; `--fixture-dir` and `--include-fixtures` adjust it.
+- **Tests that are not a framework.** A script's `--self-test` is a test of its area (its lines are test lines, listed
+  in `self_tests`), `self_test.py` is a test file, and files a pytest config collects through `python_files` are
+  tests; pytest benchmarks (`bench_*.py`) are neither product code nor counted tests (`pytest_collected`).
+- **Fix commits.** `mine_history.py` counted "bug" or "regression" anywhere in a subject ("Add bug reproducer skill");
+  a fix is now a conventional type, a leading fix verb (or `bug:`/`regression:`) or a closed issue (`fix_basis`
+  `closes_issue`).
+- **Layout and CI.** Areas for a second language are the top-level directories (`tool/`, like a workspace package
+  beside it, never `tool/scripts`); a CI workflow an explicit area covers is scored like templates.
+- On the review clone (default areas): areas with surface 5 went from 28 of 37 to 16 of 35, High areas from 15 to 7,
+  copy evidence lines (`fetch_ticket.py:469`, `browser_harness.py:367`) from 18 to 2, sample-project areas from 1 to 0
+  and sample tests counted from 12 to 0; `shared` now has its self-tests (test weakness 5 to 3) and no false fix
+  commits. The sample repository's scores are unchanged.

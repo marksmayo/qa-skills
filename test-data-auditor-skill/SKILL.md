@@ -1,7 +1,7 @@
 ---
 name: test-data-auditor
 description: Audit the data tests depend on (fixtures, factories, seeds, snapshots, HTTP recordings and inline literals, in Python, JavaScript/TypeScript and Go suites) for time bombs, real-looking personal data, magic ids, environment coupling, shared mutable fixtures, unseeded randomness, schema drift, snapshot rot, unused or duplicate files, locale assumptions and files tests leave behind. Every rule runs statically; time bombs, shared state and locale assumptions are then confirmed with real runs under a moved clock, reversed order or another locale. Personal data is never echoed (only file, line, field and data type), secrets are handed to code-security-auditor, and the report never calls test data "clean".
-version: 1.7.0
+version: 1.8.0
 ---
 
 # Test data auditor
@@ -78,7 +78,7 @@ Output:
 |---|---|---|
 | Repo | required | |
 | Paths | auto | Test directories (`tests/`, `fixtures/`, `testdata/`, `test-data/`, `sample-data/` and the like), seeds, `__snapshots__`, cassettes and recordings, mocks, mobile test assets |
-| Data dirs | none | `--data-dir <dir>` (repeatable) for a tree of test data under a name the inventory doesn't know |
+| Data dirs | fixture folders | `--data-dir <dir>` (repeatable) for a tree of test data under a name the inventory doesn't know. Fixture folders (`examples/`, `samples/` and the like holding data files) are read by default; `--no-fixture-dirs` leaves them out |
 | Today | the real date | The date the time-bomb arithmetic counts from; record it |
 | Clock shift | `+400d` | For confirming time bombs, plus a month-end and a 29 February run |
 | Markers | none | `{"anonymised_by": {"path": "reference"}}`: lowers personal data one level (Critical to Serious), is cited in the finding, and never hides it |
@@ -88,8 +88,33 @@ Output:
 ## Step 1: Inventory
 
 ```bash
-python scripts/inventory.py <repo> --out <run>/inventory.json [--markers markers.json] [--data-dir <dir> ...]     [--max-files-per-dir N]
+python scripts/inventory.py <repo> --out <run>/inventory.json [--markers markers.json] [--data-dir <dir> ...]     [--max-files-per-dir N] [--no-fixture-dirs]
 ```
+
+**Fixture folders and sample projects.** A tool or library repository keeps its test data as
+sample projects with planted defects and recorded runs under `examples/`, `samples/`,
+`testdata/` and the like (the shared `repo_layout.py` names the nested sample projects: a folder
+there with its own manifest, an `expected*.json` beside sources, or an app of its own). By
+default the inventory reads every such fixture folder holding data files as a data tree:
+`fixture_dirs` lists each with its reason and its sample projects, `fixture_projects` the
+projects, and a WARNING names them. The sample projects' code is counted under `data_dir_code`
+like any code under a data tree. Pass `--no-fixture-dirs` to audit the host repository's own test
+areas only, and say so in `limitations`.
+
+**Used by commands, not tests.** Such fixtures are often read by commands (a README's or the
+repository guide's validator commands, a `commands.sh` that regenerates an example, a Makefile, a
+CI step, `package.json` scripts) and by scripts' own self-tests (`--self-test`, `self_test.py`),
+not by a test function that names the file. A file a documented command names (resolved from the
+folder of the file the command is written in and each folder above it, with a shell script's
+`VAR=value` assignments expanded), or a folder of two or more segments holding it, gets
+`used_by_commands` (where, as `file:line`), and so does a file that such a used data file names by
+folder and file name (`via <file>`: a run.json listing its exchanges). These are not unused:
+`summary.used_by_commands` lists them apart from `summary.unused`, and the scan notes count them.
+A self-test script that builds a path to the file or its sample project
+(`HERE.parent / "examples" / "shop"`) loads it: its id `<script>::*` is in `loaded_by` and the
+tests list. A `test_*.py` module outside every test area with no test functions and no self-test
+is product code, not a test file; a product script whose name only starts with "seed"
+(`seed_report.py`) is not a seed.
 
 **Product data trees the tests read.** A site often keeps its records as thousands of data files
 (one JSON file per record) outside any test directory, and a parametrised suite globs them. The
@@ -125,6 +150,13 @@ With no tests at all, the unused-file rule does not run (no file can be loaded b
 scan notes say so. Both scripts print progress to stderr every few seconds. Templated data files are near-duplicates by
 design: a directory with more than 200 files of one format is checked for exact copies only, and
 the notes say the pairwise check did not run there.
+
+**Near-duplicates scale with the files, not their pairs.** Files are compared only within one
+project (a sample project, else the nearest package root) and one format. Each file is reduced
+to a MinHash sketch of its text (the text is not kept), files whose sketches share a band are the
+candidate pairs, and those are confirmed with the real measure (90% similar), most similar first,
+up to `duplicate_max_pairs` (2,000) pairs. When more turn up, the notes say the cap was reached
+and how many pairs were not compared; `duplicates` in the candidates records the counts.
 
 Every data source gets a kind (fixture, factory, seed, snapshot, recording, inline or support), a
 format, and `loaded_by`: the tests that load it. `support` is setup and helper code the tests
@@ -171,7 +203,9 @@ How a mention is matched, so reach isn't overstated in a monorepo:
 - helper functions in a test module (a loader used by `parametrize`) count for every test in it.
 
 Binary and encrypted files, and images, fonts and media (PNG, OTF, MP4), are `not_assessed`.
-SVG is text, and is scanned. An `.xls` file is sniffed: report tools save HTML tables and XML
+SVG is text, and is scanned. HTML pages, Markdown (tickets, notes), diffs and patches, TOML and CSS
+are read as text: an address in a sentence counts, not only one in quotes (a README beside the
+data is documentation and is not inventoried). An `.xls` file is sniffed: report tools save HTML tables and XML
 spreadsheets with that extension, and those are scanned as text (HTML tables as rows under their
 header). `.xlsx` workbooks are read with stdlib `zipfile` (shared and inline strings); their line
 numbers count lines of the text form that `python scripts/datafiles.py <file> --text` prints. A
@@ -193,14 +227,14 @@ assessed for that language.
 | Category | Rules |
 |---|---|
 | `personal_data` | A tabular extract (CSV, TSV, HTML or `.xlsx` sheet, JSON list) with 20 or more rows whose column is named for a person or customer (`customer_name`, `client`, `Cust Name`) and holds mostly names: judged by the header and the row count, reported by file, header line and column only (`customer_extract`; extend `person_columns` in `data/rules.json` for a repo's own abbreviations); email at a public or non-reserved domain (a package spec such as `name@1.2.3`, a host given as an IP address, a file name such as `icon@2x.png` and a URL's user-info `scheme://user:key@host`, which is a `url_credentials` secret, are not addresses); phone outside the reserved ranges; Luhn-valid card not on a test list, written unbroken or in the groups card schemes print (4-4-4-4, 4-6-5, 4-6-4, 4-4-4-4-3; space-separated small numbers such as screen coordinates or process-listing columns are never cards) (dates, times, version strings and epoch timestamps are never phones or cards); Medicare, TFN or NHS number with a valid check digit; SSN or National Insurance number in valid format; IBAN with a valid checksum; full name with a street address; date of birth beside a name |
-| `time_bomb` | A fixed expiry date in the future that the code compares with now, giving the date it fails on; a future literal date in a test that also reads the clock |
+| `time_bomb` | A fixed expiry date in the future that the code compares with now (directly, through a parser such as `date.fromisoformat(x["expires"])`, or through a variable holding today), giving the date it fails on; the comparison must be in the same sample project as the data (or, for the host's own data, in the host's code), never another project's code that uses the same field name; data in a top-level folder with product code of its own (a tool's component) is linked only to that folder's code; a future literal date in a test that also reads the clock |
 | `magic_id` | A lookup by a literal id where a database or seed is in reach (the test loads a seed, has a database or integration marker, requests a database fixture, or sits in an integration tree), checked against the seed rows; not a large id in a "not found" test, nor an all-nines sentinel; a literal UUID; an equality assertion on an auto-increment id (`x.id == 3`, not `x.id > 0`) |
 | `environment_coupling` | A production or staging host, a real bucket, an AWS account id, an absolute path on someone's machine, a test in a subdirectory that opens a top-level repository directory by a cwd-relative path (`open("data/x.json")`, `os.listdir("data")`: it passes only when run from the root; `cwd_relative_path`, not flagged when the test changes directory itself) (platform roots such as `/home/site/wwwroot` or a CI runner's home are the same everywhere, so they are not). Tests that reach a live endpoint through product code (an update check, telemetry) are not a literal in test data: report them as a review finding with `host` and `live_endpoint: true`, and a basis that names the host (the calling line, or the proxy log that recorded the tests reaching it) |
 | `shared_mutable` | A session, module, package or class-scoped fixture that returns a mutable value a test mutates; `importlib.reload(module)` in test code, with the module's import-time environment reads (`module_reload`): later tests see the reloaded state, so a test can pass only after it; Go tests that change process state by hand (`go_os_setenv`, `go_os_chdir`) or reassign a package-level variable with nothing putting it back (`go_package_var_reassigned`) |
 | `nondeterministic` | `random` or Faker with no seed in the file; `uuid4()` in test data; Go `math/rand` with no seeded source in the file |
 | `schema_drift` | A fixture field the model no longer has; a missing required field; an enum value the model doesn't allow (dataclasses, pydantic, SQLAlchemy, TypedDict, JSON Schema, OpenAPI JSON). Only models from the fixture's own package root count, and a record matches a model only when half its keys are the model's fields. Models in other languages (Go structs, Java classes) are not read: when the repository is mostly another language (counted by the shared `lang_census.py`, vendored and embedded third-party trees left out), `drift.json` carries `language_coverage` with status `unsupported_dominant` and a `warning` (also printed, and added to the scan's notes), and the report must not read "no drift" from it |
 | `snapshot_rot` | A snapshot with no test file; a snapshot over 500 lines |
-| `unused_or_duplicate` | A data file no test loads; a file at least 90% similar to another one of the same format |
+| `unused_or_duplicate` | A data file no test loads and no documented command or self-test reads; a file at least 90% similar to another one of the same format in the same project |
 | `locale_assumption` | A test comparing a literal with a function that formats using the machine locale (`setlocale(..., "")` with `locale.currency`, `format_string` or locale-dependent `strftime`; in JS, `toLocaleString()`, `toLocaleDateString()`, `Intl.NumberFormat()` and the like with no locale argument) |
 | `residue` | Files a test run leaves in the working tree (uploads, exports, databases), found with `residue.py` (Step 4) |
 | `secret` | An authorization header; an API key or password field; an API key or subscription-key header (`x-api-key`, `Ocp-Apim-Subscription-Key`, `x-functions-key`); a 32-64 character hex value under a key, token or secret field; an AWS key, a private key, a live token; credentials in a URL's user-info (`url_credentials`, `scheme://user:password@host`; a `${VAR}` or `%s` password, a reserved host or a placeholder password is dismissed by rule): handed to code-security-auditor with location and type only, unless it is an obvious placeholder |
@@ -460,7 +494,8 @@ or secret finding from review (`source: agent`) is protected the same way: the v
 lines (addresses at non-reserved domains, numbers) must not appear in the report or the evidence,
 so describe them by file, line, field and type there too.
 
-Write the headline yourself, naming the P0 findings. Fix every error rather than editing
+Write the headline yourself, naming the P0 findings; the validator rejects a placeholder left
+in it ("Draft headline", TODO, TBD, an empty headline). Fix every error rather than editing
 computed fields. The validator checks a finding count in the headline against the report. With
 no findings, say what was read rather than what wasn't found, for example: "No findings from the
 rules or the runs: 16 inline test files scanned, no fixture files; no experiment was needed."

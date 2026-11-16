@@ -35,6 +35,10 @@ as a low-entropy fixture are listed under secrets_set_aside with the reason, not
 provider-specific rules always stay candidates. --scanners replaces the version a SARIF driver
 reports (gitleaks prints a fixed placeholder version) with the one run_scanners.py recorded.
 
+Sample and fixture projects (see audit_scope.py): a code candidate any tool raised inside one is set aside
+(fixture_candidates_set_aside) unless --include-fixtures. A hit in a copy of a file kept identical in several
+places moves to the canonical copy (with `copies`), so it joins the same candidate there.
+
 Secret values are never copied: snippets from secret scanners are dropped, and any secret found
 in another tool's snippet or message is replaced with [REDACTED].
 """
@@ -46,6 +50,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(HERE))
+import audit_scope  # noqa: E402
 import sarif  # noqa: E402
 import scan_secrets  # noqa: E402
 import test_paths  # noqa: E402
@@ -106,11 +111,41 @@ def from_patterns(path: Path) -> list[dict]:
     for c in data.get('candidates', []):
         cand = code_candidate(c['file'], c['line'], c.get('cwe'), c.get('pitfall_id'), c.get('message'), c.get('snippet'),
                               {'tool': 'scan_pitfalls', 'rule_id': c.get('pitfall_id')})
-        for k in ('grouped_lines', 'confidence', 'group_reason'):
+        for k in ('grouped_lines', 'confidence', 'group_reason', 'copies'):
             if c.get(k):
                 cand[k] = c[k]
         out.append(cand)
     return out
+
+def layout_of(root: Path, include_fixtures: bool = False, fixture_dirs=()) -> dict:
+    """The sample and fixture projects to leave out (none with include_fixtures) and, for every file kept identical
+    in several places outside them, its representative copy."""
+    fixtures = [] if include_fixtures else audit_scope.fixture_projects(root, fixture_dirs)
+    files = [f for f in audit_scope.repo_layout.walk_files(root) if not (fixtures and audit_scope.fixture_of(f, fixtures))]
+    rep, groups = audit_scope.representatives(root, files)
+    return {'fixtures': fixtures, 'rep': rep, 'copy_groups': groups}
+
+def apply_layout(code: list[dict], secrets: list[dict], layout: dict) -> tuple[list[dict], list[dict], list[dict]]:
+    """(code, secrets, set aside): a code candidate from any tool inside a sample or fixture project is set aside (a
+    planted defect in a sample is not the repository's finding; listed with its project); one in a copy of a file is
+    moved to the representative copy, with the copy in `copies`, so merge_code joins it with the same hit there.
+    Secrets in a copy move the same way (secrets in samples were already judged by scan_secrets.py)."""
+    fixtures, rep = layout.get('fixtures') or [], layout.get('rep') or {}
+    kept, aside = [], []
+    for c in code:
+        fx = audit_scope.fixture_of(c['file'], fixtures) if fixtures and c.get('file') else None
+        if fx:
+            aside.append({'file': c['file'], 'line': c['line'], 'fixture': fx, 'tools': sorted({s['tool'] for s in c['sources']}),
+                          'rule': (c['pitfall_ids'] or c['cwe'] or [None])[0]})
+            continue
+        kept.append(_to_rep(c, rep))
+    return kept, [_to_rep(s, rep) for s in secrets], aside
+
+def _to_rep(c: dict, rep: dict) -> dict:
+    r = rep.get(c.get('file') or '')
+    if r and r != c['file']:
+        c = {**c, 'file': r, 'copies': sorted(set(c.get('copies') or []) | {c['file']})}
+    return c
 
 GENERIC_SECRET_RULES = re.compile(r'(?i)^(generic[-_]api[-_]key|generic[-_]secret|generic)$')
 
@@ -607,6 +642,8 @@ def merge_code(cands: list[dict]) -> list[dict]:
             continue
         for k in ('cwe', 'pitfall_ids'):
             have[k] += [x for x in c[k] if x not in have[k]]
+        if c.get('copies'):
+            have['copies'] = sorted(set(have.get('copies') or []) | set(c['copies']))
         have['sources'] += [s for s in c['sources'] if s not in have['sources']]
         precise = c['sources'][0]['tool'] in SINGLE_LINE_TOOLS and not any(s['tool'] in SINGLE_LINE_TOOLS for s in have['sources'][:-1])
         if precise:
@@ -629,6 +666,8 @@ def merge_secrets(items: list[dict]) -> list[dict]:
                      or (h['file'] == s['file'] and s['line'] is not None and h['line'] == s['line'])), None)
         if have:
             have['sources'] += [x for x in s['sources'] if x not in have['sources']]
+            if s.get('copies'):
+                have['copies'] = sorted(set(have.get('copies') or []) | set(s['copies']))
             for k, v in s.items():
                 if have.get(k) is None and v is not None:
                     have[k] = v
@@ -674,6 +713,7 @@ def main() -> int:
     ap.add_argument('--pnpm-lock', type=Path, help='pnpm-lock.yaml for dev/via facts on npm advisories (default: <root>/pnpm-lock.yaml)')
     ap.add_argument('--scanners', type=Path, help="run_scanners.py's scanners.json: tool versions replace the SARIF drivers' own")
     ap.add_argument('--out', type=Path)
+    audit_scope.add_arguments(ap)
     args = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(errors='replace')  # tool output can hold characters the console can't encode
@@ -754,10 +794,16 @@ def main() -> int:
     except (OSError, ValueError, KeyError) as exc:
         print(f'Unable to merge: {exc}', file=sys.stderr)
         return 2
+    layout = layout_of(root, args.include_fixtures, args.fixture_dir)
+    code, secrets, fixture_aside = apply_layout(code, secrets, layout)
     out = {
         'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'repository': root.name,
         'tools': tools,
+        # sample and fixture projects: code candidates any tool raised in them are set aside, not triaged
+        # (--include-fixtures keeps them); files kept identical in several places are one candidate with `copies`
+        'fixtures_excluded': layout['fixtures'],
+        'fixture_candidates_set_aside': {'count': len(fixture_aside), 'items': fixture_aside},
         'note': 'Candidates, not findings. Promote each to a finding with a traced path, or dismiss it with a checkable reason.',
         'candidates': merge_code(code),
         'secrets': merge_secrets(secrets),

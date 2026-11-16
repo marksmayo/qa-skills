@@ -266,7 +266,8 @@ def from_builtin(raw: dict) -> list[dict]:
         out.append({'engine': 'builtin', 'raw_id': m['id'], 'file': m['file'], 'line': m['line'], 'end_line': m['end_line'],
                     'operator': m['operator'], 'original': m['original'], 'mutated': m['mutated'],
                     'status': m['status'], 'engine_status': m['status'], 'covering_tests': m.get('covering_tests', []),
-                    'killed_by': m.get('killed_by'), **({'note': m['note']} if m.get('note') else {})})
+                    'killed_by': m.get('killed_by'), **({'note': m['note']} if m.get('note') else {}),
+                    **({'wrote_outside_scope': m['wrote_outside_scope']} if m.get('wrote_outside_scope') else {})})
     return out
 
 
@@ -538,6 +539,9 @@ def main(argv=None) -> int:
     ap.add_argument('--cargo-mutants-run', type=Path, help='run_engine.py cargo-mutants\' record (cargo-mutants.run.json); '
                     'without it the engine counts as external evidence and its tree check is missing')
     ap.add_argument('--coverage', type=Path)
+    ap.add_argument('--product-path', action='append', default=[],
+                    help='a folder that is the product although its name reads as tooling (scripts/, tools/): scoped '
+                         'files under it are not called tooling; recorded as language_coverage.declared_product')
     args = ap.parse_args(argv)
     repo = args.repo.resolve()
     scope = json.loads(args.scope.read_text(encoding='utf-8'))
@@ -578,6 +582,10 @@ def main(argv=None) -> int:
             rec.update(version=raw['engine']['version'], command=raw['engine']['command'], config_source='builtin',
                        config=None, timeout_s=raw['timeout_s'], sampled=raw['sampled'], tree_changed=raw['tree']['changed'],
                        run_by='skill')
+            if raw.get('stopped'):
+                # the engine stopped early (a mutant wrote outside the scoped files, a broken test command, an
+                # interrupt): the report keeps the record and a limitation must name it
+                rec['stopped'] = {k: v for k, v in raw['stopped'].items() if k in ('kind', 'mutant', 'files', 'detail')}
             ms = from_builtin(raw)
         elif kind == 'mutmut':
             e = raw['engine']
@@ -665,7 +673,7 @@ def main(argv=None) -> int:
         engines.append(rec)
         mutants += kept
     order = ['id', 'engine', 'raw_id', 'file', 'line', 'end_line', 'function', 'operator', 'engine_operator', 'kind', 'original', 'mutated',
-             'status', 'engine_status', 'reclassified_from', 'covering_tests', 'killed_by', 'note']
+             'status', 'engine_status', 'reclassified_from', 'covering_tests', 'killed_by', 'wrote_outside_scope', 'note']
     mutants = [{k: m[k] for k in order if k in m} for m in mutants]
     out = {'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
            'scope': {'source': scope['source'], 'files': [{'path': p, 'ranges': f['ranges']} for f in scope['files']
@@ -674,7 +682,8 @@ def main(argv=None) -> int:
            'coverage': {'file': args.coverage.name, 'method': cov['method']} if cov else stryker_cov,
            'engines': engines, 'problems': problems, 'mutants': mutants}
     import detect_tools
-    lc = detect_tools.report_language_coverage(repo, {m['file'] for m in mutants}, [f['path'] for f in out['scope']['files']])
+    lc = detect_tools.report_language_coverage(repo, {m['file'] for m in mutants}, [f['path'] for f in out['scope']['files']],
+                                               args.product_path)
     out['language_coverage'] = lc
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(out, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')

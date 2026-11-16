@@ -333,7 +333,8 @@ def language_errors(d: dict, mutants_file: dict | None, repo: Path | None) -> li
     if repo is not None:
         import detect_tools
         want = detect_tools.report_language_coverage(repo, {m['file'] for m in d['mutants']},
-                                                     [f['path'] for f in d['metadata']['scope']['files']])
+                                                     [f['path'] for f in d['metadata']['scope']['files']],
+                                                     lc.get('declared_product') or ())
         for k in ('dominant', 'mutated_languages', 'status', 'unmutated_dominant', 'tooling_scope_files'):
             if lc.get(k) != want[k]:
                 errs.append(f'metadata.language_coverage.{k} is {lc.get(k)!r}, but the repository and the mutants '
@@ -412,6 +413,25 @@ def check(d: dict, mutants_file: dict | None, runs: dict | None, proofs: dict | 
         for path in e['tree_changed'] or []:
             if path not in d['files_changed']:
                 errs.append(f'engine {e["name"]}: the run changed {path}, which is not in files_changed')
+        stop = e.get('stopped')
+        if stop:
+            # a run stopped early is part of the evidence: the reader must learn which mutant stopped it and why
+            words = {'tree_changed': r'stopp|halt|wrote|changed', 'engine_error': r'stopp|halt|error|fail',
+                     'interrupted': r'interrupt|stopp'}[stop['kind']]
+            mid = stop.get('mutant')
+            named = [l for l in d['limitations'] if re.search(words, l, re.I)
+                     and (not mid or re.search(rf'\b{re.escape(mid)}\b', l))]
+            if not named:
+                errs.append(f'engine {e["name"]} stopped early ({stop["kind"]}' + (f' at mutant {mid}' if mid else '') +
+                            '): a limitation must say so' + (f', naming {mid}' if mid else '') +
+                            (' and the files its run changed' if stop['kind'] == 'tree_changed' else ''))
+            for path in stop.get('files') or []:
+                if path not in (e['tree_changed'] or []):
+                    errs.append(f'engine {e["name"]}: stopped because {path} changed, but tree_changed does not list it')
+        elif e['tree_changed'] and e['status'] == 'ran':
+            warns.append(f'engine {e["name"]}: the tree changed during the run ({", ".join(e["tree_changed"][:3])}) and '
+                         'the engine did not record which mutant changed it, so any result after the change may read '
+                         'the changed tree (builtin_mutator.py 1.4.0 checks the tree after every mutant)')
     for t in d['tools']:
         if t['status'] != 'ran' and not t['reason'].strip():
             errs.append(f'tool {t["name"]}: {t["status"]} needs a reason')
@@ -551,8 +571,11 @@ def check(d: dict, mutants_file: dict | None, runs: dict | None, proofs: dict | 
         if BANNED.search(text):
             errs.append(f'{where}: "{BANNED.search(text).group(0)}" claims more than the mutants show')
     # files changed
-    if not md['write_tests'] and d['files_changed']:
-        errs.append('files_changed must be empty unless write_tests is true')
+    # files a stopped engine's run changed (recorded on the engine) are listed, not written by the skill
+    stopped_files = {p for e in md['engines'] for p in ((e.get('stopped') or {}).get('files') or [])}
+    if not md['write_tests'] and [p for p in d['files_changed'] if p not in stopped_files]:
+        errs.append("files_changed must be empty unless write_tests is true (or list only files a stopped engine's "
+                    'run changed)')
     # mutants file
     if mutants_file is not None:
         keyset = ('id', 'engine', 'file', 'line', 'end_line', 'operator', 'original', 'mutated', 'status', 'covering_tests')

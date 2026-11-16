@@ -130,7 +130,10 @@ Examples:
 repository's tests whose suite ran. Not applicable variations (no e2e tests, so no latency
 variation) are left out. The share comes from `metadata.suites` (one entry per language with tests,
 from `scan_pitfalls.py`'s `suites`): tests in suites that ran ÷ all suites' tests, or suites that
-ran ÷ suites when a count is unknown, and 1 when the report lists no suites. A Rust and Python
+ran ÷ suites when a count is unknown, and 1 when the report lists no suites. A suite that ran with
+no static count (`tests: null`, as for script self-tests, whose checks are printed rather than
+declared) counts the distinct test ids its presets' runs recorded **(checked)**. Sample and fixture
+projects the scan left out are not the repository's tests and are not suites. A Rust and Python
 repository whose 30 Rust tests were not run and whose 60 Python tests were scores at most 67%,
 never the same as a report that ran both **(checked)**. With `--smells`, every language the scan
 found tests in must be listed when there are two or more, a suite marked `ran` needs counted runs

@@ -120,6 +120,18 @@ named e2e is listed, not skipped as tests.
 
 Read the output before using it: a computed path is shown as <dynamic> and an f-string prefix with
 its expression in braces, and routers never included in an app are listed with included: false.
+
+Sample and fixture projects (the shared repo_layout.py: a nested project with its own manifest, expected outputs or
+app under examples/, fixtures/, testdata/, samples/, __fixtures__/ ...) are left out by default, with their own tests:
+`fixtures_excluded` lists each {dir, reason, interfaces} and stderr names it; --include-fixtures lists them (each
+interface marked `fixture`), --fixture-dir DIR names another. A file kept identical in several folders (a declared
+tools/check_shared.py-style mapping, or the same content with line endings normalised) is one interface, on its
+canonical copy, with the other files under `copies` and reached when any copy is (summary.copies_folded;
+--keep-copies lists every copy). An interface whose script has its own self-test carries `self_test` (the command;
+summary.self_tested): not counted as reached. --self-tests reads the self-test scripts (self_test.py, a module
+running self_test() under __main__) that declare no interface as tests (self_test_files): only their command lines
+reach anything, and a program with no sub-commands is reached by a command line naming its file, resolved from the
+test's folder (names_script), so a same-named script in another package is not.
 """
 from __future__ import annotations
 import argparse, ast, json, os, re, sys
@@ -129,6 +141,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import lang_census, py_routes  # noqa: E402  (shared language census and route reader)
 import py_extras  # noqa: E402  (static mounts, conditions, middleware, flags-only CLIs, PHP, build-output folders)
 import cargo_project  # noqa: E402  (shared Cargo workspace model: targets, clap CLIs, tests)
+import repo_layout  # noqa: E402  (shared: sample/fixture projects and files kept identical in several folders)
 
 PRUNE = {'.git', '.hg', '.svn', 'node_modules', '.venv', 'venv', 'env', '__pycache__', '.mypy_cache', '.pytest_cache',
          '.tox', '.nox', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'site-packages', '.turbo', '.cache',
@@ -1652,6 +1665,24 @@ def argv_tokens(strings: list[dict]) -> dict[str, dict]:
     return out
 
 
+def names_script(s_: dict, script: str) -> bool:
+    """A command-line string names this repo-relative script file: a bare file name (`HERE / 'x.py'`) when the
+    script sits in the test file's own folder; a path when it resolves to the script from the repository root, the
+    test's folder or that folder's parent. Same-named scripts elsewhere (every package's render_report.py) are not."""
+    v = s_['value'].replace('\\', '/').lstrip('./') if not s_['value'].startswith('../') else s_['value']
+    name = PurePosixPath(script).name
+    if PurePosixPath(v).name != name:
+        return False
+    tdir = PurePosixPath(s_['file']).parent
+    if '/' not in v:
+        return str(tdir / name) == script or (str(tdir) == '.' and script == name)
+    for b in ('', str(tdir), str(tdir.parent)):
+        cand = os.path.normpath(os.path.join(b, v)).replace('\\', '/') if b not in ('', '.') else os.path.normpath(v).replace('\\', '/')
+        if cand == script:
+            return True
+    return False
+
+
 def match_names(interfaces: list[dict], strings: list[dict]) -> None:
     """Commands, tools and package exports reached by a test string that names them (test_derived, weak: naming a
     command is not running it)."""
@@ -1674,7 +1705,12 @@ def match_names(interfaces: list[dict], strings: list[dict]) -> None:
             words = itf['path'].split()
             word = words[-1]
             rx = re.compile(r'(?:^|[\s/])' + re.escape(itf['path'] if len(words) > 1 else word) + r'(?:$|\s)')
-            hits = [s_ for s_ in strings if s_['value'] == word or s_['value'].startswith(word + ' ') or rx.search(s_['value'])]
+            # a self-test script prints and compares many strings: only its command lines count
+            hits = [s_ for s_ in strings if (s_['value'] == word or s_['value'].startswith(word + ' ')
+                                             or rx.search(s_['value'])) and (s_.get('argv') or not s_.get('self_test'))]
+            if len(words) == 1 and itf['file'].endswith('.py'):
+                # a Python program with no sub-commands: a command line naming its file runs it
+                hits += [s_ for s_ in strings if s_.get('argv') and names_script(s_, itf['file'])]
             if itf.get('target'):
                 tgt = stem_of(itf['target'])
                 built = re.sub(r'\.(?:[cm]?[jt]sx?)$', '', itf['target'])
@@ -1729,6 +1765,53 @@ def match(interfaces: list[dict], lits: list[dict]) -> None:
         itf['reached'] = bool(hits)
 
 
+def fold_copies(root: Path, interfaces: list[dict]) -> list[dict]:
+    """Interfaces of files kept identical in several folders (repo_layout.copy_groups: a declared copy mapping such as
+    tools/check_shared.py, or the same content with line endings normalised) are one interface: kept on the canonical
+    copy (or the first copy when the canonical file is not read), with the other files under `copies`, and reached when
+    any copy is (reached_by merged)."""
+    groups = repo_layout.copy_groups(root, files=sorted({i['file'] for i in interfaces}))
+    index = repo_layout.copy_index(groups)
+    if not index:
+        return interfaces
+    out, by_key = [], {}
+    for itf in sorted(interfaces, key=lambda i: (i['file'] != index.get(i['file']), i['file'])):
+        can = index.get(itf['file'])
+        if can is None:
+            out.append(itf)
+            continue
+        key = (can, itf['kind'], itf.get('method'), itf.get('line'), itf.get('path'))
+        first = by_key.get(key)
+        if first is None:
+            by_key[key] = itf
+            if itf['file'] != can:
+                itf['canonical'] = can
+            out.append(itf)
+            continue
+        first.setdefault('copies', []).append(itf['file'])
+        if 'reached' in itf:
+            hits = {(h['file'], h['line']): h for h in (first.get('reached_by') or []) + (itf.get('reached_by') or [])}
+            first['reached_by'] = [hits[k] for k in sorted(hits)][:20]
+            first['reached'] = bool(first.get('reached') or itf.get('reached'))
+    for itf in out:
+        if itf.get('copies'):
+            itf['copies'].sort()
+    return sorted(out, key=lambda x: (x['kind'], x['path'], x['method'], x['file']))
+
+
+def mark_self_tests(root: Path, files: list[str], interfaces: list[dict]) -> None:
+    """`self_test`: the command that runs the script's own self-test (detect_conventions.find_self_tests), on every
+    interface whose file (or a copy of it) carries one. A self-test exercises the module, usually in process: it does
+    not count as reaching the command (that needs a test that runs or names it); read it before counting it."""
+    import detect_conventions                           # shared convention detector (self-test discovery)
+    owners = {i['file'] for i in interfaces} | {c for i in interfaces for c in i.get('copies') or []}
+    found = {s_['file']: s_['command'] for s_ in detect_conventions.find_self_tests(root, sorted(owners & set(files)))}
+    for itf in interfaces:
+        cmd = found.get(itf['file']) or next((found[c] for c in itf.get('copies') or [] if c in found), None)
+        if cmd:
+            itf['self_test'] = cmd
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('repo', type=Path, nargs='?')
@@ -1739,6 +1822,17 @@ def main(argv=None) -> int:
     ap.add_argument('--out', type=Path)
     ap.add_argument('--include', action='append', default=[], metavar='DIR',
                     help='read a directory that is skipped by default (dist/, build/, out/...); repeat')
+    ap.add_argument('--include-fixtures', action='store_true',
+                    help='also list the interfaces of sample and fixture projects (examples/, fixtures/, testdata/...), '
+                         'which are left out by default and listed under fixtures_excluded')
+    ap.add_argument('--fixture-dir', action='append', default=[], metavar='DIR',
+                    help='a further directory (name or repository path) holding sample projects to leave out; repeat')
+    ap.add_argument('--self-tests', action='store_true',
+                    help='also read the self-test scripts (self_test.py, a module running self_test() '
+                         'under __main__) as tests, wherever they live, when they declare no interface of their own')
+    ap.add_argument('--keep-copies', action='store_true',
+                    help='list every copy of a file kept identical in several folders (by default each interface is '
+                         'listed once, on the canonical copy, with the other copies under `copies`)')
     ap.add_argument('--self-test', action='store_true', help='check the readers on a synthetic repository')
     args = ap.parse_args(argv)
     if args.self_test:
@@ -1752,9 +1846,14 @@ def main(argv=None) -> int:
     skipped, kept = [], []
     files = walk(root, include, skipped, kept)
     kept_paths = {k['path'] for k in kept}
-    cen = lang_census.census(root)
+    extra_fx = tuple(d.replace('\\', '/').strip('/') for d in args.fixture_dir)
+    fixtures = repo_layout.fixture_projects(root, extra_fx)
+    in_fixture = lambda rel: repo_layout.is_fixture(rel, fixtures) if fixtures else None  # noqa: E731
+    cen = lang_census.census(root, exclude_fixtures=not args.include_fixtures, fixture_dirs=extra_fx)
     bundled = bundled_trees(root, files)
     for e in cen['excluded']:
+        if e.get('kind') == 'fixture':
+            continue                    # sample projects are read, then left out below with their interface counts
         if e['path'] in kept_paths or any(e['path'].startswith(k + '/') for k in kept_paths):
             continue                    # a hand-written dist/ the census counts as build output is read as source here
         if e['source_files'] and not any(e['path'] == b or e['path'].startswith(b + '/') for b in bundled):
@@ -1787,11 +1886,36 @@ def main(argv=None) -> int:
     interfaces = sorted(py + [{'kind': 'routes', **r} for r in php] + nxt + js_interfaces(root, files, handled)
                         + [g for g in gos if g['kind'] == 'routes'] + others,
                         key=lambda x: (x['kind'], x['path'], x['method'], x['file']))
+    fixtures_excluded = []
+    if fixtures:
+        counts: dict[str, int] = {}
+        for itf in interfaces:
+            d = in_fixture(itf['file'])
+            if d:
+                itf['fixture'] = d
+                counts[d] = counts.get(d, 0) + 1
+        if not args.include_fixtures:
+            gone = [f['dir'] for f in fixtures]
+            inside = lambda p: any(p == g or p.startswith(g + '/') for g in gone)  # noqa: E731
+            interfaces = [i for i in interfaces if not i.get('fixture')]
+            not_read = [nr for nr in not_read if not inside(nr.get('project') or '')]
+            skipped = [s_ for s_ in skipped if not inside(s_['path'])]
+            kept = [k for k in kept if not inside(k['path'])]
+            notes = [n for n in notes if not any(f'{g}/' in n or f'({g})' in n for g in gone)]
+            fixtures_excluded = [{'dir': f['dir'], 'reason': f['reason'], 'interfaces': counts.get(f['dir'], 0)}
+                                 for f in fixtures]
+            notes.append(f'{len(fixtures)} sample or fixture project(s) left out, with '
+                         f'{sum(counts.values())} interface(s) of their own (fixtures_excluded: '
+                         + ', '.join(f['dir'] for f in fixtures[:5]) + (' ...' if len(fixtures) > 5 else '')
+                         + "); they are not the product's interfaces. --include-fixtures lists them, --fixture-dir "
+                           'names another')
     for nr in not_read:
         notes.append(f"{nr['framework']} ({nr['project']}): {nr['kind']} not read ({nr['count']} file(s), e.g. "
                      f"{', '.join(nr['files'][:3])}): {nr['why']}; the list is partial for these")
     res = {'repo': root.name, 'interfaces': interfaces, 'notes': notes, 'language_coverage': coverage, 'not_read': not_read,
-           'middleware': py_extras.middleware(project), 'skipped_dirs': skipped, 'source_build_dirs': kept,
+           'middleware': [m for m in py_extras.middleware(project)
+                          if args.include_fixtures or not in_fixture(m.get('file') or '')],
+           'skipped_dirs': skipped, 'source_build_dirs': kept, 'fixtures_excluded': fixtures_excluded,
            'summary': {'total': len(interfaces), 'by_kind': {}, 'by_framework': {}}}
     for i in interfaces:
         res['summary']['by_framework'][i['framework']] = res['summary']['by_framework'].get(i['framework'], 0) + 1
@@ -1806,7 +1930,7 @@ def main(argv=None) -> int:
             itf['reached_by'], itf['reached'] = [], False
         res['summary'].update(reached=0, tests='none',
                               method='--no-tests: the repository has no tests, so no interface is reached by one')
-    if args.tests:
+    if args.tests or args.self_tests:
         missing = [str(t) for t in args.tests if not t.exists()]
         if missing:
             print(f'error: --tests path does not exist: {", ".join(missing)} (for a repository with no tests, pass '
@@ -1827,6 +1951,8 @@ def main(argv=None) -> int:
             if bundled and base.is_relative_to(root):
                 names = [n for n in names if not any(f'{rel_base}/{n}'.lstrip('./').startswith(b + '/') for b in bundled)]
             repo_rel = lambda n: f'{rel_base}/{n}' if rel_base not in ('.', '') else n  # noqa: E731
+            if fixtures and not args.include_fixtures and base.is_relative_to(root):
+                names = [n for n in names if not in_fixture(repo_rel(n))]    # a sample project's own tests
             product = [n for n in names if repo_rel(n) in itf_files and not is_test(repo_rel(n), root)]
             if product:
                 names = [n for n in names if n not in product]
@@ -1853,6 +1979,19 @@ def main(argv=None) -> int:
             lits += glits
             strings += gstrings
             go_masked.update(gmasked)
+        if args.self_tests:
+            # scripts that are a self-test (a self_test.py, or a module whose self_test() runs under __main__) and declare
+            # no listed interface are tests: they run or import the scripts they check
+            import detect_conventions
+            already = {s_['file'] for s_ in strings} | {lit['file'] for lit in lits}
+            st_files = sorted({s_['file'] for s_ in detect_conventions.find_self_tests(root, files)
+                               if s_['kind'] in ('script', 'function') and s_['file'] not in itf_files
+                               and s_['file'] not in already and not in_fixture(s_['file'])})
+            res['self_test_files'] = st_files
+            strings += [{**x, 'self_test': True} for x in test_strings(root, st_files, '.')]
+            lits += test_literals(root, st_files, every_file=True)
+            notes.append(f'--self-tests: {len(st_files)} self-test script(s) read as tests (self_test_files); a '
+                         f'script they run on a command line, or a command word they name, is reached')
         match(interfaces, lits)
         match_names(interfaces, strings)
         match_go(interfaces, go_masked)
@@ -1869,6 +2008,22 @@ def main(argv=None) -> int:
                                        'or calls clap parse_from with the sub-command\'s words, and Python or JavaScript '
                                        'tests whose process call names the binary; never a name in a data string'
                                        if rust else ''))
+    if not args.keep_copies:
+        interfaces = fold_copies(root, interfaces)
+        res['interfaces'] = interfaces
+    mark_self_tests(root, files, interfaces)
+    res['summary'].update(total=len(interfaces), by_kind={}, by_framework={},
+                          copies_folded=sum(len(i.get('copies') or []) for i in interfaces),
+                          self_tested=sum(1 for i in interfaces if i.get('self_test')))
+    for i in interfaces:
+        res['summary']['by_framework'][i['framework']] = res['summary']['by_framework'].get(i['framework'], 0) + 1
+        res['summary']['by_kind'][i['kind']] = res['summary']['by_kind'].get(i['kind'], 0) + 1
+    if 'reached' in res['summary']:
+        res['summary']['reached'] = sum(1 for i in interfaces if i.get('reached'))
+    if res['summary']['copies_folded']:
+        notes.append(f"{res['summary']['copies_folded']} interface(s) in files kept identical in several folders are "
+                     f"folded onto their canonical copy (each listed once, the other files under `copies`; a test "
+                     f"reaching any copy reaches it); --keep-copies lists every copy")
     text = json.dumps(res, indent=2) + '\n'
     if args.out:
         args.out.write_text(text, encoding='utf-8')
@@ -1878,6 +2033,9 @@ def main(argv=None) -> int:
     for sk in skipped:
         print(f"note: {sk['path']}/ skipped as build output ({sk['reason']}); --include {sk['path']} reads it",
               file=sys.stderr)
+    for f in fixtures_excluded:
+        print(f"note: {f['dir']}/ left out as a sample or fixture project ({f['interfaces']} interface(s); "
+              f"{f['reason']}); --include-fixtures lists it", file=sys.stderr)
     for nr in not_read:
         print(f"note: {nr['framework']} ({nr['project']}) interfaces not read: {nr['kind']} ({nr['count']} file(s), e.g. "
               f"{', '.join(nr['files'][:3])}); the list is partial for these (see not_read)", file=sys.stderr)
@@ -2219,6 +2377,112 @@ RUST_SELF_TEST_FILES = {
         '    subprocess.run([sys.executable, "wxtools/plot.py", "--station", "wxreport", "wipe"], check=True)\n'),
 }
 
+# a tool repository: one script kept identical in three folders (declared in tools/check_shared.py), checked by its
+# own --self-test, and a deliberately broken sample app under examples/ whose routes are not the tool's interfaces
+_STAMP = (
+    '"""Stamp release archives."""\n'
+    'import argparse, sys\n'
+    '\n'
+    '\n'
+    'def pack(name):\n'
+    '    return name + ".tar"\n'
+    '\n'
+    '\n'
+    'def self_test():\n'
+    '    good = pack("a") == "a.tar"\n'
+    '    print(("ok" if good else "FAIL") + " pack adds the suffix")\n'
+    '    return 0 if good else 1\n'
+    '\n'
+    '\n'
+    'def main(argv=None):\n'
+    '    ap = argparse.ArgumentParser(prog="stamp")\n'
+    '    ap.add_argument("--self-test", action="store_true")\n'
+    '    sub = ap.add_subparsers(dest="cmd")\n'
+    '    sub.add_parser("pack")\n'
+    '    sub.add_parser("purge")\n'
+    '    args = ap.parse_args(argv)\n'
+    '    if args.self_test:\n'
+    '        return self_test()\n'
+    '    print(pack("release") if args.cmd == "pack" else "purged")\n'
+    '    return 0\n'
+    '\n'
+    '\n'
+    'if __name__ == "__main__":\n'
+    '    sys.exit(main())\n')
+TOOLREPO_SELF_TEST_FILES = {
+    'shared/scripts/stamp.py': _STAMP,
+    'pkg-a/scripts/stamp.py': _STAMP,
+    'pkg-b/scripts/stamp.py': _STAMP.replace('\n', '\r\n'),      # line endings differ: still the same copy
+    'tools/check_shared.py': "SHARED = {\n    'scripts/stamp.py': ['pkg-a', 'pkg-b'],\n}\n",
+    'pkg-a/scripts/tally.py': (
+        '"""Count release files."""\n'
+        'import argparse\n'
+        '\n'
+        '\n'
+        'def main(argv=None):\n'
+        '    ap = argparse.ArgumentParser(prog="tally")\n'
+        '    ap.add_argument("--count", type=int, default=1)\n'
+        '    print(ap.parse_args(argv).count)\n'
+        '\n'
+        '\n'
+        'if __name__ == "__main__":\n'
+        '    main()\n'),
+    'pkg-b/scripts/tally.py': (
+        '"""Count staged files (a different script with the same name)."""\n'
+        'import argparse\n'
+        '\n'
+        '\n'
+        'def main(argv=None):\n'
+        '    ap = argparse.ArgumentParser(prog="tally")\n'
+        '    ap.add_argument("--staged", action="store_true")\n'
+        '    print(ap.parse_args(argv).staged)\n'
+        '\n'
+        '\n'
+        'if __name__ == "__main__":\n'
+        '    main()\n'),
+    'pkg-a/scripts/self_test.py': (
+        '"""Self-test of the package scripts: run each and check its output."""\n'
+        'import subprocess, sys\n'
+        '\n'
+        '\n'
+        'def check(name, cond):\n'
+        '    print(("ok " if cond else "FAIL ") + name, "purge" if not cond else "")\n'
+        '    return cond\n'
+        '\n'
+        '\n'
+        'if __name__ == "__main__":\n'
+        '    out = subprocess.run([sys.executable, "pkg-a/scripts/tally.py", "--count", "3"], capture_output=True,\n'
+        '                         text=True).stdout\n'
+        '    sys.exit(0 if check("tally prints the count", out.strip() == "3") else 1)\n'),
+    'pytest.ini': '[pytest]\npython_files = bench_*.py\n',
+    'benchmarks/bench_stamp.py': 'def test_pack(benchmark):\n    benchmark(lambda: "/admin/purge")\n',
+    'examples/shop/requirements.txt': 'flask\n',
+    'examples/shop/app.py': (
+        'from flask import Flask\n'
+        '\n'
+        'app = Flask(__name__)\n'
+        '\n'
+        '\n'
+        '@app.route("/cart")\n'
+        'def cart():\n'
+        '    return "cart"\n'
+        '\n'
+        '\n'
+        '@app.route("/admin/purge", methods=["POST"])\n'
+        'def purge():\n'
+        '    return "gone"   # planted: no permission check\n'),
+    'tests/test_stamp.py': (
+        'import subprocess, sys\n'
+        '\n'
+        '\n'
+        'def test_pack():\n'
+        '    subprocess.run([sys.executable, "shared/scripts/stamp.py", "pack"], check=True)\n'
+        '\n'
+        '\n'
+        'def test_sample_cart_is_listed():\n'
+        '    assert "/cart" in open("examples/shop/app.py").read()\n'),
+}
+
 
 def self_test() -> int:
     import shutil, tempfile
@@ -2506,6 +2770,57 @@ def self_test() -> int:
         want(code == 0 and cov.get('status') == 'partial' and 'Rust' in (cov.get('warning') or '')
              and 'Rust' in err.getvalue(),
              f'Rust holding a large share of the product lines warns even when it does not dominate (got {cov})')
+
+        # ---- a tool repository: copies folded onto their canonical file, sample projects left out (and listed),
+        # self-tests named on the interfaces of the script that carries them
+        tr = tmp / 'toolrepo'
+        for rel, text in TOOLREPO_SELF_TEST_FILES.items():
+            (tr / rel).parent.mkdir(parents=True, exist_ok=True)
+            (tr / rel).write_bytes(text.encode('utf-8'))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            main([str(tr), '--tests', str(tr / 'tests'), '--out', str(out)])
+        res = json.loads(out.read_text(encoding='utf-8'))
+        its = res['interfaces']
+        want(not any(i['file'].startswith('examples/') for i in its),
+             f'a sample project under examples/ is not the tool\'s interface (got '
+             f'{sorted(i["file"] for i in its if i["file"].startswith("examples/"))})')
+        fx = {f['dir']: f for f in res.get('fixtures_excluded') or []}
+        want(fx.get('examples/shop', {}).get('interfaces') == 2 and 'examples/shop' in err.getvalue(),
+             f'the excluded sample project is listed with its interface count and named on stderr (got {fx})')
+        packs = [i for i in its if i['kind'] == 'cli' and i['path'].endswith('pack')]
+        want(len(packs) == 1 and packs[0]['file'] == 'shared/scripts/stamp.py'
+             and sorted(packs[0].get('copies') or []) == ['pkg-a/scripts/stamp.py', 'pkg-b/scripts/stamp.py'],
+             f'a script kept identical in three folders is one interface on its canonical copy, with the copies '
+             f'listed (got {[(i["file"], i.get("copies")) for i in packs]})')
+        want(res['summary'].get('copies_folded') == 4 and res['summary']['total'] == len(its),
+             f'the summary counts the folded copies (got {res["summary"].get("copies_folded")})')
+        purge = next((i for i in its if i['kind'] == 'cli' and i['path'].endswith('purge')), {})
+        want(packs and packs[0].get('reached') and not purge.get('reached', True),
+             'a test running the canonical copy reaches its sub-command; an unnamed one is not reached')
+        want(packs and packs[0].get('self_test') == 'python shared/scripts/stamp.py --self-test'
+             and res['summary'].get('self_tested') == len([i for i in its if i.get('self_test')]) > 0,
+             f'interfaces of a script with its own --self-test carry the command (got {packs and packs[0].get("self_test")})')
+        tally = next((i for i in its if i['file'] == 'pkg-a/scripts/tally.py'), {})
+        want(tally and not tally.get('reached'), 'a script only a self-test runs is not reached without --self-tests')
+        with contextlib.redirect_stderr(io.StringIO()):
+            main([str(tr), '--tests', str(tr / 'tests'), '--self-tests', '--out', str(out)])
+        res = json.loads(out.read_text(encoding='utf-8'))
+        tally = next((i for i in res['interfaces'] if i['file'] == 'pkg-a/scripts/tally.py'), {})
+        purge = next((i for i in res['interfaces'] if i['kind'] == 'cli' and i['path'].endswith('purge')), {})
+        want(tally.get('reached') and any(h['file'] == 'pkg-a/scripts/self_test.py' for h in tally.get('reached_by', []))
+             and not purge.get('reached', True) and 'pkg-a/scripts/self_test.py' in (res.get('self_test_files') or [])
+             and not any(i['file'] == 'pkg-b/scripts/tally.py' and i.get('reached') for i in res['interfaces']),
+             f'--self-tests reads self_test.py scripts as tests: the script it runs is reached by its command line, '
+             f'listed under self_test_files (got {tally.get("reached_by")}, {res.get("self_test_files")})')
+        with contextlib.redirect_stderr(io.StringIO()):
+            main([str(tr), '--tests', str(tr / 'tests'), '--include-fixtures', '--keep-copies', '--out', str(out)])
+        res = json.loads(out.read_text(encoding='utf-8'))
+        shop = [i for i in res['interfaces'] if i['file'].startswith('examples/shop/')]
+        want(len(shop) == 2 and all(i.get('fixture') == 'examples/shop' for i in shop)
+             and len([i for i in res['interfaces'] if i['kind'] == 'cli' and i['path'].endswith('pack')]) == 3,
+             '--include-fixtures reads the sample project (each interface marked with its fixture) and --keep-copies '
+             'lists every copy')
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     if fails:

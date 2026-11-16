@@ -5,7 +5,22 @@
         --out risk.json [--journeys journey_map.json] [--input security=security_audit.json] [--input flaky=flaky_report.json]
         [--input crash=crash_report.json] [--input wcag=audit.json] [--usage usage.json] [--areas areas.json]
         [--defects bugs.json] [--finding-area KIND:ID=AREA] [--release release.json] [--coverage coverage.out]
+        [--fixture-dir DIR] [--include-fixtures] [--keep-copies]
     python score_risk.py --self-test
+
+Sample and fixture projects (repo_layout: a nested project with its own manifest, expected output or app under
+examples/, fixtures/, testdata/, samples/ ..., or a --fixture-dir) are left out: never an area, never area code or
+runtime configuration, their tests never count, their changed lines are named in scope_outside_areas as such, and
+they are listed in fixtures_excluded (an explicit --areas entry inside one keeps it; --include-fixtures keeps all).
+Files kept identical in several places (a tools/check_shared.py-style mapping, or the same content) are scored once,
+in the area of the canonical copy: the other copies are excluded with the canonical path, their changes and the tests
+that import them count there, and copy_groups lists each group (--keep-copies scores every copy). A script's own
+self-test (a self_test() and what only it uses) is test code: it counts as a test of the script's area, its lines are
+test lines, and it is never a surface; self_test.py files and files a pytest configuration collects through its own
+python_files are tests, except benchmarks (bench_*.py), which are neither product code nor counted tests. In Python,
+docstrings and the strings of module-level tables and multi-line constants are data: the raw patterns that read
+inside strings skip them. A CI workflow an explicit --areas entry covers is scored like templates (churn, defects,
+change in scope).
 
 A root go.mod makes the module's Go packages the areas (nested packages and non-Go code under the module beside
 them); --coverage takes a Go coverprofile as the test-weakness evidence. Otherwise areas are the workspace packages when the repo has several (a package with more than
@@ -71,12 +86,12 @@ Also usable as a module: allocate(planned, budget) is the effort allocation the 
 recomputes.
 """
 from __future__ import annotations
-import argparse, ast, json, math, os, re, sys
+import argparse, ast, fnmatch, json, math, os, re, sys
 from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import cargo_project, detect_conventions, diff_scope, lang_census, next_app  # noqa: E402
+import cargo_project, code_mask, detect_conventions, diff_scope, lang_census, next_app, repo_layout  # noqa: E402
 
 SURFACES = json.loads((HERE.parent / 'data' / 'surfaces.json').read_text(encoding='utf-8'))
 LIKELIHOOD = {'churn': 2, 'defects': 3, 'complexity': 1, 'change_in_scope': 2, 'test_weakness': 2}
@@ -316,6 +331,152 @@ def in_runner_dir(path: str) -> bool:
     return bool(RUNNER_DIRS) and any(path.startswith(d + '/') for d in RUNNER_DIRS)
 
 
+# Sample and fixture projects (repo_layout.fixture_projects: a nested project with its own manifest, expected output or
+# app under examples/, fixtures/, testdata/, samples/ ...): deliberately broken sample code is not the repository's own
+# product, so none of its files is area code, a test of an area, an area of its own or runtime configuration. Set by
+# score() ({dir: reason}); an explicit --areas entry inside one keeps it in.
+FIXTURES: dict[str, str] = {}
+
+
+def fixture_of(path: str) -> str | None:
+    return repo_layout.is_fixture(path, list(FIXTURES)) if FIXTURES else None
+
+
+def fixture_reason(path: str) -> str:
+    d = fixture_of(path)
+    return f'sample or fixture project {d}/ ({FIXTURES[d]}); --include-fixtures scores it'
+
+
+# Files kept identical in several places (repo_layout.copy_groups: a check_shared.py-style mapping, or the same content):
+# each group is scored once, in the area of its canonical copy (or, when no area holds the canonical copy, of the first
+# copy an area holds). COPY_CANON maps every member to the canonical path, COPY_REP to the member that is scored. Set by
+# score(); --keep-copies turns it off.
+COPY_CANON: dict[str, str] = {}
+COPY_REP: dict[str, str] = {}
+COPY_HOW: dict[str, str] = {}
+
+
+def is_copy(f: str) -> bool:
+    """A member of a copy group that is not its canonical copy (before the areas are known)."""
+    return COPY_CANON.get(f, f) != f
+
+
+# Tests that are not a test framework: a script's own self-test (a self_test() function and what only it uses, run by
+# `python x.py --self-test`), and Python files a pytest configuration collects through its own python_files
+# (bench_*.py, check_*.py). SELF_TESTS: {file: (line ranges [(first index, end index)), test lines, command)}; data
+# strings: lines of module-level tables and multi-line constants whose strings are data (a scanner's pattern table, a
+# fixture page), where a raw pattern reading inside strings must not match. Set by score().
+SELF_TESTS: dict[str, tuple[list[tuple[int, int]], int, str | None]] = {}
+PYTEST_TESTS: dict[str, str] = {}
+PY_BENCH: dict[str, str] = {}
+SELF_TEST_FN = re.compile(r'^_?(?:run_)?self_?tests?$')
+SELF_TEST_HINT = re.compile(r'^\s*(?:async\s+)?def\s+_?(?:run_)?self_?tests?\s*\(', re.M)
+
+
+def python_test_layout(text: str) -> tuple[list[tuple[int, int]], set[int]]:
+    """([(first line index, end line index)) of self-test code], {1-based lines whose strings are data}) for Python source.
+
+    Self-test code is every module-level function named self_test (selftest, _self_test, run_self_test ...) and every
+    module-level function or constant that only self-test code uses (fixture builders, case tables, sample pages).
+    Data strings are the strings of other module-level assignments that sit in a list, tuple, set or dict literal, or
+    span several lines: a pattern table or a fixture held as text, which describe code rather than run it."""
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return [], set()
+    defs = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    consts: dict[str, ast.AST] = {}
+    for n in tree.body:
+        targets = n.targets if isinstance(n, ast.Assign) else [n.target] if isinstance(n, ast.AnnAssign) else []
+        for t in targets:
+            if isinstance(t, ast.Name):
+                consts.setdefault(t.id, n)
+    named = set(defs) | set(consts)
+    refs: dict[str, set[str]] = {}
+    for n in tree.body:
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            owner = n.name
+        else:
+            owner = next((k for k, v in consts.items() if v is n), '<module>')
+        refs.setdefault(owner, set()).update({x.id for x in ast.walk(n) if isinstance(x, ast.Name) and x.id in named} - {owner})
+    members = {d for d in defs if SELF_TEST_FN.match(d)}
+    grew = bool(members)
+    while grew:
+        grew = False
+        for x in sorted(named - members):
+            users = {o for o, ns in refs.items() if x in ns}
+            if users and users <= members:
+                members.add(x)
+                grew = True
+    ranges = []
+    for name in sorted(members):
+        n = defs.get(name) or consts.get(name)
+        start = min([n.lineno] + [d.lineno for d in getattr(n, 'decorator_list', [])])
+        ranges.append((start - 1, n.end_lineno))
+    data: set[int] = set()
+
+    def mark(node, in_coll: bool) -> None:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if in_coll or node.end_lineno > node.lineno:
+                data.update(range(node.lineno, node.end_lineno + 1))
+            return
+        coll = in_coll or isinstance(node, (ast.List, ast.Tuple, ast.Set, ast.Dict))
+        for c in ast.iter_child_nodes(node):
+            mark(c, coll)
+    for n in tree.body:
+        if isinstance(n, (ast.Assign, ast.AnnAssign)) and n.value is not None and not any(
+                consts.get(m) is n for m in members):
+            mark(n.value, False)
+    for n in ast.walk(tree):            # docstrings (any string statement) describe code; they never run it
+        if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str):
+            data.update(range(n.lineno, n.end_lineno + 1))
+    return sorted(ranges), data
+
+
+def set_test_layout(root: Path, files: list[str]) -> None:
+    """Fill SELF_TESTS (Python files with self-test code, with the command detect_conventions.find_self_tests gives),
+    PYTEST_TESTS and PY_BENCH (Python files a pytest configuration collects through python_files that its default
+    naming would not: bench_*.py and the like are benchmarks, other names tests)."""
+    for x in (SELF_TESTS, PYTEST_TESTS, PY_BENCH):
+        x.clear()
+    py = [f for f in files if f.endswith('.py') and not fixture_of(f)]
+    commands = {s['file']: s['command'] for s in detect_conventions.find_self_tests(root, py)}
+    for f in py:
+        try:
+            text = (root / f).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        if not SELF_TEST_HINT.search(text):
+            continue
+        ranges, _ = python_test_layout(text)
+        if ranges:
+            lines = text.splitlines()
+            n = sum(1 for a, b in ranges for x in lines[a:b] if x.strip())
+            SELF_TESTS[f] = (ranges, n, commands.get(f))
+    fileset = set(files)
+    cfg_dirs = sorted({str(PurePosixPath(f).parent) for f in files
+                       if PurePosixPath(f).name in detect_conventions.PYTEST_CONFIG_NAMES and not fixture_of(f)})
+    for d in cfg_dirs:
+        cfg = detect_conventions.pytest_collection(root, d)
+        if not cfg:
+            continue
+        base = '' if d == '.' else d + '/'
+        for f in sorted(fileset):
+            if not f.startswith(base) or not f.endswith('.py') or fixture_of(f) or f in PYTEST_TESTS or f in PY_BENCH:
+                continue
+            rel, name = f[len(base):], PurePosixPath(f).name
+            if cfg['testpaths'] and '.' not in cfg['testpaths'] and not any(
+                    rel == t or rel.startswith(t.rstrip('/') + '/') for t in cfg['testpaths']):
+                continue
+            if not any(fnmatch.fnmatch(name, p) for p in cfg['python_files']) or detect_conventions.is_test_file(f) \
+                    or name == 'conftest.py':
+                continue
+            if name.startswith('bench') or {'bench', 'benches', 'benchmark', 'benchmarks'} & set(PurePosixPath(f).parts[:-1]):
+                PY_BENCH[f] = f'{cfg["config"]} (python_files {" ".join(cfg["python_files"])})'
+            else:
+                PYTEST_TESTS[f] = f'{cfg["config"]} (python_files {" ".join(cfg["python_files"])})'
+
+
 # Test weakness from a coverage profile (--coverage): statement coverage per area. A Go coverprofile
 # (`go test -coverprofile`, "mode: set|count|atomic" then "<import path>/<file>.go:a.b,c.d <statements> <count>") is
 # mapped to repository files through the module path in go.mod (nested go.mod modules too).
@@ -381,7 +542,7 @@ def dir_names(path: str) -> set[str]:
 
 def is_source(f: str) -> bool:
     p = PurePosixPath(f)
-    return (p.suffix in CODE_EXT and not is_test(f) and not f.endswith('.d.ts') and not dir_names(f) & NOT_SOURCE_DIRS
+    return (not fixture_of(f) and p.suffix in CODE_EXT and not is_test(f) and not f.endswith('.d.ts') and not dir_names(f) & NOT_SOURCE_DIRS
             and not CONFIG_NAME.match(p.name) and not is_bench(f))
 
 
@@ -394,6 +555,8 @@ def is_area_code(f: str) -> bool:
     destructive surface); is_source() is the stricter test for choosing areas. Runtime configuration (KEPT_CONFIG: a
     next.config.* or platform file setting headers, CSP, redirects or rewrites, or a configuration file an explicit
     --areas entry names by its path) is product behaviour and counts."""
+    if fixture_of(f):
+        return False
     if f in KEPT_CONFIG:
         return True
     p = PurePosixPath(f)
@@ -405,6 +568,9 @@ def is_area_code(f: str) -> bool:
 # headers, CSP, redirects or rewrites; vercel.json, netlify.toml or public/_headers that set them) and from explicit
 # --areas entries that name a configuration file by its path.
 KEPT_CONFIG: set[str] = set()
+# CI workflow files an explicit --areas entry covers (.github/workflows/*.yml ...): scored like templates and data (churn,
+# defects, change in scope), with complexity, surface and test weakness not_assessed. Set by score().
+CI_ASSETS: set[str] = set()
 RUNTIME_CONFIG_REASON = ('runtime configuration (response headers, CSP, redirects or rewrites): product behaviour, '
                          'not tool configuration; add it to --areas to score it')
 SW_REGISTER = re.compile(r'''\bserviceWorker\s*\.\s*register\s*\(\s*['"`]([^'"`]+)['"`]''')
@@ -418,7 +584,7 @@ def service_workers(root: Path, files: list[str]) -> dict[str, str]:
     fileset = set(files)
     out: dict[str, str] = {}
     for f in files:
-        if PurePosixPath(f).suffix not in CODE_EXT or is_test(f) or 'node_modules' in f.split('/'):
+        if PurePosixPath(f).suffix not in CODE_EXT or is_test(f) or 'node_modules' in f.split('/') or fixture_of(f):
             continue
         try:
             text = (root / f).read_text(encoding='utf-8', errors='replace')
@@ -435,7 +601,7 @@ def service_workers(root: Path, files: list[str]) -> dict[str, str]:
                     break
     for p in NEXT_MODEL.get('projects', []):
         for w in p.get('service_workers') or []:
-            if w.get('exists') and w.get('worker_file') in fileset:
+            if w.get('exists') and w.get('worker_file') in fileset and not fixture_of(w['worker_file']):
                 out.setdefault(w['worker_file'], 'a service worker in public/ (not registered by code found)')
     return out
 
@@ -503,6 +669,10 @@ def next_surface_hits(model: dict) -> dict[str, list[tuple[str, str]]]:
 def is_area_asset(f: str) -> bool:
     """A template, style or data record that belongs to its area's product (not a test, docs, tool configuration or a
     manifest). Data counts only inside a directory: a JSON or YAML file at the root is repository configuration."""
+    if f in CI_ASSETS:
+        return True
+    if fixture_of(f):
+        return False
     p = PurePosixPath(f)
     sfx = p.suffix.lower()
     if sfx not in ASSET_EXT or is_test(f) or dir_names(f) & (DOC_DIRS | CONFIG_DIRS) or 'node_modules' in p.parts:
@@ -712,7 +882,7 @@ def code_lines_by_language(root: Path, files: list[str], owner) -> dict[str, lis
     out: dict[str, list] = {}
     for f in files:
         lang = lang_census.LANG_BY_EXT.get(PurePosixPath(f).suffix)
-        if not lang or not is_source(f) or diff_scope.classify(f, '', False, root)[0] in ('generated', 'vendored'):
+        if not lang or not is_source(f) or is_copy(f) or diff_scope.classify(f, '', False, root)[0] in ('generated', 'vendored'):
             continue
         try:
             n = sum(1 for x in (root / f).read_text(encoding='utf-8', errors='replace').splitlines() if x.strip())
@@ -748,7 +918,9 @@ def second_language_areas(root: Path, files: list[str], areas: list[dict]) -> tu
                 continue
             base = descend(top, gfs)
             parts = module_areas(base, gfs, base) if len(gfs) > SPLIT_PACKAGE else []
-            made += parts if len(parts) >= 2 else [{'id': base, 'paths': [base]}]
+            # unsplit, the area is the top-level directory, as a workspace package is: tool/ beside tool2/, never
+            # tool/scripts beside tool2/ (whatever else the directory holds is excluded with its own reason)
+            made += parts if len(parts) >= 2 else [{'id': top, 'paths': [top]}]
         new += made
         notes.append(f'{lang} outside the packages ({out_n} of {total} code lines, {len(fs)} file(s)): '
                      + ', '.join(a['id'] for a in made))
@@ -758,8 +930,10 @@ def second_language_areas(root: Path, files: list[str], areas: list[dict]) -> tu
 def default_areas(root: Path, files: list[str]) -> tuple[list[dict], str]:
     det = detect_conventions.Detector(root, 50_000).run(None)
     # generated and vendored files are excluded from scoring, so they never choose the main source directory
-    all_source = [f for f in files if is_area_code(f) and diff_scope.classify(f, '', False, root)[0] not in ('generated', 'vendored')]
-    pkgs = sorted({a['root'] for a in det['areas'] if a['root'] != '.'})
+    # copies of a shared file never choose an area: they are scored once, with their canonical copy
+    all_source = [f for f in files if is_area_code(f) and not is_copy(f)
+                  and diff_scope.classify(f, '', False, root)[0] not in ('generated', 'vendored')]
+    pkgs = sorted({a['root'] for a in det['areas'] if a['root'] != '.' and not fixture_of(a['root'] + '/')})
     pkgs = [p for p in pkgs if any(f.startswith(p + '/') for f in all_source)]   # not an empty or unchecked-out package
     in_pkg = lambda f: any(f.startswith(p + '/') for p in pkgs)  # noqa: E731
 
@@ -901,7 +1075,9 @@ OUTSIDE_REASON ='outside the workspace packages and the main source tree (root t
 def is_test(path: str) -> bool:
     if in_runner_dir(path):                  # an XCUITest runner app is the product's on-device agent
         return False
-    if path in RUST_TEST_FILES:              # a Rust module declared under a test cfg (#[cfg(test)] mod x;)
+    if path in RUST_TEST_FILES or path in PYTEST_TESTS:   # a Rust test module; a file a pytest config collects
+        return True
+    if PurePosixPath(path).name in detect_conventions.SELF_TEST_NAMES:   # self_test.py, run as a script
         return True
     p = PurePosixPath(path)
     if p.suffix in C_FAMILY and any(x.endswith('Tests') for x in p.parts[:-1]):   # an XCTest bundle's Objective-C
@@ -1176,6 +1352,8 @@ HELPER_DIRS = {'helpers', 'helper', 'support', 'fixtures', '__fixtures__', 'util
 def not_a_counted_test(t: str) -> str | None:
     """Why a file in a test tree doesn't count as a test of the areas it imports, or None when it does: live tests need
     real credentials or services and don't run in a routine CI run; helpers and fixtures in a test tree are not tests."""
+    if fixture_of(t):
+        return f'test of a {fixture_reason(t)}: it exercises the sample, not the repository\'s own code'
     if t in FIXTURE_BINS:
         return 'helper binary under tests/ (fn main, built for tests to run), not a test'
     names = dir_names(t)
@@ -1204,12 +1382,20 @@ def tests_by_area(files: list[str], areas: list[dict], flaky: set[str], imports:
         if why:
             not_counted.append({'path': t, 'reason': why})
             continue
-        hit = {area_of(t, areas)}
-        for r in imports.resolved(t):
-            hit.add(area_of_dir(r.rstrip('/'), areas) if r.endswith('/') else area_of(r, areas))
+        # a test kept with the examples or docs is linked only by what it imports, never by sitting in an area; an
+        # import of a sample project's code (or of other example code) links nothing
+        beside_examples = bool(dir_names(t) & DOC_DIRS)
+        hit = set() if beside_examples else {area_of(COPY_REP.get(t, t), areas)}
+        for r in imports.resolved(t):     # a copy of a shared file is tested where its scored copy is
+            if fixture_of(r.rstrip('/')) or dir_names(r.rstrip('/') + ('/x' if r.endswith('/') else '')) & DOC_DIRS:
+                continue
+            hit.add(area_of_dir(r.rstrip('/'), areas) if r.endswith('/') else area_of(COPY_REP.get(r, r), areas))
         if t.endswith('.rs'):
             hit |= rust_test_areas(t, areas, files)
             hit |= rust_crate_uses(t, areas)
+        if beside_examples and not hit - {None}:
+            not_counted.append({'path': t, 'reason': 'test kept with the examples or docs: it imports no area\'s code (it '
+                                                     'tests the sample), so it is not a test of an area'})
         for aid in hit - {None}:
             out[aid].add(t)
     # Rust unit tests live in the source file, in #[cfg(test)] modules: the file is a test of its own area too
@@ -1217,6 +1403,13 @@ def tests_by_area(files: list[str], areas: list[dict], flaky: set[str], imports:
         aid = area_of(f, areas)
         if aid in out and f not in flaky:
             out[aid].add(f)
+    # a script's own self-test is a test of the script's area (once per copy group: the scored copy's)
+    for f in SELF_TESTS:
+        aid = area_of(f, areas)
+        if aid in out and COPY_REP.get(f, f) == f and not fixture_of(f):
+            out[aid].add(f)
+    for f in sorted(PY_BENCH):
+        not_counted.append({'path': f, 'reason': bench_reason(f)})
     return {k: sorted(v) for k, v in out.items()}, skipped, not_counted
 
 
@@ -1538,8 +1731,15 @@ CRATE_DIRS: dict[str, str] = {}
 BENCH_REASON = 'Cargo bench target (benches/ or [[bench]]): benchmark code, not product source'
 
 
+def bench_reason(f: str) -> str:
+    if f in PY_BENCH:
+        return (f'benchmark collected by pytest through {PY_BENCH[f]}: it measures speed, so it is neither product '
+                'source nor a test that counts')
+    return BENCH_REASON
+
+
 def is_bench(f: str) -> bool:
-    return f in BENCH_FILES or (f.endswith('.rs') and 'benches' in dir_names(f) and bool(CARGO.get('is_cargo')))
+    return f in BENCH_FILES or f in PY_BENCH or (f.endswith('.rs') and 'benches' in dir_names(f) and bool(CARGO.get('is_cargo')))
 
 
 def set_cargo_model(root: Path, files: list[str]) -> None:
@@ -1771,6 +1971,20 @@ def surface_scan(root: Path, files: list[str], entries: dict[str, str] | None = 
             for a, b in rust_test_ranges(text):
                 for k in range(a, min(b, len(raw_lines), len(code_lines))):
                     raw_lines[k] = code_lines[k] = ''
+        if suffix == '.py':
+            # self-test code (a self_test() and what only it uses: fixture pages, case tables) is test code; the strings
+            # of module-level tables and multi-line constants are data (a scanner's pattern table), so the raw patterns,
+            # which read inside strings, see those lines with string contents blanked (code_mask)
+            ranges, data = python_test_layout(text)
+            for a, b in ranges:
+                for k in range(a, min(b, len(raw_lines), len(code_lines))):
+                    raw_lines[k] = code_lines[k] = ''
+            if data:
+                masked = comment_free(code_mask.mask(text, 'python'), suffix).splitlines()
+                if len(masked) == len(raw_lines):
+                    for i in data:
+                        if 0 < i <= len(raw_lines) and raw_lines[i - 1]:
+                            raw_lines[i - 1] = masked[i - 1]
         for i, (raw, code) in enumerate(zip(raw_lines, code_lines), 1):
             for cls in line_classes(raw, code, suffix):
                 if not any(h.startswith(f'{f}:{i} (') for h in hits.get(cls, [])):   # the model already cites it
@@ -1933,6 +2147,28 @@ def score(args) -> dict:
     scope = json.loads(args.scope.read_text(encoding='utf-8')) if args.scope else None
     # history.json lists every tracked file (mine_history adds the ones the window didn't touch, with zero counts)
     files = sorted(p for p in hist['files'] if (root / p).is_file())
+    explicit = json.loads(args.areas.read_text(encoding='utf-8'))['areas'] if args.areas else []
+    # Sample and fixture projects are left out (an explicit area inside one keeps it), then the tests that are not a
+    # test framework are found, then the copy groups (tests and fixtures never form one).
+    FIXTURES.clear()
+    kept_fixtures = []
+    if not getattr(args, 'include_fixtures', False):
+        for fx in repo_layout.fixture_projects(root, getattr(args, 'fixture_dir', None) or ()):
+            named_in = sorted({a['id'] for a in explicit for p in a['paths']
+                               if p.rstrip('/*') == fx['dir'] or p.startswith(fx['dir'] + '/')})
+            if named_in:
+                kept_fixtures.append(f'{fx["dir"]} (--areas: {", ".join(named_in)})')
+            else:
+                FIXTURES[fx['dir']] = fx['reason']
+    set_test_layout(root, files)
+    for x in (COPY_CANON, COPY_REP, COPY_HOW):
+        x.clear()
+    groups = [] if getattr(args, 'keep_copies', False) else repo_layout.copy_groups(
+        root, [f for f in files if not fixture_of(f) and not is_test(f) and not dir_names(f) & DOC_DIRS
+               and PurePosixPath(f).suffix.lower() in CODE_EXT | ASSET_EXT])
+    for g in groups:
+        for m in [g['canonical']] + g['copies']:
+            COPY_CANON[m], COPY_HOW[m] = g['canonical'], g['how']
     PRODUCT_DIRS.clear()
     PRODUCT_DIRS.update(product_dirs(root, files))
     set_runner_dirs(root, files)
@@ -1941,21 +2177,59 @@ def score(args) -> dict:
     NEXT_MODEL.clear()
     NEXT_MODEL.update(next_model(root, files))
     KEPT_CONFIG.clear()
-    runtime_cfg = runtime_config_files(NEXT_MODEL, fileset)
+    runtime_cfg = {f: v for f, v in runtime_config_files(NEXT_MODEL, fileset).items() if not fixture_of(f)}
     KEPT_CONFIG.update(runtime_cfg)
     if args.areas:
         # an explicit area that names a configuration file by its path is the user's decision: it is scored
-        named = {p for a in json.loads(args.areas.read_text(encoding='utf-8'))['areas'] for p in a['paths']}
+        named = {p for a in explicit for p in a['paths']}
         KEPT_CONFIG.update(f for f in named & fileset if CONFIG_NAME.match(PurePosixPath(f).name)
                            or ('/' not in f and PurePosixPath(f).suffix.lower() in DATA_EXT | {'.toml'}))
     areas, area_basis = define_areas(root, files, args.areas)
     warnings = []
+    CI_ASSETS.clear()
+    if args.areas:          # a CI workflow an explicit area covers is product behaviour of the repository: scored
+        CI_ASSETS.update(f for f in files if CI_FILES.match(f) and area_of(f, areas))
+    # each copy group is scored once: on its canonical copy, or on the first copy an area holds when none holds that
+    copy_out = []
+    for g in groups:
+        members = [g['canonical']] + sorted(g['copies'], key=lambda m: (m.count('/'), len(m), m))
+        rep_ = next((m for m in members if area_of(m, areas)), g['canonical'])
+        for m in members:
+            COPY_REP[m] = rep_
+        copy_out.append({'canonical': g['canonical'], 'how': g['how'], 'copies': len(g['copies']),
+                         'scored_as': rep_, 'area': area_of(rep_, areas),
+                         **({'undeclared': g['undeclared']} if g.get('undeclared') else {}),
+                         **({'drifted': g['drifted']} if g.get('drifted') else {})})
+
+    def copy_reason(f: str) -> str:
+        r = COPY_REP[f]
+        return (f'a copy of {COPY_CANON[f]} ({"declared shared file" if COPY_HOW[f] == "declared" else "identical content"});'
+                f' scored once, in area {area_of(r, areas) or "none"}' + (f' (as {r})' if r != COPY_CANON[f] else '')
+                + '; --keep-copies scores every copy')
+    if FIXTURES:
+        warnings.append(f'{len(FIXTURES)} sample or fixture project(s) are not scored (their code, tests and changes are '
+                        'left out; listed in fixtures_excluded): ' + ', '.join(sorted(FIXTURES)[:6])
+                        + (f' (+{len(FIXTURES) - 6})' if len(FIXTURES) > 6 else '')
+                        + '; --include-fixtures scores them, --fixture-dir names more')
+    if kept_fixtures:
+        warnings.append('sample or fixture project(s) scored because --areas names them: ' + ', '.join(kept_fixtures))
+    if copy_out:
+        warnings.append(f'{len(copy_out)} file(s) are kept identical in {sum(g["copies"] for g in copy_out)} further '
+                        'place(s): each is scored once, in the area of its canonical copy, and the copies are listed in '
+                        'excluded (copy_groups); --keep-copies scores every copy')
     if NEXT_MODEL.get('error'):
         warnings.append(f'the Next.js model could not be read ({NEXT_MODEL["error"]}): script loaders, next.config headers '
                         'and redirects and service workers are not scored from it')
     excluded = []
     kept_generated: dict[str, list[tuple[str, str]]] = {}
     for f in files:
+        sfx = PurePosixPath(f).suffix
+        if fixture_of(f) and area_of(f, areas) and sfx.lower() in CODE_EXT | ASSET_EXT and not is_test(f):
+            excluded.append({'path': f, 'reason': fixture_reason(f)})
+            continue
+        if COPY_REP.get(f, f) != f and area_of(f, areas) and (is_area_code(f) or is_area_asset(f)):
+            excluded.append({'path': f, 'reason': copy_reason(f)})
+            continue
         kind, why = diff_scope.classify(f, '', False, root)
         if kind == 'generated' and args.areas and area_of(f, areas):
             # an explicit area is the user's decision: its files are scored even when their name or directory looks
@@ -1965,7 +2239,7 @@ def score(args) -> dict:
             excluded.append({'path': f, 'reason': why})
         elif PurePosixPath(f).suffix in CODE_EXT and not is_test(f) and not is_area_code(f) and area_of(f, areas):
             excluded.append({'path': f, 'reason': 'tool configuration file' if CONFIG_NAME.match(PurePosixPath(f).name)
-                             else BENCH_REASON if is_bench(f) else 'documentation or examples directory'})
+                             else bench_reason(f) if is_bench(f) else 'documentation or examples directory'})
     excluded_paths = {e['path'] for e in excluded}
     for aid, kept in sorted(kept_generated.items()):
         warnings.append(f'area {aid}: {len(kept)} file(s) classified generated ({kept[0][1]}) are scored because --areas '
@@ -1977,6 +2251,7 @@ def score(args) -> dict:
     in_tree = (lambda f: True) if args.areas else (lambda f: any(f.startswith(p.rstrip('/*').rsplit('/', 1)[0] + '/')
                                                                    for a in areas for p in a['paths']))
     unassigned = sorted(f for f in files if owner[f] is None and is_source(f) and f not in excluded_paths
+                        and COPY_REP.get(f, f) == f
                         and cx.get(f, {}).get('loc', 0) > 0 and in_tree(f))
     if unassigned:
         areas = areas + [{'id': 'unassigned', 'paths': unassigned}]
@@ -1996,14 +2271,18 @@ def score(args) -> dict:
             continue
         kind, why = diff_scope.classify(f, '', False, root)
         names = dir_names(f)
-        if kind in ('generated', 'vendored'):
+        if fixture_of(f):
+            reason = fixture_reason(f)
+        elif COPY_REP.get(f, f) != f:
+            reason = copy_reason(f)
+        elif kind in ('generated', 'vendored'):
             reason = why
         elif f in KEPT_CONFIG:
             reason = RUNTIME_CONFIG_REASON
         elif CONFIG_NAME.match(p.name):
             reason = 'tool configuration file'
         elif is_bench(f):
-            reason = BENCH_REASON
+            reason = bench_reason(f)
         elif names & DOC_DIRS:
             reason = 'documentation or examples directory'
         elif names & NOT_SOURCE_DIRS:
@@ -2023,8 +2302,13 @@ def score(args) -> dict:
             continue
         if area_of(sp, areas) is not None and sp not in why_excluded:
             continue
+        if COPY_REP.get(sp, sp) != sp and area_of(COPY_REP[sp], areas):
+            continue                       # a copy's change counts once, in the area of the copy that is scored
         top = sp.split('/')[0] + '/' if '/' in sp else sp
-        reason = why_excluded.get(sp) or ('a template, style or data file in no area' if is_area_asset(sp) else 'in no area')
+        reason = why_excluded.get(sp) or (fixture_reason(sp) if fixture_of(sp)
+                                          else 'documentation or examples directory' if dir_names(sp) & DOC_DIRS
+                                          else 'a template, style or data file in no area' if is_area_asset(sp)
+                                          else 'in no area')
         if sf.get('status') == 'deleted' and sp not in fileset:
             reason = f'deleted in the scope; {reason}'
         acc = loose.setdefault((top, reason), [0, 0])
@@ -2189,10 +2473,15 @@ def score(args) -> dict:
         added_in_scope = [f for f in every if scope_files.get(f, {}).get('status') == 'added']
         novel = bool(every) and len(added_in_scope) == len(every)
         inline = {f: RUST_INLINE_TESTS[f][1] for f in mine if f in RUST_INLINE_TESTS}   # #[cfg(test)] module lines
+        selft = {f: SELF_TESTS[f][1] for f in mine if f in SELF_TESTS}                  # self-test code lines
+        for f, n in selft.items():
+            inline[f] = inline.get(f, 0) + n
         loc = sum(max(0, cx.get(f, {}).get('loc', 0) - inline.get(f, 0)) for f in mine)
         branches = sum(cx.get(f, {}).get('branches', 0) for f in mine)
         code_files = [f for f in mine if cx.get(f, {}).get('loc', 0) > 0]
-        test_loc = sum(RUST_INLINE_TESTS[t][1] if t in RUST_INLINE_TESTS else cx.get(t, {}).get('loc', 0) for t in tests[a['id']])
+        test_loc = sum(RUST_INLINE_TESTS[t][1] if t in RUST_INLINE_TESTS
+                       else SELF_TESTS[t][1] if t in SELF_TESTS and not is_test(t)
+                       else cx.get(t, {}).get('loc', 0) for t in tests[a['id']])
         scope_lines = sum(scope_files[f]['lines_added'] + scope_files[f]['lines_deleted'] for f in every if f in scope_files)
         scope_lines += sum((sf.get('lines_added') or 0) + (sf.get('lines_deleted') or 0) for sf in gone_s)
         fix_shas = sorted({s for x in h for s in x['fix_commits']})
@@ -2211,7 +2500,8 @@ def score(args) -> dict:
             'scope_lines': scope_lines, 'tests': tests[a['id']], 'test_loc': test_loc, 'code_files': code_files,
             'packages': sorted({package_of(x) for x in mine} - {None}),
             'breaking_commits': [c for c in (release or {}).get('breaking_commits') or [] if set(c.get('files') or []) & mine_set],
-            'gone_history': gone_h, 'gone_scope': gone_s, 'inline_tests': inline,
+            'gone_history': gone_h, 'gone_scope': gone_s,
+            'inline_tests': {f: n for f, n in inline.items() if f in RUST_INLINE_TESTS}, 'self_tests': selft,
         }
     # A package with a breaking pending changeset (major, or a "Breaking" note) flags the areas of it the scope changed;
     # when the scope changed none of them (or there is no scope), every area of the package.
@@ -2303,7 +2593,9 @@ def score(args) -> dict:
             tev = [f'{len(r["tests"])} test file(s) import it ({", ".join(r["tests"][:4])}); {r["test_loc"]} test lines for '
                    f'{r["loc"]} lines of code (ratio {ratio:.2f})'
                    + (f'; {len(r["inline_tests"])} source file(s) hold #[cfg(test)] modules '
-                      f'({sum(r["inline_tests"].values())} lines, counted as test lines, not code)' if r['inline_tests'] else '')]
+                      f'({sum(r["inline_tests"].values())} lines, counted as test lines, not code)' if r['inline_tests'] else '')
+                   + (f'; {len(r["self_tests"])} script(s) carry their own self-test ({sum(r["self_tests"].values())} '
+                      'lines, counted as test lines, not code)' if r['self_tests'] else '')]
         cov_files = [x for x in r['files'] if x in coverage]
         stmts = sum(coverage[x][0] for x in cov_files)
         if stmts:                         # a coverage profile measures it: statement coverage, not the size ratio
@@ -2386,7 +2678,7 @@ def score(args) -> dict:
         if args.areas or u['id'] != 'unassigned':
             warnings.append(f'area {u["id"]} is not scored: {u["reason"]}; it is listed in unscored_areas (no file to score '
                             'is not low risk: fix its paths or say in the plan why it is out of scope)')
-    no_tests = no_tests_warning(files)
+    no_tests = no_tests_warning([f for f in files if not fixture_of(f)])
     if no_tests:
         warnings.append(no_tests)
     scored = lambda p: (area_of(p, areas) is not None and p not in excluded_paths  # noqa: E731
@@ -2433,6 +2725,12 @@ def score(args) -> dict:
             'unreferenced': unreferenced,
             'warnings': warnings + list(hist.get('notes') or []),
             'excluded': excluded, 'flaky_tests_not_counted': flaky_skipped, 'tests_not_counted': tests_not_counted,
+            'fixtures_excluded': [{'dir': d, 'reason': r} for d, r in sorted(FIXTURES.items())],
+            'copy_groups': copy_out,
+            'self_tests': [{'file': f, 'command': c, 'lines': n, 'area': area_of(f, areas)}
+                           for f, (_, n, c) in sorted(SELF_TESTS.items()) if COPY_REP.get(f, f) == f],
+            'pytest_collected': [{'file': f, 'config': c, 'kind': 'benchmark' if f in PY_BENCH else 'test'}
+                                 for f, c in sorted({**PYTEST_TESTS, **PY_BENCH}.items())],
             'release': rel_meta, 'language_coverage': lang_cov,
             'weights': {'likelihood': LIKELIHOOD, 'impact': IMPACT}, 'areas': out_areas}
 
@@ -2619,7 +2917,8 @@ def self_test() -> int:
         PRODUCT_DIRS.clear()
         PRODUCT_DIRS.update(saved)
         tmp.cleanup()
-    checks = go_layout_checks() + web_app_checks() + static_front_end_checks() + next_site_checks() + cargo_workspace_checks()
+    checks = (go_layout_checks() + web_app_checks() + static_front_end_checks() + next_site_checks() + cargo_workspace_checks()
+              + tool_repo_checks())
     bad += [name for name, ok in checks if not ok]
     for b in bad:
         print('FAIL ' + b)
@@ -3207,7 +3506,8 @@ CARGO_SITE = {
     'crates/station-cli/tests/cli.rs': (
         'use station_core::mean;\n\n#[test]\nfn shows_mean() {\n    assert_eq!(mean(&[2.0]), 2.0);\n}\n'),
     'crates/station-cli/tests/fixtures/fake_plotter.rs': 'fn main() {\n    println!("plotted");\n}\n',
-    'scripts/report.py': _PY_TOOL, 'scripts/fetch.py': _PY_TOOL, 'scripts/calibrate.py': _PY_TOOL,
+    # distinct scripts (identical files would be one copy group, scored once)
+    **{f'scripts/{n}.py': _PY_TOOL + f'\n\ndef name():\n    return "{n}"\n' for n in ('report', 'fetch', 'calibrate')},
     'tests/test_report.py': ('import sys\nfrom pathlib import Path\nsys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))\n'
                              'import report\n\n\ndef test_step():\n    assert report.step_1([3]) == [3]\n'),
 }
@@ -3330,6 +3630,193 @@ def cargo_workspace_checks() -> list[tuple[str, bool]]:
     return out
 
 
+# A synthetic tool repository: a shared helper copied into two tool folders by a check_shared-style mapping, a scanner
+# whose pattern table holds the code it looks for, a script that carries its own --self-test (with a fixture page in a
+# string and temporary files it writes), an examples/ sample shop with planted defects, its own tests, a lockfile and a
+# Next.js config, pytest benchmarks collected through python_files = bench_*.py, and a CI workflow.
+_TOOL_UTIL = (
+    '"""Shared helper: read a page and list the scripts it loads."""\n'
+    'import re\nimport sys\nimport tempfile\nfrom pathlib import Path\n\n'
+    'SCRIPT_SRC = re.compile(r"<script[^>]*src=([^ >]+)", re.I)\n\n\n'
+    'def scripts_of(page):\n    out = []\n    for m in SCRIPT_SRC.finditer(page):\n        if m.group(1):\n'
+    '            out.append(m.group(1))\n    return out\n\n\n'
+    'FIXTURE_PAGE = (\'<Script src="https://www.googletagmanager.com/gtag/js?id=G-TEST000" />\'\n'
+    '                "<script>gtag(\'config\', \'G-TEST000\');</script>")\n\n\n'
+    'def self_test():\n    d = Path(tempfile.mkdtemp())\n    (d / "page.html").write_text(FIXTURE_PAGE)\n'
+    '    shell = \'out, err := exec.Command("adb", "-s", serial, "uninstall", pkg).Output()\'\n'
+    '    ok = scripts_of(FIXTURE_PAGE) and "uninstall" in shell\n    print("ok  scripts" if ok else "FAIL  scripts")\n'
+    '    return 0 if ok else 1\n\n\n'
+    'if __name__ == "__main__":\n    if "--self-test" in sys.argv:\n        sys.exit(self_test())\n'
+    '    print(scripts_of(sys.stdin.read()))\n')
+_TOOL_SCAN = (
+    '"""Scan source text for risky statements.\n\nIt only reads: the device\'s data (pm clear) and DELETE FROM statements are '
+    'named, never run.\n"""\nimport subprocess\nimport sys\n\n'
+    'RULES = [\n    ("destructive", "DROP TABLE"),\n    ("destructive", "DELETE FROM"),\n'
+    '    ("secrets", "\'Authorization\': "),\n    ("script", "gtag("),\n]\n\n\n'
+    'def scan(text):\n    hits = []\n    for kind, needle in RULES:\n        if needle in text:\n'
+    '            hits.append(kind)\n    return hits\n\n\n'
+    'def lint(path):\n    return subprocess.run(["flake8", path], check=False).returncode\n\n\n'
+    'if __name__ == "__main__":\n    print(scan(open(sys.argv[1]).read()))\n')
+TOOL_REPO = {
+    'README.md': '# Sample tools\n',
+    'tools/check_shared.py': ("SKILLS = ['alpha-tool', 'beta-tool']\nSHARED = {\n    'scripts/pagekit.py': SKILLS,\n}\n\n\n"
+                              'def main():\n    return 0\n'),
+    'shared/scripts/pagekit.py': _TOOL_UTIL,
+    'alpha-tool/scripts/pagekit.py': _TOOL_UTIL,
+    'beta-tool/scripts/pagekit.py': _TOOL_UTIL,
+    'beta-tool/requirements.txt': 'requests\n',
+    'gamma-tool/requirements.txt': 'requests\n',
+    'gamma-tool/run.py': ''.join(f'def step_{i}(x):\n    if x > {i}:\n        return x\n    return {i}\n\n\n' for i in range(8)),
+    'alpha-tool/scripts/scan.py': _TOOL_SCAN,
+    'delta-tool/scripts/merge.py': ''.join(f'def merge_{i}(a, b):\n    if a and b:\n        return a + b\n    return a or b\n\n\n'
+                                           for i in range(16)),
+    'beta-tool/scripts/report.py': ''.join(f'def part_{i}(rows):\n    if not rows:\n        return []\n    return rows[{i}:]\n\n\n'
+                                           for i in range(10)),
+    'alpha-tool/examples/shop/package.json': '{"name": "shop", "dependencies": {"next": "15.1.0"}}\n',
+    'alpha-tool/examples/shop/package-lock.json': '{"name": "shop", "lockfileVersion": 3}\n',
+    'alpha-tool/examples/shop/next.config.ts': ("const nextConfig = {\n  async headers() {\n    return [{ source: '/(.*)', "
+                                                "headers: [{ key: 'X-Frame-Options', value: 'DENY' }] }];\n  },\n};\n"
+                                                'export default nextConfig;\n'),
+    'alpha-tool/examples/shop/src/app/page.tsx': 'export default function Home() {\n  return <main>shop</main>;\n}\n',
+    'alpha-tool/examples/shop/src/cart.py': 'def total(items):\n    return sum(i["price"] for i in items)\n',
+    'alpha-tool/examples/shop/tests/test_cart.py': ('from cart import total\n\n\n' + ''.join(
+        f'def test_total_{i}():\n    assert total([{{"price": {i}}}]) == {i}\n\n\n' for i in range(20))),
+    'alpha-tool/examples/shop/data/prices.json': '{"flour": 349}\n',
+    # example outputs and a regression test beside the sample, outside its project folder
+    'alpha-tool/examples/run/first.json': '{"findings": []}\n' * 8,
+    'alpha-tool/examples/run/second.json': '{"findings": []}\n' * 8,
+    'alpha-tool/examples/regression/test_shop_regressions.py': ('import scan\n\n\n' + ''.join(
+        f'def test_rule_{i}():\n    assert scan.scan("DROP TABLE t{i}")\n\n\n' for i in range(20))),
+    'benchmarks/pytest.ini': '[pytest]\npython_files = bench_*.py\n',
+    'benchmarks/bench_scan.py': ('import sys\nsys.path.insert(0, "alpha-tool/scripts")\nimport scan\n\n\n'
+                                 'def bench_scan(benchmark):\n    benchmark(scan.scan, "DROP TABLE x")\n'),
+    'benchmarks/requirements.txt': 'pytest-codspeed\n',
+    '.github/workflows/checks.yml': 'on: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n',
+}
+
+
+def tool_repo_checks() -> list[tuple[str, bool]]:
+    """The synthetic TOOL_REPO, default and explicit areas: sample projects stay out (no area, no tests, no generated
+    warning, the right reason for their changed lines), the copies of a shared file count once, pattern tables and
+    self-test fixtures are not surfaces, a script's --self-test is a test of its area, pytest benchmarks are neither
+    product code nor tests, sibling tools get areas of the same shape, and an explicit CI area is scored."""
+    import tempfile
+    out: list[tuple[str, bool]] = []
+    saved = (set(PRODUCT_DIRS), set(RUNNER_DIRS))
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        for rel, text in TOOL_REPO.items():
+            p = root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text, encoding='utf-8')
+        files = sorted(TOOL_REPO)
+        changed = {'shared/scripts/pagekit.py': 12, 'alpha-tool/scripts/pagekit.py': 12, 'beta-tool/scripts/pagekit.py': 12,
+                   'alpha-tool/scripts/scan.py': 5, 'alpha-tool/examples/shop/data/prices.json': 2,
+                   '.github/workflows/checks.yml': 3}
+        stat = lambda: {'commits': 0, 'lines_added': 0, 'lines_deleted': 0, 'authors': [], 'fix_commits': [],  # noqa: E731
+                        'formatting_commits': [], 'first_commit': '2026-01-01'}
+        hist = {'repo': 'tools', 'head': 'abc123', 'shallow': False, 'notes': [], 'command': 'git log',
+                'window': {'days': 180, 'from': '2026-05-01', 'to': '2026-11-01', 'head_date': '2026-11-01'},
+                'excluded_formatting': [], 'summary': {'commits': 1, 'fix_commits': 0, 'formatting_commits': 0},
+                'commits': [{'sha': 'c1', 'date': '2026-10-01', 'author': 'A', 'subject': 'Sync the page helper', 'fix': False,
+                             'keys': [], 'formatting': False,
+                             'files': [{'path': p, 'added': n, 'deleted': 0} for p, n in changed.items()]}],
+                'files': {f: stat() for f in files}}
+        for p, n in changed.items():
+            hist['files'][p].update(commits=1, lines_added=n, authors=['A'])
+        cx = {'files': {f: {'loc': len([x for x in t.splitlines() if x.strip()]), 'branches': t.count('if '), 'method': 'regex'}
+                        for f, t in TOOL_REPO.items() if PurePosixPath(f).suffix in CODE_EXT}}
+        scope = {'source': {'kind': 'git', 'base_ref': 'v1', 'command': 'git diff'},
+                 'files': [{'path': p, 'status': 'modified', 'kind': 'source', 'lines_added': n, 'lines_deleted': 0}
+                           for p, n in changed.items()]}
+        (root / '_in').mkdir()
+        for name, data in (('history.json', hist), ('complexity.json', cx), ('scope.json', scope)):
+            (root / '_in' / name).write_text(json.dumps(data), encoding='utf-8')
+        (root / '_in' / 'areas.json').write_text(json.dumps({'areas': [
+            {'id': 'alpha-tool', 'paths': ['alpha-tool']}, {'id': 'beta-tool', 'paths': ['beta-tool']},
+            {'id': 'shared', 'paths': ['shared']}, {'id': 'ci', 'paths': ['.github']}]}), encoding='utf-8')
+
+        def run(areas: bool) -> dict:
+            ns = argparse.Namespace(repo=root, history=root / '_in' / 'history.json', complexity=root / '_in' / 'complexity.json',
+                                    scope=root / '_in' / 'scope.json', journeys=None, input=[], usage=None,
+                                    areas=(root / '_in' / 'areas.json') if areas else None, defects=None, finding_area=[],
+                                    release=None, coverage=[])
+            return score(ns)
+
+        def area_with(res: dict, path: str) -> dict:
+            return next((a for a in res['areas'] if area_of(path, [a]) == a['id']), {})
+        try:
+            PRODUCT_DIRS.clear()
+            set_runner_dirs(root, files)
+            res = run(False)
+            ids = sorted(a['id'] for a in res['areas'])
+            excl = {e['path']: e['reason'] for e in res['excluded']}
+            out.append((f'a sample project under examples/ is never an area, even with a Next.js config that sets headers '
+                        f'(areas {ids})', not any('examples' in p for a in res['areas'] for p in a['paths'] + [a['id']])))
+            out.append((f'the fixture projects left out are reported (got {res.get("fixtures_excluded")})',
+                        [f['dir'] for f in res.get('fixtures_excluded') or []] == ['alpha-tool/examples/regression',
+                                                                               'alpha-tool/examples/shop']))
+            homes = [a['id'] for a in res['areas']
+                     if any('pagekit.py' in e for e in ' '.join(a['factors']['surface']['evidence']).split(', '))]
+            out.append((f'copies of a shared file are excluded from their areas, naming the canonical copy (excluded '
+                        f'{ {k: v for k, v in excl.items() if "pagekit" in k} })',
+                        all('shared/scripts/pagekit.py' in excl.get(c, '') for c in ('alpha-tool/scripts/pagekit.py',
+                                                                                     'beta-tool/scripts/pagekit.py'))))
+            groups = res.get('copy_groups') or []
+            out.append((f'copy groups are reported once, with the area that scores them (got {groups})',
+                        len(groups) == 1 and groups[0].get('canonical') == 'shared/scripts/pagekit.py'
+                        and groups[0].get('copies') == 2 and groups[0].get('area') == area_with(res, 'shared/scripts/pagekit.py').get('id')))
+            alpha = area_with(res, 'alpha-tool/scripts/scan.py')
+            beta = area_with(res, 'beta-tool/scripts/report.py')
+            out.append((f'the change in scope of a copy counts once, in the canonical copy\'s area (alpha '
+                        f'{alpha.get("factors", {}).get("change_in_scope", {}).get("evidence")})',
+                        alpha.get('factors', {}).get('change_in_scope', {}).get('evidence', [''])[0].startswith('5 lines')))
+            sh = area_with(res, 'shared/scripts/pagekit.py')
+            out.append((f'a self-test\'s fixture page and its temporary files are not surfaces (shared surfaces '
+                        f'{sh.get("surfaces")})', bool(sh) and not set(sh.get('surfaces') or []) & {'third_party_script',
+                                                                                                    'file_write', 'destructive'}))
+            out.append((f'a pattern table holding the statements a scanner looks for is not a surface; its real process '
+                        f'launch is (alpha surfaces {alpha.get("surfaces")})',
+                        bool(alpha) and 'subprocess' in alpha.get('surfaces', [])
+                        and not set(alpha.get('surfaces') or []) & {'destructive', 'secrets', 'third_party_script'}))
+            out.append((f'a script\'s --self-test is a test of its own area (shared tests {sh.get("tests")}, test weakness '
+                        f'{sh.get("factors", {}).get("test_weakness")})', 'shared/scripts/pagekit.py' in (sh.get('tests') or [])
+                        and sh.get('factors', {}).get('test_weakness', {}).get('score') != 5))
+            out.append((f'pytest benchmarks (python_files = bench_*.py) are not product code (areas {ids}, excluded '
+                        f'{excl.get("benchmarks/bench_scan.py")!r})', 'benchmarks' not in ids
+                        and 'bench' in (excl.get('benchmarks/bench_scan.py') or '')))
+            out.append((f'pytest benchmarks are not counted as tests (tests_not_counted {res["tests_not_counted"]})',
+                        'benchmarks/bench_scan.py' not in alpha.get('tests', [])
+                        and any(t['path'] == 'benchmarks/bench_scan.py' and 'bench' in t['reason'] for t in res['tests_not_counted'])))
+            out.append((f'sibling tools get areas of the same shape, with or without a manifest (alpha {alpha.get("id")!r}, '
+                        f'beta {beta.get("id")!r})', alpha.get('id') == 'alpha-tool' and beta.get('id') == 'beta-tool'))
+            outside = {x['path']: x['reason'] for x in res['scope_outside_areas']}
+            out.append((f'changed lines in a sample project are named as such, not "in no area" (got {outside})',
+                        'sample or fixture project' in outside.get('alpha-tool/', '')))
+            res = run(True)
+            got = {a['id']: a for a in res['areas']}
+            at = got.get('alpha-tool', {})
+            out.append((f'tests of a sample project, or kept with the examples, do not count as the tool\'s tests (alpha '
+                        f'tests {at.get("tests")})', 'alpha-tool/examples/shop/tests/test_cart.py' not in (at.get('tests') or [])
+                        and 'alpha-tool/examples/regression/test_shop_regressions.py' not in (at.get('tests') or [])
+                        and any(t['path'] == 'alpha-tool/examples/shop/tests/test_cart.py' for t in res['tests_not_counted'])))
+            out.append((f'a sample project\'s lockfile draws no "classified generated" warning (got '
+                        f'{[w for w in res["warnings"] if "generated" in w]})', not any('package-lock' in w for w in res['warnings'])))
+            ci = got.get('ci', {})
+            out.append((f'an explicit area holding a CI workflow is scored, with churn and change in scope (unscored '
+                        f'{res["unscored_areas"]})', bool(ci) and ci.get('factors', {}).get('change_in_scope', {}).get('score')
+                        is not None and ci.get('factors', {}).get('surface', {}).get('status') == 'not_assessed'))
+        except Exception as e:                       # a missing function is a failed check, not a crash
+            import traceback
+            out.append((f'tool repository checks raised {type(e).__name__}: {e} {traceback.format_exc()[-600:]}', False))
+        finally:
+            PRODUCT_DIRS.clear()
+            PRODUCT_DIRS.update(saved[0])
+            RUNNER_DIRS.clear()
+            RUNNER_DIRS.update(saved[1])
+    return out
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--repo', type=Path, required=True)
@@ -3347,6 +3834,13 @@ def main(argv=None) -> int:
     ap.add_argument('--coverage', type=Path, action='append', default=[],
                     help='a Go coverprofile (go test -coverprofile=coverage.out ./...): statement coverage per area '
                          'becomes the test-weakness evidence (repeatable)')
+    ap.add_argument('--fixture-dir', action='append', default=[], metavar='NAME|PATH',
+                    help='also treat this directory (a name anywhere, or a repository-relative path) as holding sample or '
+                         'fixture projects, which are not scored (repeatable)')
+    ap.add_argument('--include-fixtures', action='store_true',
+                    help='score sample and fixture projects (examples/, fixtures/, testdata/ ...) as the repository\'s own code')
+    ap.add_argument('--keep-copies', action='store_true',
+                    help='score every copy of a file kept identical in several places, not once on its canonical copy')
     ap.add_argument('--out', type=Path, required=True)
     if '--self-test' in (sys.argv[1:] if argv is None else argv):
         return self_test()

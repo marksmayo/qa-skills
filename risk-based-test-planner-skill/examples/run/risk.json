@@ -53,6 +53,10 @@
   "excluded": [],
   "flaky_tests_not_counted": [],
   "tests_not_counted": [],
+  "fixtures_excluded": [],
+  "copy_groups": [],
+  "self_tests": [],
+  "pytest_collected": [],
   "release": {
     "base": {
       "tag": "v1.4",

@@ -26,7 +26,8 @@ EVIDENCE_SOURCES = {'coverage', 'import_graph', 'framework_tools', 'journeys', '
 SCOPES = {'global_config': {'full_suite', 'package', 'language'}, 'shared_fixture': {'fixture_reach', 'package'},
           'dynamic_reference': {'package'}, 'data_or_schema': {'package_and_contract'},
           'unmapped_source': {'package', 'full_suite'},
-          'deleted_or_renamed': {'importers'}, 'non_code': {'e2e_and_visual'}, 'huge_change': {'full_suite'}}
+          'deleted_or_renamed': {'importers'}, 'non_code': {'e2e_and_visual'}, 'huge_change': {'full_suite'},
+          'fixture_project': {'fixture_host'}}
 HIGH_RISK = {'global_config', 'shared_fixture', 'dynamic_reference', 'deleted_or_renamed', 'huge_change'}
 BANNED = re.compile(r'\bsafe(ly)? to (skip|omit|ignore|drop)\b|\bsafely (skip|skipped|omit|omitted|ignored?)\b|'
                     r'\b(selection|subset|it) is safe\b|\bsafe selection\b|\bno risk\b|\brisk[- ]free\b|\bguarantee[sd]?\b|'
@@ -160,6 +161,8 @@ def check(rep: dict, selection: dict | None, replay: dict | None, runs: dict | N
             errs.append('metadata.packages: differs from the selection')
         if 'language_coverage' in selection and rep.get('language_coverage') != selection['language_coverage']:
             errs.append('language_coverage: differs from the selection (copy it unchanged)')
+        if rep.get('excluded') != selection.get('excluded'):
+            errs.append('excluded: differs from the selection (copy the fixture projects and folders it left out)')
     if len({s['name'] for s in rep['sources']}) != len(rep['sources']) or set(src) != EVIDENCE_SOURCES:
         errs.append(f'sources: need exactly one entry for each of {sorted(EVIDENCE_SOURCES)}')
 
@@ -195,6 +198,11 @@ def check(rep: dict, selection: dict | None, replay: dict | None, runs: dict | N
         if tests_all and s['file'] not in tests_all:
             errs.append(f'{where}: not a test file in the inventory')
         seen_orders.append(s['order'])
+    for x in rep.get('excluded') or []:
+        inside = sorted(f for f in selected_files if f == x['dir'] or f.startswith(x['dir'] + '/'))
+        if inside:
+            errs.append(f'selected: {inside[:3]} lie in {x["dir"]}, which the selection excluded ({x.get("reason")}); '
+                        'the tests of a fixture project are not tests of the repository')
     if seen_orders != list(range(1, len(seen_orders) + 1)):
         errs.append('selected: order must run 1..n in list order')
     if rep['not_selected_count'] != rep['total_tests'] - len(rep['selected']):
@@ -231,7 +239,16 @@ def check(rep: dict, selection: dict | None, replay: dict | None, runs: dict | N
             if b['required_scope'] == 'package' and pkg_tests:
                 pkg = max((r for r in pkg_tests if r == '.' or b['path'].startswith(r + '/')), key=len, default='.')
                 want = set(import_graph.same_family(b['path'], sorted(pkg_tests.get(pkg, []) if pkg != '.' else tests_all)))
-                if import_graph.family(b['path']) == 'go':
+                top = b['path'].split('/', 1)[0] if '/' in b['path'] else None
+                bare = pkg == '.' and not next((p.get('manifests') for p in rep['metadata'].get('packages') or []
+                                                if p['root'] == '.'), None)
+                folder = {t for t in want if top and t.startswith(top + '/')} if bare else set()
+                if folder and import_graph.family(b['path']) != 'go':
+                    # a manifest-less root: the top-level folder with tests stands in for the package (its tests, the
+                    # guide checks that run its scripts and the tests that reach the file)
+                    if not folder <= set(b['widened_to']):
+                        errs.append(f'{where}: folder scope must cover every test under {top}/')
+                elif import_graph.family(b['path']) == 'go':
                     # a Go package is a directory: its own tests and its importers', else the module's Go tests
                     if not set(b['widened_to']) <= want or (want and not b['widened_to']):
                         errs.append(f'{where}: package scope of a Go file must be Go tests of {pkg}')
@@ -380,7 +397,7 @@ def recompute(selection: dict) -> list[str]:
     import select_tests  # noqa: E402
     again = select_tests.select(**select_tests.args_from_inputs(selection['inputs']))
     errs = []
-    for k in COPIED + ('packages', 'repo_code_hash', 'change'):
+    for k in COPIED + ('packages', 'repo_code_hash', 'change', 'excluded'):
         if again.get(k) != selection.get(k):
             errs.append(f'--recompute: {k} differs when the selection is run again from its inputs')
     return errs

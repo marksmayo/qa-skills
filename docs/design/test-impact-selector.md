@@ -1,6 +1,6 @@
 # Design: `test-impact-selector-skill`
 
-Status: Built (v1.6.0), see "As built" at the end. Build order: 10.
+Status: Built (v1.7.0), see "As built" at the end. Build order: 10.
 
 ## Mission
 
@@ -449,3 +449,41 @@ Where the build differs from the design above, and what the example showed.
 - **Tested** (written to fail first): `self_test.py` case `history_commit_is_never_an_option` (a commit
   and a base of `--output=<marker>` are refused and no marker is written; full, short and symbolic
   commits still work). The examples are unchanged.
+
+### Tool repositories: fixtures, self-tests, guide checks (v1.7.0)
+
+Running the skill on this repository (PR #6, 192 files) selected 72 of 72 "test files": 55 were the
+planted tests of sample projects under `examples/`, one was a product module named `test_paths.py`,
+and every script `--self-test`, the benchmarks (`benchmarks/pytest.ini`: `python_files =
+bench_*.py`) and the guide's example validations were missed. A fixture's `Cargo.lock` forced the
+full suite and the commands were wrong (a bare `pytest` at the root, `unittest discover -s
+<pkg>/scripts` run from `<pkg>`, pytest in folders with no pytest test).
+- **Fixture projects left out by default** (`tool_repo_tests`, `tool_repo_selection`): the graph asks
+  detect_conventions to exclude repo_layout's fixture projects; their files are `fixture` nodes with no
+  edges and no tests, listed under `excluded` (selection, report, schema). `--include-fixtures`,
+  `--fixture-dir`, `--exclude` override. A change inside one is change kind `fixture` and blind spot
+  `fixture_project`, scope `fixture_host` (the tests under the folder owning the sample, plus those that
+  name or import it); its lockfile never forces the full suite (`tool_repo_fixture_changes`).
+- **Python tests by configuration and content**: every pytest config's `python_files` /
+  `python_functions` / `python_classes` (detect_conventions `pytest_configs`), and a file named like a
+  test that defines none is source (`not_tests`, noted).
+- **Self-tests and guide checks are tests**: detect_conventions `self_tests` (framework `selftest`; a
+  `--self-test` flag on a source file is also source, like Rust inline tests) and the `python
+  validate*/check*` lines of root-level Markdown (framework `command`, id `<guide>:<line>`, edges to the
+  script and every path it names). Commands run from the root, one each.
+- **Commands**: pytest runs from its governing config's folder; no bare whole-suite command over an
+  excluded folder; a unittest command from CI or detect_conventions runs from the root
+  (`unittest_discover_runs_from_root`).
+- **Manifest-less root**: a top-level folder with tests stands in for the package of the files in it
+  (`bare_root_widens_to_top_folder`); the validator accepts that scope when it covers the folder's tests.
+- **Dynamic imports** (`js_template_string_is_not_a_dynamic_import`): JS computed imports are matched in
+  code only (code_mask), and a site only reaches files its language can load.
+- **Validator and renderer** (`validator_rejects_excluded_tests`, `render_fixture_project`): a selected
+  test inside an excluded folder is rejected; `excluded` must equal the selection's and is compared by
+  `--recompute`; the renderer labels the new kind and scope.
+- **On PR #6** (the review clone, `--diff --diff-applied`): before 72 of 72 test files selected (60 only
+  by widening), 145 blind spots, full suite; after 126 of 200 (15 only by widening), 55 blind spots
+  (13 `fixture_project`, none full-suite), 32 fixture projects excluded; the tests are 140 script
+  `--self-test`s, 16 `self_test.py`, 41 guide checks and 3 benchmark files. Not addressed: copies of a
+  shared script are still separate files (each copy's own `--self-test` selects it), and there is no
+  per-test coverage for self-tests. The five examples are unchanged and validate with `--recompute`.

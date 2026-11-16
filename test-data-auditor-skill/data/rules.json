@@ -47,5 +47,7 @@
   "duplicate_max_chars": 100000,
   "$duplicate_max_files": "a directory with more data files of one format than this is not compared pair by pair (the pairs grow with the square of the files, and a templated data tree is near-duplicate by design); its files are still checked for exact copies, and the notes name the directory",
   "duplicate_max_files": 200,
+  "$duplicate_max_pairs": "near-duplicate candidates are found by MinHash sketches within one project and format, never by comparing every pair; at most this many candidate pairs (the most similar first) are confirmed with the real measure, and the notes say when more were found",
+  "duplicate_max_pairs": 2000,
   "large_file_mb": 50
 }

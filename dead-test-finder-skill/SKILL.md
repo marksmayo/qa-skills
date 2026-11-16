@@ -1,7 +1,7 @@
 ---
 name: dead-test-finder
 description: Find tests that give false assurance - tests the framework never collects, tests that pass whatever the code does, tests that only check their own mocks, un-awaited async assertions, swallowed failures, duplicates, and skips whose reason has gone - and prove the important ones with real runs. Never-runs is confirmed by the framework's own collect output; can't-fail by neutralising the code under test in a scratch copy and seeing the test still pass; duplicates by identical coverage and values. Each finding gets a patch, and every strengthening patch is proved to pass on the code and fail when it's neutralised. Never deletes or merges tests, never commits, and never claims a suite has "no dead tests".
-version: 1.7.0
+version: 1.8.0
 ---
 
 # Dead test finder
@@ -99,7 +99,8 @@ Output:
 ## Step 1: Scan and collect
 
 ```bash
-python scripts/scan_tests.py <repo> --out <run>/candidates.json [--test-files "*.e2e.ts" ...]
+python scripts/scan_tests.py <repo> --out <run>/candidates.json [--test-files "*.e2e.ts" ...] \
+    [--include-fixtures] [--fixture-dir <dir> ...]
 python scripts/collect_check.py <repo> --candidates <run>/candidates.json --run-dir <run> [--cwd client=<copy with node_modules>] \
     [--env DATABASE_URL=postgresql://fake:fake@127.0.0.1:5432/fake] [--scope candidates | --files <file> ...] [--reuse] \
     [--split-on-error [MAX_RUNS]]
@@ -155,7 +156,37 @@ skill's `net_guard_proxy.py` for Go and other compiled runners) and with a scrat
 `USERPROFILE`. A test that kills "every matching emulator" is left `not_run` with that reason.
 
 `scan_tests.py` lists every test definition, whether or not it would be collected:
-- Python is parsed with `ast`;
+- Python is parsed with `ast`. Each Python definition carries the `runner` that runs it: `pytest`
+  when its file matches the `python_files` of the nearest pytest configuration, `selftest` for a
+  script self-test (below), `unknown` when neither does (its file is also a `never_runs`
+  candidate).
+- **Configured pytest suites.** Every pytest configuration counts, including one in a folder with
+  no manifest: `benchmarks/pytest.ini` with `python_files = bench_*.py` makes `bench_*.py` under
+  its `testpaths` test files, even outside a test directory. Each file is judged by the nearest
+  configuration at or above its directory, and its definitions carry `pytest_root` when that
+  configuration sits below the package (collect_check lists them from there).
+- **Script self-tests.** A script with its own self-test (`self_tests` in the output: an argparse
+  `--self-test` flag, a `self_test()` called under `__main__`, or a `self_test.py` run as a
+  script; found by the shared `detect_conventions.py`) is read as a suite of its own runner. Its
+  tests are the same-file functions the runner runs: those its entry loops over
+  (`for t in (fares, zones): t()`) or calls directly when named `test*` or holding a check; in a
+  product script with a `--self-test` flag, only functions named as checks (`go_self_checks`,
+  `*_cases`) that hold one, so a product function named `test_ids` is not a test. An entry with
+  its checks inline is itself the one test. They are `framework: selftest`, `runner: selftest`
+  with the `selftest_command`; their targets include the script's own functions
+  (`lint.trailing`) when the self-test sits in a product script.
+- **Product code named like a test.** A `test_*.py` or `*_test.py` outside every test directory
+  that product modules import (`test_paths.py`, a classifier the scanners import) is product
+  code: it is not scanned and is listed under `product_files` with its importers.
+- **Copies.** A test file kept identical in several folders (a copy declared by a
+  `check_shared.py`-style mapping, or the same bytes) runs the same tests: it is scanned once, on
+  its canonical copy, and the other copies are listed under `copies_skipped`.
+- **Fixture projects.** Sample and fixture projects (a nested project with its own manifest, an
+  `expected*.json` beside sample sources, or an app of its own under `examples/`, `fixtures/`,
+  `testdata/`, `samples/` ...; the shared `repo_layout.py`) hold planted dead tests for the
+  repository's own tools to find. They are left out by default and listed under
+  `fixtures_excluded`; `--include-fixtures` scans them, `--fixture-dir <dir>` names more. Say in
+  the limitations what was left out.
 - JavaScript and TypeScript go through a small lexer first, so strings, template literals,
   regular expression literals (`/can't/`) and comments are never read as code, and a
   commented-out `expect` is not an assertion. Calls are then matched: `describe`/`it`/`test`
@@ -199,7 +230,7 @@ It flags these candidates:
 | Candidate | Rule |
 |---|---|
 | `never_runs` | File outside `python_files` (read from the pytest config), class outside `python_classes`, `.only`, a module-level `pytest.skip(..., allow_module_level=True)` that always runs (one candidate listing every test in the module) |
-| `no_assertion` | No `assert`, assertion call, `expect` (also `expect.soft`, `expect.poll`, `expect.assertions`, helpers named `expectX`/`assertX`/`verifyX`) or `pytest.raises`. Python: a call to a function or method of the same file that asserts (`_test_shape(result)`, `self._check_row(row)`, two calls deep) counts as an assertion. JavaScript: `expect` or `assert` imported under another name (`import { expect as vexpect } from 'vitest'`) is an assertion, and so is a call to a function that asserts, defined in the same file (`function failsWith(p, code) { return expect(p).rejects... }`, two calls deep) or imported from a relative or alias module (`import { expectRow } from './helpers/checks'`). When the test only uses Testing Library `getBy*`/`findBy*` queries, the candidate says so: they throw when nothing matches, so the test checks only that elements exist |
+| `no_assertion` | No `assert`, assertion call, `expect` (also `expect.soft`, `expect.poll`, `expect.assertions`, helpers named `expectX`/`assertX`/`verifyX`) or `pytest.raises`. Python: a call to a function or method of the same file that asserts (`_test_shape(result)`, `self._check_row(row)`, two calls deep) counts as an assertion, and so does a call to a same-file recording check (`check(cond, what)` that appends to a failures list, counts, prints FAIL, exits or raises when its condition is false, and is named like a check or says FAIL). In a script self-test a `raise`, a line printed as a failure, and appending to a list the function returns to its runner (`fails.append(msg)` ... `return fails`) count too. JavaScript: `expect` or `assert` imported under another name (`import { expect as vexpect } from 'vitest'`) is an assertion, and so is a call to a function that asserts, defined in the same file (`function failsWith(p, code) { return expect(p).rejects... }`, two calls deep) or imported from a relative or alias module (`import { expectRow } from './helpers/checks'`). When the test only uses Testing Library `getBy*`/`findBy*` queries, the candidate says so: they throw when nothing matches, so the test checks only that elements exist |
 | `tautology` | `assert True`, `x == x`, `expect(v).toBe(v)` (not `expect(f(x)).toBe(f(x))`, a determinism check, and not an `expect` the product itself exports, whose matchers are the code under test) |
 | `unreached_assertion` | Assertions inside a loop over a possibly empty iterable, only inside `except` (the test has no other assertion), or after `return`. A Python loop is not flagged when something outside it fails on an empty iterable: an assertion on its length (`assert len(rows) == 3`, also split over several lines), its truthiness or value (`assert rows`), an indexed assertion (`assert rows[0] == ...`), an assertion helper given it (`_verify_shape(rows)`), or a name bound only to a non-empty literal (`expected = ["a", "b"]`). JavaScript: every assertion inside a `for ... of`/`.forEach`/`.map` over something that isn't an array literal (or a `const` holding one, also with a type annotation such as `: [() => void, () => void][]`), only inside `catch`, or after a top-level `return` (a guarded `if (x) return;` is not one) |
 | `swallowed_failure` | An `except` that can catch the assertion (bare, `AssertionError`, `Exception` or `BaseException`, alone or in a tuple) around it, and doesn't re-raise, fail (`pytest.fail`, `self.fail`), assert, or keep the error for an assertion after the `try`. JavaScript: a `catch` around an `expect` that neither rethrows nor fails, an empty `catch {}`, and an empty `.catch(() => {})` (not on a best-effort `waitFor...()`). Cleanup may fail quietly: an empty catch inside `finally`, around nothing but cleanup calls (`rm`, `close`, `kill`, `dispose` ...), or in a method of a fake object the test builds is not one. `except FileNotFoundError: pytest.skip(...)` is not one |
@@ -225,7 +256,8 @@ pattern).
   `<command>`. When a name holds `^ & | < > ( ) % ! "`, the list command starts the runner's own
   JS entry with node (from `node_modules`) or, without one, is not run and the package's listing is
   recorded as errored with the reason.
-- **No list command.** `node:test`, a repository's own runner (`framework: custom`) and a package
+- **No list command.** `node:test`, a repository's own runner (`framework: custom`), script
+  self-tests (`framework: selftest`, run whenever their script runs) and a package
   whose `package.json` names no runner are recorded as `no_list_command`; their tests are
   `not_assessed` with that reason, never `not_collected`. Confirm a never-runs finding there by
   reading the runner's config, and say so.
@@ -253,7 +285,9 @@ pattern).
   `pytest.ini`/`pyproject.toml`/`setup.cfg`/`tox.ini`, which can be above the package
   (`services/pytest.ini` for `services/api`). The listed ids are mapped back through their files,
   so they match the definitions whichever directory pytest chose. `scan_tests.py` reads
-  `python_files` from that same nearest configuration.
+  `python_files` from that same nearest configuration. A configuration below the package
+  (`benchmarks/pytest.ini`, read only when pytest runs from `benchmarks/`) gets its own list
+  command run from its directory (the definitions' `pytest_root`), and the outer list ignores it.
 - **Nested packages.** When one package holds another (`services/api` and `services/api/worker`),
   the outer list command runs with `--ignore` for the inner package, which gets its own command;
   no test is collected or counted twice.
@@ -269,8 +303,27 @@ pattern).
 ```bash
 python scripts/neutralise.py --repo <repo> --candidates <run>/candidates.json --run-dir <run> \
     --test <id> [--test <id> ...] [--tests-file ids.txt] [--target <id>=module.function] [--cwd client=<copy>] \
-    [--env K=V ...] [--package-env <package>:K=V] [--npm-script test] [--runner-args "..."]
+    [--env K=V ...] [--package-env <package>:K=V] [--npm-script test] [--runner-args "..."] \
+    [--copy-ignore "*.apk" "*.png"] [--runner auto|pytest|selftest]
 ```
+
+**The suite's own runner.** A test is neutralised with the runner that really runs it, never with
+pytest by default: a script self-test whose `check()` records a failure instead of raising passes
+under pytest whatever the code returns, which would read as a confirmed can't-fail. Python tests
+run by the `runner` scan_tests.py recorded:
+
+- `pytest`: `run_tests.py --preset pytest` on the test id (a `benchmarks/pytest.ini` suite too:
+  pytest finds that configuration from the file's directory).
+- `selftest`: `run_tests.py --preset selftest` with the script's own command, from the package
+  copy. The script's other tests are silenced (`return None`) for that test's runs, so a failed
+  check is the test's own (`silenced` in the result). The test failed when a check line failed or
+  the script exited non-zero, including a script that crashed before printing a check (an uncaught
+  exception fails a self-test); a script that could not start or timed out is errored. The result
+  records `runner: selftest`, and the validator reads its runs the same way.
+- `unknown`: not run. Nothing known runs it (no pytest configuration's `python_files` matches its
+  file and it is no script self-test), so a neutralised result would not say how the suite
+  behaves; the result is `not_run` with `not_run_reason`. If you know how it runs, say so with
+  `--runner pytest` or `--runner selftest` (for every test of that invocation).
 
 Run this for every `no_assertion`, `tautology`, `unreached_assertion`, `swallowed_failure`,
 `async_not_awaited` and `mock_only` candidate, all in one invocation where you can. First read
@@ -294,7 +347,8 @@ rest by the shared reason, and report the scanner gap in the limitations.
 - **One copy per invocation.** Each package (the repo root too) is copied once, outside the
   repo, without VCS data, caches, virtualenvs, `node_modules` or the run directory, and every test
   in the invocation shares it; each neutralised file is written back straight after its run. Add
-  `--copy-ignore <glob>` for large files the tests never open (`--copy-ignore "*.mp4"`), and only
+  `--copy-ignore <glob> [<glob> ...]` for large files the tests never open (`--copy-ignore "*.mp4" "*.apk"`;
+  the flag also repeats), and only
   those: a test that checks an image exists needs the image. `neutralisations.json` records each
   copy and what it left out. For a very large repo, make one scratch copy yourself and pass it
   with `--cwd <package>=<copy>` to reuse it across invocations.
@@ -328,7 +382,11 @@ rest by the shared reason, and report the scanner gap in the limitations.
   `--target <id>=package.module.Class.method`; a class on its own is reported with that hint, not
   neutralised. Standard-library names (`datetime.datetime`) are never targets (they are listed in
   `skipped_targets`), and a name from another package or an installed library is reported as not
-  found in this package.
+  found in this package. A module is looked up the way the test imports it: from the package
+  directory, then from the directories the test file puts on `sys.path`
+  (`sys.path.insert(0, str(HERE))`, `HERE.parent / "scripts"`), its own directory and each parent
+  up to the package, so `run_mobile_audit.clipped` imported by a self-test beside it is found. A
+  target may also name a file: `--target <id>=scripts/pricing.py:fare` (relative to the package).
 
 The targets are the product functions the test imports and calls; use `--target` to name another.
 Each test runs three times:
@@ -384,7 +442,10 @@ Every candidate becomes a finding or is dismissed with a reason, for example a l
 conditional skip. A candidate the scanner got wrong (a misread skip, a name cut short) is
 dismissed with `scanner_error: true` and a `basis` of `{file, line, excerpt}` items showing the
 real code; this is the only way to dismiss a stale-skip or confirmed never-runs candidate, and
-the validator re-reads each line with `--repo`.
+the validator re-reads each line with `--repo`. A candidate whose test passed with its code
+neutralised can't be dismissed on source lines alone: the dismissal's `basis` must include the
+counter-evidence as an evidence file (`{"evidence": "run/..."}`, a run of the suite's own runner
+failing with the same neutral body), or the validator refuses it.
 
 **Problems no candidate covers** (an assertion commented out in a file the rules couldn't parse,
 a test that asserts only the keys of a result) are reported too, as findings with `"source":
