@@ -391,7 +391,7 @@
       "command": "npx playwright test e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts --reporter=junit",
       "exit_code": 1,
       "junit_paths": [
-        "C:/Users/markm/AppData/Local/Temp/claude/C--Users-markm-Github-qa-skills/843e2eaf-b7ed-42d5-b8ac-d28bfb241683/scratchpad/ex/r1.xml"
+        "~/scratch/ex/r1.xml"
       ],
       "started_at": "2026-11-09T08:52:04Z",
       "totals": {
@@ -412,7 +412,7 @@
       "command": "npx playwright test e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts --repeat-each=3 --reporter=junit",
       "exit_code": 1,
       "junit_paths": [
-        "C:/Users/markm/AppData/Local/Temp/claude/C--Users-markm-Github-qa-skills/843e2eaf-b7ed-42d5-b8ac-d28bfb241683/scratchpad/ex/r2.xml"
+        "~/scratch/ex/r2.xml"
       ],
       "started_at": "2026-11-09T08:52:04Z",
       "totals": {
@@ -433,7 +433,7 @@
       "command": "npx playwright test e2e/login.spec.ts --grep @JRN-ACC-001 --repeat-each=3 --reporter=junit",
       "exit_code": 1,
       "junit_paths": [
-        "C:/Users/markm/AppData/Local/Temp/claude/C--Users-markm-Github-qa-skills/843e2eaf-b7ed-42d5-b8ac-d28bfb241683/scratchpad/ex/r3.xml"
+        "~/scratch/ex/r3.xml"
       ],
       "started_at": "2026-11-09T08:52:04Z",
       "totals": {
