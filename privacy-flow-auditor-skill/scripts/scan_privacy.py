@@ -290,14 +290,16 @@ def masked_kind(spans: list, off: int) -> str | None:
     return spans[i][2] if i >= 0 and spans[i][0] <= off < spans[i][1] else None
 
 
-def inside_literal(spans: list, off: int) -> bool:
-    """A quoted literal starting at off lies INSIDE another string, a docstring or a comment (a URL in a fixture string or
-    a docstring), as opposed to being a literal of the code itself (whose opening quote is code, or opens the range: a
-    Python f-string's range starts at its quote)."""
+def inside_literal(spans: list, off: int, text: str = '') -> bool:
+    """A match starting at off lies INSIDE a string, docstring or comment (a URL or a <script> tag in a fixture string or a
+    docstring), as opposed to a literal of the code itself, whose opening quote is code or opens the range (a Python
+    f-string's range starts at its quote)."""
     if not spans:
         return False
     i = bisect.bisect_right(spans, (off, float('inf'), '')) - 1
-    return i >= 0 and spans[i][0] < off < spans[i][1]
+    if i < 0 or not spans[i][0] <= off < spans[i][1]:
+        return False
+    return spans[i][0] < off or not (off < len(text) and text[off] in '"\'`')
 
 
 def tracked_files(repo: Path) -> set[str] | None:
@@ -1230,7 +1232,7 @@ def main() -> int:
             return csp_lines[n_]
 
         def script(host, off, source, extra=None, literal=False):
-            if inside_literal(spans, off):
+            if inside_literal(spans, off, text):
                 return   # inside a string, docstring or comment of the code: text, not a loader
             host = (urlparse('//' + host).hostname or host).lower()  # no port, query or fragment
             n = T.line_of(off)
@@ -1283,7 +1285,7 @@ def main() -> int:
                     script(m.group(1) or m.group(2), m.start(), 'injected_script')
             creates = 'createelement(' in low and CREATES_SCRIPT.search(text) is not None
             for m in (URL_LIT.finditer(text) if creates or any(d in low for d in VENDOR_DOMAINS) else ()):
-                if inside_literal(spans, m.start()):
+                if inside_literal(spans, m.start(), text):
                     continue
                 host, path = m.group(1), m.group(2) or ''
                 ve = vendor_entry(host)
@@ -1471,7 +1473,7 @@ def main() -> int:
                     alias[v.group(1)] = nm      # email := flag.String("email", ...) and user := flag.String("email", ...)
             pkg = go_pkgs.setdefault(Path(rel).parent.as_posix(), {'hosts': [], 'sends': [], 'env': set(), 'ids': set(), 'hash': False})
             for m in (URL_LIT.finditer(text) if '//' in text else ()):
-                if inside_literal(spans, m.start()):
+                if inside_literal(spans, m.start(), text):
                     continue
                 host = (urlparse('//' + m.group(1)).hostname or m.group(1)).lower()
                 if not NOT_RECIPIENT.search(host) and not DOC_HOST.match(host):
