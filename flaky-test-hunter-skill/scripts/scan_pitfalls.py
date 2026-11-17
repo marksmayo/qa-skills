@@ -540,6 +540,14 @@ def body_hits(lines: list[str], lang: str, sm: dict, code_lines: list[str] | Non
             k = next((k for k in body if rx.search(lines[k])), None)
             if k is not None:
                 hits.append((k, name))
+    elif sm['scope'] == 'duration_window':
+        launch, asserts = re.compile(sm['launch_pattern']), re.compile(sm['assert_pattern'])
+        for name, a, b in test_bodies(lines, lang):
+            body = [k for k in range(a, b + 1) if code(lines[k])]
+            k = next((k for k in body if rx.search(lines[k])), None)
+            if k is not None and any(launch.search(lines[j]) for j in body) \
+                    and any(asserts.search(lines[j]) for j in body):
+                hits.append((k, name))
     elif sm['scope'] == 'py_helper' and lang == 'python':
         src = code_lines if code_lines is not None else lines
         joined = '\n'.join(src)
@@ -554,6 +562,94 @@ def body_hits(lines: list[str], lang: str, sm: dict, code_lines: list[str] | Non
             if any(k != j and code(l) and ref.search(l) for k, l in enumerate(src)):
                 hits.append((j, name))
     return hits
+
+
+PYTHONPATH_INI = re.compile(r'(?m)^\s*pythonpath\s*=\s*(.+)$')
+PATH_LOADS = ('spec_from_file_location', 'SourceFileLoader', 'runpy.run_path')
+
+
+def pytest_pythonpath(root: Path, read) -> set[str]:
+    """Folders pytest's own `pythonpath` setting puts on sys.path (pytest.ini, pyproject.toml, tox.ini, setup.cfg at
+    the root), repository-relative."""
+    dirs: set[str] = set()
+    for name in ('pytest.ini', 'pyproject.toml', 'tox.ini', 'setup.cfg'):
+        text = read(name) if (root / name).is_file() else None
+        for m in PYTHONPATH_INI.finditer(text or ''):
+            for part in re.split(r'[\s,\[\]"\']+', m.group(1)):
+                if part:
+                    dirs.add(PurePosixPath(part.replace('\\', '/')).as_posix().rstrip('/') or '.')
+    return dirs
+
+
+def import_time_lines(tree) -> set[int]:
+    """Lines of the import statements a module runs when it is loaded: at module level, or inside a module-level
+    if, try, with or class body; never inside a function."""
+    import ast
+    lines: set[int] = set()
+    todo = list(tree.body)
+    while todo:
+        node = todo.pop()
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            lines.add(node.lineno)
+        elif not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            todo.extend(c for c in ast.iter_child_nodes(node) if isinstance(c, ast.stmt) or hasattr(c, 'body'))
+    return lines
+
+
+def path_load_hits(rel: str, text: str, ctx: dict) -> list[tuple[int, str, str | None]]:
+    """(line index, detail, mitigation) for each script a test file loads by file path whose folder nothing puts on
+    sys.path for this file, while the script imports a sibling module from that folder. On the path already: folders
+    the file or a conftest.py above it inserts, pytest's pythonpath setting, the folder pytest inserts for the test
+    file itself (its first folder without __init__.py), and the script's own folder when the script inserts it.
+    ctx: {exists: set of repository-relative paths, read: path -> text or None, pythonpath: set}. Read with
+    py_loads.py; a file that does not parse gives no hit."""
+    import ast
+    try:
+        py_loads = _import_sibling('py_loads')
+        tree = ast.parse(text)
+    except Exception:                 # noqa: BLE001 - a lead, never fatal
+        return []
+    exists, read = ctx['exists'], ctx['read']
+    res = py_loads.script_loads(tree, rel, exists)
+    loads = [l for l in res['loads'] if l.get('via') in PATH_LOADS and l.get('path')]
+    if not loads:
+        return []
+    on_path = set(res['sys_path_dirs']) | set(ctx['pythonpath'])
+    for conf in py_loads.conftests_above(rel, exists):
+        try:
+            on_path |= set(py_loads.sys_path_dirs(ast.parse(read(conf) or ''), conf)[0])
+        except SyntaxError:
+            pass
+    base = PurePosixPath(rel).parent
+    while str(base) not in ('.', '') and (base / '__init__.py').as_posix() in exists:
+        base = base.parent
+    on_path.add(base.as_posix())
+    out, seen = [], set()
+    for load in loads:
+        script = load['path']
+        folder = PurePosixPath(script).parent.as_posix()
+        if script in seen or folder in on_path:
+            continue
+        seen.add(script)
+        try:
+            stree = ast.parse(read(script) or '')
+        except SyntaxError:
+            continue
+        # only imports that run when the script is loaded: one inside a function runs when it is called, so it does
+        # not stop collection (it can still fail that test, which the runs show)
+        at_import = import_time_lines(stree)
+        sibs = [s for s in py_loads.sibling_imports(stree, script, exists) if s['line'] in at_import]
+        if not sibs or folder in py_loads.sys_path_dirs(stree, script)[0]:
+            continue
+        s = sibs[0]
+        more = f' and {len(sibs) - 1} more' if len(sibs) > 1 else ''
+        unknown = res.get('sys_path_unknown') or []
+        mitigation = (f'line {unknown[0]} changes sys.path to a folder this reader could not work out (check it is '
+                      f'not {folder}/)') if unknown else None
+        out.append((max(load['line'] - 1, 0),
+                    f"{script}:{s['line']} imports {s['spec']}{more} from {folder}/, which this file, the conftest.py "
+                    f"files above it and pytest's pythonpath never put on sys.path", mitigation))
+    return out
 
 
 def enclosing_test(lines: list[str], i: int, js: bool, lang: str | None = None) -> str | None:
@@ -653,9 +749,16 @@ def scan(root: Path, data: dict, layout: dict | None = None, info: dict | None =
                'req_rx': re.compile(s['requires_in_file']) if s.get('requires_in_file') else None,
                'skip_rx': re.compile(s['skip_if_in_file']) if s.get('skip_if_in_file') else None}
               for s in data['smells']
-              if s.get('scope') not in ('thread_setup', 'reload_target', 'module_let', *GO_SCOPES, *BODY_SCOPES)]
+              if s.get('scope') not in ('thread_setup', 'reload_target', 'module_let', *GO_SCOPES, *BODY_SCOPES,
+                                        *PATH_SCOPES)]
+    for sm in smells:
+        v = sm.get('variant_if_in_file')
+        sm['variant_rx'] = re.compile(v['pattern']) if v else None
     module_let = [s for s in data['smells'] if s.get('scope') == 'module_let']
-    body_smells = [{**s, '_rx': re.compile(s['pattern'])} for s in data['smells'] if s.get('scope') in BODY_SCOPES]
+    body_smells = [{**s, '_rx': re.compile(s['pattern']), '_gate': re.compile(s['gate']) if s.get('gate') else None}
+                   for s in data['smells'] if s.get('scope') in BODY_SCOPES]
+    path_smells = [{**s, '_gate': re.compile(s['pattern'])} for s in data['smells'] if s.get('scope') in PATH_SCOPES]
+    path_ctx: dict = {}
     go_body = {s['scope']: s for s in data['smells'] if s.get('scope') in GO_SCOPES}
     project = [s for s in data['smells'] if s.get('scope') == 'thread_setup']
     reload_targets = [s for s in data['smells'] if s.get('scope') == 'reload_target']
@@ -834,23 +937,47 @@ def scan(root: Path, data: dict, layout: dict | None = None, info: dict | None =
                     if sm['id'] in once:
                         continue          # one lead per file: the file never cleans up, wherever it creates
                     once.add(sm['id'])
+                message = sm['message']
+                if sm['variant_rx'] is not None and first_match(sm['variant_rx'], lines) is not None:
+                    message = sm['variant_if_in_file']['message']
                 out.append({'id': f'SM-{len(out) + 1}', 'smell': sm['id'], 'file': rel, 'line': i + 1,
-                            'excerpt': s[:160], 'cause': sm['cause'], 'message': sm['message'], 'fix': sm['fix'],
+                            'excerpt': s[:160], 'cause': sm['cause'], 'message': message, 'fix': sm['fix'],
                             'test': test, 'in_test_file': line_test, 'mitigation': mitigation})
         if (is_test or test_lines) and lang in ('python', 'rust'):
+            counted: set[str] = set()         # tests with a count-over-duration hit: one lead per test is enough
             for sm in body_smells:
                 if lang not in sm['languages']:
                     continue
+                if sm['_gate'] is not None and not sm['_gate'].search(read_raw(p) or ''):
+                    continue                  # the file names no duration flag: its test bodies are not read for this
                 # py_helper reads the masked lines, but masking only blanks text: when no plain line matches, no masked
                 # line can, and the file need not be lexed
                 needs_mask = lang == 'python' and sm['scope'] == 'py_helper' \
                     and any(sm['_rx'].match(ln) for ln in lines)
                 src = masked()[2] if needs_mask else (lines if lang == 'python' else None)
                 for k, name in body_hits(lines, lang, sm, src):
+                    if sm['scope'] == 'count_over_duration':
+                        counted.add(name)
+                    elif sm['scope'] == 'duration_window' and name in counted:
+                        continue
                     if is_test or k in test_lines:
                         out.append({'id': f'SM-{len(out) + 1}', 'smell': sm['id'], 'file': rel, 'line': k + 1,
                                     'excerpt': lines[k].strip()[:160], 'cause': sm['cause'], 'message': sm['message'],
                                     'fix': sm['fix'], 'test': name, 'in_test_file': True, 'mitigation': None})
+        if is_test and lang == 'python' and path_smells:
+            for sm in path_smells:
+                text = read_raw(p) or ''
+                if not sm['_gate'].search(text):
+                    continue                  # no load by path in this file: nothing is parsed
+                if 'exists' not in path_ctx:
+                    path_ctx['exists'] = {rel_of(q) for q in all_files}
+                    path_ctx['read'] = lambda r: read_raw(root / r)
+                    path_ctx['pythonpath'] = pytest_pythonpath(root, path_ctx['read'])
+                for k, detail, mitigation in path_load_hits(rel, text, path_ctx):
+                    out.append({'id': f'SM-{len(out) + 1}', 'smell': sm['id'], 'file': rel, 'line': k + 1,
+                                'excerpt': lines[k].strip()[:160] if k < len(lines) else '', 'cause': sm['cause'],
+                                'message': f"{sm['message']} ({detail})", 'fix': sm['fix'], 'test': None,
+                                'in_test_file': True, 'mitigation': mitigation})
         if is_test and lang == 'go' and go_body:
             for scope, line, test, name in go_body_hits(lines):
                 sm = go_body.get(scope)
@@ -914,7 +1041,8 @@ def scan_repo(root: Path, data: dict, include_fixtures: bool = False, fixture_di
 
 
 GO_SCOPES = ('go_parallel', 'go_goroutine')
-BODY_SCOPES = ('count_over_duration', 'py_helper')
+BODY_SCOPES = ('count_over_duration', 'duration_window', 'py_helper')
+PATH_SCOPES = ('py_path_load',)
 # presets of run_tests.py per language, and the CI gate runners detect_conventions.py names
 PRESETS_BY_LANG = {'python': ['pytest'], 'rust': ['cargo', 'nextest'], 'go': ['go-test', 'gotestsum'],
                    'javascript': ['vitest', 'jest', 'node-test', 'playwright'],
@@ -956,7 +1084,15 @@ def suite_inventory(root: Path, data: dict | None = None, layout: dict | None = 
             model = cargo_project.read_cargo(root)
             tests = [t for c in model.get('crates', []) for t in c.get('tests', [])]
             rust = {'tests': sum(t.get('kind') != 'doc' for t in tests), 'doc_tests': sum(t.get('kind') == 'doc' for t in tests),
-                    'ignored': sum(bool(t.get('ignored')) for t in tests)}
+                    'ignored': sum(bool(t.get('ignored')) for t in tests),
+                    # tests a plain `cargo test` leaves out on at least one platform (cargo_project's default_run)
+                    'not_run_by_default': [
+                        {'id': t['id'], 'file': t.get('file'), 'line': t.get('line'),
+                         'gate': (t.get('why') or [{}])[0].get('gate'),
+                         'detail': '; '.join(w.get('detail', '') for w in t.get('why') or []),
+                         **({'platforms': t['platforms']} if t.get('platforms') else {})}
+                        for t in tests if t.get('kind') != 'doc' and t.get('runs_by_default') is False],
+                    'undecided': [t['id'] for t in tests if t.get('kind') != 'doc' and t.get('runs_by_default') is None]}
         except Exception:                     # noqa: BLE001
             rust = None
     test_rx = [re.compile(p) for p in data['test_file_patterns']]
@@ -1009,7 +1145,9 @@ def suite_inventory(root: Path, data: dict | None = None, layout: dict | None = 
             tf = max(tf, (langs.get('rust') or {}).get('test_files', 0) or 0)
         if lang == 'rust' and rust is not None and (rust['tests'] or tf):
             entry = {'language': lang, 'test_files': tf, 'tests': rust['tests'], 'doc_tests': rust['doc_tests'],
-                     'ignored': rust['ignored'], 'count_source': 'cargo_project.py (#[test] fns; doc tests apart)'}
+                     'ignored': rust['ignored'], 'count_source': 'cargo_project.py (#[test] fns; doc tests apart)',
+                     'not_run_by_default': rust['not_run_by_default'],
+                     **({'undecided': rust['undecided']} if rust['undecided'] else {})}
         elif tf:
             entry = {'language': lang, 'test_files': tf, 'tests': counts.get(lang),
                      'count_source': 'static count of test definitions' if lang in STATIC_TEST else None}
@@ -1496,10 +1634,130 @@ def tool_repo_checks(data: dict) -> list[tuple[str, bool, str]]:
     return out
 
 
+# A harness crate: one integration test hands a child process a fixed --duration window and asserts it succeeded, and
+# removes its scratch folder as its last statement (so a failing run leaves it); another file cleans up in Drop; the
+# library has tests a plain `cargo test` never runs.
+RUST_QUAY = {
+    'Cargo.toml': '[package]\nname = "quay"\nversion = "0.1.0"\nedition = "2021"\n\n[features]\ndesktop = []\n',
+    'src/lib.rs': (
+        'pub fn berth(n: u32) -> u32 {\n    n + 1\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n'
+        '    #[test]\n    fn plain() {\n        assert_eq!(berth(1), 2);\n    }\n\n'
+        '    #[test]\n    #[ignore]\n    fn slow() {\n        assert_eq!(berth(2), 3);\n    }\n\n'
+        '    #[cfg(feature = "desktop")]\n    #[test]\n    fn needs_desktop() {\n        assert_eq!(berth(3), 4);\n    }\n}\n'),
+    'tests/run.rs': (
+        'use std::process::Command;\n\n'
+        'fn scratch(tag: &str) -> std::path::PathBuf {\n'
+        '    let dir = std::env::temp_dir().join(format!("quay-{tag}-{}", std::process::id()));\n'
+        '    std::fs::create_dir_all(&dir).unwrap();\n    dir\n}\n\n'
+        '#[test]\nfn first_event_lands_in_the_window() {\n    let dir = scratch("window");\n'
+        '    let status = Command::new(env!("CARGO_BIN_EXE_quay"))\n'
+        '        .args(["watch", "--duration", "3", "--feed"])\n        .arg(dir.join("feed"))\n'
+        '        .status()\n        .unwrap();\n'
+        '    assert!(status.success());\n'
+        '    std::fs::remove_dir_all(&dir).unwrap();\n}\n\n'
+        '#[test]\nfn prints_help() {\n'
+        '    let out = Command::new(env!("CARGO_BIN_EXE_quay")).arg("--help").output().unwrap();\n'
+        '    assert!(out.status.success());\n}\n'),
+    'tests/guard.rs': (
+        'struct Scratch(std::path::PathBuf);\n\n'
+        'impl Drop for Scratch {\n    fn drop(&mut self) {\n        let _ = std::fs::remove_dir_all(&self.0);\n    }\n}\n\n'
+        '#[test]\nfn writes_a_log() {\n    let s = Scratch(std::env::temp_dir().join("quay-guard"));\n'
+        '    std::fs::create_dir_all(&s.0).unwrap();\n    assert!(s.0.is_dir());\n}\n'),
+}
+# Python tests that load a script by path: one never puts the script's folder on sys.path although the script
+# imports a sibling (it can only be collected after a file that did), one inserts the folder itself; and a test
+# that gives a child process a fixed --duration and asserts only that it succeeded.
+PY_REPORTS = {
+    'scripts/build_report.py': 'import publication\n\n\ndef build(rows):\n    return publication.clean(rows)\n',
+    'scripts/publication.py': 'def clean(rows):\n    return [r for r in rows if r]\n',
+    'scripts/standalone.py': ('import json\n\n\ndef dump(rows):\n    return json.dumps(rows)\n\n\n'
+                              'def publish(rows):\n    from publication import clean\n    return clean(rows)\n'),
+    'tests/test_report.py': (
+        'import importlib.util\nimport unittest\nfrom pathlib import Path\n\n'
+        'SPEC = importlib.util.spec_from_file_location(\n'
+        '    "build_report", Path(__file__).resolve().parents[1] / "scripts" / "build_report.py")\n'
+        'REPORT = importlib.util.module_from_spec(SPEC)\nSPEC.loader.exec_module(REPORT)\n\n\n'
+        'class ReportTest(unittest.TestCase):\n    def test_drops_empty_rows(self):\n'
+        '        self.assertEqual(REPORT.build(["a", ""]), ["a"])\n'),
+    'tests/test_collection.py': (
+        'import importlib.util\nimport sys\nimport unittest\nfrom pathlib import Path\n\n'
+        'SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"\nsys.path.insert(0, str(SCRIPTS))\n'
+        'SPEC = importlib.util.spec_from_file_location("build_report", SCRIPTS / "build_report.py")\n'
+        'REPORT = importlib.util.module_from_spec(SPEC)\nSPEC.loader.exec_module(REPORT)\n\n\n'
+        'class CollectionTest(unittest.TestCase):\n    def test_keeps_rows(self):\n'
+        '        self.assertEqual(REPORT.build(["a"]), ["a"])\n'),
+    'tests/test_standalone.py': (
+        'import importlib.util\nfrom pathlib import Path\n\n'
+        'SPEC = importlib.util.spec_from_file_location(\n'
+        '    "standalone", Path(__file__).resolve().parents[1] / "scripts" / "standalone.py")\n'
+        'MOD = importlib.util.module_from_spec(SPEC)\nSPEC.loader.exec_module(MOD)\n\n\n'
+        'def test_dump():\n    assert MOD.dump([1]) == "[1]"\n'),
+    'tests/test_watch.py': (
+        'import subprocess\nimport sys\n\n\n'
+        'def test_watch_sees_the_first_event(tmp_path):\n'
+        '    done = subprocess.run([sys.executable, "watch.py", "--duration", "3", "--out", str(tmp_path)])\n'
+        '    assert done.returncode == 0\n\n\n'
+        'def test_watch_counts(tmp_path):\n'
+        '    out = subprocess.run([sys.executable, "watch.py", "--duration", "3"], capture_output=True, text=True)\n'
+        '    lines = out.stdout.splitlines()\n    assert len(lines) >= 2\n\n\n'
+        'def test_version():\n'
+        '    assert subprocess.run([sys.executable, "watch.py", "--version"]).returncode == 0\n'),
+}
+
+
+def order_and_window_checks(data: dict) -> list[tuple[str, bool, str]]:
+    """Import-order leads, fixed windows around a child process, scratch folders removed only on the success path,
+    and the Rust tests a plain `cargo test` leaves out."""
+    out = []
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for rel, text in RUST_QUAY.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        hits = scan(root, data)
+        leaks = [(h['file'], 'success path' in h['message']) for h in hits if h['smell'] == 'scratch-dir-leak-rust']
+        out.append(('a scratch folder removed only as a statement on the success path is a leak lead; one removed in '
+                    'Drop is not', leaks == [('tests/run.rs', True)], f'got {leaks}'))
+        win = [(h['file'], h['test']) for h in hits if h['smell'] == 'fixed-window-child-process']
+        out.append(('rust: a fixed --duration handed to a child whose success the test asserts is a lead',
+                    win == [('tests/run.rs', 'first_event_lands_in_the_window')], f'got {win}'))
+        rust = next((s for s in suite_inventory(root, data) if s['language'] == 'rust'), {})
+        gated = {t['id']: t['gate'] for t in rust.get('not_run_by_default') or []}
+        out.append(('the rust suite lists the tests a plain cargo test leaves out, with the gate',
+                    gated == {'quay::tests::slow': 'ignored', 'quay::tests::needs_desktop': 'feature'}
+                    and rust.get('tests') == 6, f'got {gated}, tests {rust.get("tests")}'))
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for rel, text in PY_REPORTS.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        hits = scan(root, data)
+        lead = [(h['file'], h['line'], 'scripts/build_report.py:1' in h['message'] and 'publication' in h['message'])
+                for h in hits if h['smell'] == 'script-sibling-not-on-path']
+        out.append(('a test file that loads a script by path and never puts its folder on sys.path, while the script '
+                    'imports a sibling at import time, is an order-dependence lead (not the file that inserts the '
+                    'folder, nor a script whose sibling import runs only inside a function)', lead == [('tests/test_report.py', 5, True)], f'got {lead}'))
+        win = [(h['file'], h['test']) for h in hits if h['smell'] == 'fixed-window-child-process']
+        out.append(('python: a fixed --duration handed to a child whose exit status the test asserts is a lead; a '
+                    'count assertion keeps its own smell', win == [('tests/test_watch.py', 'test_watch_sees_the_first_event')]
+                    and ('wall-time-count-assertion', 'test_watch_counts') in {(h['smell'], h['test']) for h in hits},
+                    f'got {win}'))
+    return out
+
+
 def self_test() -> int:
     data = json.loads(DATA.read_text(encoding='utf-8'))
     ok = True
     lines = []
+
+    # 10) Import order, fixed windows around a child process, success-path cleanup, tests cargo leaves out.
+    try:
+        more = order_and_window_checks(data)
+    except Exception as exc:          # noqa: BLE001 - a crash is a failed check, not a traceback
+        more = [('order and window checks ran', False, repr(exc))]
+    for name, good, detail in more:
+        lines.append(f'{name}: ' + ('ok' if good else f'FAILED, {detail}'))
+        ok = ok and good
 
     # 8) A tool repository: fixtures, copies, strings, helper-based assertions, self-tests, nested pytest config.
     try:
