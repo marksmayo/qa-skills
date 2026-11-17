@@ -1143,6 +1143,9 @@ def start(password):
 def tools():
     subprocess.run(['winget', 'install', '--id', 'Vendor.Player'], check=True)
     subprocess.run(['winget', 'install', '--id', 'Vendor.Tool', '--version', '2.1.0'], check=True)
+
+def install_command(winget, package):
+    return [winget, 'install', '--exact', '--id', package]
 '''
 PY_LOOPBACK = '''import urllib.request
 
@@ -1187,7 +1190,7 @@ def scan_scope_rules() -> None:
           f'node:vm running a script is its own rule, not "eval, new Function or string timers" ({got})')
     res = scan_tree({'app/main.py': PY_RUNNER, 'bootstrap.ps1': PS_BOOTSTRAP, 'install.sh': SH_INSTALL})
     got = ids(res)
-    want = [('app/main.py', 4, 'PY-SECRET-ARGV'), ('app/main.py', 7, 'PY-INSTALL-UNPINNED'),
+    want = [('app/main.py', 4, 'PY-SECRET-ARGV'), ('app/main.py', 7, 'PY-INSTALL-UNPINNED'), ('app/main.py', 11, 'PY-INSTALL-UNPINNED'),
             ('bootstrap.ps1', 2, 'PS-INSTALL-UNPINNED'), ('bootstrap.ps1', 4, 'PS-INSTALL-UNPINNED'), ('bootstrap.ps1', 6, 'PS-SECRET-ARGV'),
             ('install.sh', 2, 'SH-PIPE-TO-SHELL'), ('install.sh', 3, 'SH-SECRET-ARGV')]
     check(got == want, f'secrets on a command line and unpinned installs in Python, PowerShell and shell; pinned ones are not ({got})')

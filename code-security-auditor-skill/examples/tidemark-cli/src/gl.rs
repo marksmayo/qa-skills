@@ -31,7 +31,10 @@ pub fn load() -> Vec<Library> {
 pub struct Loaded(pub Vec<Library>);
 
 // SAFETY: the handles are only read after loading, and Library itself is Send.
+// No symbol is called from two threads at once: the chart window owns every call
+// after start-up, and nothing is unloaded while a Loaded value lives.
 unsafe impl Send for Loaded {}
+unsafe impl Sync for Loaded {}
 
 /// Opens one library by its full path.
 /// # Safety

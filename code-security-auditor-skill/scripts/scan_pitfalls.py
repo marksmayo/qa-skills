@@ -322,6 +322,11 @@ def ffi_unsafe_block(text: str, masked: str, lines: list[str], i: int, col: int)
     `unsafe impl Send/Sync` in a file that calls foreign code."""
     head = lines[i][col:]
     doc = lines[max(0, i - 6 if head.startswith('unsafe fn') or 'unsafe fn' in head else i - 3):i + 1]
+    if re.match(r'unsafe\s+impl\b', head):  # the comment block above a run of unsafe impls covers each of them
+        k = i - 1
+        while k >= 0 and re.match(r'\s*(?://|unsafe\s+impl\b|#\[)', lines[k]):
+            k -= 1
+        doc = lines[k + 1:i + 1]
     if not any(re.search(r'SAFETY\s*:|^\s*///?\s*#\s*Safety\b', x, re.I) for x in doc):
         return False
     if re.match(r'unsafe\s+impl\s+(?:Send|Sync)\b', head):

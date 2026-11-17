@@ -646,7 +646,7 @@
    "owasp": "A03:2025 Software Supply Chain Failures",
    "category": "supply_chain_ci",
    "title": "A script installs a package with a system package manager without pinning a version",
-   "regex": "[\"'](?:winget|choco|scoop)(?:\\.exe)?[\"']\\s*,\\s*[\"'](?:install|upgrade)[\"']",
+   "regex": "[\\[,(]\\s*(?:[\"'](?:winget|choco|scoop)(?:\\.exe)?[\"']|\\w*(?:winget|choco|scoop)\\w*)\\s*,\\s*[\"'](?:install|upgrade)[\"']",
    "match_in_strings": true,
    "fix": "Pin the version (winget install --version, choco install --version) and, where the manager supports it, the installer hash, so a later release cannot change what the script installs.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",

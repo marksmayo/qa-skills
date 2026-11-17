@@ -20,7 +20,7 @@
     ["src/plotter.rs", 52, "RUST-SEARCH-PATH-RELATIVE"]
   ],
   "grouped": {"src/harmonics.rs:20:RUST-UNSAFE": {"grouped_lines": [20, 28, 33, 41, 56], "confidence": "low"},
-              "src/gl.rs:24:RUST-UNSAFE": {"grouped_lines": [24, 34, 39, 45], "confidence": "low"}},
+              "src/gl.rs:24:RUST-UNSAFE": {"grouped_lines": [24, 36, 37, 42, 48], "confidence": "low"}},
   "test_only_modules": [{"file": "src/plotter/plot_checks.rs", "declared_at": "src/plotter.rs:56"}],
   "rust_outbound_files": [],
   "artifact_lead_mentions": [".github/workflows/ci.yml", "publish-tables", "contents"],
