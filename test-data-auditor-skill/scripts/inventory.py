@@ -102,6 +102,9 @@ CODE_EXT = {'.py', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.mts', '.cts',
 # named with --data-dir; only the files a test loads are listed, the rest are counted under served_dirs
 SERVED_DIRS = {'public', 'static', 'wwwroot', 'www', 'htdocs'}
 DATA_MODULE_MAX_BYTES = 1_000_000
+# test directories that hold fixtures: a file of any type there is test data (an unknown type is listed not_assessed)
+FIXTURE_TEST_DIRS = {'fixtures', 'testdata', 'test_data', 'test-data', 'testData', 'TestData', 'test-fixtures', 'test_fixtures',
+                     'sample-data', 'sample_data', 'sampledata', 'sampleData', 'testFixtures'}
 MOBILE_ASSETS = re.compile(r'(^|/)(androidTest|test)/assets/|\.xctest|TestResources?/|(^|/)Fixtures/')
 
 
@@ -314,6 +317,9 @@ def kind_of(path: str) -> str | None:
         return None
     if (in_test_area(path) or MOBILE_ASSETS.search(path)) and (ext in DATA_EXT or ext in BINARY_EXT or ext in MEDIA_EXT):
         return 'fixture'
+    if set(p.parts[:-1]) & FIXTURE_TEST_DIRS and ext not in CODE_EXT and not DOC_NAME.match(p.name) and test_dirs_of(path) \
+            and not p.name.startswith('.'):
+        return 'fixture'          # a fixture of a type the inventory does not read (a script, a save file): listed, not_assessed
     if in_data_dir(path) and ext not in CODE_EXT:
         return 'fixture'          # a tree named with --data-dir: every file is listed, an unknown format as not_assessed
     return None
@@ -1026,6 +1032,43 @@ def unlisted_data_dirs(root: Path, all_files: list[str], py: 'PyTests', js_tests
     return out
 
 
+def rust_tests(root: Path, all_files: list[str]) -> dict:
+    """The Rust tests of a Cargo project or workspace (cargo_project.py, read only when a Cargo.toml is present):
+    ids: {file: ['<target>::<path>', ...]} for every #[test] function (doc tests have no id and are left out);
+    unit_files: {src file holding #[cfg(test)] tests: [[first, last] line ranges of its test code]};
+    fixture_bins: helper programs under tests/fixtures, which are run by tests and are not tests."""
+    out: dict = {'ids': {}, 'unit_files': {}, 'fixture_bins': set()}
+    if not any(PurePosixPath(f).name == 'Cargo.toml' for f in all_files):
+        return out
+    try:
+        import cargo_project
+        model = cargo_project.read_cargo(root)
+    except Exception:                     # an unreadable manifest: Rust stays read as text, as before
+        return out
+    for c in model.get('crates', []):
+        out['fixture_bins'] |= {f['file'] for f in c.get('fixture_bins', [])}
+        for t in c.get('tests', []):
+            if t.get('id') and t.get('file'):
+                out['ids'].setdefault(t['file'], []).append(t['id'])
+                if t.get('kind') == 'unit' and not in_test_area(t['file']):
+                    out['unit_files'][t['file']] = None
+    for f in list(out['unit_files']):
+        try:
+            lines = sorted(cargo_project.test_lines((root / f).read_text(encoding='utf-8', errors='replace')))
+        except OSError:
+            lines = []
+        ranges: list[list[int]] = []
+        for n in lines:
+            if ranges and n == ranges[-1][1] + 1:
+                ranges[-1][1] = n
+            else:
+                ranges.append([n, n])
+        out['unit_files'][f] = ranges
+    out['ids'] = {f: sorted(set(v)) for f, v in out['ids'].items()}
+    out['fixture_bins'] -= set(out['ids'])
+    return out
+
+
 def archive_members(p: Path, rel: str, entry: dict) -> list[dict]:
     """Fill the inventory entry of an archive and return one entry per member of a zip (path <archive>!<member>):
     a text member read in memory is `scanned` with its line count, every other member is `not_assessed` with the
@@ -1111,6 +1154,11 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
         files = [f for f in files if any(f == p or f.startswith(p.rstrip('/') + '/') for p in paths)]
     py = PyTests(root, all_files)
     js_tests = [f for f in files if detect_conventions.is_test_file(f) and not f.endswith('.py') and not is_support(f)]
+    # Rust through cargo_project.py: #[test] ids per file, src/ files holding #[cfg(test)] tests, helper programs
+    # under tests/fixtures (not tests). Their text is matched for data file names like other non-Python tests
+    rust = rust_tests(root, all_files)
+    js_tests = [f for f in js_tests if f not in rust['fixture_bins']] + \
+        [f for f in sorted(rust['unit_files']) if f not in js_tests and f in set(files)]
     roots = package_roots(all_files)
     name_counts: dict[tuple[str, str], int] = {}
     for f in all_files:
@@ -1124,6 +1172,12 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
     kinds = {rel: k for rel, k in kinds.items() if k}
     # a module named like a test (test_paths.py, path_test.py) outside every test area, with no test functions and no
     # self-test, is product code
+    for rel in rust['fixture_bins']:
+        if rel in kinds:
+            kinds[rel] = 'support'
+    for rel in rust['unit_files']:
+        if rel in set(files):
+            kinds[rel] = 'inline'
     for rel in [r for r, k in kinds.items() if k == 'inline' and r.endswith('.py')]:
         if not test_dirs_of(rel) and PurePosixPath(rel).name != 'conftest.py' and not py.tests.get(rel) \
                 and rel not in SELF_TEST_FILES:
@@ -1234,6 +1288,10 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
             entry['loaded_by'] = sorted(py.requesting(rel, set(py.fixtures.get(rel, {}))))
         elif k == 'inline':
             entry['loaded_by'] = ([py.test_id(rel, fn) for fn in py.tests.get(rel, [])] if rel.endswith('.py') else [f'{rel}::*'])
+            if rel in rust['unit_files']:
+                entry['test_lines'] = rust['unit_files'][rel]
+                entry['note'] = ('Rust source with #[cfg(test)] tests: only its test lines (test_lines) are read as test '
+                                 'data; the rest is product code')
             if rel in SELF_TEST_FILES:
                 entry['loaded_by'].append(f'{rel}::*')
         elif k == 'support' and GLOBAL_SETUP.match(PurePosixPath(rel).name):
@@ -1288,7 +1346,16 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
         if entry['status'] == 'not_assessed' and archive_text.is_archive_name(rel) and rel not in skipped:
             archives.append(entry)
     named_by_used_data(root, items)
-    tests = sorted({py.test_id(p, fn) for p, fn in py.all_tests()} | {f'{t}::*' for t in js_tests}
+    # a Rust test file's file::* stands for its #[test] functions (cargo_project ids)
+    for i in items:
+        if any(t.endswith('.rs::*') and t[:-3] in rust['ids'] for t in i['loaded_by']):
+            i['loaded_by'] = sorted({x for t in i['loaded_by'] for x in (rust['ids'].get(t[:-3]) or [t])})
+    for rel in rust['fixture_bins']:
+        for i in items:
+            if i['path'] == rel:
+                i['note'] = 'a helper program under tests/fixtures (cargo_project fixture_bins): run by tests, not a test'
+    js_ids = {x for t in js_tests for x in (rust['ids'].get(t) or [f'{t}::*'])}
+    tests = sorted({py.test_id(p, fn) for p, fn in py.all_tests()} | js_ids
                    | {f'{t}::*' for t in SELF_TEST_FILES})
     warnings: list[str] = []
     # a served folder named with --data-dir: its files are the site's assets; only those a test loads are test data

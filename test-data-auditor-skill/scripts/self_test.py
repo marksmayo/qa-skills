@@ -1276,7 +1276,53 @@ def log_ids_and_grouped_paths() -> None:
           'inventory: files under --evidence-dir are inventoried and scanned, never called unused')
 
 
-GROUPS: list = [long_line_is_linear, archives_and_logs, local_path_false_positives, loaded_by_reach, log_ids_and_grouped_paths]
+RUST_WORKSPACE = {
+    'Cargo.toml': '[workspace]\nmembers = ["crates/reel"]\n',
+    'crates/reel/Cargo.toml': '[package]\nname = "reel"\nversion = "0.1.0"\nedition = "2021"\n',
+    'crates/reel/src/lib.rs': ('pub fn frames(n: u32) -> u32 { n * 2 }\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n'
+                               '    #[test]\n    fn doubles() {\n        assert_eq!(frames(2), 4);\n    }\n\n'
+                               '    #[test]\n    fn reads_script() {\n'
+                               '        let s = std::fs::read_to_string("tests/fixtures/controls.lua").unwrap();\n'
+                               '        assert!(s.contains("play"));\n    }\n}\n'),
+    'crates/reel/tests/cli.rs': ('use std::process::Command;\n\n#[test]\nfn runs_helper() {\n'
+                                 '    let out = Command::new(env!("CARGO_BIN_EXE_reel")).output();\n    assert!(out.is_ok());\n}\n\n'
+                                 '#[test]\nfn reads_fixture() {\n'
+                                 '    assert!(std::fs::read_to_string("tests/fixtures/clip.json").is_ok());\n}\n'),
+    'crates/reel/tests/fixtures/player.rs': 'fn main() {\n    println!("{}", "ready");\n}\n',
+    'crates/reel/tests/fixtures/controls.lua': 'mp.add_key_binding("p", "play", function() end)\n',
+    'crates/reel/tests/fixtures/clip.json': '{"frames": 4}\n',
+    'tests/test_tool.py': 'def test_tool():\n    assert True\n',
+}
+
+
+def rust_tests_modelled() -> None:
+    """A Rust workspace read through cargo_project.py: #[test] functions in #[cfg(test)] modules of src/ files are
+    inventoried, a helper program under tests/fixtures is not a test, tests_found counts test functions, and a fixture
+    of an unknown type is listed (not_assessed) instead of dropped."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, RUST_WORKSPACE)
+        invd = inv.build(root, None, {})
+        res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
+    by = {i['path']: i for i in invd['inventory']}
+    lib = by.get('crates/reel/src/lib.rs', {})
+    check(lib.get('kind') == 'inline' and len(lib.get('loaded_by', [])) == 2,
+          f'inventory: a src/ file with #[cfg(test)] tests is inventoried as test code with its test ids (got {lib})')
+    helper = by.get('crates/reel/tests/fixtures/player.rs', {})
+    check(helper.get('kind') != 'inline' and not any('player.rs' in t for t in invd['tests']),
+          f'inventory: a helper program under tests/fixtures is not a test (got {helper.get("kind")}, '
+          f'{[t for t in invd["tests"] if "player" in t]})')
+    check(res['tests_found'] == 5, f'scan: tests_found counts test functions: 4 Rust and 1 Python (got {res["tests_found"]}: '
+                                   f'{invd["tests"]})')
+    lua = by.get('crates/reel/tests/fixtures/controls.lua', {})
+    check(lua.get('status') == 'not_assessed' and 'unknown format' in (lua.get('reason') or ''),
+          f'inventory: a fixture of an unknown type is listed not_assessed, not dropped (got {lua})')
+    clip = by.get('crates/reel/tests/fixtures/clip.json', {}).get('loaded_by', [])
+    check(any(t.endswith('reads_fixture') for t in clip), f'inventory: a fixture a Rust test names is loaded by that test (got {clip})')
+
+
+GROUPS: list = [long_line_is_linear, archives_and_logs, local_path_false_positives, loaded_by_reach, log_ids_and_grouped_paths,
+                rust_tests_modelled]
 
 
 def main(argv=None) -> int:

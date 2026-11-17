@@ -1693,7 +1693,10 @@ class Scanner:
         structured = {(r_line) for r in records for r_line in [v['line'] for v in r['fields'].values()]}
         prose = item.get('format') in PROSE_FORMATS
         is_markup = rel.lower().endswith(MARKUP_EXT)
+        only = {n for a, b in item['test_lines'] for n in range(a, b + 1)} if item.get('test_lines') else None
         for n, line in enumerate(text.split('\n'), 1):
+            if only is not None and n not in only:
+                continue                   # product code beside the #[cfg(test)] module of a Rust source file
             self.secrets(rel, n, line)
             self.environment(rel, n, line)
             if n not in structured:
