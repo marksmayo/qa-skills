@@ -34,7 +34,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from parse_results import parse_junit  # noqa: E402
-from extract_failures import log_tests, match_sections, step_sections  # noqa: E402
+from extract_failures import checks_not_run, failure_groups, log_tests, match_sections, step_sections  # noqa: E402
 
 SIG = json.loads((HERE.parent / 'data' / 'signatures.json').read_text(encoding='utf-8'))
 COMPILED = [(s, re.compile(s['pattern'], re.I)) for s in SIG['signatures']]
@@ -161,7 +161,7 @@ def decide(sg: dict, owner: dict | None) -> tuple[str, str, str]:
         if sg['rerun'] == 'failed':
             return 'real', 'confirmed' if owner and owner.get('status') == 'identified' else 'indicated', 'failed again on re-run on the same commit'
         if sg['rerun'] in ('not_rerun', 'job_not_rerun'):
-            return 'real', 'indicated', 'assertion failure; not re-run'
+            return 'real', 'indicated', ('assertion failure' if sg['failure_type'] == 'assertion' else 'test error (a panic or exception, not an assertion)') + '; not re-run'
     if sg.get('log_status', 'fetched') != 'fetched':
         return 'unclassified', 'low', f'no log to read ({sg["log_status"]}); no rule decided it'
     return 'unclassified', 'low', 'no rule decided it'
@@ -181,10 +181,22 @@ def main() -> int:
         owner = changes['per_failure'].get(f['id'])
         cls, conf, rule = decide(sg, owner)
         out.append({'id': f['id'], 'failure': f, 'classification': cls, 'confidence': conf, 'rule': rule, 'signals': sg, 'owning_change': owner})
-    a.out.write_text(json.dumps({'run_id': run['run']['id'], 'candidates': out}, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
+    doc = {'run_id': run['run']['id'], 'candidates': out}
+    groups, nr = failure_groups(fails), checks_not_run(run, 1)
+    if groups:
+        doc['groups'] = groups
+    if nr['steps'] or nr['jobs']:
+        doc['checks_not_run'] = nr
+    a.out.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
     print(f'{len(out)} candidate(s) -> {a.out}')
     for c in out:
-        print(f'  {c["id"]} {c["classification"]:12} {c["confidence"]:9} {c["rule"]}')
+        print(f'  {c["id"]} {c["classification"]:12} {c["confidence"]:9} {c["rule"]}' + (f' [{c["failure"]["group"]}]' if c['failure'].get('group') else ''))
+    for g in doc.get('groups', []):
+        print(f'  {g["id"]}: {", ".join(g["failures"])} are one defect ({g["basis"]}): one draft, on one of them, with covers naming the others')
+    nr = doc.get('checks_not_run')
+    if nr:
+        print(f'WARNING: {sum(len(x["steps"]) for x in nr["steps"])} step(s) after a failed step and {len(nr["jobs"])} skipped job(s) never ran and '
+              'gave no result on this commit; the triage carries them as checks_not_run', file=sys.stderr)
     return 0
 
 

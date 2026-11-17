@@ -1,7 +1,7 @@
 ---
 name: ci-failure-triager
 description: Triage a failed CI run on GitHub Actions or Azure DevOps - classify every failing job and test as real, flaky, environment, data, consequence (an aggregate gate job failing because another job failed) or unclassified from its log lines, JUnit results, a re-run of the failed jobs on the same commit, the run history and known failure signatures; find the owning change (the commit since the last green run that touched what failed); and draft a defect or a test-data issue for each real or data failure in the result log. Flaky needs a pass and a fail on the same commit; real needs a repeatable failure; every log excerpt is quoted with its line numbers and secrets redacted. Re-runs only failed jobs, once, and only with permission. Never files anything and never calls a build green.
-version: 1.5.0
+version: 1.6.0
 ---
 
 # CI failure triager
@@ -78,7 +78,12 @@ python scripts/classify.py --run run/ --out run/candidates.json
    green run (the newest successful run of that workflow on the branch before this one, preferring the same
    event, and skipping a run that did not pass the jobs that failed here; when the branch has none, such as a
    new pull request branch, the newest on the default branch before this one, which then starts the range,
-   with `last_green.branch` and a basis that says so). Every history query is bounded and recorded
+   with `last_green.branch` and a basis that says so). On a live GitHub fetch the default branch is read from the
+   repository itself (the repository object inside a workflow run does not carry it); when that cannot be read it is
+   recorded as unknown (`history_query.default_branch_source`), `fetch_run.py` says to give `--default-branch NAME`,
+   and a triage with no last green run must say the default branch was not searched. For a run in which no job ran,
+   the commit's other workflows are read too (`same_commit_runs`): when they concluded the same way, the cause is
+   likelier common to them, and the triage says so. Every history query is bounded and recorded
    (`history_query`: runs per branch, the default branch, runs of the same commit, before or after this one). Redirects to log and artifact
    storage are followed without the API token (`safe_http.py`, shared); `rerun.py`'s requests use the same
    handler.
@@ -114,6 +119,23 @@ python scripts/validate_triage.py triage.json --run run/ [--write-summary]
 python scripts/render_report.py triage.json [--brief | --defects-md drafts.md]
 ```
 
+## One defect on several jobs, and checks that never ran
+
+A matrix runs the same step on several operating systems or versions, so one defect fails several jobs.
+`extract_failures.py` puts failures of the same test, or the same failed step with the same kind of failure, at
+the same file and line (else with the same message) on different jobs into one group (`group` on each failure,
+`groups` in failures.json and candidates.json). Paths are compared after the runner's checkout prefix and path
+style are taken out, including the extended-length form rustfmt prints on Windows (`\\?\D:\a\repo\repo\...`).
+Triage every member (each keeps its own job, log lines and signals), copy the groups to `failure_groups`, and write
+**one draft per group**: on one member, with `draft_defect.covers` listing the group's other failures of the same
+classification. The legs of one defect have one owning change: a leg left `not_identified` while another names a
+commit is an error; name it on every leg (`owning_change.override_reason` when changes.json did not find it there).
+
+A job stops at its first failed step. Every later step the CI records as skipped (the linter, the coverage gate,
+the build), and every job it skipped, gave **no result** on this commit: `extract_failures.py` lists them
+(`checks_not_run`) and warns. Copy that object into the triage as `checks_not_run`, and say in the headline or the
+limitations what was never checked. Never read a skipped check as a pass, or as a failure.
+
 ## Rating
 
 See `RUBRIC.md`: the rules in order, confidence, priority (real failures: P1 on the default or a release
@@ -144,7 +166,13 @@ approved or a job stopped before it started: the headline then says there is not
 what ran, outcomes), `failures` (job, step, test, classification, confidence, rule, signals, log excerpt,
 owning change, priority, draft, next action), `summary`, `limitations`, `files_written` (every file listed
 must exist; a drafts file only when there are drafts, holding each draft: `render_report.py --defects-md`
-writes nothing when there is none). Schema 1.3.0; 1.2.0 reports still validate.
+writes nothing when there is none). Optional until the run has them, then required: `failure_groups` and each
+member's `group`, `checks_not_run`, and `summary.evidence_checks` (the five checks behind the evidence
+completeness, each true, false or `not_applicable`; written by `--write-summary`). The validator applies the schema
+first (required fields, types, a draft's title and body) and checks nothing further when it fails. Schema 1.4.0;
+1.2.0 and 1.3.0 reports still validate (they may carry a draft per failure, and must name the skipped checks in
+their limitations). `render_report.py --brief` prints the headline, the table, the checks that never ran and the
+limitations, and says what it left out.
 
 ## Edge cases
 
@@ -183,7 +211,11 @@ writes nothing when there is none). Schema 1.3.0; 1.2.0 reports still validate.
 - **Rust**: a failing `cargo test` or nextest test is `real, indicated` (an assertion or panic), a nextest
   TIMEOUT stays `unclassified` like a Go hang; a compile error, a clippy finding under `-D warnings`, a
   `cargo fmt --check` diff and a coverage gate below its threshold are `REAL-*` signatures (deterministic).
-  A step named "coverage gate" is not an aggregate gate.
+  A step named "coverage gate" is not an aggregate gate. A panic line may carry a thread id
+  (`thread 'name' (2976) panicked at`); the message is still the panic's location and cause. Under
+  `--nocapture` the panic is printed while the tests run, with no `---- name stdout ----` block: it is tied to
+  its test by the thread name, which gives the test file, the frames and the message. An error that is not an
+  assertion is ruled "test error (a panic or exception, not an assertion); not re-run".
 - **Aggregate gate jobs**: a consequence of the failures they gate, not a failure of their own. A cause in
   another run (a release waiting on a gate run) is out of reach; say so in the next action.
 - **Toolchain drift** (a nightly "fresh project" build whose tools moved past the pinned versions):

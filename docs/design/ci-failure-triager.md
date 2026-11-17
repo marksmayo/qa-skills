@@ -1,6 +1,6 @@
 # Design: `ci-failure-triager-skill`
 
-Status: Built (v1.5.0); see "As built" at the end. Build order: 26.
+Status: Built (v1.6.0); see "As built" at the end. Build order: 26.
 
 ## Mission
 
@@ -340,3 +340,34 @@ and the validator stopped the agent from naming the test. Fixed:
   runner, the hypercare watcher and every skill that carries `fetch_ticket.py`); `fetch_run.py` imports it.
   `rerun.py` now sends its POSTs through the same opener, so a redirected re-run request no longer carries the
   token to another origin (checked in `fetch_run.py --self-test`, written to fail first).
+
+## As built (v1.6.0): gaps from a second review on a Rust workspace with an OS matrix
+
+Each fix was written to fail first in `self_test.py`, `fetch_run.py --self-test` or `extract_failures.py --self-test`.
+
+- **Default branch on a live fetch.** The repository object inside a workflow-run response is the minimal one and
+  has no `default_branch`, so the fallback to the default branch's last green run never fired outside recordings.
+  `fetch_run.py` now reads the repository (one GET, `raw/repository.json`), records where the name came from
+  (`history_query.default_branch_source`: option, run, repository or unknown), and when it is unknown says so with
+  the `--default-branch` hint; `owning_change.py` repeats it and the validator needs a limitation.
+- **Rust output.** rustfmt's extended-length Windows paths (`\\?\D:\a\...`) are read and reduced to the repository
+  path; a panic line with a thread id keeps its message; a panic printed under `--nocapture` is tied to its test by
+  the thread name.
+- **One defect on several jobs.** `extract_failures.py` groups failures with the same test or step, failure type and
+  location across jobs; the triage carries `failure_groups`, one draft per group (`covers`), and the validator
+  rejects a leg left `not_identified` beside a sibling that names a commit.
+- **Checks that never ran.** Steps skipped after the first failed step and skipped jobs are `checks_not_run`,
+  required in a 1.4.0 triage (older ones must name them in their limitations) and shown by the renderer.
+- **The schema is applied.** `validate_triage.py` checks the triage against `schemas/triage.schema.json` with a small
+  in-file reader of the keywords the schema uses (the shared `schema_check.py` is not shipped with this skill and
+  has no `allOf` or `else`); schema 1.4.0, with 1.2.0 and 1.3.0 still accepted.
+- **Reports.** `--brief` keeps the limitations and the skipped checks and says what it left out; owning-change ties
+  are named; `summary.evidence_checks` names the five checks behind the completeness score, with `not_applicable`
+  for a check over nothing (the score is unchanged).
+- **A run with no job.** The commit's other workflows are read (one GET, only then); when they concluded the same
+  way the triage must say so.
+- **Self-test time.** The storage stub is reached by address (a `localhost` lookup cost about two seconds a request on
+  Windows), the validator runs in-process, and the sample repository's git calls ignore the machine's git
+  configuration.
+- Not done: no change to the tie rule itself (the newest tied commit is still named, now with the ties beside it);
+  `triage.example.json` stays a 1.2.0 report, and the 1.4.0 fields are exercised by the self-test's synthetic matrix run.

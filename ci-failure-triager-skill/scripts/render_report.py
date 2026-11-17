@@ -3,8 +3,10 @@
 
     python render_report.py triage.json [--brief] [--defects-md drafts.md] [--color auto|always|never]
 
---brief prints the headline and the failure table. --defects-md writes each drafted defect and
-test-data issue as Markdown, ready to paste into a tracker by a person (the skill never files them).
+--brief prints the headline, the failure table, the checks that never ran and the limitations, and says what it
+left out (the per-failure sections with their log lines, and the re-runs). --defects-md writes each drafted defect
+and test-data issue as Markdown, ready to paste into a tracker by a person (the skill never files them); a draft that
+covers a failure group names every failure and job it stands for.
 """
 from __future__ import annotations
 import argparse, json, os, sys
@@ -15,9 +17,12 @@ from term_safe import load_json  # noqa: E402  (report strings lose terminal con
 COL = {'real': '31;1', 'data': '35', 'flaky': '33', 'environment': '36', 'consequence': '34', 'unclassified': '2', 'bold': '1', 'dim': '2'}
 
 
-def draft_md(f: dict) -> list[str]:
+def draft_md(f: dict, failures: list[dict]) -> list[str]:
     dd, b = f['draft_defect'], f['draft_defect']['body']
-    out = [f'## {dd["title"]}', '', f'*{dd["kind"].replace("_", " ")}, drafted from CI failure {f["id"]}; not filed.*', '', b['summary'], '',
+    also = [x for x in failures if x['id'] in (dd.get('covers') or [])]
+    src = (f'CI failures {", ".join([f["id"]] + [x["id"] for x in also])} (one defect on the jobs {", ".join([f["job"]] + [x["job"] for x in also])})'
+           if also else f'CI failure {f["id"]}')
+    out = [f'## {dd["title"]}', '', f'*{dd["kind"].replace("_", " ")}, drafted from {src}; not filed.*', '', b['summary'], '',
            '**Steps to reproduce**', ''] + [f'{i}. {s}' for i, s in enumerate(b['steps'], 1)] + ['',
            f'**Expected:** {b["expected"]}', '', f'**Actual:** {b["actual"]}', '']
     if b.get('suspect_commit'):
@@ -44,7 +49,7 @@ def main() -> int:
             return 0
         lines = ['# Drafted defects', '', f'From {d["run"]["system"]} run {d["run"]["id"]} on `{d["run"]["commit"][:12]}` ({d["run"]["branch"]}).', '']
         for f in drafted:
-            lines += draft_md(f)
+            lines += draft_md(f, d['failures'])
         a.defects_md.write_text('\n'.join(lines), encoding='utf-8', newline='\n')
         print(f'wrote {a.defects_md}')
         return 0
@@ -59,15 +64,34 @@ def main() -> int:
            + (f' (requested as {r["repo"]}; the CI names it {r["repo_api"]})' if r.get('repo_api') else ''), '', s['headline'], '']
     if d.get('run_status') not in (None, 'complete'):
         out += [c(f'Run status: {d["run_status"]} ({d.get("run_status_reason") or "no reason given"}).', 'bold'), '']
+    ev = s.get('evidence_checks') or {}
+    word = {True: 'yes', False: 'no', 'not_applicable': 'not applicable'}
     out += [
            'By classification: ' + ', '.join(f'{c(k, k)} {v}' for k, v in s['by_classification'].items() if v)
-           + f'. Drafts: {s["defects_drafted"]}. Re-runs: {s["reruns"]}. Evidence completeness {s["evidence_completeness"]}.', '',
+           + f'. Drafts: {s["defects_drafted"]}. Re-runs: {s["reruns"]}. Evidence completeness {s["evidence_completeness"]}'
+           + (' (' + ', '.join(f'{k.replace("_", " ")} {word.get(v, v)}' for k, v in ev.items()) + ')' if ev else '') + '.', '',
            '| ID | Job | Failure | Class | Confidence | Owning change | Next action |', '|---|---|---|---|---|---|---|']
     for f in d['failures']:
         oc = f.get('owning_change') or {}
-        own = f'`{oc["commit"][:8]}` {oc["subject"]}' if oc.get('status') == 'identified' else 'not identified'
+        own = f'`{oc["commit"][:8]}` {oc.get("subject", "")}' if oc.get('status') == 'identified' else 'not identified'
+        if oc.get('status') == 'identified' and oc.get('ties'):
+            # a tie goes to the newest commit, which may be a follow-up (a reformat) to the one that made the change
+            own += f' (tied with {", ".join(f"`{t[:8]}`" for t in oc["ties"])}: the newest of the tied commits is named)'
+        if f.get('group'):
+            f = {**f, 'id': f'{f["id"]} ({f["group"]})'}
         named = f'{f["test_id"]} (named by the agent from the log)' if f.get('test_id_source') == 'agent' else f.get('test_id') or f.get('step') or f.get('message')
         out.append(f'| {f["id"]} | {f["job"]} | {named} | {c(f["classification"], f["classification"])} | {f["confidence"]} | {own} | {f["next_action"]} |')
+    if d.get('failure_groups'):
+        out += [''] + [f'{g["id"]}: {", ".join(g["failures"])} are one defect ({g["basis"]}).' for g in d['failure_groups']]
+    nr = d.get('checks_not_run') or {}
+    if nr.get('steps') or nr.get('jobs'):
+        out += ['', c('Checks that never ran on this commit (no result, not a pass):', 'bold')]
+        out += [f'- {x["job"]}: after the failed step "{x["after_step"]}", skipped: {"; ".join(x["steps"])}' for x in nr.get('steps', [])]
+        out += [f'- skipped jobs: {"; ".join(nr["jobs"])}'] if nr.get('jobs') else []
+    if a.brief:
+        out += ['', '## Limitations', ''] + ([f'- {x}' for x in d['limitations']] or ['None given.'])
+        out += ['', f'Left out of --brief: {len(d["failures"])} failure section(s) with their rules and log lines, and {len(d["reruns"])} re-run record(s); '
+                    'run without --brief to read them.']
     if not a.brief:
         for f in d['failures']:
             out += ['', f'### {f["id"]} {c(f["classification"], f["classification"])}: {f.get("test_id") or f.get("step") or f.get("message")}', '',
