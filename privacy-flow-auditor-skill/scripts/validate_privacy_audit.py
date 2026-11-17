@@ -55,6 +55,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from match_canaries import EMAIL, PHONE_RX, CARD, card_like, encodings  # noqa: E402
 from domains import registrable  # noqa: E402
 from merge_candidates import load_declared  # noqa: E402

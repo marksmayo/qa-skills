@@ -22,6 +22,7 @@ HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
 ROOT = SKILL.parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import validate_privacy_audit as vpa  # noqa: E402
 
 FAILS: list[str] = []

@@ -65,6 +65,7 @@ from urllib.parse import urlparse
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from domains import FirstParty, registrable  # noqa: E402,F401  (registrable is imported by other scripts from here)
 
 CATS = json.loads((HERE.parent / 'data' / 'categories.json').read_text(encoding='utf-8'))
