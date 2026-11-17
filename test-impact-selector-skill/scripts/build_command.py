@@ -201,15 +201,92 @@ def script_runner(fw: str, script: str | None) -> tuple[str | None, str | None]:
     return None, f'its test script runs `{script.strip()[:120]}`, not a runner this selector can pass files to'
 
 
-def cargo_commands(files: list[str], cargo: dict, max_chars: int) -> tuple[list[dict], list[dict], list[str]]:
-    """(commands, feature_gated, files with no test id) for the selected Rust test files.
+def hard_gates(t: dict) -> list[dict]:
+    """The gates that keep a test out of a plain `cargo test` on every platform (required-features of its target,
+    #[ignore], a feature the defaults do not enable, a cfg false everywhere); [] when it runs somewhere by default."""
+    gates = [g for g in t.get('why') or [] if 'platforms' not in g]
+    if not gates and t.get('features'):
+        gates = [{'gate': 'feature', 'features': list(t['features']),
+                  'detail': f'needs --features {",".join(t["features"])}, not enabled by default'}]
+    return gates
+
+
+def not_run_groups(selected: list[dict]) -> list[dict]:
+    """command.not_run_by_default: the selected Rust tests a plain `cargo test` does not run, or runs only on some
+    platforms or cannot be decided, grouped by crate and gates, with how to run them when a flag does it."""
+    groups: dict[tuple, dict] = {}
+    for f, t in selected:
+        hard = hard_gates(t)
+        if hard:
+            gates = list(t.get('why') or hard)
+        elif t.get('runs_by_default') is False:
+            gates = [g for g in t.get('why') or []]
+        elif 'runs_by_default' in t and t['runs_by_default'] is None:
+            gates = [{'gate': 'undecided', 'detail': 'a cfg this reader cannot decide: '
+                                                     + (t.get('why_undecided') or 'unknown')}]
+        else:
+            continue
+        names = sorted({g['gate'] for g in gates})
+        feats = sorted({x for g in gates for x in g.get('features') or []})
+        plats = sorted(t['platforms']) if t.get('platforms') is not None else None
+        detail = '; '.join(dict.fromkeys(g.get('detail') or g['gate'] for g in gates))
+        key = (t['crate'], tuple(names), tuple(feats), tuple(plats or ()), detail)
+        g = groups.get(key)
+        if g is None:
+            g = groups[key] = {'crate': t['crate'], 'package': t['package'], 'gates': names, 'detail': detail,
+                               'tests': [], 'files': []}
+            if feats:
+                g['features'] = feats
+            if plats is not None:
+                g['platforms'] = plats
+            run_with = ['cargo', 'test', '-p', t['crate']]
+            if feats:
+                run_with += ['--features', ','.join(feats)]
+            if 'ignored' in names and hard:
+                run_with += ['--', '--ignored']
+            if (feats or 'ignored' in names) and hard and not set(names) - {'feature', 'required_features', 'ignored'}:
+                g['run_with'] = run_with
+        if t['id'] not in g['tests']:
+            g['tests'].append(t['id'])
+        if f not in g['files']:
+            g['files'].append(f)
+    return sorted(groups.values(), key=lambda g: (g['crate'], g['gates'], g['tests']))
+
+
+def not_run_lines(command: dict) -> list[str]:
+    """One line per not_run_by_default group, for the console and the report: what the commands do not run and why."""
+    out = []
+    for g in command.get('not_run_by_default') or []:
+        n = len(g['tests'])
+        shown = ', '.join(g['tests'][:3]) + (f' and {n - 3} more' if n > 3 else '')
+        if set(g['gates']) == {'platform'}:
+            line = (f'{n} selected test(s) of {g["crate"]} run only on {", ".join(g.get("platforms") or []) or "some platforms"}'
+                    f' ({shown}): a run elsewhere passes without running them')
+        elif g['gates'] == ['undecided']:
+            line = f'{n} selected test(s) of {g["crate"]} may not run ({shown}): {g["detail"]}'
+        else:
+            line = f'{n} selected test(s) of {g["crate"]} are not run by the commands above ({shown}): {g["detail"]}'
+            if g.get('run_with'):
+                line += f'. Run them with `{" ".join(g["run_with"])}`'
+        out.append(line)
+    return out
+
+
+def cargo_commands(files: list[str], cargo: dict, max_chars: int) -> tuple[list[dict], list[dict], list[str], list[dict]]:
+    """(commands, feature_gated, files with no test id, not_run_by_default) for the selected Rust test files.
 
     Every Rust test file of the workspace selected: one workspace-wide command (the CI's own `cargo test
     --workspace ...` line when there is one). Every test file of a crate: `cargo test -p <crate>`. Otherwise
     `cargo test -p <crate> --lib|--bin <b>|--test <t> -- --exact <paths>` from the files' libtest ids
     (`<target>::<path>`), the same arguments run_tests.py's cargo preset builds from those ids (`test_ids`).
-    Tests behind a cargo feature the crate does not enable by default only run with `--features`: they are listed
-    under feature_gated, never silently counted as run."""
+
+    Tests a plain `cargo test` does not run are never silently counted as run: a test behind a feature the crate does
+    not enable by default, in a target with required-features the defaults do not enable (cargo skips the whole
+    target), marked #[ignore], or compiled on some platforms only (cargo_project's runs_by_default and why). They are
+    listed under not_run_by_default (and, for features, feature_gated). A test no platform runs by default is left
+    out of the --exact names (cargo would run nothing and pass, or refuse the target), a command's `tests` counts
+    only the files it runs a test of, `not_run` the selected tests of its crates it does not run and
+    `platform_dependent` those it runs on some platforms only."""
     tests, crates = cargo['tests'], cargo['crates']
     unknown, by_crate = [], {}
     gated: dict[tuple[str, str], dict] = {}
@@ -220,10 +297,24 @@ def cargo_commands(files: list[str], cargo: dict, max_chars: int) -> tuple[list[
             continue
         by_crate.setdefault(ts[0]['crate'], []).append(f)
         for t in ts:
-            for feat in t['features']:
+            for feat in sorted({x for g in hard_gates(t) for x in g.get('features') or []} | set(t['features'])):
                 g = gated.setdefault((t['crate'], feat), {'package': t['package'], 'crate': t['crate'], 'feature': feat,
                                                           'tests': []})
                 g['tests'].append(t['id'])
+    not_run = not_run_groups([(f, t) for f in files for t in tests.get(f) or []])
+
+    def counts(mine: list[str]) -> dict:
+        """What a whole-crate or workspace command over these files runs: the files with a test that runs somewhere
+        by default, the tests it never runs, the tests that depend on the platform."""
+        ts = [t for f in mine for t in tests.get(f) or []]
+        out = {'tests': len([f for f in mine if any(not hard_gates(t) for t in tests.get(f) or [])])}
+        hard = len([t for t in ts if hard_gates(t)])
+        plat = len([t for t in ts if not hard_gates(t) and t.get('runs_by_default') is False])
+        if hard:
+            out['not_run'] = hard
+        if plat:
+            out['platform_dependent'] = plat
+        return out
     commands = []
     roots = {crates[c]['root'] for c in by_crate}
     all_rust = {f for c in crates.values() for f in c['test_files']}
@@ -233,7 +324,7 @@ def cargo_commands(files: list[str], cargo: dict, max_chars: int) -> tuple[list[
         ws = cargo.get('workspace_command')
         cmd = {'package': root, 'cwd': root, 'framework': 'cargo-test', 'full_suite': True,
                'argv': list(ws['argv']) if ws else ['cargo', 'test', '--workspace'],
-               'tests': len(files) - len(unknown), 'part': 1, 'parts': 1}
+               **counts([f for f in files if f not in unknown]), 'part': 1, 'parts': 1}
         if ws:
             cmd['command_from'] = ws['from']
         commands.append(cmd)
@@ -241,15 +332,18 @@ def cargo_commands(files: list[str], cargo: dict, max_chars: int) -> tuple[list[
         for crate in sorted(by_crate):
             mine, info = by_crate[crate], crates[crate]
             base = {'package': info['dir'], 'cwd': info['root'], 'framework': 'cargo-test'}
+            if not any(not hard_gates(t) for f in mine for t in tests[f]):
+                continue                # nothing of this crate runs by default: listed under not_run_by_default
             if set(info['test_files']) <= set(mine):
-                commands.append({**base, 'full_suite': True, 'argv': ['cargo', 'test', '-p', crate], 'tests': len(mine),
+                commands.append({**base, 'full_suite': True, 'argv': ['cargo', 'test', '-p', crate], **counts(mine),
                                  'part': 1, 'parts': 1})
                 continue
             ids, param = [], set()
             for f in mine:
-                ids += [t['id'] for t in tests[f] if t['id'] not in ids]
+                ids += [t['id'] for t in tests[f] if t['id'] not in ids and not hard_gates(t)]
                 param |= {t['id'] for t in tests[f] if t.get('parameterised')}
             kind_of = {t['id']: (t['target_kind'], t['target']) for f in mine for t in tests[f]}
+            dependent = {t['id'] for f in mine for t in tests[f] if not hard_gates(t) and t.get('runs_by_default') is False}
 
             def argv_of(chunk: list[str], exact: bool) -> list[str]:
                 sel: list[list[str]] = []
@@ -277,13 +371,15 @@ def cargo_commands(files: list[str], cargo: dict, max_chars: int) -> tuple[list[
                 files_in = sorted({f for f in mine if any(t['id'] in chunk for t in tests[f])})
                 cmd = {**base, 'full_suite': False, 'argv': argv_of(chunk, exact), 'tests': len(files_in),
                        'test_ids': chunk, 'part': n, 'parts': len(chunks)}
+                if dependent & set(chunk):
+                    cmd['platform_dependent'] = len(dependent & set(chunk))
                 if not exact:
                     cmd['note'] = ('parameterised tests (#[rstest], #[test_case]) generate child tests named '
                                    '<fn>::<case>, which --exact <fn> would not match: these names are substring '
                                    'filters without --exact, so they run every case and may also run other tests '
                                    'whose names contain them')
                 commands.append(cmd)
-    return commands, sorted(gated.values(), key=lambda g: (g['crate'], g['feature'])), unknown
+    return commands, sorted(gated.values(), key=lambda g: (g['crate'], g['feature'])), unknown, not_run
 
 
 def safe_command(cmd: str | None) -> list[str] | None:
@@ -383,13 +479,16 @@ def build(selected: list[dict], packages: list[dict], full_packages: set[str], t
             commands.append(cmd)
     commands += own
     gated: list[dict] = []
+    not_run: list[dict] = []
     if rust:
-        cargo_cmds, gated, no_ids = cargo_commands(rust, cargo, max_chars)
+        cargo_cmds, gated, no_ids, not_run = cargo_commands(rust, cargo, max_chars)
         commands += cargo_cmds
         unknown += no_ids
     out = {'commands': commands, 'split_into': len(commands), 'max_chars': max_chars, 'no_runner': unknown}
     if gated:
         out['feature_gated'] = gated
+    if not_run:
+        out['not_run_by_default'] = not_run
     if reasons:
         out['no_runner_reasons'] = dict(sorted(reasons.items()))
     if builds:
@@ -441,7 +540,7 @@ def main(argv=None) -> int:
                 not any(s['file'] in a.split() for a in own) and ':' not in s['file']]
         command = {**build(rest, sel['packages'], full, {p['root']: p.get('test_files', []) for p in sel['packages']},
                            levels, args.max_chars, go_flags=flags, go_flags_from=(go or {}).get('flags_from')),
-                   **{k: v for k, v in command.items() if k in ('no_runner_reasons', 'build_first', 'feature_gated')}}
+                   **{k: v for k, v in command.items() if k in ('no_runner_reasons', 'build_first', 'feature_gated', 'not_run_by_default')}}
         command['commands'] += kept
         command['split_into'] = len(command['commands'])
     if args.ci:
@@ -458,6 +557,8 @@ def main(argv=None) -> int:
         print(f'(cd {c["cwd"]} && {" ".join(c["argv"])})')
     for pkg, why in command.get('no_runner_reasons', {}).items():
         print(f'# {pkg}: no command, {why}; run its selected tests with its own script')
+    for line in not_run_lines(command):
+        print('# ' + line)
     return 0
 
 

@@ -55,8 +55,10 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import code_mask  # noqa: E402
 import detect_conventions  # noqa: E402
+import py_loads  # noqa: E402
 
 READS = 0   # source files read by graphs in this process (the self-test's timing check counts them)
 STDLIB = set(getattr(sys, 'stdlib_module_names', ())) | {'__future__'}
@@ -212,56 +214,12 @@ def build_output(pkg_dir: Path) -> str | None:
     return None
 
 
-def eval_path(node, here: str, names: dict, depth: int = 0) -> str | None:
-    """The repository-relative path a path expression names, for the sys.path idioms of test files: __file__,
-    Path()/str()/os.fspath()/resolve()/absolute(), .parent, .parents[n], os.path.dirname/abspath/realpath/normpath/
-    join, `/` with literal parts, and names assigned earlier in the module. None when it cannot be worked out (an
-    environment variable, a computed value) or it leaves the repository."""
-    if depth > 12 or node is None:
-        return None
-    rec = lambda n: eval_path(n, here, names, depth + 1)  # noqa: E731
-    if isinstance(node, ast.Name):
-        if node.id == '__file__':
-            return here
-        return rec(names.get(node.id)) if node.id in names else None
-    if isinstance(node, ast.Attribute):
-        if node.attr == 'parent':
-            v = rec(node.value)
-            return None if v is None else _norm(f'{v}/..')
-        return None
-    if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute) and node.value.attr == 'parents':
-        idx = node.slice
-        if isinstance(idx, ast.Constant) and isinstance(idx.value, int):
-            v = rec(node.value.value)
-            return None if v is None else _norm(v + '/..' * (idx.value + 1))
-        return None
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
-        left = rec(node.left)
-        right = node.right.value if isinstance(node.right, ast.Constant) and isinstance(node.right.value, str) else None
-        return None if left is None or right is None else _norm(f'{left}/{right}')
-    if isinstance(node, ast.Call):
-        f = node.func
-        name = f.attr if isinstance(f, ast.Attribute) else f.id if isinstance(f, ast.Name) else None
-        if name in ('resolve', 'absolute') and isinstance(f, ast.Attribute) and not node.args:
-            return rec(f.value)
-        if name in ('Path', 'PurePath', 'PosixPath', 'WindowsPath', 'PurePosixPath', 'str', 'fspath', 'abspath',
-                    'realpath', 'normpath') and len(node.args) == 1:
-            return rec(node.args[0])
-        if name == 'dirname' and len(node.args) == 1:
-            v = rec(node.args[0])
-            return None if v is None else _norm(f'{v}/..')
-        if name == 'join' and node.args:
-            v = rec(node.args[0])
-            rest = [a.value for a in node.args[1:] if isinstance(a, ast.Constant) and isinstance(a.value, str)]
-            if v is None or len(rest) != len(node.args) - 1:
-                return None
-            return _norm('/'.join([v, *rest]))
-    return None
-
-
-def _norm(p: str) -> str | None:
-    out = os.path.normpath(p).replace(os.sep, '/')
-    return None if out == '..' or out.startswith('../') else ('.' if out in ('', '.') else out)
+# a path expression built from __file__ (the sys.path idioms of test files), from the shared reader
+eval_path = py_loads.eval_path
+# loads by file path (importlib.util.spec_from_file_location, SourceFileLoader, runpy.run_path): only a file whose
+# text names one is handed to py_loads.script_loads
+PATH_LOAD = re.compile(r'spec_from_file_location|SourceFileLoader|run_path')
+PATH_LOAD_VIA = ('spec_from_file_location', 'SourceFileLoader', 'runpy.run_path')
 
 
 class Graph:
@@ -300,6 +258,7 @@ class Graph:
         self.cargo_models: list[dict] = []
         self.rust_tests: dict[str, list[dict]] = {}
         self.rust_crates: dict[str, dict] = {}
+        self.cargo_metadata_note: str | None = None
 
     # ------------------------------------------------------------ reads (each file once; shared with `reuse`)
     def text(self, path: str) -> str | None:
@@ -606,6 +565,7 @@ class Graph:
             o = self.reuse
             self.cargo_models, self.rust_crates, self.rust_tests = o.cargo_models, o.rust_crates, o.rust_tests
             self._rust_reach, self._rust_files = o._rust_reach, o._rust_files
+            self.cargo_metadata_note = o.cargo_metadata_note
             return dict(o._rust_files)
         import cargo_project
         fixture: set[str] = set()
@@ -615,6 +575,8 @@ class Graph:
         model_of: dict[str, tuple[dict, str]] = {}
         for top in tops:
             m = cargo_project.read_cargo(self.root / top, self.cargo_metadata if top == '.' else None)
+            if self.cargo_metadata and top == '.':
+                m = self._checked_metadata(cargo_project, m)
             pre = '' if top == '.' else top + '/'
             for key, tfiles in cargo_project.target_files(m).items():
                 crate, kind, name = key.split(':', 2)
@@ -671,6 +633,38 @@ class Graph:
         self._rust_files = out
         return out
 
+    def _checked_metadata(self, cargo_project, m: dict) -> dict:
+        """--cargo-metadata must never make the reading worse than the manifests alone. A crate whose metadata
+        targets are not files of this tree (metadata of another project or an older commit, a generated target
+        outside the repository) is read from its manifest instead, and `cargo_metadata_note` says which crates took
+        their targets from cargo and which did not, and why."""
+        meta = self.cargo_metadata
+        used, bad = [], {}
+        for c in m['crates']:
+            mine = [t for t in c['targets'] if t.get('from') == 'cargo metadata']
+            lost = [str(t.get('name')) for t in mine
+                    if not (isinstance(t.get('path'), str) and (self.root / t['path']).is_file())]
+            if lost:
+                bad[c['name']] = lost
+            elif mine:
+                used.append(c['name'])
+        if bad:
+            kept = [p for p in meta.get('packages') or [] if p.get('name') not in bad]
+            m = cargo_project.read_cargo(self.root, {**meta, 'packages': kept} if used else None)
+        if not used and not bad:
+            self.cargo_metadata_note = ('--cargo-metadata: the cargo metadata names none of the crates of this '
+                                        'repository (the output of another project?), so it was ignored and every '
+                                        'crate was read from its manifest.')
+        else:
+            self.cargo_metadata_note = (
+                f'--cargo-metadata: the targets and features of {len(used)} crate(s) come from cargo metadata'
+                + (f' ({", ".join(sorted(used)[:6])}).' if used else '.')
+                + (f' {len(bad)} crate(s) have metadata targets that are not files of this tree ('
+                   + '; '.join(f'{c}: {", ".join(t[:3])}' for c, t in sorted(bad.items())[:4])
+                   + '): metadata from another project or commit, or a generated target. They were read from '
+                   'their manifests instead, so nothing lost its cargo links.' if bad else ''))
+        return m
+
     def _add_rust_tests(self, pc: dict) -> None:
         """Record the crate's tests per file. A test's gating features come from the shared reader (features and
         features_any: its own cfg, its inline modules' and the `mod x;` declarations on the way to its file in its
@@ -690,10 +684,20 @@ class Graph:
             for g in groups:
                 if not set(g) & enabled:
                     gated |= set(g)
-            self.rust_tests.setdefault(t['file'], []).append({
+            # whether a plain `cargo test` runs it (cargo_project.default_run): required-features of its target,
+            # #[ignore], platform and feature cfgs
+            run = t if 'runs_by_default' in t else cargo_project.default_run(t, pc)
+            entry = {
                 'crate': pc['name'], 'package': pc['dir'], 'root': pc['root'], 'target': t['target'],
                 'target_kind': t['target_kind'], 'id': t['id'], 'name': t['name'], 'ignored': t['ignored'],
-                'features': sorted(gated), 'parameterised': self._parameterised(t['file'], t['line'])})
+                'features': sorted(gated), 'parameterised': self._parameterised(t['file'], t['line'])}
+            if run.get('runs_by_default') is not True:
+                entry['runs_by_default'] = run.get('runs_by_default')
+                entry['why'] = run.get('why') or []
+                for k in ('platforms', 'why_undecided'):
+                    if run.get(k) is not None:
+                        entry[k] = run[k]
+            self.rust_tests.setdefault(t['file'], []).append(entry)
 
     def _parameterised(self, path: str, line: int) -> bool:
         """True when the test function at `line` carries an attribute that generates child tests (#[rstest],
@@ -905,6 +909,7 @@ class Graph:
         me = self.module_of(path) or ''
         is_pkg = path.endswith('__init__.py')
         here_pkg = me if is_pkg else me.rpartition('.')[0]
+        here_dir = path.rpartition('/')[0] or '.'
 
         def add(target: str | None, via: str, line: int, spec: str):
             if not target and spec:
@@ -912,6 +917,12 @@ class Graph:
                 found = self.resolve_in_dirs(spec, dirs) if dirs else None
                 if found and found != path:
                     target, via = found, 'import (sys.path)'
+                elif spec.split('.')[0] not in STDLIB:
+                    # a script's own folder is first on sys.path when it runs (and on the path of a test that
+                    # inserts that folder): a bare import of a sibling file or package resolves there
+                    found = py_loads.resolve_in_dirs(spec, (here_dir,), self.all_paths)
+                    if found and found != path:
+                        target, via = found, 'import (script folder)'
             if target and target != path:
                 if not any(i['path'] == target for i in entry['imports']):
                     entry['imports'].append({'path': target, 'via': via, 'line': line})
@@ -994,6 +1005,17 @@ class Graph:
                                                  'text': ast.get_source_segment(self.text(path) or '', node) or name})
                 elif name in DYNAMIC_ANY:
                     entry['dynamic'].append({'line': node.lineno, 'call': name, 'lang': 'python', 'prefix': None, 'text': name + '(...)'})
+        if PATH_LOAD.search(self.text(path) or ''):
+            # scripts loaded by file path (a hyphenated name, a script outside every package): an edge to the file
+            # when the path can be worked out, a dynamic site (it could load any script) when it cannot
+            res = py_loads.script_loads(tree, path, self.all_paths)
+            for ld in res['loads']:
+                if ld['via'] in PATH_LOAD_VIA and ld['path'] != path and not any(i['path'] == ld['path'] for i in entry['imports']):
+                    entry['imports'].append({'path': ld['path'], 'via': ld['via'], 'line': ld['line']})
+            for u in res['unresolved']:
+                if u['via'] in PATH_LOAD_VIA:
+                    entry['dynamic'].append({'line': u['line'], 'call': u['via'], 'lang': 'python', 'prefix': None,
+                                             'text': f'{u["via"]}({u["expr"] or "..."}): a path this graph cannot work out'})
 
     def go_package_dir(self, spec: str) -> str | None:
         """The repo directory of a Go import path in one of the repository's modules (longest module path wins)."""

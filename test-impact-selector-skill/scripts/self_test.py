@@ -10,6 +10,7 @@ Cases that need the Go toolchain or git are skipped (and say so) when those are 
 from __future__ import annotations
 import argparse, difflib, json, os, shutil, subprocess, sys, tempfile, traceback
 from pathlib import Path
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -985,7 +986,434 @@ def case_validator_rejects_excluded_tests(tmp: Path) -> None:
     assert any('excluded' in e for e in errs), errs
 
 
-CASES = [case_tool_repo_tests, case_tool_repo_selection, case_tool_repo_fixture_changes, case_bare_root_widens_to_top_folder,
+# Helper scripts with no package: they import each other by bare name (a script's own folder is on sys.path), some
+# have hyphenated names that only a load by file path can reach, and the unittest tests put scripts/ on sys.path.
+SCRIPTS = {
+    'scripts/rainfall.py': 'def total(xs):\n    return sum(xs)\n',
+    'scripts/build_rain_report.py': 'from rainfall import total\n\n\ndef report(xs):\n    return f"{total(xs)} mm"\n',
+    'scripts/install-gauge.py': 'import rainfall\n\n\ndef main():\n    return rainfall.total([1])\n',
+    'scripts/station-sync.py': 'def main():\n    return 0\n',
+    'tests/test_rain_report.py': ('import sys\nimport unittest\nfrom pathlib import Path\n\n'
+                                  'sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))\n\n'
+                                  'import build_rain_report  # noqa: E402\n\n\nclass ReportTest(unittest.TestCase):\n'
+                                  '    def test_report(self):\n        self.assertEqual(build_rain_report.report([1, 2]), "3 mm")\n'),
+    'tests/test_install_gauge.py': ('import importlib.util\nimport unittest\nfrom pathlib import Path\n\n'
+                                    'SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "install-gauge.py"\n'
+                                    'SPEC = importlib.util.spec_from_file_location("install_gauge", SCRIPT)\n'
+                                    'GAUGE = importlib.util.module_from_spec(SPEC)\nSPEC.loader.exec_module(GAUGE)\n\n\n'
+                                    'class GaugeTest(unittest.TestCase):\n    def test_main(self):\n'
+                                    '        self.assertEqual(GAUGE.main(), 1)\n'),
+    'tests/test_station_sync.py': ('import unittest\n\n\nclass SyncTest(unittest.TestCase):\n    def test_nothing(self):\n'
+                                   '        self.assertTrue(True)\n'),
+    '.github/workflows/ci.yml': 'jobs:\n  test:\n    steps:\n      - run: python -m unittest discover -s tests\n',
+}
+BY_ENV_TEST = ('import importlib.util\nimport os\nimport unittest\n\n'
+               'SPEC = importlib.util.spec_from_file_location("tool", os.environ["TOOL_SCRIPT"])\n\n\n'
+               'class ToolTest(unittest.TestCase):\n    def test_loaded(self):\n        self.assertIsNotNone(SPEC)\n')
+
+
+def scripts_select(tmp: Path, rel: str, new: str, files: dict[str, str] = SCRIPTS, **kw) -> dict:
+    import select_tests
+    repo = make_repo(tmp / 'repo', files)
+    d = write(tmp / f'{rel.replace("/", "_")}.diff', diff_of(rel, files[rel], new))
+    return select_tests.select(repo, d, **kw)
+
+
+def case_sibling_script_imports(tmp: Path) -> None:
+    """A script imports its sibling by bare name (its own folder is on sys.path when it runs, and on the test's
+    sys.path): a change to the sibling selects the tests of every script that imports it, with the chain."""
+    import import_graph
+    g = import_graph.build(make_repo(tmp / 'g', SCRIPTS))
+    imp = g.files['scripts/build_rain_report.py']['imports']
+    assert [(i['path'], i['via']) for i in imp] == [('scripts/rainfall.py', 'import (script folder)')], imp
+    sel = scripts_select(tmp, 'scripts/rainfall.py', 'def total(xs):\n    return sum(xs) + 0\n')
+    got = {s['file']: s for s in sel['selected'] if s['strength']}
+    assert sorted(got) == ['tests/test_install_gauge.py', 'tests/test_rain_report.py'], sorted(got)
+    chain = got['tests/test_rain_report.py']['reasons'][0]['evidence']
+    assert chain == 'tests/test_rain_report.py -> scripts/build_rain_report.py -> scripts/rainfall.py', chain
+    assert not sel['blind_spots'], sel['blind_spots']
+
+
+def case_load_by_file_path(tmp: Path) -> None:
+    """A test that loads a hyphenated script with importlib.util.spec_from_file_location (a path built from
+    __file__) reaches it: an import-graph edge, not an unmapped file widened to the package. Naming also matches
+    test_station_sync.py to station-sync.py."""
+    import import_graph
+    g = import_graph.build(make_repo(tmp / 'g', SCRIPTS))
+    imp = g.files['tests/test_install_gauge.py']['imports']
+    assert ('scripts/install-gauge.py', 'spec_from_file_location') in [(i['path'], i['via']) for i in imp], imp
+    sel = scripts_select(tmp, 'scripts/install-gauge.py', SCRIPTS['scripts/install-gauge.py'].replace('[1]', '[2]'))
+    assert [s['file'] for s in sel['selected']] == ['tests/test_install_gauge.py'], sel['selected']
+    assert not sel['blind_spots'], sel['blind_spots']
+    sel = scripts_select(tmp / 'n', 'scripts/station-sync.py', 'def main():\n    return 1\n')
+    named = [r for s in sel['selected'] + sel['considered_not_selected'] for r in s['reasons'] if r['source'] == 'naming']
+    assert named and 'test_station_sync.py' in named[0]['evidence'], sel['selected']
+
+
+def case_unresolved_load_is_a_blind_spot(tmp: Path) -> None:
+    """A load by a path that cannot be worked out (from the environment) is a dynamic site: a changed script nothing
+    imports is a dynamic_reference blind spot naming the site, never silently unlinked. And a bare import the graph
+    cannot resolve whose candidate is the changed file is a blind spot widened to the importing tests, even when
+    another test already selects the file."""
+    files = dict(SCRIPTS)
+    files['tests/test_by_env.py'] = BY_ENV_TEST
+    sel = scripts_select(tmp, 'scripts/station-sync.py', 'def main():\n    return 1\n', files=files)
+    spot = next((b for b in sel['blind_spots'] if b['kind'] == 'dynamic_reference'), None)
+    assert spot and 'tests/test_by_env.py:5' in spot['note'] and 'spec_from_file_location' in spot['note'], sel['blind_spots']
+    files = dict(SCRIPTS)
+    files['tools/test_totals.py'] = ('import os\nimport sys\nimport unittest\n\nsys.path.insert(0, os.environ["SCRIPTS_DIR"])\n\n'
+                                     'import rainfall  # noqa: E402\n\n\nclass TotalTest(unittest.TestCase):\n'
+                                     '    def test_total(self):\n        self.assertEqual(rainfall.total([1]), 1)\n')
+    sel = scripts_select(tmp / 'u', 'scripts/rainfall.py', 'def total(xs):\n    return sum(xs) + 0\n', files=files)
+    spot = next((b for b in sel['blind_spots'] if b['required_scope'] == 'unresolved_importers'), None)
+    assert spot and spot['kind'] == 'dynamic_reference' and spot['widened_to'] == ['tools/test_totals.py'], sel['blind_spots']
+    assert 'tools/test_totals.py:7' in spot['note'], spot['note']
+    assert 'tools/test_totals.py' in [s['file'] for s in sel['selected']], sel['selected']
+    import validate_impact_report as v
+    assert 'unresolved_importers' in v.SCOPES['dynamic_reference'], v.SCOPES
+
+
+def cargo_meta(root: str, sep: str = '/') -> dict:
+    """`cargo metadata --no-deps` output for the RUST workspace as cargo writes it in a checkout at `root`."""
+    def pkg(name, targets, features=None):
+        d = sep.join([root, 'crates', name])
+        return {'name': name, 'manifest_path': sep.join([d, 'Cargo.toml']), 'features': features or {},
+                'targets': [{'kind': [k], 'name': n, 'src_path': sep.join([d, *rel.split('/')])} for k, n, rel in targets]}
+    return {'workspace_root': root, 'packages': [
+        pkg('tides-core', [('lib', 'tides_core', 'src/lib.rs'), ('test', 'tables', 'tests/tables.rs'),
+                           ('bench', 'lookup', 'benches/lookup.rs')], {'default': [], 'gauge': []}),
+        pkg('tides-cli', [('bin', 'tides', 'src/main.rs'), ('test', 'cli', 'tests/cli.rs')]),
+        pkg('tides-chart', [('lib', 'tides_chart', 'src/lib.rs')])]}
+
+
+def case_cargo_metadata_from_another_checkout(tmp: Path) -> None:
+    """--cargo-metadata written in another checkout (absolute src_path values under its own workspace root, POSIX
+    or Windows) gives the same selection as the static reading: a binary's module keeps its cargo links, a bench
+    file stays a bench, and the notes say the targets came from cargo metadata."""
+    changes = {'crates/tides-cli/src/report.rs': RUST['crates/tides-cli/src/report.rs'].replace('"{}"', '"{} m"'),
+               'crates/tides-core/benches/lookup.rs': RUST['crates/tides-core/benches/lookup.rs'].replace('(1)', '(2)'),
+               'crates/tides-core/src/height.rs': RUST['crates/tides-core/src/height.rs'].replace('0.3048', '0.30480')}
+    keys = ('changes', 'selected', 'blind_spots', 'command', 'total_tests')
+    for n, (rel, new) in enumerate(changes.items()):
+        plain = rust_select(tmp / f's{n}', rel, new)
+        for m, (root, sep) in enumerate((('/elsewhere/checkout', '/'), ('D:\\other\\copy', '\\'))):
+            meta = write(tmp / f'meta{m}.json', json.dumps(cargo_meta(root, sep)))
+            with_meta = rust_select(tmp / f'm{n}{m}', rel, new, cargo_metadata=meta)
+            for k in keys:
+                assert with_meta[k] == plain[k], (rel, root, k, with_meta[k], plain[k])
+            assert any('cargo metadata' in x and '3 crate' in x for x in with_meta['notes']), with_meta['notes']
+    kinds = {c['path']: c['kind'] for c in plain['changes']}
+    assert kinds == {'crates/tides-core/src/height.rs': 'source'}, kinds
+    sel = rust_select(tmp / 'b', 'crates/tides-core/benches/lookup.rs', changes['crates/tides-core/benches/lookup.rs'],
+                      cargo_metadata=write(tmp / 'meta.json', json.dumps(cargo_meta('/elsewhere/checkout'))))
+    assert sel['changes'][0]['kind'] == 'bench' and not sel['blind_spots'], (sel['changes'], sel['blind_spots'])
+
+
+def case_cargo_metadata_that_does_not_map(tmp: Path) -> None:
+    """cargo metadata whose targets are not files of this repository (another project's, or an older commit's) never
+    replaces the static reading with empty targets: the crates it cannot map are read from their manifests, the
+    selection equals the static one, and a note says which crates and why (never "targets come from cargo metadata"
+    alone)."""
+    rel = 'crates/tides-cli/src/report.rs'
+    new = RUST[rel].replace('"{}"', '"{} m"')
+    plain = rust_select(tmp / 's', rel, new)
+    meta = cargo_meta('/elsewhere/checkout')
+    cli = meta['packages'][1]
+    cli['manifest_path'] = '/gone/Cargo.toml'
+    cli['targets'] = [{'kind': ['bin'], 'name': 'tides', 'src_path': '/opt/generated/main.rs'},
+                      {'kind': ['test'], 'name': 'cli', 'src_path': '/elsewhere/checkout/crates/tides-cli/tests/renamed.rs'}]
+    del meta['packages'][2]
+    sel = rust_select(tmp / 'm', rel, new, cargo_metadata=write(tmp / 'meta.json', json.dumps(meta)))
+    for k in ('changes', 'selected', 'blind_spots', 'command'):
+        assert sel[k] == plain[k], (k, sel[k], plain[k])
+    note = next((x for x in sel['notes'] if 'cargo metadata' in x and 'tides-cli' in x), '')
+    assert 'read from' in note and 'manifest' in note and '1 crate' in note, sel['notes']
+    other = {'workspace_root': '/x', 'packages': [{'name': 'unrelated', 'manifest_path': '/x/Cargo.toml', 'targets': [
+        {'kind': ['lib'], 'name': 'unrelated', 'src_path': '/x/src/lib.rs'}]}]}
+    sel = rust_select(tmp / 'o', rel, new, cargo_metadata=write(tmp / 'other.json', json.dumps(other)))
+    assert sel['selected'] == plain['selected'], sel['selected']
+    assert any('cargo metadata' in x and 'none of' in x for x in sel['notes']), sel['notes']
+
+
+# A crate whose tests a plain `cargo test` does not all run: a binary with required-features (cargo skips the whole
+# target), an #[ignore]d test, a Unix-only test and a feature-gated one, beside one ordinary test.
+GATED = dict(RUST)
+GATED.update({
+    'crates/tides-ui/Cargo.toml': ('[package]\nname = "tides-ui"\nversion = "0.1.0"\nedition = "2021"\n\n'
+                                   '[features]\ndefault = []\ndesktop = []\n\n'
+                                   '[[bin]]\nname = "tides-desktop"\npath = "src/main.rs"\nrequired-features = ["desktop"]\n'),
+    'crates/tides-ui/src/main.rs': ('fn main() {}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n'
+                                    '    fn window_opens() {}\n}\n'),
+    'crates/tides-ui/src/lib.rs': ('pub fn width() -> u32 { 80 }\n\n#[cfg(test)]\nmod tests {\n    #[test]\n'
+                                   '    fn fits() { assert_eq!(super::width(), 80); }\n\n    #[test]\n    #[ignore]\n'
+                                   '    fn slow_render() {}\n\n    #[cfg(unix)]\n    #[test]\n    fn unix_socket() {}\n}\n'),
+})
+UI_LIB = 'crates/tides-ui/src/lib.rs'
+UI_MAIN = 'crates/tides-ui/src/main.rs'
+
+
+def case_rust_tests_the_command_does_not_run(tmp: Path) -> None:
+    """Selected Rust tests a plain `cargo test` does not run are listed apart under command.not_run_by_default with
+    the gate (required-features of their binary, #[ignore], a platform cfg, a feature) and how to run them, are left
+    out of --exact commands (cargo would run nothing, or refuse the target) and are never counted as run."""
+    sel = rust_select(tmp / 'a', UI_LIB, GATED[UI_LIB].replace('80 }', '81 }'), files=GATED)
+    nr = {tuple(x['gates']): x for x in sel['command'].get('not_run_by_default', []) if x['crate'] == 'tides-ui'}
+    assert set(nr) == {('required_features',), ('ignored',), ('platform',)}, sel['command'].get('not_run_by_default')
+    req = nr[('required_features',)]
+    assert req['tests'] == ['tides-desktop::tests::window_opens'] and req['files'] == [UI_MAIN], req
+    assert req['features'] == ['desktop'] and '--features' in req['run_with'] and 'desktop' in req['run_with'], req
+    assert nr[('ignored',)]['tests'] == ['tides_ui::tests::slow_render'] and '--ignored' in nr[('ignored',)]['run_with'], nr
+    plat = nr[('platform',)]
+    assert plat['tests'] == ['tides_ui::tests::unix_socket'] and plat['platforms'] == ['linux', 'macos'], plat
+    cmd = next(c for c in sel['command']['commands'] if c['argv'][:4] == ['cargo', 'test', '-p', 'tides-ui'])
+    # two files selected, but every test of main.rs is behind the binary's required-features: one file is run
+    assert cmd['tests'] == 1 and cmd['not_run'] == 2 and cmd['platform_dependent'] == 1, cmd
+    assert any(g['crate'] == 'tides-ui' and g['feature'] == 'desktop' for g in sel['command']['feature_gated']), sel['command']
+    assert any('not run' in n and 'tides-ui' in n for n in sel['notes']), sel['notes']
+    # the binary alone: no command can run its test by default, so none is given for it
+    sel = rust_select(tmp / 'b', UI_MAIN, GATED[UI_MAIN].replace('fn main() {}', 'fn main() { }'), files=GATED)
+    assert UI_MAIN in [s['file'] for s in sel['selected']], sel['selected']
+    assert not any('tides-desktop' in c['argv'] for c in sel['command']['commands']), sel['command']['commands']
+    assert sel['command']['not_run_by_default'][0]['tests'] == ['tides-desktop::tests::window_opens'], sel['command']
+    # an ignored or feature-gated id never appears after --exact (it would match nothing and pass)
+    files = dict(GATED)
+    files['crates/tides-ui/tests/layout.rs'] = '#[test]\nfn lays_out() { assert_eq!(tides_ui::width(), 80); }\n'
+    files['crates/tides-ui/src/extra.rs'] = '#[cfg(test)]\nmod tests {\n    #[test]\n    fn extra() {}\n}\n'
+    files[UI_LIB] = 'pub mod extra;\n' + files[UI_LIB]
+    sel = rust_select(tmp / 'c', UI_LIB, files[UI_LIB].replace('80 }', '81 }'), files={**files, UI_MAIN: 'fn main() {}\n'})
+    exact = [c for c in sel['command']['commands'] if '--exact' in c['argv']]
+    words = [w for c in exact for w in c['argv']]
+    assert not exact or ('tests::slow_render' not in words and 'tests::fits' in words), exact
+
+
+def case_validator_requires_not_run_limitation(tmp: Path) -> None:
+    """The validator rejects a report whose command lists tests the commands do not run by default when no limitation
+    names the gate (the feature, the ignore, the platform)."""
+    import validate_impact_report as v
+    nr = [{'crate': 'tides-ui', 'package': 'crates/tides-ui', 'gates': ['required_features'], 'features': ['desktop'],
+           'detail': 'target tides-desktop has required-features desktop', 'tests': ['tides-desktop::tests::window_opens'],
+           'files': [UI_MAIN]},
+          {'crate': 'tides-ui', 'package': 'crates/tides-ui', 'gates': ['ignored'], 'detail': '#[ignore]',
+           'tests': ['tides_ui::tests::slow_render'], 'files': [UI_LIB]},
+          {'crate': 'tides-ui', 'package': 'crates/tides-ui', 'gates': ['platform'], 'platforms': ['linux', 'macos'],
+           'detail': 'compiled only on linux, macos', 'tests': ['tides_ui::tests::unix_socket'], 'files': [UI_LIB]}]
+    rep = {'metadata': {'mode': 'strict', 'change': {}}, 'sources': [], 'selected': [], 'changes': [], 'blind_spots': [],
+           'total_tests': 0, 'not_selected_count': 0,
+           'command': {'commands': [], 'split_into': 0, 'not_run_by_default': nr},
+           'recommendations': {'full_suite': 'Run the full suite on merge.'}, 'limitations': ['Coverage was not given.'],
+           'summary': {'headline': 'Nothing: 0 of 0 test files.'}}
+    errs = [e for e in v.check(rep, None, None, None) if 'not_run_by_default' in e]
+    assert len(errs) == 3 and any('desktop' in e for e in errs) and any('ignore' in e for e in errs), errs
+    rep['limitations'] += ['One selected test needs --features desktop and one is #[ignore]d: the commands do not run them.',
+                           'One selected test is compiled only on Linux and macOS.']
+    errs = [e for e in v.check(rep, None, None, None) if 'not_run_by_default' in e]
+    assert not errs, errs
+
+
+# The RUST workspace with files no parser here reads (UI markup, Lua, PowerShell, shell), a data file in a
+# root-level folder and Python tests that name the data file and the installer by path.
+MIXED = dict(RUST)
+MIXED.update({
+    'crates/tides-chart/ui/chart.slint': 'export component Chart inherits Window { }\n',
+    'crates/tides-cli/tests/fixtures/hook.lua': 'return 1\n',
+    'scripts/hooks/level.lua': 'return 1\n',
+    'packaging/Install-Tides.ps1': 'Write-Host "tides"\n',
+    'packaging/build.sh': 'echo tides\n',
+    'benchmarks/levels.json': '{"levels": [1]}\n',
+    'tests/test_levels.py': ('import json\nimport unittest\nfrom pathlib import Path\n\n'
+                             'LEVELS = Path(__file__).resolve().parents[1] / "benchmarks" / "levels.json"\n\n\n'
+                             'class LevelsTest(unittest.TestCase):\n    def test_levels(self):\n'
+                             '        self.assertTrue(json.loads(LEVELS.read_text())["levels"])\n'),
+    'tests/test_packaging.py': ('import unittest\nfrom pathlib import Path\n\n'
+                                'INSTALLER = Path(__file__).resolve().parents[1] / "packaging" / "Install-Tides.ps1"\n\n\n'
+                                'class InstallerTest(unittest.TestCase):\n    def test_present(self):\n'
+                                '        self.assertIn("tides", INSTALLER.read_text())\n'),
+})
+
+
+def added_diff(rel: str, text: str) -> str:
+    lines = text.splitlines()
+    return (f'diff --git a/{rel} b/{rel}\nnew file mode 100644\n--- /dev/null\n+++ b/{rel}\n@@ -0,0 +1,{len(lines)} @@\n'
+            + ''.join(f'+{x}\n' for x in lines))
+
+
+def case_unread_language_warns(tmp: Path) -> None:
+    """A changed file in a language nothing here reads (UI markup such as Slint, Lua, PowerShell, shell) sets
+    language_coverage.warning with the language in changed_unparsed, its blind spot says there is no parser, and it
+    does not count as parsed in the import graph's completeness factor."""
+    for n, (rel, lang) in enumerate((('crates/tides-chart/ui/chart.slint', 'slint'), ('scripts/hooks/level.lua', 'lua'),
+                                     ('packaging/Install-Tides.ps1', 'powershell'), ('packaging/build.sh', 'shell'))):
+        sel = rust_select(tmp / str(n), rel, MIXED[rel] + '\n', files=MIXED)
+        lc = sel.get('language_coverage') or {}
+        assert lc.get('changed_unparsed') == [lang] and lang in (lc.get('warning') or '').lower(), (rel, lc)
+        assert lc['changed_unparsed_files'] == {lang: [rel]} and lang in lc['no_parser'], lc
+        spot = next(b for b in sel['blind_spots'] if b['path'] == rel)
+        assert 'no import parser for' in spot['note'].lower() and lang in spot['note'].lower(), spot['note']
+        graph = next(s for s in sel['sources'] if s['name'] == 'import_graph')
+        assert graph['factor'] == 0.0 and lang in graph['reason'].lower(), graph
+    sel = rust_select(tmp / 'py', 'scripts/scale_recipe.py', 'def scale(q, n):\n    return q * n * 1\n', files=MIXED)
+    assert not sel.get('language_coverage'), sel.get('language_coverage')
+
+
+def case_root_files_widen_by_evidence(tmp: Path) -> None:
+    """A data file or an unread script in the root package widens to the tests that could read it: Rust tests only
+    when a Rust file names it or its folder (a compiled test reads a file by a path in its source). The blind spot
+    says which tests name it and what was left out and why; with a Rust file naming it, the Rust tests come back."""
+    for n, rel in enumerate(('benchmarks/levels.json', 'packaging/Install-Tides.ps1')):
+        sel = rust_select(tmp / str(n), rel, MIXED[rel] + '\n', files=MIXED)
+        spot = next(b for b in sel['blind_spots'] if b['path'] == rel and b['kind'] in ('data_or_schema', 'unmapped_source'))
+        assert spot['widened_to'] and not any(t.endswith('.rs') for t in spot['widened_to']), (rel, spot['widened_to'])
+        assert 'tests/test_levels.py' in spot['widened_to'] and 'tests/test_packaging.py' in spot['widened_to'], spot
+        left = spot.get('left_out') or []
+        assert [x['family'] for x in left] == ['rust'] and left[0]['tests'] == 9 and 'names' in left[0]['reason'], left
+        named = 'tests/test_levels.py:5' if n == 0 else 'tests/test_packaging.py:4'
+        assert named in spot['note'] and 'Rust' in spot['note'], spot['note']
+        assert not any(s['file'].endswith('.rs') for s in sel['selected']), [s['file'] for s in sel['selected']]
+    files = dict(MIXED)
+    files['crates/tides-core/tests/tables.rs'] += ('\n#[test]\nfn reads_levels() {\n'
+                                                   '    assert!(std::fs::read("../../benchmarks/levels.json").is_ok());\n}\n')
+    sel = rust_select(tmp / 'r', 'benchmarks/levels.json', MIXED['benchmarks/levels.json'] + '\n', files=files)
+    spot = next(b for b in sel['blind_spots'] if b['path'] == 'benchmarks/levels.json')
+    assert 'crates/tides-core/tests/tables.rs' in spot['widened_to'] and not spot.get('left_out'), spot
+
+
+def case_added_ci_file_widens_nothing(tmp: Path) -> None:
+    """A newly added workflow file adds jobs; it cannot change an existing test's result, so it is a blind spot that
+    widens to no test and says why. A modified workflow still widens to the full suite."""
+    import select_tests
+    import validate_impact_report as v
+    repo = make_repo(tmp / 'repo', MIXED)
+    rel = '.github/workflows/release.yml'
+    d = write(tmp / 'a.diff', added_diff(rel, 'jobs:\n  release:\n    steps:\n      - run: cargo build --release\n'))
+    sel = select_tests.select(repo, d)
+    spot = next(b for b in sel['blind_spots'] if b['path'] == rel)
+    assert spot['kind'] == 'global_config' and spot['required_scope'] == 'no_existing_test', spot
+    assert spot['widened_to'] == [] and not sel['selected'] and 'new' in spot['note'].lower(), (spot, sel['selected'])
+    assert 'no_existing_test' in v.SCOPES['global_config'], v.SCOPES
+    sel = rust_select(tmp / 'm', '.github/workflows/ci.yml', MIXED['.github/workflows/ci.yml'] + '      - run: echo done\n',
+                      files=MIXED)
+    spot = next(b for b in sel['blind_spots'] if b['path'] == '.github/workflows/ci.yml')
+    assert spot['required_scope'] == 'full_suite' and len(spot['widened_to']) == sel['total_tests'], spot
+    # the validator refuses the scope for anything but an added CI file
+    rep = {'metadata': {'mode': 'strict', 'change': {}}, 'sources': [], 'selected': [], 'total_tests': 0,
+           'changes': [{'path': 'Cargo.lock', 'status': 'modified', 'kind': 'global_config', 'line_ranges': []}],
+           'blind_spots': [{'id': 'B1', 'path': 'Cargo.lock', 'kind': 'global_config', 'action': 'no_existing_test',
+                            'required_scope': 'no_existing_test', 'widened_to': [], 'would_widen_to': [], 'note': 'x'}],
+           'not_selected_count': 0, 'command': {'commands': [], 'split_into': 0},
+           'recommendations': {'full_suite': 'Run the full suite on merge.'}, 'limitations': ['Coverage was not given.'],
+           'summary': {'headline': 'Nothing: 0 of 0 test files.'}}
+    errs = v.check(rep, None, None, None)
+    assert any('no_existing_test' in e and 'added' in e for e in errs), errs
+
+
+def case_fixture_note_names_no_js_runner(tmp: Path) -> None:
+    """A helper file under a Rust crate's tests/fixtures that no test imports is not described as loaded by a
+    JavaScript runner's setupFiles."""
+    rel = 'crates/tides-cli/tests/fixtures/hook.lua'
+    sel = rust_select(tmp, rel, 'return 2\n', files=MIXED)
+    spot = next(b for b in sel['blind_spots'] if b['path'] == rel)
+    assert 'setupFiles' not in spot['note'] and spot['widened_to'] == CLI_TESTS, spot
+
+
+def verify_report(known=None, limitations=None) -> tuple[dict, dict]:
+    """A report and a verify runs file: the selection holds one Rust unit-test file; the full run fails that file's
+    test (recorded under the crate root, as a run parsed without the Cargo model does) and one test of another crate,
+    which a re-run then passes."""
+    height = 'crates/tides-core/src/height.rs'
+    reason = {'source': 'import_graph', 'strength': 2, 'evidence': height, 'changed_path': height}
+    rep = {'metadata': {'mode': 'strict', 'change': {}, 'packages': [{'root': '.', 'test_files': [
+               height, 'crates/tides-chart/src/lib.rs'], 'manifests': ['Cargo.toml']}]},
+           'sources': [{'name': 'import_graph', 'status': 'ran', 'factor': 1.0}], 'total_tests': 2,
+           'changes': [{'path': height, 'status': 'modified', 'kind': 'source', 'line_ranges': []}],
+           'selected': [{'test_id': height, 'file': height, 'package': '.', 'strength': 2, 'reasons': [reason], 'order': 1,
+                         'test_ids': ['tides_core::height::tests::converts']}],
+           'blind_spots': [], 'not_selected_count': 1, 'command': {'commands': [], 'split_into': 0},
+           'verify': {'runs_file': 'runs.json', 'selected_run_ids': ['SC-1'], 'full_run_ids': ['FC-1'],
+                      'failures_outside_selection': [], 'failures_inside_selection': [height],
+                      **({'known_failures': known} if known is not None else {})},
+           'recommendations': {'full_suite': 'Run the full suite on merge.'},
+           'limitations': limitations or ['Coverage was not given.'],
+           'summary': {'headline': 'One: 1 of 2 test files.'}}
+    case = lambda run, tid, file, status: {'run_id': run, 'id': tid, 'file': file, 'status': status}  # noqa: E731
+    runs = {'runs': [{'id': 'SC-1', 'label': 'verify-selected cargo', 'code_hash': 'h1'},
+                     {'id': 'FC-1', 'label': 'verify-full cargo', 'code_hash': 'h1'},
+                     {'id': 'RR-1', 'label': 'verify-rerun cargo', 'code_hash': 'h1'},
+                     {'id': 'BASE-1', 'label': 'verify-base cargo', 'code_hash': 'h0'}],
+            'cases': [case('SC-1', 'tides_core::height::tests::converts', height, 'failed'),
+                      case('FC-1', 'tides_core::height::tests::converts', 'crates/tides-core/src/lib.rs', 'failed'),
+                      case('FC-1', 'tides_chart::tests::draws', 'crates/tides-chart/src/lib.rs', 'failed'),
+                      case('RR-1', 'tides_chart::tests::draws', 'crates/tides-chart/src/lib.rs', 'passed'),
+                      case('BASE-1', 'tides_chart::tests::draws', 'crates/tides-chart/src/lib.rs', 'passed')]}
+    return rep, runs
+
+
+def case_verify_compares_by_test_id(tmp: Path) -> None:
+    """A failed libtest unit test whose id belongs to a selected file is inside the selection even when the run
+    recorded it under the crate's root file, and a run label whose last word is no package (`verify-full cargo`) is
+    read as the repository root, not as a folder named cargo."""
+    import validate_impact_report as v
+    chart = 'crates/tides-chart/src/lib.rs'
+    rep, runs = verify_report()
+    rep['verify']['failures_outside_selection'] = [chart]
+    rep['limitations'].append(f'{chart} failed in the full run outside the selection.')
+    errs = [e for e in v.check(rep, None, None, runs) if e.startswith('verify')]
+    assert not errs, errs
+    # the selector records each selected Rust file's libtest ids for this
+    sel = rust_select(tmp, 'crates/tides-core/src/height.rs', RUST['crates/tides-core/src/height.rs'].replace('0.3048', '0.30480'))
+    item = next(s for s in sel['selected'] if s['file'] == 'crates/tides-core/src/height.rs')
+    assert item.get('test_ids') == ['tides_core::height::tests::converts'], item
+
+
+def case_verify_known_flaky_or_baseline_failure(tmp: Path) -> None:
+    """A full-run failure outside the selection is a miss unless verify.known_failures shows it is flaky (the same
+    test passed and failed in the named runs of the same code) or failed at the base already (a verify-base run):
+    then it is reported as such, named in limitations, and not counted as a miss. An entry the runs do not bear out is
+    rejected."""
+    import validate_impact_report as v
+    chart = 'crates/tides-chart/src/lib.rs'
+    tid = 'tides_chart::tests::draws'
+    flaky = [{'id': tid, 'kind': 'flaky', 'run_ids': ['FC-1', 'RR-1'], 'note': 'Passed when re-run on the same code.'}]
+    rep, runs = verify_report(flaky, ['Coverage was not given.', f'{tid} is flaky: it failed in FC-1 and passed in RR-1.'])
+    errs = [e for e in v.check(rep, None, None, runs) if e.startswith('verify')]
+    assert not errs, errs
+    # not named in limitations
+    rep, runs = verify_report(flaky)
+    errs = [e for e in v.check(rep, None, None, runs) if e.startswith('verify')]
+    assert any('limitations' in e and tid in e for e in errs), errs
+    # claimed flaky, but the named runs never show it passing
+    rep, runs = verify_report([{**flaky[0], 'run_ids': ['FC-1']}], ['Coverage was not given.', f'{tid} is flaky.'])
+    errs = [e for e in v.check(rep, None, None, runs) if e.startswith('verify')]
+    assert any('known_failures' in e and 'passed' in e for e in errs), errs
+    # claimed to fail at the base, but the base run passed it
+    rep, runs = verify_report([{'id': tid, 'kind': 'baseline', 'run_ids': ['BASE-1'], 'note': 'Fails before the change.'}],
+                              ['Coverage was not given.', f'{tid} fails at the base.'])
+    errs = [e for e in v.check(rep, None, None, runs) if e.startswith('verify')]
+    assert any('known_failures' in e and 'base' in e for e in errs), errs
+    runs['cases'][-1]['status'] = 'failed'
+    errs = [e for e in v.check(rep, None, None, runs) if e.startswith('verify')]
+    assert not errs, errs
+    # a known failure that is not a failure of the full run
+    rep, runs = verify_report([{'id': 'tides_chart::tests::other', 'kind': 'flaky', 'run_ids': ['FC-1', 'RR-1'], 'note': 'x'}])
+    rep['verify']['failures_outside_selection'] = [chart]
+    rep['limitations'].append(f'{chart} failed outside the selection.')
+    errs = [e for e in v.check(rep, None, None, runs) if e.startswith('verify')]
+    assert any('known_failures' in e and 'not a failure' in e for e in errs), errs
+    out = subprocess.run([sys.executable, str(HERE / 'render_report.py'), str(write(tmp / 'r.json', json.dumps({
+        **verify_report(flaky)[0], 'metadata': {'repo': 'tides', 'mode': 'strict', 'change': {'diff': 'c.diff'}},
+        'summary': {'selected': 1, 'total_tests': 2, 'blind_spots': 0, 'evidence_completeness': 1.0,
+                    'headline': 'One of two.', 'recall_status': 'not_assessed'}}))), '--brief', '--color', 'never'],
+        capture_output=True, text=True)
+    assert 'Known failure' in out.stdout and tid in out.stdout and 'flaky' in out.stdout, out.stdout + out.stderr
+    assert '## Limitations' in out.stdout and 'Coverage was not given.' in out.stdout, out.stdout
+
+
+CASES = [case_verify_compares_by_test_id, case_verify_known_flaky_or_baseline_failure,
+         case_unread_language_warns, case_root_files_widen_by_evidence, case_added_ci_file_widens_nothing,
+         case_fixture_note_names_no_js_runner,
+         case_rust_tests_the_command_does_not_run, case_validator_requires_not_run_limitation,
+         case_cargo_metadata_from_another_checkout, case_cargo_metadata_that_does_not_map,
+         case_sibling_script_imports, case_load_by_file_path, case_unresolved_load_is_a_blind_spot,
+         case_tool_repo_tests, case_tool_repo_selection, case_tool_repo_fixture_changes, case_bare_root_widens_to_top_folder,
          case_js_template_string_is_not_a_dynamic_import, case_unittest_discover_runs_from_root,
          case_validator_rejects_excluded_tests, case_render_fixture_project,
          case_import_graph_go,case_select_go_change, case_unmapped_go_widens_within_go, case_naming_same_package,

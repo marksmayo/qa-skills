@@ -9,7 +9,12 @@ are exactly select_tests.py's output. --recompute re-runs the selection from the
 in it (paths relative to the current directory) and checks the result is the same. --replay
 checks the recall figures and the misses against replay.py's output. --runs checks a verify run:
 every test file that failed in a `verify-full <package>` run outside the selection must be
-listed. --write-summary fills in the computed summary fields (the headline stays yours).
+listed (a failed case is inside the selection when its file is selected, or when its test id is
+one of a selected file's `test_ids`: libtest unit tests may be recorded under their crate's root
+file). A failure listed in `verify.known_failures` is not a miss when the runs it names bear it
+out: `flaky` needs a pass and a failure of that test on the same code, `baseline` a failure in a
+`verify-base ...` run; each is still named in limitations. --write-summary fills in the computed
+summary fields (the headline stays yours).
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -17,14 +22,15 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import import_graph, stats  # noqa: E402
 
 SCHEMA = HERE.parent / 'schemas' / 'impact_report.schema.json'
 KINDS = import_graph.KINDS
 COPIED = ('sources', 'changes', 'selected', 'blind_spots', 'total_tests', 'not_selected_count', 'command')
 EVIDENCE_SOURCES = {'coverage', 'import_graph', 'framework_tools', 'journeys', 'naming', 'co_failure'}
-SCOPES = {'global_config': {'full_suite', 'package', 'language'}, 'shared_fixture': {'fixture_reach', 'package'},
-          'dynamic_reference': {'package'}, 'data_or_schema': {'package_and_contract'},
+SCOPES = {'global_config': {'full_suite', 'package', 'language', 'no_existing_test'}, 'shared_fixture': {'fixture_reach', 'package'},
+          'dynamic_reference': {'package', 'unresolved_importers'}, 'data_or_schema': {'package_and_contract'},
           'unmapped_source': {'package', 'full_suite'},
           'deleted_or_renamed': {'importers'}, 'non_code': {'e2e_and_visual'}, 'huge_change': {'full_suite'},
           'fixture_project': {'fixture_host'}}
@@ -129,6 +135,8 @@ def all_text(rep: dict) -> list[tuple[str, str]]:
         out += [(f'replay.misses[{m["change"]}]', m.get('explanation', '') + ' ' + m.get('fix', ''))]
     if rep.get('verify'):
         out.append(('verify.note', rep['verify'].get('note', '')))
+        out += [(f'verify.known_failures[{k.get("id")}].note', str(k.get('note') or ''))
+                for k in rep['verify'].get('known_failures') or []]
     out += [(f'notes[{i}]', t) for i, t in enumerate(rep.get('notes', []))]
     return out
 
@@ -225,6 +233,22 @@ def check(rep: dict, selection: dict | None, replay: dict | None, runs: dict | N
         where = f'blind_spots[{b["id"]}]'
         if b['required_scope'] not in SCOPES[b['kind']]:
             errs.append(f'{where}: {b["kind"]} needs scope {sorted(SCOPES[b["kind"]])}, not {b["required_scope"]}')
+        if b['required_scope'] == 'no_existing_test':
+            # only a newly added CI file may widen to nothing: nothing that exists refers to it yet
+            ch = next((c for c in rep['changes'] if c['path'] == b['path']), {})
+            if ch.get('status') != 'added' or not import_graph.match(b['path'], KINDS['ci']):
+                errs.append(f'{where}: no_existing_test is only for an added CI file; {b["path"]} is '
+                            f'{ch.get("status") or "not a change"}, so it widens')
+            if b['widened_to'] or b['would_widen_to']:
+                errs.append(f'{where}: no_existing_test widens to no test')
+        for x in b.get('left_out') or []:
+            fam = x.get('family')
+            if b['required_scope'] not in ('package', 'package_and_contract') or import_graph.family(b['path']) is not None:
+                errs.append(f'{where}: left_out is only for a file of no language widened to its package')
+            if fam not in ('rust', 'go') or not str(x.get('reason') or '').strip():
+                errs.append(f'{where}: left_out needs a family (rust or go) and the reason its tests were left out')
+            elif any(import_graph.family(t) == fam for t in b['would_widen_to']):
+                errs.append(f'{where}: left_out says the {fam} tests were left out, but its scope lists some')
         widen = mode == 'strict' or (mode == 'balanced' and b['kind'] in HIGH_RISK)
         if widen:
             if b['action'] != b['required_scope']:
@@ -239,6 +263,13 @@ def check(rep: dict, selection: dict | None, replay: dict | None, runs: dict | N
             if b['required_scope'] == 'package' and pkg_tests:
                 pkg = max((r for r in pkg_tests if r == '.' or b['path'].startswith(r + '/')), key=len, default='.')
                 want = set(import_graph.same_family(b['path'], sorted(pkg_tests.get(pkg, []) if pkg != '.' else tests_all)))
+                for x in b.get('left_out') or []:
+                    # tests of a compiled language left out for a file of no language that none of its sources names
+                    gone = {t for t in want if import_graph.family(t) == x.get('family')}
+                    if pkg != '.' or x.get('tests') != len(gone):
+                        errs.append(f'{where}: left_out {x.get("family")} must count the {len(gone)} {x.get("family")} '
+                                    'test file(s) of the root package')
+                    want -= gone
                 top = b['path'].split('/', 1)[0] if '/' in b['path'] else None
                 bare = pkg == '.' and not next((p.get('manifests') for p in rep['metadata'].get('packages') or []
                                                 if p['root'] == '.'), None)
@@ -323,24 +354,88 @@ def check(rep: dict, selection: dict | None, replay: dict | None, runs: dict | N
             elif by_id[rid].get('errored'):
                 errs.append(f'verify: run {rid} errored ({by_id[rid].get("error") or "the tests did not run"}); '
                             'an errored run is no evidence that the selection holds')
-        outside, inside = set(), set()
+        roots = set(pkg_tests) | {'.'}
+        id_file = {tid: x['file'] for x in rep['selected'] for tid in x.get('test_ids') or []}
+
+        def case_file(c: dict) -> str:
+            """The case's file, repository-relative: the run label's last word is its package when it is one."""
+            label = (by_id.get(c['run_id']) or {}).get('label') or ''
+            pkg = label.split()[-1] if ' ' in label else '.'
+            if pkg not in roots:
+                pkg = '.'
+            f = (c.get('file') or '').replace('\\', '/')
+            return f if pkg == '.' or f.startswith(pkg + '/') else f'{pkg}/{f}'
+
+        def case_id(c: dict) -> str:
+            return re.sub(r'#\d+$', '', c.get('id') or '')
+        inside: set[str] = set()
+        outside_cases: list[tuple[str, str]] = []
         for c in runs['cases']:
             run = by_id.get(c['run_id'])
             if not run or c['run_id'] not in v['full_run_ids'] or c['status'] not in ('failed', 'error'):
                 continue
-            pkg = (run.get('label') or '').split()[-1] if ' ' in (run.get('label') or '') else '.'
-            f = (c.get('file') or '').replace('\\', '/')
-            f = f if pkg == '.' or f.startswith(pkg + '/') else f'{pkg}/{f}'
-            (inside if f in selected_files else outside).add(f)
+            f, cid = case_file(c), case_id(c)
+            if f in selected_files:
+                inside.add(f)
+            elif cid in id_file:
+                # a libtest unit test recorded under its target's root file: its id belongs to a selected file
+                inside.add(id_file[cid])
+            else:
+                outside_cases.append((f, cid))
+        waived: set[int] = set()
+        lims = rep.get('limitations', [])
+        for k in v.get('known_failures') or []:
+            kid = str(k.get('id') or '')
+            where = f'verify.known_failures[{kid}]'
+            hits = {i for i, (f, cid) in enumerate(outside_cases) if kid and kid in (f, cid)}
+            if not hits:
+                errs.append(f'{where}: not a failure of the full run outside the selection; list only tests that failed '
+                            'there')
+                continue
+            rids = k.get('run_ids') or []
+            bad = [r for r in rids if r not in by_id or by_id[r].get('errored')]
+            mine = [c for c in runs['cases'] if c['run_id'] in rids and kid in (case_file(c), case_id(c))]
+            fails = [c for c in mine if c['status'] in ('failed', 'error')]
+            passes = [c for c in mine if c['status'] == 'passed']
+            ok = False
+            if bad or not rids:
+                errs.append(f'{where}: run_ids must name runs of {v["runs_file"]} that did not error ({bad or "none given"})')
+            elif k.get('kind') == 'flaky':
+                hashes = {by_id[c['run_id']].get('code_hash') for c in fails + passes} - {None}
+                if not fails or not passes:
+                    errs.append(f'{where}: flaky needs runs in run_ids in which it failed and in which it passed; it '
+                                f'failed in {len(fails)} and passed in {len(passes)} of them')
+                elif len(hashes) > 1:
+                    errs.append(f'{where}: flaky needs a pass and a failure on the same code; the runs have '
+                                f'{len(hashes)} different code hashes')
+                else:
+                    ok = True
+            elif k.get('kind') == 'baseline':
+                base = [r for r in rids if (by_id[r].get('label') or '').startswith('verify-base')
+                        and r not in v['full_run_ids']]
+                if not any(c['run_id'] in base for c in fails):
+                    errs.append(f'{where}: baseline needs a verify-base run (the tests at the base, before the change) '
+                                'in run_ids in which it failed')
+                else:
+                    ok = True
+            else:
+                errs.append(f'{where}: kind must be flaky or baseline')
+            if not str(k.get('note') or '').strip():
+                errs.append(f'{where}: say in note what the runs showed')
+            if not any(kid in t for t in lims):
+                errs.append(f'{where}: name {kid} in limitations; a known failure is reported, not hidden')
+            if ok:
+                waived |= hits
+        outside = {f for i, (f, _cid) in enumerate(outside_cases) if i not in waived}
         if sorted(outside) != sorted(v['failures_outside_selection']):
             errs.append(f'verify.failures_outside_selection: the full runs failed outside the selection in {sorted(outside)}')
         if sorted(inside) != sorted(v['failures_inside_selection']):
             errs.append(f'verify.failures_inside_selection: must be {sorted(inside)}')
     elif v and not runs:
         errs.append('verify: pass --runs to check the verify run')
-    if v and v['failures_outside_selection'] and not any(f in rep.get('limitations', []) or
-                                                          any(f in t for t in rep.get('limitations', [])) for f in v['failures_outside_selection']):
-        errs.append('verify: failures outside the selection are misses; name each one in limitations')
+    for f in (v or {}).get('failures_outside_selection') or []:
+        if not any(f in t for t in rep.get('limitations', [])):
+            errs.append(f'verify: failures outside the selection are misses; name each one in limitations ({f} is not)')
 
     # a changed file in a language with no import parser: the report must say so
     lc = rep.get('language_coverage') or (selection or {}).get('language_coverage') or {}
@@ -350,6 +445,25 @@ def check(rep: dict, selection: dict | None, replay: dict | None, runs: dict | N
             if lang.lower() not in lim:
                 errs.append(f'limitations: changed {lang} file(s) have no import parser (language_coverage.warning); '
                             f'name {lang} in a limitation, since those changes were widened, not traced to tests')
+
+    # selected tests the commands do not run by default: the report must say so
+    lim = ' '.join(rep.get('limitations', [])).lower()
+    for g in rep['command'].get('not_run_by_default') or []:
+        gates = set(g.get('gates') or [])
+        need = []
+        if gates & {'feature', 'required_features'}:
+            need += [f for f in g.get('features') or [] if f.lower() not in lim] or \
+                ([] if g.get('features') or 'feature' in lim else ['the feature'])
+        if 'ignored' in gates and 'ignore' not in lim:
+            need.append('the #[ignore]')
+        if 'platform' in gates and not any(w in lim for w in [*(g.get('platforms') or []), 'platform', 'unix', 'windows']):
+            need.append('the platforms (' + ', '.join(g.get('platforms') or []) + ')')
+        if gates - {'feature', 'required_features', 'ignored', 'platform'} and 'cfg' not in lim:
+            need.append('the cfg')
+        if need:
+            errs.append(f'command.not_run_by_default[{g.get("crate")}: {", ".join(sorted(gates))}]: {len(g.get("tests") or [])} '
+                        f'selected test(s) are not run by the commands, or not on every platform ({g.get("detail")}); name '
+                        f'{" and ".join(need)} in a limitation')
 
     # text rules
     for where, text in all_text(rep):

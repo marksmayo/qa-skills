@@ -28,9 +28,9 @@ A reason must not cite a source recorded `not_run`, `errored` or `not_applicable
 
 | Kind | Required scope | Allowed scopes |
 |---|---|---|
-| `global_config` | Full suite for repo-level files, lockfiles and CI; the package for a package's own manifest or test config; every Rust test for the workspace's Cargo files (`Cargo.toml`, `Cargo.lock`, toolchain, `.cargo/config`) | `full_suite`, `package`, `language` |
+| `global_config` | Full suite for repo-level files, lockfiles and CI; the package for a package's own manifest or test config; every Rust test for the workspace's Cargo files (`Cargo.toml`, `Cargo.lock`, toolchain, `.cargo/config`); no test for a newly added CI file (status `added`), which nothing that exists refers to yet | `full_suite`, `package`, `language`, `no_existing_test` |
 | `shared_fixture` | Every test under a `conftest.py`'s directory; a helper's importers, or the package when nothing imports it | `fixture_reach`, `package` |
-| `dynamic_reference` | The package | `package` |
+| `dynamic_reference` | The package; for the candidate of an import the graph could not resolve, the importing tests and the tests that reach the importers | `package`, `unresolved_importers` |
 | `data_or_schema` | The package's tests plus contract tests | `package_and_contract` |
 | `unmapped_source` | The package's tests of the file's language family: Rust files only Rust tests, Go files only Go tests (the package directory's and its importers', else the module's), other source files every test but Rust and Go ones. When the file's language has no import parser and that scope is empty, the full suite | `package`, `full_suite` |
 | `deleted_or_renamed` | Tests that imported it in the base tree | `importers` |
@@ -43,11 +43,19 @@ holds tests is that folder's tests (with the guide checks that run its scripts a
 reach the file), not every test of the repository. A selected test may never lie inside a folder
 listed under `excluded`.
 
-A file of no language (data, styles, configuration) widens to every test of its scope. A Rust
+A file of no language (data, styles, configuration, an unread script language) widens to every
+test of its scope, except that in the root package Rust and Go tests are left out when no file of
+that language names the file or its folder; the blind spot lists them under `left_out` with the
+count of that family's root-package tests and the reason. A Rust
 bench file is change kind `bench`, not a blind spot: `cargo test` never builds or runs it.
 
 When `language_coverage.warning` is set (a changed file in a language with no import parser),
-every language in `changed_unparsed` must be named in `limitations`.
+every language in `changed_unparsed` must be named in `limitations`. Unread languages (PowerShell,
+shell, Slint, Lua ...) count.
+
+Selected Rust tests in `command.not_run_by_default` are not run by the commands (required-features,
+`#[ignore]`, a feature) or not on every platform: a limitation must name each group's features, the
+ignore, or the platforms.
 
 | Mode | What widens |
 |---|---|
@@ -97,7 +105,11 @@ Without a replay that has failures:
 - no text gives a recall percentage.
 
 A verify run's failures outside the selection are misses too, listed in
-`verify.failures_outside_selection` and in `limitations`.
+`verify.failures_outside_selection` and in `limitations`. A failed case is inside the selection
+when its file is selected or its test id is one of a selected file's `test_ids`. A failure in
+`verify.known_failures` is not a miss only when the runs bear it out: `flaky` needs a pass and a
+failure of the test in the named runs on the same code, `baseline` a failure in a `verify-base`
+run; it is still named in `limitations`.
 
 ## Honesty rules
 

@@ -101,6 +101,8 @@
           "journey_priority": {"type": ["string", "null"]},
           "past_failures": {"type": ["string", "null"]},
           "widened_by": {"type": "array", "items": {"type": "string"}},
+          "test_ids": {"type": "array", "items": {"type": "string"},
+                       "description": "a Rust test file's libtest ids: a verify run may record a unit test under its crate's root file"},
           "order": {"type": "integer", "minimum": 1}
         }
       }
@@ -116,11 +118,15 @@
           "path": {"type": "string"},
           "kind": {"enum": ["global_config", "shared_fixture", "dynamic_reference", "data_or_schema", "unmapped_source",
                             "deleted_or_renamed", "non_code", "huge_change", "fixture_project"]},
-          "action": {"enum": ["full_suite", "language", "package", "fixture_reach", "package_and_contract", "importers", "e2e_and_visual", "fixture_host", "labelled"]},
-          "required_scope": {"enum": ["full_suite", "language", "package", "fixture_reach", "package_and_contract", "importers", "e2e_and_visual", "fixture_host"]},
+          "action": {"enum": ["full_suite", "language", "package", "fixture_reach", "package_and_contract", "importers", "e2e_and_visual", "fixture_host", "unresolved_importers", "no_existing_test", "labelled"]},
+          "required_scope": {"enum": ["full_suite", "language", "package", "fixture_reach", "package_and_contract", "importers", "e2e_and_visual", "fixture_host", "unresolved_importers", "no_existing_test"]},
           "widened_to": {"type": "array", "items": {"type": "string"}},
           "would_widen_to": {"type": "array", "items": {"type": "string"}},
           "note": {"type": "string", "minLength": 10},
+          "left_out": {"type": "array", "description": "compiled-language tests left out of a package scope because no source of that language names the file",
+                       "items": {"type": "object", "required": ["family", "tests", "reason"],
+                                 "properties": {"family": {"enum": ["rust", "go"]}, "tests": {"type": "integer", "minimum": 0},
+                                                "reason": {"type": "string", "minLength": 10}}}},
           "comment": {"type": "string"}
         }
       }
@@ -141,6 +147,8 @@
               "package": {"type": "string"}, "cwd": {"type": "string"}, "framework": {"type": "string"},
               "argv": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "full_suite": {"type": "boolean"},
               "tests": {"type": "integer"}, "part": {"type": "integer"}, "parts": {"type": "integer"},
+              "not_run": {"type": "integer", "description": "selected tests of its crates this command never runs (not_run_by_default)"},
+              "platform_dependent": {"type": "integer", "description": "selected tests it runs on some platforms only"},
               "note": {"type": "string", "description": "a caveat about this command, such as name filters without --exact for parameterised Rust tests"}
             }
           }
@@ -155,6 +163,18 @@
           "items": {"type": "object", "required": ["crate", "feature", "tests"],
                     "properties": {"package": {"type": "string"}, "crate": {"type": "string"}, "feature": {"type": "string"},
                                    "tests": {"type": "array", "items": {"type": "string"}}}}
+        },
+        "not_run_by_default": {
+          "type": "array",
+          "description": "Selected Rust tests a plain cargo test does not run, or runs only on some platforms: required-features of their target, #[ignore], a feature, a platform cfg. Never counted as run; name each gate in limitations",
+          "items": {"type": "object", "required": ["crate", "gates", "detail", "tests"],
+                    "properties": {"crate": {"type": "string"}, "package": {"type": "string"},
+                                   "gates": {"type": "array", "minItems": 1, "items": {"enum": ["ignored", "feature", "required_features", "platform", "target", "doc", "cfg", "undecided"]}},
+                                   "detail": {"type": "string"}, "features": {"type": "array", "items": {"type": "string"}},
+                                   "platforms": {"type": "array", "items": {"type": "string"}},
+                                   "run_with": {"type": "array", "items": {"type": "string"}},
+                                   "tests": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+                                   "files": {"type": "array", "items": {"type": "string"}}}}
         }
       }
     },
@@ -204,6 +224,14 @@
         "full_run_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
         "failures_outside_selection": {"type": "array", "items": {"type": "string"}},
         "failures_inside_selection": {"type": "array", "items": {"type": "string"}},
+        "known_failures": {
+          "type": "array",
+          "description": "full-run failures outside the selection that the runs show to be flaky (a pass and a failure on the same code) or failing at the base (a verify-base run): reported, named in limitations, not counted as misses",
+          "items": {"type": "object", "required": ["id", "kind", "run_ids", "note"], "additionalProperties": false,
+                    "properties": {"id": {"type": "string"}, "kind": {"enum": ["flaky", "baseline"]},
+                                   "run_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+                                   "note": {"type": "string"}}}
+        },
         "note": {"type": "string"}
       }
     },
