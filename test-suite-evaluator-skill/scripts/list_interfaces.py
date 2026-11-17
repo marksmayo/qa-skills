@@ -105,11 +105,31 @@ and notes and the exit status is 3; a mostly-Rust repository (read in part) is p
 and exit 0; and when Rust holds 30% or more of the product lines without dominating, the status stays partial
 but the warning is given too (`partially_read` names what is read).
 
-A CLI command or tool is reached when a test string literal names it (the command word, `prog cmd`,
-or the tool name); a package export when a test imports it by package name, or imports the source
+A JavaScript or Go CLI command or a tool is reached when a test string literal names it (the command word,
+`prog cmd`, or the tool name); a package export when a test imports it by package name, or imports the source
 file its built target comes from (dist/x.js -> src/x.ts). That is weaker than a URL match: it says a
 test names the command, not that it ran it. Every interface carries its `kind`, the value for
 interface_coverage[].kind.
+
+A Python command (argparse, click, typer, sys.argv dispatch, a pyproject script) is reached only by a command line,
+as a Rust binary is: a process call naming the script's file (resolved from the test's folder), its module after -m
+or the program in program position; main() of the script run in the test process with sys.argv patched, with an
+argument list or through runpy.run_path(run_name='__main__'), however the test loads the script
+(spec_from_file_location, a sys.path folder, an import: the shared py_loads.py); or a click/typer
+CliRunner().invoke(app, [...]). A sub-command needs its words among that command line's arguments, and
+reached_by[].how says which kind it was, at the line that runs the command. The program's name in a data string, an
+import alias or a loader call reaches nothing. Loads whose path could not be worked out are listed under
+`unresolved_loads`.
+
+Commands that are not listed are named in `not_read` and on stderr: Python scripts with a __main__ guard and no
+argument parser (python / scripts_without_parser), Node scripts reading process.argv with no CLI library and no
+package.json bin (node / scripts), and scripts in languages no reader covers (lang_census's script languages:
+PowerShell, Shell, Batch ...; kind scripts).
+
+--tests on the repository root reads only the test-like files under it as tests, and warns (tests_warnings).
+When a tooling-named folder (scripts/, tools/) holds code the tests load, CI measures or runs, or a manifest ships
+(language_coverage.tooling_as_product), the language warning (or a note) says its lines were counted as tooling;
+--product-dir DIR counts the folder as product code.
 
 When nothing is found the output says so in `notes` and on stderr ("no supported interface found"),
 never an empty success: map the interfaces by hand then.
@@ -138,10 +158,12 @@ import argparse, ast, json, os, re, sys
 from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import lang_census, py_routes  # noqa: E402  (shared language census and route reader)
 import py_extras  # noqa: E402  (static mounts, conditions, middleware, flags-only CLIs, PHP, build-output folders)
 import cargo_project  # noqa: E402  (shared Cargo workspace model: targets, clap CLIs, tests)
 import repo_layout  # noqa: E402  (shared: sample/fixture projects and files kept identical in several folders)
+import py_loads  # noqa: E402  (shared: what a Python test loads by path, and the main() calls it makes in process)
 
 PRUNE = {'.git', '.hg', '.svn', 'node_modules', '.venv', 'venv', 'env', '__pycache__', '.mypy_cache', '.pytest_cache',
          '.tox', '.nox', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'site-packages', '.turbo', '.cache',
@@ -695,8 +717,13 @@ def prog_for(rel: str, progs: dict[str, str]) -> str:
         d = d.parent
 
 
-def js_commands_and_tools(root: Path, files: list[str], progs: dict[str, str]) -> list[dict]:
-    """commander / yargs / cac sub-commands and MCP tools, from JavaScript and TypeScript source."""
+NODE_SCRIPT = re.compile(r'\A#![^\n]*\bnode\b|\bprocess\.argv\b')
+
+
+def js_commands_and_tools(root: Path, files: list[str], progs: dict[str, str], scripts: list | None = None) -> list[dict]:
+    """commander / yargs / cac sub-commands and MCP tools, from JavaScript and TypeScript source. `scripts` collects
+    the files that are run as a Node script (a node shebang, or reading process.argv) and use no CLI library this
+    reads: commands with a hand-written argument parser, which the caller names as not read."""
     out = []
     for rel in files:
         if not rel.endswith(JS_EXT) or is_test(rel, root):
@@ -704,6 +731,8 @@ def js_commands_and_tools(root: Path, files: list[str], progs: dict[str, str]) -
         text = (root / rel).read_text(encoding='utf-8', errors='replace')
         cli, mcp = CLI_LIBS.search(text), MCP_LIB.search(text)
         if not cli and not mcp:
+            if scripts is not None and NODE_SCRIPT.search(text):
+                scripts.append(rel)
             continue
         masked = COMMENT.sub(lambda m: re.sub(r'[^\n]', ' ', m.group(0)), text)
         if cli:
@@ -1437,6 +1466,59 @@ def partial_language(coverage: dict, cen: dict) -> None:
             return
 
 
+def tooling_product_notes(coverage: dict) -> list[str]:
+    """The census notes about code in a tooling-named folder (scripts/, tools/) that the tests load, CI measures or a
+    manifest ships (language_coverage `tooling_as_product`), and about a read language whose every line sits in such
+    folders. The product-line shares in the language banner leave that code out, so the banner must say so."""
+    out = [n for n in coverage.get('notes') or [] if '--product-dir' in n or 'has no product line' in n]
+    return [n.replace('lang_census.py --product-dir', 'list_interfaces.py --product-dir')
+             .replace(', or the calling script\'s own option', '') for n in out]
+
+
+def _main_guard(tree: ast.AST) -> int | None:
+    """The line of a module-level `if __name__ == "__main__":`, else None."""
+    for st in getattr(tree, 'body', []):
+        if isinstance(st, ast.If) and isinstance(st.test, ast.Compare) and isinstance(st.test.left, ast.Name) \
+                and st.test.left.id == '__name__':
+            return st.lineno
+    return None
+
+
+def unread_scripts(files: list[str], interfaces: list[dict], project, node_scripts: list[str], in_fixture) -> list[dict]:
+    """Commands this script lists nothing for, as not_read entries, so "N argparse" is never read as "the command
+    lines": Python files run as a script (a __main__ guard) with no argument parser this reads, Node scripts with a
+    hand-written parser (js_commands_and_tools), and scripts in languages no reader covers (the census's script
+    languages: PowerShell, shell, batch ...)."""
+    out = []
+    listed = {i['file'] for i in interfaces} | {c for i in interfaces for c in i.get('copies') or []}
+    targets = {stem_of(i['target']) for i in interfaces if i.get('target')}
+    skip = lambda rel: bool(in_fixture and in_fixture(rel))  # noqa: E731
+
+    def add(framework, kind, found, why):
+        found = sorted(found)
+        if found:
+            out.append({'framework': framework, 'project': '.', 'kind': kind, 'count': len(found), 'files': found, 'why': why})
+    py = [m.rel for m in project.modules.values()
+          if m.rel not in listed and not skip(m.rel) and _main_guard(m.tree) is not None]
+    add('python', 'scripts_without_parser', py,
+        'run as a script (an `if __name__ == "__main__":` guard) with no argparse, click or typer parser and no '
+        'sys.argv[1] dispatch: a command with no declared options is still a command (CI or a person runs it); it is '
+        'not in the interface list, so map it by hand')
+    add('node', 'scripts', [f for f in node_scripts if f not in listed and stem_of(f) not in targets and not skip(f)],
+        'a Node script (a node shebang, or it reads process.argv) that no package.json bin names and that uses no '
+        'commander, yargs or cac: its command line is parsed by hand and is not in the interface list')
+    by_kind: dict[str, list[str]] = {}
+    for f in files:
+        kind = lang_census.SCRIPT_BY_EXT.get(PurePosixPath(f).suffix.lower())
+        if kind and not skip(f):
+            by_kind.setdefault(kind, []).append(f)
+    for kind, found in sorted(by_kind.items()):
+        add(kind, 'scripts', found,
+            f'{kind} scripts are not parsed: their parameters and the commands they run are not in the interface '
+            f'list; an installer, packaging or release script among them is shipped code')
+    return out
+
+
 def repo_slug(url: str) -> tuple[str, str] | None:
     """('owner', 'name') from a repository URL or a Go module path."""
     parts = [p for p in re.sub(r'\.git$', '', re.sub(r'^[a-z+]+://|^git@|^git\+', '', url.strip())).replace(':', '/').split('/') if p]
@@ -1629,6 +1711,12 @@ def py_argv_nodes(tree: ast.AST) -> dict[int, str]:
                 argv(a)
             if call.args and is_str(call.args[0]):
                 marked[id(call.args[0])] = 'prog'
+        elif isinstance(call, ast.Call) and fname(call) == 'invoke' and isinstance(call.func, ast.Attribute):
+            # click / typer CliRunner().invoke(app, ["cmd", "--flag"]): a command line run in the test process
+            for a in list(call.args[1:]) + [k.value for k in call.keywords if k.arg == 'args']:
+                for n in ast.walk(a):
+                    if is_str(n):
+                        marked.setdefault(id(n), 'invoke')
     defs = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
     scopes = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
     scopes.append(ast.Module(body=[st for st in getattr(tree, 'body', []) if not isinstance(st, defs)], type_ignores=[]))
@@ -1683,6 +1771,130 @@ def names_script(s_: dict, script: str) -> bool:
     return False
 
 
+PY_CLI_FW = ('argparse', 'click', 'typer', 'sys.argv', 'python-script')
+IN_PROCESS = ('sys.argv patch', 'argv argument', 'runpy.run_path')     # py_loads main_calls that are a command line
+
+
+def is_python_cli(itf: dict) -> bool:
+    return itf.get('kind') == 'cli' and (itf['file'].endswith('.py') or itf.get('framework') in PY_CLI_FW)
+
+
+def module_file(spec: str, exists, near: str = '') -> str | None:
+    """The repository file of a dotted module name, looked for from the repository root, src/, and the folder of
+    `near` and its parent (the places a test run usually has on its path)."""
+    tail = spec.replace('.', '/')
+    here = PurePosixPath(near).parent
+    bases = ['', 'src/'] + [b.as_posix() + '/' for b in (here, here.parent) if b.as_posix() not in ('.', '')]
+    for base in bases:
+        for cand in (f'{base}{tail}.py', f'{base}{tail}/__main__.py', f'{base}{tail}/__init__.py'):
+            if cand in exists:
+                return cand
+    return None
+
+
+def py_main_calls(root: Path, files: list[str], tests: list[str], entry_names: tuple) -> tuple[list[dict], list[dict]]:
+    """Command lines the Python test files run in the test process (the shared py_loads.py): `main()` of a script the
+    test loads by path, through a sys.path folder or by import, called with sys.argv patched, with an argument list,
+    or through runpy.run_path(run_name='__main__'). Returns ([{file, path, line, via, tokens}], unresolved loads
+    [{file, line, via, expr}]): tokens are the literal arguments, None when the list could not be read."""
+    exists = set(files)
+    calls, unresolved, conf_dirs = [], [], {}
+    for rel in tests:
+        try:
+            text = (root / rel).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        if not any(n in text for n in entry_names) and 'run_path' not in text:
+            continue
+        try:
+            tree = ast.parse(text)
+        except (SyntaxError, ValueError):
+            continue
+        extra = []
+        for c in py_loads.conftests_above(rel, exists):
+            if c not in conf_dirs:
+                try:
+                    conf_dirs[c] = py_loads.sys_path_dirs(ast.parse((root / c).read_text(encoding='utf-8', errors='replace')), c)[0]
+                except (OSError, SyntaxError, ValueError):
+                    conf_dirs[c] = []
+            extra += [d for d in conf_dirs[c] if d not in extra]
+        got = py_loads.script_loads(tree, rel, exists, extra_dirs=extra, entry_names=entry_names,
+                                    resolve_import=lambda spec, rel=rel: module_file(spec, exists, rel))
+        for mc in got['main_calls']:
+            if mc['via'] in IN_PROCESS:
+                argv = mc.get('argv')
+                if argv is not None and mc['via'] != 'argv argument':
+                    argv = argv[1:]                     # sys.argv[0] is the program name
+                calls.append({'file': rel, 'path': mc['path'], 'line': mc['line'], 'via': mc['via'],
+                              'tokens': None if argv is None else [a for a in argv if isinstance(a, str)]})
+        unresolved += [{'file': rel, **u} for u in got['unresolved']]
+    return calls, unresolved
+
+
+def match_python_clis(interfaces: list[dict], strings: list[dict], main_calls: list[dict], exists) -> None:
+    """A Python command (an argparse, click, typer or sys.argv program, a pyproject script) is reached only by a
+    command line, the rule Cargo binaries have: a process call that names the script's file (resolved from the test's
+    folder), its module after -m, or the program in program position; or the script's entry function run in the test
+    process with its arguments (py_main_calls); or, for click and typer, a CliRunner().invoke(app, [...]) whose
+    arguments name the command. A sub-command needs its words among that command line's arguments.
+    The program's name in a data string, an import alias or the name given to a module loader reaches nothing:
+    loading a module is not running its command line."""
+    argv = argv_tokens(strings)
+    by_file: dict[str, list[dict]] = {}
+    for s_ in strings:
+        if s_.get('argv') or 'argv' not in s_:          # Go test strings carry no command-line mark: paths only
+            by_file.setdefault(s_['file'], []).append(s_)
+    calls_to: dict[str, list[dict]] = {}
+    for mc in main_calls:
+        calls_to.setdefault(mc['path'], []).append(mc)
+    for itf in interfaces:
+        if not is_python_cli(itf):
+            continue
+        words = itf['path'].split()
+        prog, subs = words[0], words[1:]
+        script = itf['file'] if itf['file'].endswith('.py') else None
+        if script is None and itf.get('target'):        # a pyproject script: module:function
+            script = module_file(itf['target'].split(':')[0].strip(), exists, itf['file'])
+        dotted_names = set()
+        if script:
+            parts = list(PurePosixPath(script).with_suffix('').parts)
+            if parts[-1] in ('__main__', '__init__'):
+                parts = parts[:-1]
+            dotted_names = {'.'.join(parts[i:]) for i in range(len(parts))}
+        hits = []
+
+        def take(tokens, file, run_line, how):
+            if tokens is None and subs:
+                return                                  # the arguments could not be read: the sub-command is unknown
+            if subs and not all(w in tokens for w in subs):
+                return
+            line = tokens[subs[-1]] if subs and isinstance(tokens, dict) else run_line
+            hits.append({'file': file, 'line': line, 'how': how})
+        for file, ss in by_file.items():
+            toks = argv.get(file, {'tokens': {}, 'progs': {}})
+            for s_ in ss:
+                marked = s_.get('argv')
+                if script and names_script(s_, script) and (marked or '/' in s_['value']):
+                    take(toks['tokens'], file, s_['line'], 'runs the script')
+                elif marked and s_['value'] in dotted_names and '-m' in toks['tokens']:
+                    take(toks['tokens'], file, s_['line'], 'runs the module (-m)')
+            if prog in toks['progs']:
+                take(toks['tokens'], file, toks['progs'][prog], 'runs the program')
+            if itf.get('framework') in ('click', 'typer') and subs:
+                invoked: dict[str, int] = {}
+                for s_ in ss:
+                    if s_.get('argv') == 'invoke':
+                        for t in s_['value'].split():
+                            invoked.setdefault(t, s_['line'])
+                if invoked:
+                    take(invoked, file, 0, 'invokes the command in process (CliRunner)')
+        for mc in calls_to.get(script or '', []):
+            take(mc['tokens'], mc['file'], mc['line'], f"runs main() in process ({mc['via']})")
+        uniq = {(h['file'], h['line']): h for h in hits}
+        itf['reached_by'] = [uniq[k] for k in sorted(uniq)][:20]
+        itf['reached'] = bool(uniq)
+
+
 def match_names(interfaces: list[dict], strings: list[dict]) -> None:
     """Commands, tools and package exports reached by a test string that names them (test_derived, weak: naming a
     command is not running it)."""
@@ -1701,6 +1913,8 @@ def match_names(interfaces: list[dict], strings: list[dict]) -> None:
             if itf.get('target'):
                 src = stem_of(itf['target'])
                 hits += [s_ for s_ in imports if s_['import'] in (src, re.sub(r'/index$', '', src))]
+        elif itf['kind'] == 'cli' and is_python_cli(itf):
+            continue                                    # match_python_clis: only a command line reaches it
         elif itf['kind'] == 'cli':
             words = itf['path'].split()
             word = words[-1]
@@ -1833,6 +2047,9 @@ def main(argv=None) -> int:
     ap.add_argument('--keep-copies', action='store_true',
                     help='list every copy of a file kept identical in several folders (by default each interface is '
                          'listed once, on the canonical copy, with the other copies under `copies`)')
+    ap.add_argument('--product-dir', action='append', default=[], metavar='DIR',
+                    help='a tooling-named folder (scripts/, tools/) that holds product code: its lines count as product '
+                         'lines when the language shares are worked out; repeat')
     ap.add_argument('--self-test', action='store_true', help='check the readers on a synthetic repository')
     args = ap.parse_args(argv)
     if args.self_test:
@@ -1849,7 +2066,8 @@ def main(argv=None) -> int:
     extra_fx = tuple(d.replace('\\', '/').strip('/') for d in args.fixture_dir)
     fixtures = repo_layout.fixture_projects(root, extra_fx)
     in_fixture = lambda rel: repo_layout.is_fixture(rel, fixtures) if fixtures else None  # noqa: E731
-    cen = lang_census.census(root, exclude_fixtures=not args.include_fixtures, fixture_dirs=extra_fx)
+    cen = lang_census.census(root, exclude_fixtures=not args.include_fixtures, fixture_dirs=extra_fx,
+                             product_dirs=[d.replace('\\', '/').strip('/') for d in args.product_dir])
     bundled = bundled_trees(root, files)
     for e in cen['excluded']:
         if e.get('kind') == 'fixture':
@@ -1874,15 +2092,21 @@ def main(argv=None) -> int:
     coverage = lang_census.language_coverage(cen, READ_CENSUS, tool='list_interfaces.py',
                                              what='list of the product\'s interfaces')
     partial_language(coverage, cen)
+    tooling_notes = tooling_product_notes(coverage)
     if coverage.get('warning'):
+        if tooling_notes:
+            coverage['warning'] = coverage['warning'].rstrip('. ') + '. ' + ' '.join(tooling_notes)
         notes.append('WARNING: ' + coverage['warning'])
+    else:
+        notes += tooling_notes
     manifests, progs = manifest_interfaces(root, files)
     gos = go_interfaces(root, files)
     nxt, not_read, handled = next_interfaces(root, files)
     models = cargo_models(root, files)
     rust = rust_interfaces(models, notes, not_read)
-    others = manifests + js_commands_and_tools(root, files, progs) + py_commands_and_tools(root, files, project) + \
-        [g for g in gos if g['kind'] != 'routes'] + rust
+    node_scripts: list[str] = []
+    others = manifests + js_commands_and_tools(root, files, progs, node_scripts) + \
+        py_commands_and_tools(root, files, project) + [g for g in gos if g['kind'] != 'routes'] + rust
     interfaces = sorted(py + [{'kind': 'routes', **r} for r in php] + nxt + js_interfaces(root, files, handled)
                         + [g for g in gos if g['kind'] == 'routes'] + others,
                         key=lambda x: (x['kind'], x['path'], x['method'], x['file']))
@@ -1909,6 +2133,7 @@ def main(argv=None) -> int:
                          + ', '.join(f['dir'] for f in fixtures[:5]) + (' ...' if len(fixtures) > 5 else '')
                          + "); they are not the product's interfaces. --include-fixtures lists them, --fixture-dir "
                            'names another')
+    not_read += unread_scripts(files, interfaces, project, node_scripts, None if args.include_fixtures else in_fixture)
     for nr in not_read:
         notes.append(f"{nr['framework']} ({nr['project']}): {nr['kind']} not read ({nr['count']} file(s), e.g. "
                      f"{', '.join(nr['files'][:3])}): {nr['why']}; the list is partial for these")
@@ -1936,7 +2161,7 @@ def main(argv=None) -> int:
             print(f'error: --tests path does not exist: {", ".join(missing)} (for a repository with no tests, pass '
                   f'--no-tests)', file=sys.stderr)
             return 2
-        lits, strings, go_masked = [], [], {}
+        lits, strings, go_masked, py_tests = [], [], {}, []
         itf_files = {i['file'] for i in interfaces}
         res['tests_warnings'] = []
         for t in args.tests:
@@ -1953,6 +2178,20 @@ def main(argv=None) -> int:
             repo_rel = lambda n: f'{rel_base}/{n}' if rel_base not in ('.', '') else n  # noqa: E731
             if fixtures and not args.include_fixtures and base.is_relative_to(root):
                 names = [n for n in names if not in_fixture(repo_rel(n))]    # a sample project's own tests
+            if t.is_dir() and (t == root or root.is_relative_to(t)):
+                # the whole repository given as the tests: only what looks like a test is one, or every script and
+                # document generator that names a URL or runs a command would "reach" it
+                code = ('.py', '.rs') + JS_EXT
+                other = [n for n in names if n.endswith(code) and not is_test(repo_rel(n), root)]
+                names = [n for n in names if not n.endswith(code) or is_test(repo_rel(n), root)]
+                if other:
+                    msg = (f'--tests names the repository root: only its test-like files (test_*.py, *_test.py, '
+                           f'*.test.*, *.spec.*, files under tests/, e2e/, __tests__/) are read as tests; '
+                           f'{len(other)} other code file(s) (e.g. {", ".join(repo_rel(n) for n in other[:3])}) are '
+                           f'not. Name the test folders (--tests tests --tests e2e) to say what the tests are')
+                    res['tests_warnings'].append(msg)
+                    notes.append(msg)
+                    print(f'WARNING: {msg}', file=sys.stderr)
             product = [n for n in names if repo_rel(n) in itf_files and not is_test(repo_rel(n), root)]
             if product:
                 names = [n for n in names if n not in product]
@@ -1975,6 +2214,8 @@ def main(argv=None) -> int:
                 lits.append({**lit, 'file': f'{rel_base}/{lit["file"]}' if rel_base != '.' else lit['file']})
             if others:
                 strings += test_strings(base, names, rel_base)
+                if base.is_relative_to(root):
+                    py_tests += [repo_rel(n) for n in names if n.endswith('.py')]
             glits, gstrings, gmasked = go_test_literals(base, names, rel_base)
             lits += glits
             strings += gstrings
@@ -1989,11 +2230,23 @@ def main(argv=None) -> int:
                                and s_['file'] not in already and not in_fixture(s_['file'])})
             res['self_test_files'] = st_files
             strings += [{**x, 'self_test': True} for x in test_strings(root, st_files, '.')]
+            py_tests += [f for f in st_files if f.endswith('.py')]
             lits += test_literals(root, st_files, every_file=True)
             notes.append(f'--self-tests: {len(st_files)} self-test script(s) read as tests (self_test_files); a '
                          f'script they run on a command line, or a command word they name, is reached')
         match(interfaces, lits)
         match_names(interfaces, strings)
+        if any(is_python_cli(i) for i in interfaces):
+            entries = tuple(sorted({'main'} | {i['target'].split(':')[1].split('.')[0].strip() for i in interfaces
+                                               if i.get('framework') == 'python-script' and ':' in (i.get('target') or '')}))
+            main_calls, unresolved = py_main_calls(root, files, sorted(set(py_tests)), entries)
+            match_python_clis(interfaces, strings, main_calls, set(files))
+            if unresolved:
+                res['unresolved_loads'] = unresolved
+                notes.append(f'{len(unresolved)} script load(s) in the tests whose path could not be worked out (e.g. '
+                             + ', '.join(f"{u['file']}:{u['line']}" for u in unresolved[:3])
+                             + '; unresolved_loads): a command such a test runs in process is not counted as reached; '
+                               'read those tests by hand')
         match_go(interfaces, go_masked)
         if rust:
             match_rust(interfaces, rust_test_reach(root, files, models), argv_tokens(strings))
@@ -2002,6 +2255,12 @@ def main(argv=None) -> int:
                                     'with the client method when the literal is its first argument; commands, tools and '
                                     'package exports by a test string naming them or a test import of the export\'s '
                                     'source (naming is weaker than calling): test_derived'
+                                    + ('. Python commands (argparse, click, typer, sys.argv dispatch, pyproject scripts) '
+                                       'only by a command line: a process call naming the script file, its module after '
+                                       '-m or the program in program position, main() run in the test process with '
+                                       'sys.argv patched or an argument list (reached_by[].how), or a CliRunner invoke; '
+                                       'never the program\'s name in a data string, an import alias or a loader call'
+                                       if any(is_python_cli(i) for i in interfaces) else '')
                                     + ('. Rust binaries and clap sub-commands only by a command line: every Cargo '
                                        'integration test and #[cfg(test)] module (whatever --tests names) that runs the '
                                        'binary (env!("CARGO_BIN_EXE_x"), assert_cmd cargo_bin, Command::new on its path) '
@@ -2042,9 +2301,15 @@ def main(argv=None) -> int:
     if coverage.get('warning'):
         bar = '!' * 78
         print(f'{bar}\nWARNING: {coverage["warning"]}\n{bar}', file=sys.stderr)
-    print(f'{s["total"]} interfaces ' + ', '.join(f'{v} {k}' for k, v in s['by_framework'].items())
-          + (f'; {s["reached"]} reached by a test literal' if 'reached' in s else '')
-          + (f' -> {args.out}' if args.out else ''), file=sys.stderr)
+    else:
+        for n in tooling_notes:
+            print(f'note: {n}', file=sys.stderr)
+    line = (f'{s["total"]} interfaces ' + ', '.join(f'{v} {k}' for k, v in s['by_framework'].items())
+            + (f'; {s["reached"]} reached by a test' if 'reached' in s else '')
+            + (f'; {sum(nr["count"] for nr in not_read)} file(s) of commands or routes not read (not_read)' if not_read else '')
+            + (f' -> {args.out}' if args.out else ''))
+    # the summary goes to stdout when the JSON went to a file (as the other readers do), to stderr when stdout is the JSON
+    print(line, file=sys.stdout if args.out else sys.stderr)
     if not args.out:
         sys.stdout.write(text)
     return 3 if coverage['status'] == 'unsupported_dominant' else 0
@@ -2484,7 +2749,108 @@ TOOLREPO_SELF_TEST_FILES = {
 }
 
 
+# a script repository: argparse programs under scripts/ that the tests load by path and run in process (main() under
+# a patched sys.argv), a program named after a common word, a script with no parser, a Node script, shell scripts
+def _flags_script(doc: str, *flags: str) -> str:
+    return (f'"""{doc}"""\nimport argparse\n\n\ndef tidy(name):\n    return name.strip()\n\n\n'
+            'def main(argv=None):\n    ap = argparse.ArgumentParser()\n'
+            + ''.join(f'    ap.add_argument("{f}")\n' for f in flags)
+            + '    args = ap.parse_args(argv)\n    print(args)\n    return 0\n\n\n'
+              'if __name__ == "__main__":\n    raise SystemExit(main())\n')
+
+
+SCRIPTS_SELF_TEST_FILES = {
+    'scripts/render_tiles.py': _flags_script('Render map tiles.', '--zoom', '--out'),
+    'scripts/sync_feeds.py': _flags_script('Fetch the tide feeds.', '--since'),
+    'scripts/queue.py': _flags_script('Show the render queue.', '--limit'),
+    'scripts/install-fonts.py': _flags_script('Install the map fonts.', '--dest'),
+    'scripts/prune_cache.py': _flags_script('Delete cached tiles.', '--older-than'),
+    'scripts/atlas.py': (
+        '"""Build or prune the atlas."""\nimport argparse\n\n\n'
+        'def main(argv=None):\n'
+        '    ap = argparse.ArgumentParser(prog="atlas")\n'
+        '    sub = ap.add_subparsers(dest="cmd")\n'
+        '    sub.add_parser("build").add_argument("--dry-run", action="store_true")\n'
+        '    sub.add_parser("prune")\n'
+        '    print(ap.parse_args(argv).cmd)\n'
+        '    return 0\n\n\n'
+        'if __name__ == "__main__":\n    raise SystemExit(main())\n'),
+    'scripts/count_lines.py': (
+        '"""Print the line count of the sources (no options)."""\nfrom pathlib import Path\n\n\n'
+        'def main():\n    print(sum(1 for p in Path("scripts").glob("*.py") for _ in p.open()))\n\n\n'
+        'if __name__ == "__main__":\n    main()\n'),
+    'scripts/verify-bundle.mjs': (
+        "import fs from 'node:fs';\n"
+        "const file = process.argv[2];\n"
+        "if (!fs.existsSync(file)) { process.exit(1); }\n"),
+    'scripts/package.ps1': 'param([string]$Out)\nWrite-Output "packing $Out"\n',
+    'scripts/bench.sh': '#!/bin/sh\necho bench\n',
+    'docs/make_figures.py': (
+        '"""Draw the figures of the guide (not a test)."""\nimport subprocess, sys\n\n\n'
+        'def draw():\n'
+        '    subprocess.run([sys.executable, "scripts/prune_cache.py", "--older-than", "7"], check=True)\n'),
+    'tests/test_render_tiles.py': (
+        'import sys, unittest\nfrom pathlib import Path\nfrom unittest.mock import patch\n\n'
+        'sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))\n'
+        'import render_tiles\n\n\n'
+        'class RenderTest(unittest.TestCase):\n'
+        '    def test_zoom(self):\n'
+        '        with patch.object(sys, "argv", ["render_tiles.py", "--zoom", "3"]):\n'
+        '            self.assertEqual(render_tiles.main(), 0)\n'),
+    'tests/test_sync_feeds.py': (
+        'import importlib.util, sys, unittest\nfrom pathlib import Path\nfrom unittest.mock import patch\n\n'
+        'SPEC = importlib.util.spec_from_file_location("feeds", Path(__file__).parents[1] / "scripts" / "sync_feeds.py")\n'
+        'FEEDS = importlib.util.module_from_spec(SPEC)\n'
+        'SPEC.loader.exec_module(FEEDS)\n\n\n'
+        'class SyncTest(unittest.TestCase):\n'
+        '    def test_since(self):\n'
+        '        argv = ["sync_feeds.py", "--since", "2026-01-01"]\n'
+        '        with patch.object(sys, "argv", argv):\n'
+        '            FEEDS.main()\n'),
+    'tests/test_queue.py': (
+        'import sys, unittest\nfrom pathlib import Path\n\n'
+        'sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))\n'
+        'import queue as render_queue\n\n\n'
+        'class QueueTest(unittest.TestCase):\n'
+        '    def test_tidy(self):\n'
+        '        job = {"kind": "queue", "name": " a "}\n'
+        '        self.assertEqual(render_queue.tidy(job["name"]), "a")\n'),
+    'tests/test_fonts.py': (
+        'import importlib.util, unittest\nfrom pathlib import Path\n\n'
+        'SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"\n\n\n'
+        'def load(name):\n'
+        '    spec = importlib.util.spec_from_file_location(name.replace("-", "_"), SCRIPTS / f"{name}.py")\n'
+        '    module = importlib.util.module_from_spec(spec)\n'
+        '    spec.loader.exec_module(module)\n'
+        '    return module\n\n\n'
+        'FONTS = load("install-fonts")\n\n\n'
+        'class FontsTest(unittest.TestCase):\n'
+        '    def test_tidy(self):\n'
+        '        self.assertEqual(FONTS.tidy(" x "), "x")\n'),
+    'tests/test_atlas.py': (
+        'import sys, unittest\nfrom pathlib import Path\n\n'
+        'sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))\n'
+        'import atlas\n\n\n'
+        'class AtlasTest(unittest.TestCase):\n'
+        '    def test_build(self):\n'
+        '        self.assertEqual(atlas.main(["build", "--dry-run"]), 0)\n\n'
+        '    def test_words(self):\n'
+        '        self.assertIn("prune", ["build", "prune"])\n'),
+}
+
+
 def self_test() -> int:
+    import contextlib, io
+    with contextlib.redirect_stdout(io.StringIO()):     # the runs' own summary lines are not the self-test's output
+        fails = _self_test_fails()
+    if fails:
+        print('list_interfaces self-test FAILED:\n  - ' + '\n  - '.join(fails))
+        return 1
+    print('list_interfaces self-test: ok')
+    return 0
+
+
+def _self_test_fails() -> list[str]:
     import shutil, tempfile
     tmp = Path(tempfile.mkdtemp(prefix='li-self-'))
     fails = []
@@ -2821,13 +3187,89 @@ def self_test() -> int:
              and len([i for i in res['interfaces'] if i['kind'] == 'cli' and i['path'].endswith('pack')]) == 3,
              '--include-fixtures reads the sample project (each interface marked with its fixture) and --keep-copies '
              'lists every copy')
+
+        # ---- a script repository: commands run in process, names that are only data, scripts that are not read
+        sr = tmp / 'scriptrepo'
+        for rel, text in SCRIPTS_SELF_TEST_FILES.items():
+            (sr / rel).parent.mkdir(parents=True, exist_ok=True)
+            (sr / rel).write_text(text, encoding='utf-8')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = main([str(sr), '--tests', str(sr / 'tests'), '--out', str(out)])
+        res = json.loads(out.read_text(encoding='utf-8'))
+        got = {i['path']: i for i in res['interfaces'] if i['kind'] == 'cli'}
+        tiles = got.get('render_tiles', {})
+        want(tiles.get('reached') and tiles.get('reached_by') == [
+            {'file': 'tests/test_render_tiles.py', 'line': 12, 'how': 'runs main() in process (sys.argv patch)'}],
+             f'main() called under a patched sys.argv is a command line that reaches the script, at the line of the '
+             f'call (got {tiles.get("reached_by")})')
+        want(got.get('sync_feeds', {}).get('reached'),
+             'a script loaded with spec_from_file_location and run through main() with sys.argv patched from a '
+             'variable is reached')
+        want(got.get('queue', {}).get('reached') is False,
+             f'a program named after a common word is not reached by that word in test data or by an import alias '
+             f'(got {got.get("queue", {}).get("reached_by")})')
+        want(got.get('install-fonts', {}).get('reached') is False,
+             f'the name passed to a loader helper does not reach the script: loading a module is not running its '
+             f'command line (got {got.get("install-fonts", {}).get("reached_by")})')
+        want(got.get('atlas build', {}).get('reached') and got.get('atlas prune', {}).get('reached') is False,
+             f'main([...]) with an argument list reaches the sub-command it names, and not one named only in other '
+             f'strings (got build {got.get("atlas build", {}).get("reached_by")}, prune '
+             f'{got.get("atlas prune", {}).get("reached_by")})')
+        nr = {(x['framework'], x['kind']): x for x in res.get('not_read', [])}
+        want('scripts/count_lines.py' in nr.get(('python', 'scripts_without_parser'), {}).get('files', []),
+             f'a Python script with a __main__ guard and no argument parser is named as not read (got {sorted(nr)})')
+        want('scripts/verify-bundle.mjs' in nr.get(('node', 'scripts'), {}).get('files', []),
+             'a Node script outside any package bin is named as not read')
+        want('scripts/package.ps1' in nr.get(('PowerShell', 'scripts'), {}).get('files', [])
+             and 'scripts/bench.sh' in nr.get(('Shell', 'scripts'), {}).get('files', []),
+             'PowerShell and shell scripts are named as not read')
+        want(all(k in err.getvalue() for k in ('count_lines.py', 'verify-bundle.mjs', 'package.ps1', 'bench.sh')),
+             'the scripts that are not read are named on stderr, so the command list never looks complete')
+        want(any('scripts/' in n and '--product-dir' in n for n in res['notes']) and '--product-dir scripts' in err.getvalue()
+             and res['language_coverage'].get('tooling_as_product'),
+             'code in a tooling-named folder that the tests load is said to be counted as tooling, in notes and on '
+             'stderr, with the option that counts it as product')
+        want(code == 0, f'a Python script repository is read: exit 0 (got {code})')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            try:
+                code = main([str(sr), '--tests', str(sr / 'tests'), '--product-dir', 'scripts', '--out', str(out)])
+            except SystemExit as exc:
+                code = f'exit {exc.code}'
+        res2 = json.loads(out.read_text(encoding='utf-8'))
+        want(code == 0 and not any('--product-dir' in n for n in res2['notes'])
+             and (res2['language_coverage'].get('supported_lines') or 0) > 0 if 'supported_lines' in res2['language_coverage']
+             else code == 0 and not any('--product-dir' in n for n in res2['notes']),
+             f'--product-dir scripts counts the folder as product code: no tooling note (got {code})')
+        # --tests <repository root>: only the files that look like tests are tests
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            main([str(sr), '--tests', str(sr), '--out', str(out)])
+        res = json.loads(out.read_text(encoding='utf-8'))
+        got = {i['path']: i for i in res['interfaces'] if i['kind'] == 'cli'}
+        want(got.get('prune_cache', {}).get('reached') is False,
+             f'with --tests on the repository root a documentation script is not a test: the command it runs is not '
+             f'reached (got {got.get("prune_cache", {}).get("reached_by")})')
+        want(any('repository root' in w for w in res.get('tests_warnings') or []) and 'repository root' in err.getvalue(),
+             '--tests on the repository root warns on stderr and in tests_warnings')
+        want(got.get('render_tiles', {}).get('reached'), 'the test files under the root are still read')
+        # the language banner of a mostly-Rust repository also says when a tooling-named folder holds product code
+        (rs / 'scripts').mkdir(exist_ok=True)
+        (rs / 'scripts' / 'pack_logs.py').write_text(_flags_script('Pack the station logs.', '--day'), encoding='utf-8')
+        (rs / 'tests' / 'test_pack_logs.py').write_text(
+            'import sys\nfrom pathlib import Path\n\nsys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))\n'
+            'import pack_logs\n\n\ndef test_tidy():\n    assert pack_logs.tidy(" a ") == "a"\n', encoding='utf-8')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            main([str(rs), '--tests', str(rs / 'tests'), '--out', str(out)])
+        cov = json.loads(out.read_text(encoding='utf-8')).get('language_coverage', {})
+        want('Rust' in (cov.get('warning') or '') and 'scripts/' in (cov.get('warning') or '')
+             and '--product-dir' in (cov.get('warning') or ''),
+             f'the Rust warning names the tooling-named folder whose code the tests load (got {cov.get("warning")})')
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    if fails:
-        print('list_interfaces self-test FAILED:\n  - ' + '\n  - '.join(fails))
-        return 1
-    print('list_interfaces self-test: ok')
-    return 0
+    return fails
 
 
 if __name__ == '__main__':

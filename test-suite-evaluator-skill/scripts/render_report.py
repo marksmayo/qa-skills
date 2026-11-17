@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 RESET = "\033[0m"; BOLD = "\033[1m"; DIM = "\033[2m"
@@ -339,9 +340,14 @@ def render(data: dict, md: bool, color: bool) -> str:
     return o.text()
 
 
+BRIEF_LOWER_FINDINGS = 3    # medium (or low) findings shown when there is no critical or high one
+BRIEF_FAILURES = 3          # failure entries of the assessed runs named in the brief
+
+
 def brief(data: dict, color: bool) -> str:
-    """The headline only: overall score and band, caps, critical findings, each dimension on one line, the critical
-    risks and top improvements, and how many evidence items are missing or partial."""
+    """The headline only: overall score and band, caps, critical and high findings (the first medium ones when there
+    is none, and always how many were left out), the tests that failed in the assessed runs, each dimension on one
+    line, the critical risks and top improvements, and how many evidence items are missing or partial."""
     o = Out(False, color)
     meta, head = data['metadata'], data['headline']
     overall = head['overall_score']
@@ -357,13 +363,37 @@ def brief(data: dict, color: bool) -> str:
     if not head.get('applied_caps'):
         o.p('No caps applied: no cap condition holds.')
     o.p(DECIMALS_NOTE, DIM)
-    for f in data.get('critical_findings', []):
-        if f['severity'] in ('critical', 'high'):
-            o.p(f"[{f['severity'].upper()}] {f['title']}", RED)
-    left = {sev: sum(1 for f in data.get('critical_findings', []) if f['severity'] == sev) for sev in ('medium', 'low')}
+    findings = data.get('critical_findings', [])
+    shown = [f for f in findings if f['severity'] in ('critical', 'high')]
+    for f in shown:
+        o.p(f"[{f['severity'].upper()}] {f['title']}", RED)
+    if not shown and findings:
+        # nothing critical or high: a screenful that named no finding would read as "nothing found"
+        top = next(sev for sev in ('medium', 'low') if any(f['severity'] == sev for f in findings))
+        shown = [f for f in findings if f['severity'] == top][:BRIEF_LOWER_FINDINGS]
+        o.p(f'No critical or high finding; the first {len(shown)} {top} one(s):')
+        for f in shown:
+            o.p(f"[{f['severity'].upper()}] {f['title']}", YELLOW)
+    left = {sev: sum(1 for f in findings if f['severity'] == sev and f not in shown) for sev in ('medium', 'low')}
     if any(left.values()):
         o.p(f"{sum(left.values())} more finding(s) not shown here ("
             + ', '.join(f'{n} {sev}' for sev, n in left.items() if n) + '): see the full report', DIM)
+    er = meta.get('execution_result') or {}
+    failures = er.get('failures') or []
+    if failures:
+        # a test that failed in the assessed runs is named here whatever severity its finding was given
+        n_runs = len(er.get('runs') or [])
+        by_class = {cls: sum(f.get('count', 1) for f in failures if f['class'] == cls)
+                    for cls in ('product', 'test', 'environment', 'unknown')}
+        o.p(f"{sum(by_class.values())} test(s) failed in the assessed runs ("
+            + ', '.join(f'{n} {cls}' for cls, n in by_class.items() if n) + '):', MAGENTA)
+        for f in failures[:BRIEF_FAILURES]:
+            seen = f.get('runs_failed')
+            runs = f", in {len(seen)} of {n_runs} run(s)" if seen and n_runs else ''
+            count = f" (x{f['count']})" if f.get('count', 1) > 1 else ''
+            o.li(f"{f['test']}{count} [{f['class']}{runs}]")
+        if len(failures) > BRIEF_FAILURES:
+            o.p(f"{len(failures) - BRIEF_FAILURES} more failure entry(ies) not shown here: see the full report", DIM)
     width = max(len(d['name']) for d in data['dimensions'])
     for d in data['dimensions']:
         sc = 'not assessed' if d['score'] is None else f"{d['score']}/10"
@@ -406,6 +436,30 @@ def self_test() -> int:
     text = brief(lower, color=False)
     if 'Medium finding' in text or '3 more finding(s)' not in text or '2 medium' not in text or '1 low' not in text:
         fails.append('a brief that leaves out medium and low findings says how many it left out, by severity')
+    # every finding medium: the screenful still names the top ones, and says what it left out
+    mediums = copy.deepcopy(ex)
+    mediums['critical_findings'] = [{**ex['critical_findings'][0], 'title': f'Medium finding {k}', 'severity': 'medium'}
+                                    for k in range(5)]
+    text = brief(mediums, color=False)
+    if '[MEDIUM] Medium finding 0' not in text or 'Medium finding 3' in text or '2 more finding(s)' not in text \
+            or 'No critical or high finding' not in text:
+        fails.append('a brief whose findings are all medium shows the top three and says how many it left out')
+    # a test that failed in the assessor's own runs makes the brief, whatever the findings' severities
+    failed = copy.deepcopy(mediums)
+    failed['metadata']['execution_result'] = {
+        'layers': [{'name': 'unit', 'status': 'run'}],
+        'runs': [{'id': 'r1'}, {'id': 'r2'}],
+        'failures': [{'test': 'tests/test_window.py::test_priming_window', 'class': 'test', 'runs_failed': ['r1'],
+                      'evidence': 'the first event arrived after the fixed window'},
+                     {'test': 'tests/test_export.py (group)', 'count': 3, 'class': 'environment',
+                      'runs_failed': ['r1', 'r2'], 'evidence': 'no device attached'}]}
+    text = brief(failed, color=False)
+    if 'tests/test_window.py::test_priming_window' not in text or '4 test(s) failed' not in text \
+            or '1 of 2 run(s)' not in text or 'environment' not in text:
+        fails.append('a brief names the tests that failed in the assessed runs, with their class and the runs')
+    mediums['metadata'].pop('execution_result', None)
+    if 'failed in the assessed runs' in brief(mediums, color=False):
+        fails.append('a brief of a run with no failure has no failures line')
     if fails:
         print('render_report self-test FAILED:\n  - ' + '\n  - '.join(fails))
         return 1

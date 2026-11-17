@@ -2,11 +2,14 @@
 """Validate a Test Suite Evaluator evaluation.json against the schema and the rubric (stdlib only).
 
     python validate_evaluation.py evaluation.json [--interfaces interfaces.json] [--conventions conventions.json]
+                                                  [--cargo cargo.json]
 
 With --interfaces (list_interfaces.py output) it also warns where interface_coverage departs from the script's
 list: a kind with no entry, a smaller total, or a tested count other than the script's reached count (sample
 projects the listing marks `fixture` are left out; interfaces marked `self_test` may count as tested when the entry
-says a self-test exercises them). With --conventions (detect_conventions.py output) it warns when CI runs none of
+says a self-test exercises them; a count that differs gives no warning once the entry's method or notes names
+list_interfaces.py and the count it gave). With --cargo (cargo_project.py output) it warns when Rust tests a plain
+`cargo test` does not run are neither a not_run or partial layer naming their gate nor run on purpose. With --conventions (detect_conventions.py output) it warns when CI runs none of
 the functional tests (only benchmarks, or nothing) and the evaluation records no ci_runs_no_tests finding.
 
 Beyond the schema it checks what SKILL.md and RUBRIC.md require: all fifteen dimensions with the
@@ -717,6 +720,14 @@ def execution_errors(meta: dict) -> list[str]:
 KIND_FAMILY = {'commands': 'cli', 'endpoints': 'routes', 'operations': 'routes'}
 
 
+def explains(said: str, count: int) -> bool:
+    """An entry's method and notes account for a departure from list_interfaces.py when they name the script and
+    the count it gave (as a number of its own, so 12 is not found in 120 or 1.2). The difference is then a recorded
+    decision of the assessor, not an oversight: the warning has been answered."""
+    return bool(re.search(r'list_interfaces(?:\.py)?\b', said)
+                and re.search(r'(?<![\w.])' + str(count) + r'(?!\w|[.,]\d)', said))
+
+
 def interface_warnings(rep: dict, listing: dict) -> list[str]:
     """Differences between interface_coverage and list_interfaces.py's output (`--interfaces interfaces.json`): a
     kind the script lists with no entry, an entry total below the script's count, and a tested count that differs
@@ -727,7 +738,8 @@ def interface_warnings(rep: dict, listing: dict) -> list[str]:
     and are never compared. A listing without `fixtures_excluded` comes from an older list_interfaces.py that counted
     sample projects and every copy of a copied file: that is said once, so its numbers are not taken as the target.
     Interfaces marked `self_test` (the script carries its own self-test) may be counted as tested above the reached
-    count when the entry's method or notes says a self-test exercises them."""
+    count when the entry's method or notes says a self-test exercises them. A total or tested count that differs
+    gives no warning once the entry's method or notes names list_interfaces.py and the count it gave (explains())."""
     out = []
     if 'fixtures_excluded' not in listing:
         out.append('this list_interfaces.py output predates fixture exclusion and copy folding: it may count the '
@@ -749,19 +761,73 @@ def interface_warnings(rep: dict, listing: dict) -> list[str]:
                        f'of kind {kind}: map them, or say why they are left out')
             continue
         total, tested = sum(b['total'] for b in es), sum(b['tested'] for b in es)
-        if total < len(its):
+        said = ' '.join(f'{b.get("method", "")} {b.get("notes", "")}' for b in es)
+        if total < len(its) and not explains(said, len(its)):
             out.append(f'interface_coverage {kind}: total {total} but list_interfaces.py lists {len(its)}; say in the '
-                       f'entry\'s method or notes which were left out and why')
+                       f'entry\'s method or notes which were left out and why, naming list_interfaces.py and its '
+                       f'count ({len(its)}): that clears this warning')
         reached = sum(1 for i in its if i.get('reached'))
         self_only = sum(1 for i in its if i.get('self_test') and not i.get('reached'))
         says_self = any(re.search(r'self[- _]?tests?\b', f'{b.get("method", "")} {b.get("notes", "")}', re.I) for b in es)
         if matched and says_self and reached <= tested <= reached + self_only:
             continue
-        if matched and tested != reached:
+        if matched and tested != reached and not explains(said, reached):
             out.append(f'interface_coverage {kind}: tested {tested} but list_interfaces.py found {reached} reached by a '
                        f'test; say in the entry\'s method or notes how the mapping differs (hits read by hand, tests the '
-                       f'script cannot read, names that are not calls)')
+                       f'script cannot read, names that are not calls), naming list_interfaces.py and its count '
+                       f'({reached}): that clears this warning')
     return out
+
+
+# gate (cargo_project.py tests[].why[].gate) -> (what a layer's name or reason says, what a run's command has)
+CARGO_GATES = {
+    'feature': (r'feature', r'--all-features|--features\b|-F\s'),
+    'required_features': (r'feature', r'--all-features|--features\b|-F\s'),
+    'ignored': (r'ignore', r'--ignored|--include-ignored'),
+    'platform': (r'platform|unix|linux|macos|windows|target_os|target_family|cfg|host', None),
+}
+
+
+def cargo_warnings(rep: dict, model: dict) -> list[str]:
+    """`--cargo` (cargo_project.py output): the Rust tests a plain `cargo test` does not run (tests[].runs_by_default
+    false: feature-gated, in a required-features target, #[ignore], or compiled out on a platform) must not vanish
+    into "all tests passed". Each gate is accounted for by a layer recorded `not_run` or `partial` whose name or
+    reason names it, or, for features and ignored tests, by a run whose command asks for them (--all-features,
+    --features, --ignored, --include-ignored). A platform gate is never accounted for by a run: one host cannot run
+    every platform's tests."""
+    er = (rep.get('metadata') or {}).get('execution_result')
+    if not er:
+        return []
+    tests = [t for c in model.get('crates') or [] for t in c.get('tests') or []]
+    if tests and not any('runs_by_default' in t for t in tests):
+        return ['--cargo: this cargo_project.py output has no runs_by_default on its tests (an older version): re-run '
+                'the current cargo_project.py, which says which tests a plain cargo test does not run']
+    gated: dict[str, int] = {}
+    for t in tests:
+        if t.get('runs_by_default') is False:
+            for g in sorted({w.get('gate') for w in t.get('why') or [] if w.get('gate')} or {'other'}):
+                gated[g] = gated.get(g, 0) + 1
+    said = ' '.join(f'{la.get("name", "")} {la.get("reason", "")}' for la in er.get('layers') or []
+                    if la.get('status') in ('not_run', 'partial'))
+    commands = ' '.join(str(r.get('command') or '') for r in er.get('runs') or [])
+    open_ = {}
+    for g, n in gated.items():
+        layer_rx, run_rx = CARGO_GATES.get(g, (None, None))
+        if layer_rx and re.search(layer_rx, said, re.I):
+            continue
+        if run_rx and re.search(run_rx, commands):
+            continue
+        if not layer_rx and said:
+            continue                    # bench, example and doc targets: any not_run or partial layer answers
+        open_[g] = n
+    if not open_:
+        return []
+    n_gated = sum(1 for t in tests if t.get('runs_by_default') is False)
+    return [f'cargo_project.py lists {n_gated} Rust test(s) a plain cargo test does not run on every platform, and '
+            f'these gates are not accounted for ({", ".join(f"{n} {g}" for g, n in sorted(open_.items()))}): record '
+            f'them as a layer with status not_run or partial whose reason names the gate (the feature, #[ignore], the '
+            f'platform), or run them (--features / --all-features, -- --ignored) and keep that command in the run; '
+            f'never let them disappear into "all tests passed"']
 
 
 BENCHMARK_CMD = re.compile(r'--codspeed\b|--benchmark-(?:only|enable|autosave|json)\b|(?:^|[\s/])bench(?:mark)?s?(?:[\s/]|$)'
@@ -924,6 +990,27 @@ def self_test() -> int:
             or not any('cli' in w and 'no interface_coverage entry' in w for w in diff):
         fails.append(f'--interfaces names a different total, a different tested count and a kind with no entry '
                      f'(got {diff})')
+    # a hand mapping that differs and says how (naming the script and its count) validates clean; a vague remark,
+    # or the wrong count, does not clear the warning
+    hand = copy.deepcopy(base)
+    hand['interface_coverage'][0]['notes'] = ('list_interfaces.py found 30 reached; the other 11 call main() through a '
+                                              'helper it cannot read (tests/test_cli.py:40-88), read by hand')
+    left = interface_warnings(hand, listing(46, 30))
+    if any('tested' in w for w in left):
+        fails.append(f'a tested count that differs from list_interfaces.py gives no warning once the entry names the '
+                     f'script and its reached count and says how the mapping differs (got {left})')
+    for label, text in (('a remark that does not name the script and its count', 'the hits were read by hand'),
+                        ('an explanation quoting another count', 'list_interfaces.py found 35 reached; rest by hand')):
+        vague = copy.deepcopy(base)
+        vague['interface_coverage'][0]['notes'] = text
+        if not any('tested' in w for w in interface_warnings(vague, listing(46, 30))):
+            fails.append(f'{label} does not clear the tested-count warning')
+    hand = copy.deepcopy(base)
+    hand['interface_coverage'][0]['method'] += ('; list_interfaces.py lists 50, of which 4 are aliases of one handler '
+                                                'counted once')
+    left = interface_warnings(hand, listing(50, 41))
+    if any('total' in w for w in left):
+        fails.append(f'a smaller total gives no warning once the entry names the script and its count (got {left})')
     # a listing from before fixtures and copies were handled counts sample projects and every copy: say so, rather
     # than pushing the mapping toward its numbers
     old = listing(46, 41)
@@ -993,6 +1080,38 @@ def self_test() -> int:
     if functional or selftest_ci:
         fails.append(f'--conventions: a CI gate running tests, or a CI self-test command, gives no warning '
                      f'(got {functional + selftest_ci})')
+    # --cargo: Rust tests a plain `cargo test` does not run must be a not_run or partial layer (or be run on purpose)
+    def cargo(*gates):
+        tests = [{'id': 'core::ok', 'runs_by_default': True, 'why': []}]
+        tests += [{'id': f'core::gated{k}', 'runs_by_default': False, 'why': [{'gate': g, 'detail': g}]}
+                  for k, g in enumerate(gates)]
+        return {'crates': [{'name': 'core', 'tests': tests}]}
+    rust = copy.deepcopy(pr)
+    er = rust['metadata']['execution_result']
+    for layer in er['layers']:
+        layer.update(status='run')
+        layer.pop('reason', None)
+    try:
+        silent = cargo_warnings(rust, cargo('feature', 'ignored', 'platform'))
+        none_gated = cargo_warnings(rust, cargo())
+        named = copy.deepcopy(rust)
+        named['metadata']['execution_result']['layers'].append(
+            {'name': 'rust feature-gated, ignored and unix-only tests', 'status': 'not_run',
+             'reason': '1 behind the gpu feature, 1 #[ignore], 1 #[cfg(unix)] on a Windows host'})
+        accounted = cargo_warnings(named, cargo('feature', 'ignored', 'platform'))
+        ran = copy.deepcopy(rust)
+        ran['metadata']['execution_result']['runs'][0]['command'] = 'cargo test --workspace --all-features -- --include-ignored'
+        partly = cargo_warnings(ran, cargo('feature', 'ignored', 'platform'))
+    except NameError as exc:
+        silent, none_gated, accounted, partly = [], [str(exc)], [str(exc)], []
+    if not any('3' in w and 'feature' in w and 'ignored' in w and 'platform' in w for w in silent):
+        fails.append(f'--cargo: gated Rust tests with no not_run or partial layer naming them warn, by gate (got {silent})')
+    if none_gated or accounted:
+        fails.append(f'--cargo: no gated test, or a not_run layer whose reason names each gate, gives no warning '
+                     f'(got {none_gated + accounted})')
+    if len(partly) != 1 or 'platform' not in partly[0] or 'feature' in partly[0].split(':', 1)[-1].split('record')[0]:
+        fails.append(f'--cargo: a run with --all-features and --include-ignored accounts for those gates, not for '
+                     f'platform-gated tests (got {partly})')
     # a note that mentions reading source for another reason does not answer the warning
     for note in ('Read the source of the fixtures folder before running the suite.',
                  'Static analysis of the source tree found no secrets.'):
@@ -1019,6 +1138,9 @@ def main(argv=None) -> int:
     ap.add_argument('--conventions', type=Path, metavar='CONVENTIONS_JSON',
                     help='detect_conventions.py output (--exclude-fixtures): warn when CI runs none of the functional '
                          'tests and no ci_runs_no_tests finding is recorded, or the reverse')
+    ap.add_argument('--cargo', type=Path, metavar='CARGO_JSON',
+                    help='cargo_project.py output: warn when Rust tests a plain cargo test does not run (feature-gated, '
+                         '#[ignore], platform-gated) are not a not_run or partial layer and were not run on purpose')
     args = ap.parse_args(argv)
     try:
         rep = json.loads(args.evaluation.read_text(encoding='utf-8-sig'))
@@ -1062,6 +1184,13 @@ def main(argv=None) -> int:
             print(f'INVALID: cannot read --conventions {args.conventions}: {exc}')
             return 1
         warns += conventions_warnings(rep, conv if isinstance(conv, dict) else {})
+    if args.cargo:
+        try:
+            model = json.loads(args.cargo.read_text(encoding='utf-8-sig'))
+        except (OSError, ValueError) as exc:
+            print(f'INVALID: cannot read --cargo {args.cargo}: {exc}')
+            return 1
+        warns += cargo_warnings(rep, model if isinstance(model, dict) else {})
     for w in warns:
         print('WARNING: ' + w)
     if errs:
