@@ -35,6 +35,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import collect_check, run_tests, scan_tests, tree_guard  # noqa: E402
 
 PLUGIN = r'''
@@ -318,6 +319,8 @@ def main(argv=None) -> int:
     path = args.out or args.run_dir / 'similarity.json'
     path.write_text(json.dumps({'tree_hash_before': h_before, 'tree_hash_after': h_after, 'sessions': sessions, 'pairs': out},
                                indent=2) + '\n', encoding='utf-8')
+    print(f'{len(out)} candidate pair(s), {len(sessions)} traced session(s)'
+          + ('' if out else ' (no duplicate candidate: nothing to compare)') + f' -> {path}')
     return 3 if h_before != h_after else 0
 
 

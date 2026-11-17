@@ -1,7 +1,7 @@
 ---
 name: dead-test-finder
 description: Find tests that give false assurance - tests the framework never collects, tests that pass whatever the code does, tests that only check their own mocks, un-awaited async assertions, swallowed failures, duplicates, and skips whose reason has gone - and prove the important ones with real runs. Never-runs is confirmed by the framework's own collect output; can't-fail by neutralising the code under test in a scratch copy and seeing the test still pass; duplicates by identical coverage and values. Each finding gets a patch, and every strengthening patch is proved to pass on the code and fail when it's neutralised. Never deletes or merges tests, never commits, and never claims a suite has "no dead tests".
-version: 1.8.0
+version: 1.9.0
 ---
 
 # Dead test finder
@@ -106,18 +106,53 @@ python scripts/collect_check.py <repo> --candidates <run>/candidates.json --run-
     [--split-on-error [MAX_RUNS]]
 ```
 
-`scan_tests.py` supports **Python, JavaScript/TypeScript and Go test suites**. Languages are counted by
+`scan_tests.py` supports **Python, JavaScript/TypeScript and Go test suites**, and reads **Rust tests
+statically** (below). Languages are counted by
 the shared `lang_census.py`, which leaves out vendored, submodule and embedded third-party trees (an
 embedded driver with its own manifest and licence, header directories, built bundles); those trees are
 also never scanned for tests, and `excluded_trees` in the output names each with its reason. When the
 dominant language is one it cannot parse (for example Rust, Java or Ruby): the largest unsupported
 language has more source files than all supported files combined, it adds a `language_coverage` block and
 `summary.language_warning`, prints a loud warning and **exits 3** (`--allow-minority` exits 0 with the
-warning kept). The few supported files it did scan are a minority and the result is **not** a dead-test
-analysis of that repository. Do not present it as one. Either stop with a report whose headline and
-`limitations` say the primary language was not analysed, or review that language by hand: findings you
-find are `source: agent` with a `basis` (file, line, excerpt), and their runs are recorded in the
-skill's shapes (Go: `go_tests.py`, below).
+warning kept). The output is still written either way and later steps accept it, but the few supported
+files it did scan are a minority and the result is **not** a dead-test analysis of that repository. Do
+not present it as one. Either stop with a report whose headline and `limitations` say the primary
+language was not analysed, or review that language by hand: findings you find are `source: agent` with
+a `basis` (file, line, excerpt), and their runs are recorded in the skill's shapes (Go: `go_tests.py`,
+Rust: `run_tests.py --preset cargo`, below). The validator refuses a report whose limitations do not
+name the language the scan warned about, and evidence completeness is multiplied by the share of
+product code in languages the scan read. Languages, scripts and tooling folders the scan did not read
+without dominating are listed under `language_notes`: carry them into the limitations.
+
+**Rust (static only).** In a Cargo project or workspace the shared `cargo_project.py` lists every
+`#[test]` function with its `#[ignore]`, cfg and feature gates; each is a definition
+(`<file>::<module path>::<name>`, framework `cargo-test`, runner `cargo`, the libtest id in `cargo_id`,
+its `gates`), read by `rust_tests.py` with comments and strings masked:
+
+- `ignored_never_run` (category `never_runs`): `#[ignore]`, and no CI file passes `--ignored`,
+  `--include-ignored` or nextest's `--run-ignored`.
+- `feature_never_enabled` (`never_runs`): the test or its whole target (required-features) needs a
+  feature the defaults leave off, and no CI file passes `--all-features` or `--features` naming it.
+- `cfg_never_true` (`never_runs`): a cfg false on Linux, macOS and Windows.
+- `cfg_body` (`unreached_assertion`): the whole body is one `#[cfg(...)] { ... }` block or one
+  `if cfg!(...) { ... }`, so it is empty where the condition is false.
+- `no_assertion`: no `assert!`-style or `panic!`-style macro, no `#[should_panic]`, and no same-file
+  helper (function or macro, two calls deep) holding one; a helper named like a check from another file
+  is assumed to assert. The candidate says whether the body at least fails on an error (`?`, `unwrap`).
+
+A test gated to one platform is no candidate. CI is read from every CI file's text, so check a
+never-runs candidate against the workflow (a flag in a matrix value counts). Rust tests are **never
+listed or neutralised** by the scripts: `candidates.json` has a `static_only` entry and
+`summary.static_only_warning`, collect_check records them `not_assessed` (no list command), and
+neutralise.py records them `not_run` with the reason. The report's limitations must name Rust and say
+the tests were scanned statically (the validator checks it), and evidence completeness is multiplied by
+the share of tests that are not static only. To confirm a Rust candidate by hand: copy the crate
+outside the repository, give the target function a neutral body (`Default::default()` or
+`unimplemented!()`), run `python scripts/run_tests.py --preset cargo --cwd <copy> --tests <cargo_id>
+--out <run>/runs.json --label "neutralise <fn> return" --run-prefix N<k>` (with
+`--env CARGO_TARGET_DIR=<scratch>`, never the repository's own target folder), restore, and report it as
+`source: agent` with the runs file as `basis` evidence; such a finding stays `suspected` or `static`
+(neutralisations.json has no Rust record for the validator to check).
 
 **Go.** `_test.go` files are read with comment- and string-aware patterns (nothing is compiled). Each
 `func TestX(t *testing.T)` is a definition (`<file>::TestX`, framework `go-test`; subtests are part of
@@ -157,9 +192,27 @@ skill's `net_guard_proxy.py` for Go and other compiled runners) and with a scrat
 
 `scan_tests.py` lists every test definition, whether or not it would be collected:
 - Python is parsed with `ast`. Each Python definition carries the `runner` that runs it: `pytest`
-  when its file matches the `python_files` of the nearest pytest configuration, `selftest` for a
-  script self-test (below), `unknown` when neither does (its file is also a `never_runs`
-  candidate).
+  when its file matches the `python_files` of the nearest pytest configuration, `unittest` when the
+  suite runs with unittest (below), `selftest` for a script self-test (below), `unknown` when none
+  does (its file is also a `never_runs` candidate).
+- **The suite's real runner.** It is taken from the shared `detect_conventions.py` (`python_runner`
+  per area, which reads CI's test gates first) and recorded in `python_runners` with its command,
+  reason and evidence (`source: ci` or `inferred`). Under **unittest** (CI runs `python -m unittest
+  discover`, or every test module is a `TestCase` module and nothing names pytest): a module-level
+  `def test_x()` or a method of a plain class (not a `TestCase`, not subclassed or named as a mixin)
+  is a `never_runs` candidate (`not_a_testcase`: pytest would collect it, unittest never does); so is
+  every test of a file whose name does not match the discovery pattern (`-p`, `file_pattern`) or that
+  sits below a folder without `__init__.py` under the start directory (`not_a_package`).
+- **`unittest.TestCase` classes are tests whatever they are called.** pytest collects every
+  `TestCase` subclass whatever `python_classes` says (found with the shared
+  `detect_conventions.unittest_classes`, also through a base class of the file, an import alias, or
+  a framework's `*TestCase`), so `class_pattern` is raised only for a class that is certainly no
+  `TestCase` (no base, or only plain bases of the same file).
+- **Targets.** A definition's `calls` are the product functions it calls: imported names, functions
+  of a script the test loads by file path (`spec_from_file_location`, `SourceFileLoader`,
+  `runpy.run_path`, hyphenated names included, read with the shared `py_loads.py`) in file form
+  (`scripts/fetch-rates.py:main`), and what same-file helpers it calls reach (`self.sample()`, two
+  calls deep).
 - **Configured pytest suites.** Every pytest configuration counts, including one in a folder with
   no manifest: `benchmarks/pytest.ini` with `python_files = bench_*.py` makes `bench_*.py` under
   its `testpaths` test files, even outside a test directory. Each file is judged by the nearest
@@ -229,19 +282,26 @@ It flags these candidates:
 
 | Candidate | Rule |
 |---|---|
-| `never_runs` | File outside `python_files` (read from the pytest config), class outside `python_classes`, `.only`, a module-level `pytest.skip(..., allow_module_level=True)` that always runs (one candidate listing every test in the module) |
+| `never_runs` | File outside `python_files` (read from the pytest config), class outside `python_classes` that is no `unittest.TestCase`; under unittest a module-level test function or a plain class's method (`not_a_testcase`), a file outside the discovery pattern or below a folder with no `__init__.py` (`not_a_package`); Rust `#[ignore]` or feature-gated tests no CI command runs; `.only`, a module-level `pytest.skip(..., allow_module_level=True)` that always runs (one candidate listing every test in the module) |
 | `no_assertion` | No `assert`, assertion call, `expect` (also `expect.soft`, `expect.poll`, `expect.assertions`, helpers named `expectX`/`assertX`/`verifyX`) or `pytest.raises`. Python: a call to a function or method of the same file that asserts (`_test_shape(result)`, `self._check_row(row)`, two calls deep) counts as an assertion, and so does a call to a same-file recording check (`check(cond, what)` that appends to a failures list, counts, prints FAIL, exits or raises when its condition is false, and is named like a check or says FAIL). In a script self-test a `raise`, a line printed as a failure, and appending to a list the function returns to its runner (`fails.append(msg)` ... `return fails`) count too. JavaScript: `expect` or `assert` imported under another name (`import { expect as vexpect } from 'vitest'`) is an assertion, and so is a call to a function that asserts, defined in the same file (`function failsWith(p, code) { return expect(p).rejects... }`, two calls deep) or imported from a relative or alias module (`import { expectRow } from './helpers/checks'`). When the test only uses Testing Library `getBy*`/`findBy*` queries, the candidate says so: they throw when nothing matches, so the test checks only that elements exist |
 | `tautology` | `assert True`, `x == x`, `expect(v).toBe(v)` (not `expect(f(x)).toBe(f(x))`, a determinism check, and not an `expect` the product itself exports, whose matchers are the code under test) |
 | `unreached_assertion` | Assertions inside a loop over a possibly empty iterable, only inside `except` (the test has no other assertion), or after `return`. A Python loop is not flagged when something outside it fails on an empty iterable: an assertion on its length (`assert len(rows) == 3`, also split over several lines), its truthiness or value (`assert rows`), an indexed assertion (`assert rows[0] == ...`), an assertion helper given it (`_verify_shape(rows)`), or a name bound only to a non-empty literal (`expected = ["a", "b"]`). JavaScript: every assertion inside a `for ... of`/`.forEach`/`.map` over something that isn't an array literal (or a `const` holding one, also with a type annotation such as `: [() => void, () => void][]`), only inside `catch`, or after a top-level `return` (a guarded `if (x) return;` is not one) |
 | `swallowed_failure` | An `except` that can catch the assertion (bare, `AssertionError`, `Exception` or `BaseException`, alone or in a tuple) around it, and doesn't re-raise, fail (`pytest.fail`, `self.fail`), assert, or keep the error for an assertion after the `try`. JavaScript: a `catch` around an `expect` that neither rethrows nor fails, an empty `catch {}`, and an empty `.catch(() => {})` (not on a best-effort `waitFor...()`). Cleanup may fail quietly: an empty catch inside `finally`, around nothing but cleanup calls (`rm`, `close`, `kill`, `dispose` ...), or in a method of a fake object the test builds is not one. `except FileNotFoundError: pytest.skip(...)` is not one |
 | `async_not_awaited` | `expect(...).resolves/.rejects` neither awaited nor returned; a `done` callback never called. Held in a name that is awaited or returned later (`const assertion = expect(p).rejects...; await vi.advanceTimersByTimeAsync(); await assertion`), an element of an awaited `Promise.all([...])`, or passed to another call, it is settled |
-| `mock_only` | The test patches a function, then asserts on that same function. JavaScript: every product function the test calls comes from a module it mocks (`vi.mock`/`jest.mock`), and every `expect` is on a mock |
+| `mock_only` | The test patches a function, then asserts on that same function. Python: every check is on a mock's call record and none on a result or effect: only `assert_not_called`/`assert_not_awaited`, `assertFalse(m.called)` or `call_count == 0` (`only_negative_mock_checks`: it passes when the code under test does nothing at all), or only `assert_called*`/`call_args` checks (`only_mock_call_checks`); neutralise to see whether those calls depend on the code. JavaScript: every product function the test calls comes from a module it mocks (`vi.mock`/`jest.mock`), and every `expect` is on a mock |
 | `skipped` | `skip`, `skipif`, a non-strict `xfail` (on the test or its class), a runtime `pytest.skip()` or `self.skipTest()`, `it.skip`, `describe.skip`, `todo`, `test.fixme`, `it.skipIf(cond)` (conditional), a runtime Playwright `test.skip(cond, reason)` (conditional, on its test or block); at module level `pytestmark = pytest.mark.skip/skipif/xfail`, `pytest.importorskip(...)` and a guarded `pytest.skip(..., allow_module_level=True)` (one candidate listing every test in the module). Each with the reason, any ticket key, and whether it is conditional: a runtime skip inside an `if`, `except`, `try`, loop or short-circuit expression, or after an early return, is conditional, with that guard as its condition |
 | `duplicate` | Pairs within one package only (two services that each keep a copy of the same tests are each testing their own code). Python: normalised AST similarity ≥ 0.9 and the same literal values; same-shape tests with different values are input cases, counted as `summary.near_duplicates` with a note (worth parametrising), not candidates. JavaScript: test bodies identical apart from variable names (calls, object keys and literal values kept, at least 40 tokens), because no per-test coverage run can tell a JavaScript duplicate from an overlap later. Pairs are pruned first with bounds that never drop a pair at or above the threshold (length, token counts, longest common subsequence), so the result is the same as comparing every pair, in seconds rather than minutes on a large suite |
 
 `collect_check.py` runs each framework's list command and keeps the raw output. Every
 definition that isn't listed is `not_collected` (a parametrised one is matched by its name
 pattern).
+
+- **unittest** suites (runner `unittest`) are listed with unittest's own loader
+  (`TestLoader().discover` with the command's `-s`, `-p` and `-t`), which imports the modules and
+  prints `<file>::<Class>::<method>` ids without running a test; a module that cannot be imported
+  leaves only its tests `not_assessed` (package `partial`).
+- **Rust** tests have no list command here (`no_list_command`, `not_assessed`): `cargo test -- --list`
+  builds every test binary. Run it yourself when it matters.
 
 - **Playwright** specs are listed with `npx playwright test --list --reporter=json` (no browser
   starts), never with Vitest or Jest, which exclude `e2e/` and would report every spec as not
@@ -314,6 +374,10 @@ run by the `runner` scan_tests.py recorded:
 
 - `pytest`: `run_tests.py --preset pytest` on the test id (a `benchmarks/pytest.ini` suite too:
   pytest finds that configuration from the file's directory).
+- `unittest`: `run_tests.py --preset unittest` on the test id (`file::Class::method`, loaded by name
+  as `python -m unittest <module.Class.method>` does), with the discovery start directory from
+  `python_runners` (`--runner-args` overrides it). A module-level function or plain class there is
+  a never-runs candidate, not something to neutralise.
 - `selftest`: `run_tests.py --preset selftest` with the script's own command, from the package
   copy. The script's other tests are silenced (`return None`) for that test's runs, so a failed
   check is the test's own (`silenced` in the result). The test failed when a check line failed or
@@ -323,21 +387,35 @@ run by the `runner` scan_tests.py recorded:
 - `unknown`: not run. Nothing known runs it (no pytest configuration's `python_files` matches its
   file and it is no script self-test), so a neutralised result would not say how the suite
   behaves; the result is `not_run` with `not_run_reason`. If you know how it runs, say so with
-  `--runner pytest` or `--runner selftest` (for every test of that invocation).
+  `--runner pytest`, `--runner unittest` or `--runner selftest` (for every test of that invocation).
+- Rust (`cargo-test`): not run, with that reason (see Step 1).
 
 Run this for every `no_assertion`, `tautology`, `unreached_assertion`, `swallowed_failure`,
 `async_not_awaited` and `mock_only` candidate, all in one invocation where you can. First read
 the candidates and dismiss the scanner's mistakes (a helper it didn't follow, a name that is not
 the test framework's) with a reason and a basis: neutralising them costs runs and teaches
 nothing. When most candidates of a rule turn out to be the same mistake, sample a few, dismiss the
-rest by the shared reason, and report the scanner gap in the limitations.
+rest by the shared reason, and report the scanner gap in the limitations. When you also neutralise
+tests no rule flagged (a sample of the critical paths), name them and say how you chose them in a
+limitation: the report's `tests[]` marks them `neutralised`, but nothing else records why.
 
 - **Network guard.** Run the list commands, neutralisations and similarity sessions with the
   network blocked, using the guards this skill ships: for Node,
   `NODE_OPTIONS="--require <absolute path to this skill>/scripts/net_guard.cjs"` (forward slashes
   on Windows; it reaches child processes and Vitest's and Jest's workers); for Python,
-  `scripts/net_guard.py` as a pytest plugin (`-p net_guard` with `PYTHONPATH` reaching
-  `scripts/`). Set `QA_NET_GUARD_LOG=<run>/net_guard.log`: with it set the guards write only to
+  `scripts/net_guard.py` as a pytest plugin. Which flag loads it, per script:
+
+  | Script | Python (pytest) | Node |
+  |---|---|---|
+  | `collect_check.py` | `--env "PYTHONPATH=<skill>/scripts" "PYTEST_ADDOPTS=-p net_guard"` (it has no `--runner-args`) | `--env "NODE_OPTIONS=--require <skill>/scripts/net_guard.cjs"` |
+  | `neutralise.py` | `--env PYTHONPATH=<skill>/scripts --runner-args "-p net_guard"` | `--env "NODE_OPTIONS=--require <skill>/scripts/net_guard.cjs"` |
+  | `similarity.py` | `--env "PYTHONPATH=<skill>/scripts" "PYTEST_ADDOPTS=-p net_guard"` | (Python only) |
+
+  unittest runs and script self-tests are not pytest, so the plugin cannot load there: run them under
+  `net_guard_proxy.py run --log <run>/net_guard.log -- <command>` (it guards only clients that honour
+  the proxy variables; say so), or name the gap in the limitations. Add `QA_NET_GUARD_LOG` with the
+  same `--env`. A `PYTHONPATH` you give replaces the package's own, so add the package directories the
+  tests need to it (`;`-separated on Windows). Set `QA_NET_GUARD_LOG=<run>/net_guard.log`: with it set the guards write only to
   the log, never to stderr, so tests of a CLI that assert on a child's stderr are not broken by
   the guard. Each process writes `net_guard: loaded pid=<pid>` and each refusal
   `net_guard: refused <host>:<port>`. Check the log has a `loaded` line before relying on the
@@ -519,6 +597,9 @@ Each finding's priority is computed:
 python scripts/validate_dead_test_report.py <run>/../dead_test_report.json --repo <repo> --write-summary
 python scripts/render_report.py <run>/../dead_test_report.json [--brief]
 ```
+
+`--brief` keeps the headline, the findings, the limitations and one line per group of dismissals
+sharing a reason; the full render lists every dismissal and the collection and tool details.
 
 The report's `metadata.evidence_files` and patch paths are relative to the report's directory.
 Write the headline yourself, naming the P0 findings, and fix every error rather than editing

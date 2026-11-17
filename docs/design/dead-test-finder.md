@@ -1,6 +1,6 @@
 # Design: `dead-test-finder-skill`
 
-Status: Built (v1.8.0), see "As built" at the end. Build order: 12.
+Status: Built (v1.9.0), see "As built" at the end. Build order: 12.
 
 ## Mission
 
@@ -564,3 +564,33 @@ configured only by `benchmarks/pytest.ini`). Each fix was written to fail first 
   listed) and 14 candidates (the benchmark with no assertion, a benchmark duplicate pair, 12 loops over expected data),
   no fixture candidates. The three sampled
   self-tests that ended `passed_neutralised` (false) or `not_run` now end `failed_neutralised`.
+
+### v1.9.0: a Rust workspace with Python tooling scripts tested by unittest
+
+Found on a Cargo workspace whose Python helper scripts are tested by `python -m unittest discover` in CI (no pytest
+installed), and fixed:
+
+- **unittest suites read as pytest.** Every `unittest.TestCase` test whose class name missed `python_classes` was a
+  `never_runs`/`class_pattern` candidate (all 111 candidates there, all false). pytest collects every TestCase
+  subclass, so `class_pattern` now needs a class that is certainly no TestCase (shared
+  `detect_conventions.unittest_classes`).
+- **The real runner.** `python_runner` per area (CI's test gate first) is recorded in `python_runners` and on every
+  definition (`runner: unittest`). Under unittest, a module-level `def test_x()` or a plain class's method is a
+  `never_runs`/`not_a_testcase` candidate, and a file outside the discovery pattern or below a folder with no
+  `__init__.py` is `file_pattern`/`not_a_package`. collect_check lists such suites with unittest's own loader;
+  neutralise.py runs them with run_tests.py's `unittest` preset.
+- **Mock-only checks.** A test whose only checks are on a mock's call record is `mock_only`:
+  `only_negative_mock_checks` (`assert_not_called`, `call_count == 0`: it passes when the code does nothing) or
+  `only_mock_call_checks`. The real finding of that review (an offline-archive test that only asserted the download
+  was not called) was missed by the rules before.
+- **Targets.** Scripts loaded by file path (`spec_from_file_location`, hyphenated names) give file-form targets
+  through the shared `py_loads.py`, and same-file helpers (`self.sample()`) are followed. neutralise.py resolves
+  `sys.path` folders with `py_loads.sys_path_dirs` (`.parents[n]`, conftest folders); a target behind a sys.path
+  entry it cannot work out is reported with that line, not as "another package".
+- **Rust** tests are definitions (shared `cargo_project.py`) scanned statically by `rust_tests.py`; never listed or
+  neutralised (`static_only`, a loud note), and SKILL.md gives the by-hand path with `run_tests.py --preset cargo`.
+- **Honesty.** The validator needs a limitation naming a language the scan warned about and one for statically
+  scanned tests; evidence completeness is multiplied by the runnable share of tests and the read share of product
+  code. The schema types `evidence.neutralisation.targets`, the renderer no longer crashes on bare names or mangles
+  file-form targets, and `--brief` keeps the limitations and groups dismissals by reason. SKILL.md names the flag
+  that loads the network guard for each script. Scripts no longer write `__pycache__` into the skill folder.
