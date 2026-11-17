@@ -90,6 +90,9 @@ JS_FROZEN = re.compile(r'useFakeTimers|setSystemTime|MockDate|mockdate|timekeepe
                        r'jest\.useFakeTimers|sinon\.useFakeTimers|mockDate\(|freezeTime|tk\.freeze')
 ATTR_BEFORE = re.compile(r'([A-Za-z_:][\w:.-]*)\s*=\s*$')        # an XML/SVG/HTML attribute name before its value
 MARKUP_EXT = ('.svg', '.xml', '.html', '.htm', '.xhtml')
+KEY_WINDOW = 200            # characters read before a quoted string for its key or attribute name
+SLOW_SOURCE_S = 5           # progress names a source that took longer than this, and a big one before it is read
+BIG_SOURCE_BYTES = 256_000
 # near-duplicate sketches: DUP_BINS MinHash values per file in bands of DUP_ROWS; a bucket over DUP_BUCKET_MAX files
 # pairs neighbours only; pairs whose sketch estimate is below the threshold minus DUP_EST_SLACK are not confirmed
 DUP_BINS, DUP_ROWS, DUP_BUCKET_MAX, DUP_EST_SLACK = 64, 4, 60, 0.25
@@ -1644,10 +1647,19 @@ class Scanner:
         py = inv.PyTests(self.root, self.files)
         import time
         t_start = t_last = time.monotonic()
+        t_item, slow = t_start, None
         for n_item, item in enumerate(self.inv['inventory'], 1):
-            if self.progress and time.monotonic() - t_last >= 5:
-                t_last = time.monotonic()
-                print(f'scan: {n_item}/{len(self.inv["inventory"])} sources ({t_last - t_start:.0f} s)', file=sys.stderr, flush=True)
+            if self.progress:
+                # a long run is never mistaken for a hung one, and a slow file is named: the last source when it took
+                # seconds, and a big one before it is read
+                now = time.monotonic()
+                if slow and now - t_item >= SLOW_SOURCE_S:
+                    print(f'scan: {slow} took {now - t_item:.0f} s', file=sys.stderr, flush=True)
+                t_item, slow = now, item['path']
+                if now - t_last >= 5 or (item.get('bytes') or 0) >= BIG_SOURCE_BYTES:
+                    t_last = now
+                    print(f'scan: {n_item}/{len(self.inv["inventory"])} sources ({now - t_start:.0f} s), reading {item["path"]}'
+                          f' ({(item.get("bytes") or 0) / 1000:.0f} kB)', file=sys.stderr, flush=True)
             if item['status'] != 'scanned':
                 continue
             rel = item['path']
@@ -1680,13 +1692,16 @@ class Scanner:
                 continue
             structured = {(r_line) for r in records for r_line in [v['line'] for v in r['fields'].values()]}
             prose = item.get('format') in PROSE_FORMATS
+            is_js, is_markup = jsparse.is_js(rel), rel.lower().endswith(MARKUP_EXT)
             for n, line in enumerate(text.split('\n'), 1):
                 self.secrets(rel, n, line)
                 self.environment(rel, n, line)
                 if n not in structured:
                     for m in re.finditer(r'"([^"\n]{3,200})"|\'([^\'\n]{3,200})\'', line):
-                        key = JS_KEY_BEFORE.search(line[:m.start()]) if jsparse.is_js(rel) else \
-                            ATTR_BEFORE.search(line[:m.start()]) if rel.lower().endswith(MARKUP_EXT) else None
+                        # the key or attribute name sits right before the string: read a short window, never the whole
+                        # line so far (a page with its data on one 300k-character line has thousands of strings on it)
+                        before = line[max(0, m.start() - KEY_WINDOW):m.start()]
+                        key = JS_KEY_BEFORE.search(before) if is_js else ATTR_BEFORE.search(before) if is_markup else None
                         self.personal_value(rel, n, key.group(1) if key else None, m.group(1) or m.group(2), loose=bool(key))
                     if prose:
                         # pages, tickets, notes and patches carry people in their running text, not only in quotes

@@ -1078,13 +1078,43 @@ def arithmetic_time_bomb() -> None:
           'renderer: a bomb confirmed by date arithmetic says so, with no empty run list')
 
 
-def main() -> int:
+# ---------------------------------------------------------------- gaps found on a Rust workspace with Python tooling
+def long_line_is_linear() -> None:
+    """A report page with its data embedded on one line (hundreds of thousands of characters, thousands of quoted
+    strings): the attribute look-behind reads a short window before each string, never the whole line so far."""
+    import time
+    cells = ''.join('<td class="n" data-k="v%d">row %d</td>' % (i, i) for i in range(9000))
+    page = '<!doctype html>\n<html><body><table><tr>' + cells + '</tr></table>\n<p title="Contact">Ada Example, ' \
+           + place_mailbox() + '</p></body></html>\n'
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, {'tests/test_page.py': 'def test_page():\n    assert open("tests/fixtures/report.html").read()\n',
+                     'tests/fixtures/report.html': page})
+        invd = inv.build(root, None, {})
+        t0 = time.process_time()
+        res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
+        took = time.process_time() - t0
+    check(len(cells) > 300_000 and took < 6.0,
+          f'scan: one {len(cells) // 1000}k-character line with 18,000 quoted strings scans in under 6 s of CPU time '
+          f'(took {took:.1f} s)')
+    check(any(c['rule'] == 'email' and c['file'] == 'tests/fixtures/report.html' and c['line'] == 3 for c in res['candidates']),
+          'scan: the address after the long line is still found, on its own line')
+
+
+GROUPS: list = [long_line_is_linear]
+
+
+def main(argv=None) -> int:
+    """self_test.py [group ...]: all groups, or only the named ones."""
+    names = list(sys.argv[1:] if argv is None else argv)
     for t in (fixture_dirs_by_default, commands_count_as_use, prose_formats, time_bombs_stay_in_project, code_is_not_an_email,
               near_duplicates_scale, capped_pairs_are_noted, placeholder_headline, arithmetic_time_bomb,
               baseline_on_audit_date, go_rules, url_credentials_and_cards, placeholders, coverage_and_drift, residue_outside_tree, live_endpoint_severity,
               big_data_tree, cwd_relative_paths, agent_personal_data_leak, empty_repository, data_dir_unknown_format,
               served_data_dir, data_dir_code, no_tests_statement, tests_found_field, runs_required, drift_nothing_to_check,
-              write_summary_line_endings):
+              write_summary_line_endings, *GROUPS):
+        if names and t.__name__ not in names:
+            continue
         try:
             t()
         except Exception as exc:  # a crash in one group is a failure, not the end of the run
