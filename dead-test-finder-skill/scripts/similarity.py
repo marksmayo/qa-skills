@@ -35,6 +35,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import collect_check, run_tests, scan_tests, tree_guard  # noqa: E402
 
 PLUGIN = r'''

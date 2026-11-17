@@ -25,6 +25,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import unified_diff  # noqa: E402
 
 SCHEMA = HERE.parent / 'schemas' / 'dead_test_report.schema.json'
