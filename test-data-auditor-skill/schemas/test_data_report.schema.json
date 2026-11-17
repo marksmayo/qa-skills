@@ -7,7 +7,7 @@
   "required": ["metadata", "inventory", "tools", "findings", "dismissed", "handoffs", "summary", "limitations", "files_changed"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": {"enum": ["1.0", "1.1"], "description": "Absent means 1.0. 1.1 adds metadata.tests_found, which it requires."},
+    "schema_version": {"enum": ["1.0", "1.1", "1.2"], "description": "Absent means 1.0. 1.1 adds metadata.tests_found, which it requires. 1.2 documents the optional inventory fields for archive members, Rust test lines and evidence trees."},
     "metadata": {
       "type": "object",
       "required": ["repo", "generated_at", "today", "skill_version", "clock_shift", "apply_fixes", "candidates_file", "runs_file"],
@@ -42,7 +42,12 @@
           "status": {"enum": ["scanned", "not_assessed"]},
           "reason": {"type": ["string", "null"]},
           "anonymised_by": {"type": "string"},
-          "note": {"type": "string"}
+          "note": {"type": "string"},
+          "archive": {"type": "string", "description": "A member of a zip archive (path <archive>!<member>): the archive"},
+          "member": {"type": "string", "description": "A member of a zip archive: its name inside the archive"},
+          "archive_members": {"type": "object", "description": "A zip archive: members, read, not_read, complete"},
+          "test_lines": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}}, "description": "A Rust source with #[cfg(test)] tests: the [first, last] line ranges read as test data"},
+          "evidence_tree": {"type": "boolean", "description": "Under --evidence-dir: scanned, never called unused"}
         }
       }
     },
