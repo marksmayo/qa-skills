@@ -23,6 +23,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from adapters import CONF_RANK, facts_for  # noqa: E402
 
 BANNED = re.compile(r'(?i)\b(safe to (release|ship|deploy)|(?<!not )safe\b|ready to (ship|release|deploy)|release[- ]ready|production[- ]ready|no risks?\b|risk[- ]free|fully tested|nothing (left )?to worry|good to go|all clear)')

@@ -91,7 +91,8 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import cargo_project, code_mask, detect_conventions, diff_scope, lang_census, next_app, repo_layout  # noqa: E402
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
+import cargo_project, code_mask, detect_conventions, diff_scope, lang_census, next_app, py_loads, repo_layout  # noqa: E402
 
 SURFACES = json.loads((HERE.parent / 'data' / 'surfaces.json').read_text(encoding='utf-8'))
 LIKELIHOOD = {'churn': 2, 'defects': 3, 'complexity': 1, 'change_in_scope': 2, 'test_weakness': 2}
@@ -189,6 +190,7 @@ def recompute(area: dict) -> dict:
 
 
 SCOPE_CAPS = ((25, 2), (100, 3), (250, 4))   # (fewer than N lines changed in the area, highest score)
+DATA_ONLY_CAP = 3       # churn and change in scope of an area that holds only data records never score above this
 
 
 def scope_cap(lines: int) -> int:
@@ -668,13 +670,17 @@ def next_surface_hits(model: dict) -> dict[str, list[tuple[str, str]]]:
 
 def is_area_asset(f: str) -> bool:
     """A template, style or data record that belongs to its area's product (not a test, docs, tool configuration or a
-    manifest). Data counts only inside a directory: a JSON or YAML file at the root is repository configuration."""
+    manifest). Data counts only inside a directory: a JSON or YAML file at the root is repository configuration.
+    Product files in a language or format no script here reads (UNREAD_EXT: PowerShell and shell scripts, Slint and
+    other UI markup, Lua ...) count the same way: churn, defects and change in scope, never complexity or surfaces."""
     if f in CI_ASSETS:
         return True
     if fixture_of(f):
         return False
     p = PurePosixPath(f)
     sfx = p.suffix.lower()
+    if sfx in UNREAD_EXT and sfx not in ASSET_EXT:      # a script, UI definition or language no script here reads
+        return not is_test(f) and not dir_names(f) & DOC_DIRS and 'node_modules' not in p.parts
     if sfx not in ASSET_EXT or is_test(f) or dir_names(f) & (DOC_DIRS | CONFIG_DIRS) or 'node_modules' in p.parts:
         return False
     if sfx in DATA_EXT:
@@ -1159,6 +1165,8 @@ class Imports:
                 self.dirs.add(d)
         self.aliases = js_aliases(root, files)
         self.cache: dict[str, list[str]] = {}
+        self._loaded: dict[str, list[str]] = {}
+        self.load_unresolved: dict[str, list[dict]] = {}       # {test file: path loads py_loads could not work out}
         self._roots: list[str] | None = None
         self._roots_for: dict[str, list[str]] = {}
 
@@ -1297,6 +1305,27 @@ class Imports:
             self.cache[f] = sorted({r for r in (self.resolve(t, f) for t in self.targets(f)) if r})
         return self.cache[f]
 
+    def loaded(self, f: str) -> list[str]:
+        """Repository files a Python file loads by path instead of importing by name (the shared py_loads reader):
+        importlib.util.spec_from_file_location, SourceFileLoader and runpy.run_path with a literal or __file__-built
+        path (a script with a hyphen in its name can be loaded no other way), bare imports through a sys.path folder,
+        and what those scripts import from their own folder. Loads whose path cannot be worked out are kept in
+        load_unresolved, never dropped silently."""
+        if f not in self._loaded:
+            reach: list[str] = []
+            if f.endswith('.py'):
+                try:
+                    text = (self.root / f).read_text(encoding='utf-8', errors='replace')
+                except OSError:
+                    text = ''
+                if py_loads.may_load(text):
+                    got = py_loads.loaded_files(self.root, f)
+                    reach = [r for r in got.get('reaches') or [] if r in self.fileset]
+                    if got.get('unresolved'):
+                        self.load_unresolved[f] = got['unresolved']
+            self._loaded[f] = reach
+        return self._loaded[f]
+
     def __call__(self, f: str) -> list[str]:
         """Imported files only (no directories), for one hop of journey attribution."""
         return [r for r in self.resolved(f) if not r.endswith('/')]
@@ -1344,6 +1373,8 @@ def rust_test_areas(test_path: str, areas: list[dict], files: list[str]) -> set[
     return hits
 
 
+# {area: tests linked to it only because they load one of its scripts by file path}; set by tests_by_area()
+PATH_LOADS: dict[str, set[str]] = {}
 LIVE_TEST_DIRS = {'live', 'tests-live', 'live-tests', 'live_tests'}
 HELPER_DIRS = {'helpers', 'helper', 'support', 'fixtures', '__fixtures__', 'utils', 'testutils', 'test-utils', 'test_utils',
                'mocks', '__mocks__'}
@@ -1372,6 +1403,7 @@ def tests_by_area(files: list[str], areas: list[dict], flaky: set[str], imports:
     which import the utility by name rather than by a resolvable path, are linked by the `test_<util>.rs` convention."""
     out: dict[str, set[str]] = {a['id']: set() for a in areas}
     skipped, not_counted = [], []
+    PATH_LOADS.clear()
     for t in files:
         if not is_test(t) or PurePosixPath(t).suffix not in CODE_EXT:
             continue
@@ -1390,6 +1422,13 @@ def tests_by_area(files: list[str], areas: list[dict], flaky: set[str], imports:
             if fixture_of(r.rstrip('/')) or dir_names(r.rstrip('/') + ('/x' if r.endswith('/') else '')) & DOC_DIRS:
                 continue
             hit.add(area_of_dir(r.rstrip('/'), areas) if r.endswith('/') else area_of(COPY_REP.get(r, r), areas))
+        for r in imports.loaded(t):       # scripts the test loads by file path (py_loads), and their sibling imports
+            if fixture_of(r) or dir_names(r) & DOC_DIRS:
+                continue
+            aid = area_of(COPY_REP.get(r, r), areas)
+            if aid and aid not in hit:
+                PATH_LOADS.setdefault(aid, set()).add(t)
+            hit.add(aid)
         if t.endswith('.rs'):
             hit |= rust_test_areas(t, areas, files)
             hit |= rust_crate_uses(t, areas)
@@ -2048,6 +2087,109 @@ UI_MARKUP_EXT = {'.slint': 'Slint', '.qml': 'QML', '.xaml': 'XAML', '.axaml': 'A
                  '.storyboard': 'Interface Builder'}
 
 
+# Product files in a language or format no script here reads: every language of the census outside CODE_EXT (Lua,
+# Elixir ...), UI markup and script languages (PowerShell, shell, batch ...). They count for their area's churn,
+# defects and change in scope like templates and data, and are named wherever they count or change.
+UNREAD_EXT = {**{e.lower(): k for e, k in lang_census.LANG_BY_EXT.items() if e.lower() not in CODE_EXT and e != '.pyi'},
+              **lang_census.UI_MARKUP_BY_EXT, **UI_MARKUP_EXT, **lang_census.SCRIPT_BY_EXT}
+SCRIPT_LANGUAGE_WARNING = 'script languages these scripts do not measure'
+# Changed files that are never listed as lines to test: lockfiles, dotfiles, licence and changelog files, images,
+# fonts, media and archives. (Documentation and binary files are left out by their diff_scope kind.)
+SCOPE_NOISE = re.compile(r'(?:^|/)(?:\.[^/]*|[^/]*\.lock|[^/]*-lock\.(?:json|ya?ml)|go\.sum|LICEN[CS]E[^/]*|NOTICE[^/]*|'
+                         r'AUTHORS[^/]*|CHANGELOG[^/]*|CODEOWNERS)$|\.(?:png|jpe?g|gif|svg|ico|webp|avif|bmp|woff2?|ttf|otf|'
+                         r'eot|mp[34]|webm|ogg|wav|pdf|zip|gz|tgz|7z|jar|bin|exe|dll|so|dylib)$', re.I)
+SCOPE_SKIP_KINDS = {'docs', 'binary', 'types', 'generated', 'vendored', 'test'}
+
+
+def unread_kind(f: str) -> str | None:
+    sfx = PurePosixPath(f).suffix.lower()
+    return UNREAD_EXT.get(sfx) if sfx not in ASSET_EXT else None
+
+
+def unread_words(paths: list[str]) -> str:
+    """'PowerShell 2, Slint 1' for the unread files among paths ('' when there are none)."""
+    kinds: dict[str, int] = {}
+    for f in paths:
+        k = unread_kind(f)
+        if k:
+            kinds[k] = kinds.get(k, 0) + 1
+    return ', '.join(f'{k} {n}' for k, n in sorted(kinds.items(), key=lambda kv: (-kv[1], kv[0])))
+
+
+def outside_dir(sp: str, areas: list[dict]) -> str:
+    """The directory a changed file outside the areas is listed under: the shortest directory above it that no area
+    sits in or under (docs/ for docs/a/b.md; crates/x/benches/ for a bench of the area crates/x, never crates/, which
+    every area id contains), or the file itself when every directory above it holds an area."""
+    parts = sp.split('/')
+    roots = [q.rstrip('/*') for a in areas for q in a['paths']]
+    for i in range(1, len(parts)):
+        d = '/'.join(parts[:i])
+        if not any(r == d or r.startswith(d + '/') for r in roots):
+            return d + '/'
+    return sp
+
+
+def script_languages(root: Path, files: list[str], owner: dict) -> list[dict]:
+    """[{kind, files, lines, areas, examples}] for the script languages of lang_census.SCRIPT_BY_EXT among the tracked
+    files (fixture projects left out), most lines first: nothing here reads them, so they are always named."""
+    found: dict[str, list[tuple[str, int]]] = {}
+    for f in files:
+        kind = lang_census.SCRIPT_BY_EXT.get(PurePosixPath(f).suffix.lower())
+        if not kind or fixture_of(f):
+            continue
+        try:
+            n = sum(1 for x in (root / f).read_text(encoding='utf-8', errors='replace').splitlines() if x.strip())
+        except OSError:
+            continue
+        found.setdefault(kind, []).append((f, n))
+    out = [{'kind': k, 'files': len(fs), 'lines': sum(n for _, n in fs),
+            'areas': sorted({owner[f] for f, _ in fs if owner.get(f) and is_area_asset(f)}),
+            'in_no_area': len([f for f, _ in fs if not (owner.get(f) and is_area_asset(f))]),
+            'examples': [f for f, _ in sorted(fs, key=lambda x: (-x[1], x[0]))[:3]]} for k, fs in found.items()]
+    return sorted(out, key=lambda s: (-s['lines'], s['kind']))
+
+
+def gated_rust_tests() -> list[dict]:
+    """[{file, tests, gate, detail}] for the Rust tests of the Cargo model that a plain `cargo test` does not run on
+    every platform (cargo_project runs_by_default False), or that it cannot decide (None), grouped by file and gate.
+    Bench and example targets and doc tests are left out: they are not tests an area counts."""
+    acc: dict[tuple[str, str, str], int] = {}
+    for c in CARGO.get('crates', []):
+        for t in c.get('tests') or []:
+            if 'runs_by_default' not in t or t['runs_by_default'] is True:
+                continue
+            why = t.get('why') or []
+            gate = why[0].get('gate') if why else 'undecided'
+            if gate in ('target', 'doc'):
+                continue
+            first = why[0] if why else {}
+            detail = (', '.join(first.get('features') or first.get('features_any') or [])
+                      or ', '.join(first.get('platforms') or []) and 'runs only on ' + ', '.join(first.get('platforms') or [])
+                      or str(first.get('detail') or t.get('why_undecided') or ''))
+            acc[(t['file'], gate, detail[:120])] = acc.get((t['file'], gate, detail[:120]), 0) + 1
+    return [{'file': f, 'tests': n, 'gate': g, 'detail': d} for (f, g, d), n in sorted(acc.items())]
+
+
+def coverage_format(text: str) -> str:
+    """What a --coverage file that holds no Go coverprofile line looks like, for the warning that it was not read."""
+    head = text[:4000].lstrip()
+    if text.startswith('SQLite format'):
+        return 'a coverage.py data file (.coverage)'
+    if head.startswith('{') or head.startswith('['):
+        if 'llvm.coverage.json.export' in text[:200000] or 'llvm.coverage.json.export' in text[-4000:]:
+            return 'an llvm-cov JSON export (cargo llvm-cov --json)'
+        if '"executed_lines"' in text[:200000] or '"percent_covered"' in text[:200000]:
+            return 'a coverage.py JSON report'
+        return 'a JSON coverage report'
+    if head.startswith('<'):
+        return 'an XML coverage report (Cobertura, JaCoCo or coverage.py xml)'
+    if re.search(r'^(?:TN:|SF:)', text[:4000], re.M):
+        return 'an lcov tracefile'
+    if head.startswith('mode:'):
+        return 'a Go coverprofile of another module (no line maps to a file of this repository)'
+    return 'a file in a format this script does not know'
+
+
 def ui_markup_note(root: Path, files: list[str], owner: dict) -> str | None:
     """Desktop and mobile UI definition files (Slint, QML, XAML, Qt Designer, GTK, Kivy, Interface Builder): neither
     the language census nor the surface patterns read them, so they are named with their areas, never passed over."""
@@ -2224,7 +2366,7 @@ def score(args) -> dict:
     kept_generated: dict[str, list[tuple[str, str]]] = {}
     for f in files:
         sfx = PurePosixPath(f).suffix
-        if fixture_of(f) and area_of(f, areas) and sfx.lower() in CODE_EXT | ASSET_EXT and not is_test(f):
+        if fixture_of(f) and area_of(f, areas) and sfx.lower() in CODE_EXT | ASSET_EXT | set(UNREAD_EXT) and not is_test(f):
             excluded.append({'path': f, 'reason': fixture_reason(f)})
             continue
         if COPY_REP.get(f, f) != f and area_of(f, areas) and (is_area_code(f) or is_area_asset(f)):
@@ -2294,19 +2436,50 @@ def score(args) -> dict:
     # Changed files the scope holds that no scored area counts (in no area, or excluded as generated, vendored, docs or
     # root tooling) count nowhere: name them by directory and reason, with their changed lines, so a release whose
     # content is all outside the areas never reads as "nothing in scope changed".
+    # A changed file of a type nothing here reads (a Cargo.toml, a go.mod, a .proto) is still a change of the release:
+    # inside a scored area it adds to that area's change in scope (extra_scope, named in the evidence), outside it is
+    # listed here. Only documentation, binary, generated and vendored files, lockfiles, dotfiles and media stay out.
     why_excluded = {e['path']: e['reason'] for e in excluded}
+    live_ids = {owner[f] for f in files if owner.get(f) and f not in excluded_paths and (is_area_code(f) or is_area_asset(f))}
+    known_ext = CODE_EXT | ASSET_EXT | set(UNREAD_EXT)
+    extra_scope: dict[str, list[dict]] = {}
     loose: dict[tuple[str, str], list[int]] = {}
     for sf in (scope or {}).get('files', []):
         sp = sf['path']
-        if is_test(sp) or PurePosixPath(sp).suffix not in CODE_EXT | ASSET_EXT:
+        if is_test(sp):
             continue
-        if area_of(sp, areas) is not None and sp not in why_excluded:
-            continue
+        known = PurePosixPath(sp).suffix.lower() in known_ext
+        sp_area = area_of(sp, areas)
+        other_reason = None
+        if not known:
+            kind = sf.get('kind') or diff_scope.classify(sp, '', False, root)[0]
+            if (kind in SCOPE_SKIP_KINDS or SCOPE_NOISE.search(sp) or fixture_of(sp)
+                    or not (sf.get('lines_added') or 0) + (sf.get('lines_deleted') or 0)):
+                continue
+            if sp_area in live_ids and sp not in why_excluded:
+                extra_scope.setdefault(sp_area, []).append(sf)
+                continue
+            other_reason = ('a build or configuration file' if kind == 'config' else 'a file of a type these scripts do '
+                            'not read') + (f' in the unscored area {sp_area}' if sp_area else ' in no area')
+        elif sp_area is not None and sp not in why_excluded:
+            if sp not in fileset or ((is_area_code(sp) or is_area_asset(sp)) and sp_area in live_ids):
+                continue                   # counted by its area (a file the scope deleted counts through gone_scope)
+            if sp_area in live_ids and not dir_names(sp) & DOC_DIRS:
+                # a manifest or configuration file inside an area (package.json, tsconfig.json): its lines are part
+                # of the area's change, though the area's other factors do not read it
+                if not SCOPE_NOISE.search(sp) and not fixture_of(sp):
+                    extra_scope.setdefault(sp_area, []).append(sf)
+                continue
+            if sp_area in live_ids:
+                continue                   # documentation or examples inside an area
+            other_reason = f'in the unscored area {sp_area}'
         if COPY_REP.get(sp, sp) != sp and area_of(COPY_REP[sp], areas):
             continue                       # a copy's change counts once, in the area of the copy that is scored
-        top = sp.split('/')[0] + '/' if '/' in sp else sp
+        top = outside_dir(sp, areas)
         reason = why_excluded.get(sp) or (fixture_reason(sp) if fixture_of(sp)
                                           else 'documentation or examples directory' if dir_names(sp) & DOC_DIRS
+                                          else other_reason if other_reason
+                                          else f'{unread_kind(sp)} these scripts do not read, in no area' if unread_kind(sp)
                                           else 'a template, style or data file in no area' if is_area_asset(sp)
                                           else 'in no area')
         if sf.get('status') == 'deleted' and sp not in fileset:
@@ -2325,7 +2498,7 @@ def score(args) -> dict:
     # Deleted code is removed behaviour (a redirect, a guard, a handler): the scope's deletions are named wherever they
     # count, so a release that removes middleware never reads as a small change.
     gone_scope = [sf for sf in (scope or {}).get('files', []) if sf.get('status') == 'deleted' and sf['path'] not in fileset
-                  and not is_test(sf['path']) and PurePosixPath(sf['path']).suffix in CODE_EXT | ASSET_EXT]
+                  and not is_test(sf['path']) and PurePosixPath(sf['path']).suffix.lower() in known_ext]
     if gone_scope:
         gone_scope.sort(key=lambda sf: (-(sf.get('lines_deleted') or 0), sf['path']))
         warnings.append(f'{len(gone_scope)} file(s) deleted in the scope ({sum(sf.get("lines_deleted") or 0 for sf in gone_scope)} '
@@ -2358,6 +2531,16 @@ def score(args) -> dict:
     markup = ui_markup_note(root, files, owner)
     if markup:
         warnings.append(markup)
+    scripts = script_languages(root, files, owner)
+    if scripts:
+        warnings.append(
+            f'{SCRIPT_LANGUAGE_WARNING} (no complexity, no surface, no link to tests): '
+            + '; '.join(f'{s["kind"]} {s["files"]} file(s), {s["lines"]} lines ({", ".join(s["examples"])}; '
+                        + (f'area {", ".join(s["areas"])}' if s['areas'] else 'no area')
+                        + (f', {s["in_no_area"]} in no area' if s['areas'] and s['in_no_area'] else '') + ')' for s in scripts)
+            + '; an installer, packaging or release script is shipped code: where an area holds it, it counts for churn, '
+            'defects and change in scope only, and the plan must name each kind and say how it is tested or why it '
+            'needs no testing (headline, an assumption or an open question)')
     inputs = [load_input(k, Path(p)) for k, p in (x.split('=', 1) for x in args.input)]
     names = [(i['skill'], i['path']) for i in inputs]
     if len(set(names)) != len(names):
@@ -2412,12 +2595,26 @@ def score(args) -> dict:
         data = json.loads(args.defects.read_text(encoding='utf-8'))
         bugs = [t for t in data.get('tickets', [data]) if (t.get('type') or '').lower() in ('bug', 'defect')]
     tests, flaky_skipped, tests_not_counted = tests_by_area(files, areas, flaky_files, imports)
+    unresolved_loads = [(t, u) for t in sorted(imports.load_unresolved) for u in imports.load_unresolved[t]]
+    if unresolved_loads:
+        warnings.append(f'{len(unresolved_loads)} load(s) by file path in {len(imports.load_unresolved)} test file(s) could '
+                        'not be worked out, so those tests are linked to no area through them and test weakness may read '
+                        'too high there: '
+                        + ', '.join(f'{t}:{u.get("line")} ({u.get("via")} {str(u.get("expr"))[:50]})' for t, u in unresolved_loads[:6])
+                        + (f' (+{len(unresolved_loads) - 6})' if len(unresolved_loads) > 6 else '')
+                        + '; judge test weakness by hand for the areas those scripts are in')
+    gated = gated_rust_tests()
     coverage: dict[str, tuple[int, int]] = {}
+    coverage_not_read = []
     for prof in args.coverage:
         got = read_coverage(root, prof)
         if not got:
-            warnings.append(f'--coverage {prof.name}: no line mapped to a repository file (is it a Go coverprofile of this '
-                            'module?); test weakness falls back to the test-size ratio')
+            looks = coverage_format(prof.read_text(encoding='utf-8', errors='replace'))
+            coverage_not_read.append({'file': prof.name, 'looks_like': looks})
+            warnings.append(f'--coverage {prof.name}: NOT READ. It looks like {looks}; --coverage reads only a Go coverprofile '
+                            '(go test -coverprofile=coverage.out ./...) of this repository\'s module. Test weakness is the '
+                            'test-size ratio for every area, not this coverage: say in the plan that the coverage figure '
+                            'was not used, or judge test weakness from it by hand with a reason')
         for k, (n, c) in got.items():
             o = coverage.get(k, (0, 0))
             coverage[k] = (max(o[0], n), max(o[1], c))
@@ -2484,6 +2681,8 @@ def score(args) -> dict:
                        else cx.get(t, {}).get('loc', 0) for t in tests[a['id']])
         scope_lines = sum(scope_files[f]['lines_added'] + scope_files[f]['lines_deleted'] for f in every if f in scope_files)
         scope_lines += sum((sf.get('lines_added') or 0) + (sf.get('lines_deleted') or 0) for sf in gone_s)
+        extra_s = extra_scope.get(a['id'], [])     # changed manifests and other files of the area nothing here reads
+        scope_lines += sum((sf.get('lines_added') or 0) + (sf.get('lines_deleted') or 0) for sf in extra_s)
         fix_shas = sorted({s for x in h for s in x['fix_commits']})
         commit_keys = {k for s in fix_shas if s in commits for k in commits[s]['keys']}
         area_bugs = [t for t in bugs if a['id'].lower() in {x.lower() for x in (t.get('components') or []) + (t.get('labels') or [])}
@@ -2500,7 +2699,10 @@ def score(args) -> dict:
             'scope_lines': scope_lines, 'tests': tests[a['id']], 'test_loc': test_loc, 'code_files': code_files,
             'packages': sorted({package_of(x) for x in mine} - {None}),
             'breaking_commits': [c for c in (release or {}).get('breaking_commits') or [] if set(c.get('files') or []) & mine_set],
-            'gone_history': gone_h, 'gone_scope': gone_s,
+            'gone_history': gone_h, 'gone_scope': gone_s, 'extra_scope': extra_s,
+            # only data records (regenerated results, fixtures, tables): their line counts are not comparable with code
+            'data_only': bool(assets) and not code_files and all(
+                PurePosixPath(x).suffix.lower() in DATA_EXT and x not in CI_ASSETS for x in assets),
             'inline_tests': {f: n for f, n in inline.items() if f in RUST_INLINE_TESTS}, 'self_tests': selft,
         }
     # A package with a breaking pending changeset (major, or a "Breaking" note) flags the areas of it the scope changed;
@@ -2509,6 +2711,10 @@ def score(args) -> dict:
     live = [k for k in raw if raw[k]['files'] or raw[k]['assets']]
     coded = [k for k in live if raw[k]['code_files']]
     vals = lambda key, only=None, among=None: [raw[k][key] for k in (among or live) if (only is None or only(k))]  # noqa: E731
+    # Line counts are ranked among the areas that hold code or hand-written assets: a folder of regenerated data records
+    # is ranked against them but is not part of their pool, so its thousands of lines never lower a code area's score.
+    line_pool = lambda key, me, only=None: [raw[k][key] for k in live  # noqa: E731
+                                            if (k == me or not raw[k]['data_only']) and (only is None or only(k))]
     hist_ok = not hist['shallow']
     out_areas, unscored = [], []
     for a in areas:
@@ -2522,8 +2728,13 @@ def score(args) -> dict:
             unscored.append({'id': a['id'], 'paths': a['paths'], 'reason': reason})
             continue
         no_code = not r['code_files']
-        NO_CODE = (f'no code files: {len(r["assets"])} template, style or data file(s) only' if r['assets']
-                   else 'no code with lines')
+        unread = unread_words(r['assets'])
+        n_unread = len([x for x in r['assets'] if unread_kind(x)])
+        NO_CODE = ((f'no code files: {len(r["assets"])} template, style or data file(s) only' if not unread
+                    else f'no code these scripts read: {n_unread} file(s) they do not read ({unread})'
+                    + (f' and {len(r["assets"]) - n_unread} template, style or data file(s)' if len(r['assets']) > n_unread else ''))
+                   if r['assets'] else 'no code with lines')
+        capped = {}
         f = {}
         if not hist_ok:
             na = {'score': None, 'status': 'not_assessed', 'evidence': ['shallow clone: fetch more history (git fetch --unshallow)']}
@@ -2533,8 +2744,11 @@ def score(args) -> dict:
             f['churn'] = {'score': None, 'status': 'not_assessed', 'evidence': ['no history before the scope: every file is new']}
             f['defects'] = {'score': None, 'status': 'not_assessed', 'evidence': ['no history before the scope: every file is new']}
         else:
-            hv = lambda key: vals(key, lambda k: not raw[k]['novel'])  # noqa: E731
-            f['churn'] = {'score': pct_score(r['churn'], hv('churn')), 'status': 'assessed', 'command': cmd,
+            hv = lambda key: line_pool(key, a['id'], lambda k: not raw[k]['novel'])  # noqa: E731
+            churn_pct = pct_score(r['churn'], hv('churn'))
+            if r['data_only'] and churn_pct > DATA_ONLY_CAP:
+                capped['churn'] = churn_pct
+            f['churn'] = {'score': min(churn_pct, DATA_ONLY_CAP) if r['data_only'] else churn_pct, 'status': 'assessed', 'command': cmd,
                           'evidence': [f'{r["churn"]} lines changed in {r["commits"]} commits by {len(r["authors"])} author(s), '
                                        f'{window["from"]} to {window["to"]} (formatting-only commits excluded)'
                                        + (f'; including {len(r["gone_history"])} file(s) no longer at HEAD '
@@ -2555,17 +2769,33 @@ def score(args) -> dict:
                                'evidence': [f'{r["branches"]} branches in {len(r["code_files"])} file(s), {r["branch_density"]} per file; '
                                             f'{r["loc"]} lines of code (complexity.py)']}
         if scope is not None:
-            pct = pct_score(r['scope_lines'], vals('scope_lines'))
+            pct = pct_score(r['scope_lines'], line_pool('scope_lines', a['id']))
             cap = scope_cap(r['scope_lines'])
-            in_assets = sum(scope_files[x]['lines_added'] + scope_files[x]['lines_deleted'] for x in r['assets'] if x in scope_files)
+            if r['data_only'] and min(pct, cap) > DATA_ONLY_CAP:
+                capped['change_in_scope'] = min(pct, cap)
+                cap = DATA_ONLY_CAP
+            sl = lambda x: scope_files[x]['lines_added'] + scope_files[x]['lines_deleted']  # noqa: E731
+            in_unread = [x for x in r['assets'] if x in scope_files and unread_kind(x)]
+            in_assets = sum(sl(x) for x in r['assets'] if x in scope_files and not unread_kind(x))
             f['change_in_scope'] = {'score': min(pct, cap), 'status': 'assessed',
                                     'command': (scope.get('source') or {}).get('command') or 'diff_scope.py',
                                     'evidence': [f'{r["scope_lines"]} lines changed in the scope diff'
                                                  + (f' ({in_assets} in templates, styles or data)' if in_assets else '')
+                                                 + (f' ({sum(sl(x) for x in in_unread)} in {len(in_unread)} file(s) these '
+                                                    f'scripts do not read: '
+                                                    + ', '.join(f'{unread_kind(x)} {x}' for x in in_unread[:3])
+                                                    + (f' +{len(in_unread) - 3}' if len(in_unread) > 3 else '') + ')'
+                                                    if in_unread else '')
+                                                 + (f' ({sum((sf.get("lines_added") or 0) + (sf.get("lines_deleted") or 0) for sf in r["extra_scope"])}'
+                                                    f' in {len(r["extra_scope"])} manifest, build or other file(s) of the area: '
+                                                    + ', '.join(sf['path'] for sf in r['extra_scope'][:3])
+                                                    + (f' +{len(r["extra_scope"]) - 3}' if len(r['extra_scope']) > 3 else '') + ')'
+                                                    if r['extra_scope'] else '')
                                                  + (f' ({sum(sf.get("lines_deleted") or 0 for sf in r["gone_scope"])} in '
                                                     f'{len(r["gone_scope"])} deleted file(s): '
                                                     f'{", ".join(sf["path"] for sf in r["gone_scope"][:3])})' if r['gone_scope'] else '')
-                                                 + (f' (percentile {pct}, capped at {cap} for a change this size)' if cap < pct else '')]}
+                                                 + (f' (percentile {pct}, capped at {cap} for a change this size)'
+                                                    if cap < pct and 'change_in_scope' not in capped else '')]}
         else:
             f['change_in_scope'] = {'score': None, 'status': 'not_assessed', 'evidence': ['no scope diff given']}
         breaking = False
@@ -2590,12 +2820,26 @@ def score(args) -> dict:
         else:
             ratio = r['test_loc'] / r['loc'] if r['loc'] else 1
             tw = 4 if ratio < 0.2 else 3 if ratio < 0.5 else 2 if ratio < 1 else 1
+            by_path = sorted(PATH_LOADS.get(a['id'], set()) & set(r['tests']))
+            mine_gated = [g for g in gated if g['file'] in set(r['tests'])]
+            for g in mine_gated:
+                g['area'] = a['id']
+            n_rust = sum(1 for c in CARGO.get('crates', []) for t in c.get('tests') or [] if t.get('file') in set(r['tests']))
             tev = [f'{len(r["tests"])} test file(s) import it ({", ".join(r["tests"][:4])}); {r["test_loc"]} test lines for '
                    f'{r["loc"]} lines of code (ratio {ratio:.2f})'
                    + (f'; {len(r["inline_tests"])} source file(s) hold #[cfg(test)] modules '
                       f'({sum(r["inline_tests"].values())} lines, counted as test lines, not code)' if r['inline_tests'] else '')
                    + (f'; {len(r["self_tests"])} script(s) carry their own self-test ({sum(r["self_tests"].values())} '
-                      'lines, counted as test lines, not code)' if r['self_tests'] else '')]
+                      'lines, counted as test lines, not code)' if r['self_tests'] else '')
+                   + (f'; {len(by_path)} of them load its scripts by file path, not by import '
+                      f'({", ".join(by_path[:3])})' if by_path else '')
+                   + (f'; {sum(g["tests"] for g in mine_gated)} of its {n_rust} Rust test(s) do not run under a default '
+                      '`cargo test` on every platform ('
+                      + '; '.join(f'{g["tests"]} in {PurePosixPath(g["file"]).name}: {g["gate"]}'
+                                  + (f' {g["detail"]}' if g['detail'] else '') for g in mine_gated[:4])
+                      + (f' +{len(mine_gated) - 4}' if len(mine_gated) > 4 else '')
+                      + '): their lines count here, so check which CI job runs them before trusting this score'
+                      if mine_gated else '')]
         cov_files = [x for x in r['files'] if x in coverage]
         stmts = sum(coverage[x][0] for x in cov_files)
         if stmts:                         # a coverage profile measures it: statement coverage, not the size ratio
@@ -2655,6 +2899,9 @@ def score(args) -> dict:
                     if moved:
                         fnd['reassigned_from'] = sorted(x for x in {aof(x) for x in it['files']} if x) or None
                     findings.append(fnd)
+        for k, was in capped.items():
+            f[k]['evidence'][0] += (f' (percentile {was}, capped at {DATA_ONLY_CAP} for a data-only area: line counts of '
+                                    'data records, often regenerated by a tool, are not comparable with code changes)')
         flags = (['novel'] if r['novel'] else []) + (['breaking_change'] if breaking else []) + finding_flags(findings)
         area = {'id': a['id'], 'paths': a['paths'], 'files': len(r['files']),
                 **({'asset_files': len(r['assets'])} if r['assets'] else {}),
@@ -2662,6 +2909,38 @@ def score(args) -> dict:
                 'tests': r['tests'], 'factors': {k: f[k] for k in list(LIKELIHOOD) + list(IMPACT)}}
         area.update(recompute(area))
         out_areas.append(area)
+    # A data-only area has no complexity and no test evidence, so its likelihood is its line counts and fix commits
+    # alone: it is never ranked above every area that holds code. Its line-count factors are lowered until it is not.
+    code_lik = [x['likelihood'] for x in out_areas if raw[x['id']]['code_files'] and x['likelihood'] is not None]
+    if code_lik:
+        for x in out_areas:
+            if not raw[x['id']]['data_only']:
+                continue
+            lowered = {}
+            while x['likelihood'] is not None and x['likelihood'] > max(code_lik):
+                cand = [k for k in ('churn', 'change_in_scope') if (x['factors'][k]['score'] or 0) > 1]
+                if not cand:
+                    break
+                k = max(cand, key=lambda k: x['factors'][k]['score'])
+                lowered.setdefault(k, x['factors'][k]['score'])
+                x['factors'][k]['score'] -= 1
+                x.update(recompute(x))
+            for k, was in lowered.items():
+                x['factors'][k]['evidence'][0] += (f' (lowered from {was} to {x["factors"][k]["score"]}: a data-only area is '
+                                                   f'not ranked above every code area on likelihood; the highest is '
+                                                   f'{max(code_lik)})')
+    data_only = [x['id'] for x in out_areas if raw[x['id']]['data_only']]
+    if data_only:
+        warnings.append(f'{len(data_only)} area(s) hold only data records ({", ".join(data_only[:6])}): their churn and '
+                        f'change in scope are capped at {DATA_ONLY_CAP} and never put them above every code area, and they '
+                        'are left out of the pool the code areas are ranked in; if the records are hand-maintained '
+                        'product data (prices, rules, translations), judge those factors up with a reason')
+    gated_out = [g for g in gated if g.get('area')]
+    if gated_out:
+        warnings.append(f'{sum(g["tests"] for g in gated_out)} Rust test(s) in {len({g["file"] for g in gated_out})} file(s) do '
+                        'not run under a default `cargo test` on every platform (a non-default feature, required-features, '
+                        '#[ignore] or a platform cfg; listed in tests_not_run_by_default): they still count as test lines '
+                        'of their areas, so check which CI job runs them and judge test weakness up where none does')
     out_areas.sort(key=lambda a: (-(a['risk'] or 0), a['id']))
     ui = [a['id'] for a in out_areas if any(PurePosixPath(f).suffix in UI_EXT for f in raw[a['id']]['files'])]
     if ui and not have_map and not usage:
@@ -2670,8 +2949,10 @@ def score(args) -> dict:
                         'drives an important flow can rank Low; run journey-mapper (or give --usage) before trusting the UI '
                         'ranking, and say so in the plan')
     blind = [a['id'] for a in out_areas if a['impact'] is None]
+    blind_unread = any(unread_kind(x) for b in blind for x in raw[b]['assets'])
     if blind:
-        warnings.append(f'{len(blind)} area(s) hold only templates, styles or data and have no impact evidence (surface '
+        warnings.append(f'{len(blind)} area(s) hold only templates, styles or data'
+                        + (' or files these scripts do not read' if blind_unread else '') + ' and have no impact evidence (surface '
                         f'patterns read code): {", ".join(blind[:6])}; their band is Low only for want of evidence, so give '
                         'a journey map or --usage, or judge their impact in the plan')
     for u in unscored:
@@ -2683,7 +2964,7 @@ def score(args) -> dict:
         warnings.append(no_tests)
     scored = lambda p: (area_of(p, areas) is not None and p not in excluded_paths  # noqa: E731
                         and (is_area_code(p) or is_area_asset(p)))
-    stray = [c for c in hist['commits'] if c.get('fix') and not c.get('merge') and c['files']
+    stray = [c for c in hist['commits'] if c.get('fix') and (not c.get('merge') or c.get('merge_own_changes')) and c['files']
              and not any(scored(fl['path']) for fl in c['files']) and not all(is_test(fl['path']) for fl in c['files'])]
     if stray:
         warnings.append(f'{len(stray)} fix commit(s) in the window touch no scored area and count in no area\'s defects: '
@@ -2725,6 +3006,7 @@ def score(args) -> dict:
             'unreferenced': unreferenced,
             'warnings': warnings + list(hist.get('notes') or []),
             'excluded': excluded, 'flaky_tests_not_counted': flaky_skipped, 'tests_not_counted': tests_not_counted,
+            'tests_not_run_by_default': gated_out, 'script_languages': scripts, 'coverage_not_read': coverage_not_read,
             'fixtures_excluded': [{'dir': d, 'reason': r} for d, r in sorted(FIXTURES.items())],
             'copy_groups': copy_out,
             'self_tests': [{'file': f, 'command': c, 'lines': n, 'area': area_of(f, areas)}
@@ -2918,7 +3200,7 @@ def self_test() -> int:
         PRODUCT_DIRS.update(saved)
         tmp.cleanup()
     checks = (go_layout_checks() + web_app_checks() + static_front_end_checks() + next_site_checks() + cargo_workspace_checks()
-              + tool_repo_checks())
+              + tool_repo_checks() + loaded_site_checks() + data_area_checks())
     bad += [name for name, ok in checks if not ok]
     for b in bad:
         print('FAIL ' + b)
@@ -3630,6 +3912,197 @@ def cargo_workspace_checks() -> list[tuple[str, bool]]:
     return out
 
 
+# The weather-station workspace again, with what a release tool chain adds around the crates: a launcher module whose
+# `use` nests process::Command and hands over with .exec(), a hyphenated packaging script that its test loads by file
+# path, installer scripts in PowerShell and shell, and a scope that changes the Slint panel, two Cargo manifests, an
+# installer and a bench.
+LOADED_SITE = {
+    **CARGO_SITE,
+    'crates/station-cli/src/main.rs': CARGO_SITE['crates/station-cli/src/main.rs'].replace('use clap', 'mod launch;\nuse clap', 1),
+    'crates/station-cli/src/launch.rs': (
+        'use std::{ffi::OsString, process::Command};\n\npub fn hand_over(tool: OsString) -> std::io::Error {\n'
+        '    use std::os::unix::process::CommandExt;\n    Command::new(tool).arg("--serve").exec()\n}\n'),
+    'tools/pack-release.py': _PY_TOOL + '\n\ndef archive_name():\n    return "station.zip"\n',
+    'tests/test_pack_release.py': (
+        'import importlib.util\nfrom pathlib import Path\n\nROOT = Path(__file__).resolve().parents[1]\n'
+        'SPEC = importlib.util.spec_from_file_location("pack_release", ROOT / "tools" / "pack-release.py")\n'
+        'pack = importlib.util.module_from_spec(SPEC)\nSPEC.loader.exec_module(pack)\n\n\n'
+        'def test_name():\n    assert pack.archive_name() == "station.zip"\n'),
+    'packaging/install-runtime.ps1': 'param([string]$Target)\n' + ''.join(f'Write-Host "step {i}"\n' for i in range(20)),
+    'packaging/make-archive.sh': '#!/bin/sh\nset -e\ntar -czf station.tar.gz target/release/station\n',
+}
+LOADED_SCOPE = {'crates/station-core/benches/lookup.rs': 5, 'crates/station-render/ui/panel.slint': 55,
+                'crates/station-cli/Cargo.toml': 2, 'Cargo.toml': 3, 'packaging/install-runtime.ps1': 20,
+                'crates/station-core/README.md': 9}
+
+
+def _site_inputs(root: Path, site: dict, changed: dict, churn: dict | None = None) -> argparse.Namespace:
+    """Write a synthetic repository and the history, complexity and scope files score() reads; changed and churn are
+    {path: lines}."""
+    for rel, text in site.items():
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding='utf-8')
+    files = sorted(site)
+    stat = lambda: {'commits': 0, 'lines_added': 0, 'lines_deleted': 0, 'authors': [], 'fix_commits': [],  # noqa: E731
+                    'formatting_commits': [], 'first_commit': '2026-01-01'}
+    churn = churn or {}
+    hist = {'repo': 'station', 'head': 'abc123', 'shallow': False, 'notes': [], 'command': 'git log',
+            'window': {'days': 180, 'from': '2026-05-01', 'to': '2026-11-01', 'head_date': '2026-11-01'},
+            'excluded_formatting': [], 'summary': {'commits': len(churn), 'fix_commits': 0, 'formatting_commits': 0},
+            'commits': [{'sha': f'c{i}', 'date': '2026-10-01', 'author': 'author-1', 'subject': f'Change {p}', 'fix': False,
+                         'keys': [], 'formatting': False, 'files': [{'path': p, 'added': n, 'deleted': 0}]}
+                        for i, (p, n) in enumerate(sorted(churn.items()))],
+            'files': {f: stat() for f in files}}
+    for p, n in churn.items():
+        hist['files'][p].update(commits=1, lines_added=n, authors=['author-1'])
+    cx = {'files': {f: {'loc': len([x for x in site[f].splitlines() if x.strip()]), 'branches': site[f].count('if '),
+                        'method': 'regex'} for f in files if PurePosixPath(f).suffix in CODE_EXT}}
+    scope = {'source': {'kind': 'git', 'base_ref': 'v1', 'command': 'git diff'},
+             'files': [{'path': p, 'status': 'modified', 'kind': diff_scope.classify(p, '', False, root)[0],
+                        'lines_added': n, 'lines_deleted': 0} for p, n in changed.items()]}
+    (root / '_in').mkdir()
+    for name, data in (('history.json', hist), ('complexity.json', cx), ('scope.json', scope)):
+        (root / '_in' / name).write_text(json.dumps(data), encoding='utf-8')
+    return argparse.Namespace(repo=root, history=root / '_in' / 'history.json', complexity=root / '_in' / 'complexity.json',
+                              scope=root / '_in' / 'scope.json', journeys=None, input=[], usage=None, areas=None,
+                              defects=None, finding_area=[], release=None, coverage=[])
+
+
+def loaded_site_checks() -> list[tuple[str, bool]]:
+    """LOADED_SITE: a test that loads a script by file path is a test of the script's area; changed files of types no
+    script reads (Slint, PowerShell, Cargo.toml) count in their area's change or are listed in scope_outside_areas
+    under a path no area id contains; script languages are listed with a warning; a nested `use` and .exec() are a
+    process launch; tests a default `cargo test` does not run are noted; an explicit area of installer scripts is
+    scored; a coverage file that is no Go coverprofile is named as unread."""
+    import tempfile
+    out: list[tuple[str, bool]] = []
+    saved = (set(PRODUCT_DIRS), set(RUNNER_DIRS))
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        try:
+            PRODUCT_DIRS.clear()
+            ns = _site_inputs(root, LOADED_SITE, LOADED_SCOPE)
+            res = score(ns)
+            got = {a['id']: a for a in res['areas']}
+            ev = lambda aid, k: ' '.join(got.get(aid, {}).get('factors', {}).get(k, {}).get('evidence') or [])  # noqa: E731
+            tools = got.get('tools', {})
+            out.append((f'a test that loads a hyphenated script with spec_from_file_location is a test of the script\'s '
+                        f'area (tools tests {tools.get("tests")}, test weakness {ev("tools", "test_weakness")!r})',
+                        'tests/test_pack_release.py' in (tools.get('tests') or [])
+                        and tools.get('factors', {}).get('test_weakness', {}).get('score') != 5))
+            out.append((f'a changed Slint file counts in its area\'s change in scope and is named (render: '
+                        f'{ev("crates/station-render", "change_in_scope")!r})',
+                        ev('crates/station-render', 'change_in_scope').startswith('55 lines')
+                        and 'Slint' in ev('crates/station-render', 'change_in_scope')))
+            out.append((f'a changed Cargo.toml inside a crate counts in the crate\'s change in scope and is named (cli: '
+                        f'{ev("crates/station-cli", "change_in_scope")!r})',
+                        ev('crates/station-cli', 'change_in_scope').startswith('2 lines')
+                        and 'Cargo.toml' in ev('crates/station-cli', 'change_in_scope')))
+            outside = {x['path']: x for x in res['scope_outside_areas']}
+            out.append((f'changed files of unread types in no area are listed, never dropped (got {sorted(outside)})',
+                        'PowerShell' in outside.get('packaging/', {}).get('reason', '')
+                        and outside.get('Cargo.toml', {}).get('lines') == 3))
+            out.append((f'a changed file outside the areas is listed under a directory no area sits in, not the '
+                        f'top-level one every area id contains (got {sorted(outside)})',
+                        'crates/station-core/benches/' in outside and 'crates/' not in outside))
+            out.append((f'documentation changes are not listed as changed lines to test (got {sorted(outside)})',
+                        not any('README' in p for p in outside)
+                        and not ev('crates/station-core', 'change_in_scope').startswith('9 lines')))
+            kinds = {s['kind']: s for s in res.get('script_languages') or []}
+            out.append((f'script languages are listed with their files and lines, and warned about (got {kinds})',
+                        set(kinds) == {'PowerShell', 'Shell'} and kinds['PowerShell']['files'] == 1
+                        and any(w.startswith(SCRIPT_LANGUAGE_WARNING) for w in res['warnings'])))
+            out.append((f'Command::new behind a nested `use std::{{.., process::Command}}` with .exec() is a process launch '
+                        f'(cli: {ev("crates/station-cli", "surface")!r})', 'launch.rs' in ev('crates/station-cli', 'surface')))
+            gated = res.get('tests_not_run_by_default') or []
+            out.append((f'tests a default `cargo test` does not run are noted on the area and listed (render: '
+                        f'{ev("crates/station-render", "test_weakness")!r}, listed {gated[:2]})',
+                        'default' in ev('crates/station-render', 'test_weakness')
+                        and any(g.get('gate') == 'feature' and g.get('area') == 'crates/station-render' for g in gated)))
+            (root / '_in' / 'areas.json').write_text(json.dumps({'areas': [
+                {'id': c, 'paths': [c]} for c in ('crates/station-core', 'crates/station-render', 'crates/station-cli',
+                                                  'scripts', 'tools', 'packaging')]}), encoding='utf-8')
+            (root / '_in' / 'cov.json').write_text('{"data": [{"files": [], "totals": {"lines": {"percent": 91.0}}}], '
+                                                   '"type": "llvm.coverage.json.export"}\n', encoding='utf-8')
+            res2 = score(argparse.Namespace(**{**vars(ns), 'areas': root / '_in' / 'areas.json',
+                                               'coverage': [root / '_in' / 'cov.json']}))
+            pk = next((a for a in res2['areas'] if a['id'] == 'packaging'), {})
+            out.append((f'an explicit area holding only installer scripts is scored on churn and change in scope, with '
+                        f'what cannot be read not_assessed (got {pk.get("factors", {}).get("change_in_scope")}, unscored '
+                        f'{res2["unscored_areas"]})', pk.get('factors', {}).get('change_in_scope', {}).get('score') is not None
+                        and pk.get('factors', {}).get('surface', {}).get('status') == 'not_assessed'
+                        and 'PowerShell' in ' '.join(pk.get('factors', {}).get('surface', {}).get('evidence') or [])))
+            cov_w = [w for w in res2['warnings'] if w.startswith('--coverage')]
+            out.append((f'a coverage file that is not a Go coverprofile is named as unread, with what it looks like '
+                        f'(got {cov_w})', bool(cov_w) and 'llvm-cov' in cov_w[0] and 'Go coverprofile' in cov_w[0]))
+        except Exception as e:                       # a missing function is a failed check, not a crash
+            import traceback
+            out.append((f'loaded-site checks raised {type(e).__name__}: {e} {traceback.format_exc()[-600:]}', False))
+        finally:
+            for x in (RUST_TEST_FILES, BENCH_FILES, FIXTURE_BINS, RUST_INLINE_TESTS, CRATE_DIRS, CARGO):
+                x.clear()
+            PRODUCT_DIRS.clear()
+            PRODUCT_DIRS.update(saved[0])
+            RUNNER_DIRS.clear()
+            RUNNER_DIRS.update(saved[1])
+    return out
+
+
+# Two small code areas beside a folder of regenerated result files: the data folder's line counts dwarf the code's.
+DATA_SITE = {
+    'src/app/orders.py': ''.join(f'def order_{i}(x):\n    if x > {i}:\n        return x\n    return {i}\n\n\n' for i in range(8)),
+    'src/lib/totals.py': ''.join(f'def total_{i}(rows):\n    if not rows:\n        return 0\n    return sum(rows) + {i}\n\n\n'
+                                 for i in range(8)),
+    'tests/test_orders.py': 'from src.app.orders import order_1\n\n\ndef test_order():\n    assert order_1(5) == 5\n',
+    **{f'results/run_{i}.json': '{"samples": [' + ', '.join(str(n) for n in range(40)) + ']}\n' for i in range(5)},
+}
+DATA_AREAS = [{'id': 'app', 'paths': ['src/app']}, {'id': 'lib', 'paths': ['src/lib']}, {'id': 'results', 'paths': ['results']}]
+
+
+def data_area_checks() -> list[tuple[str, bool]]:
+    """DATA_SITE with explicit areas: a data-only area (regenerated JSON) never outranks the code areas on likelihood,
+    says why its line counts were capped, and does not push the code areas' percentiles down."""
+    import tempfile
+    out: list[tuple[str, bool]] = []
+    saved = (set(PRODUCT_DIRS), set(RUNNER_DIRS))
+    try:
+        PRODUCT_DIRS.clear()
+        runs = {}
+        for name, areas in (('with', DATA_AREAS), ('without', DATA_AREAS[:2])):
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                lines = {'src/app/orders.py': 30, 'src/lib/totals.py': 12, **{f'results/run_{i}.json': 2900 for i in range(5)}}
+                ns = _site_inputs(root, DATA_SITE, lines, churn=lines)
+                (root / '_in' / 'areas.json').write_text(json.dumps({'areas': areas}), encoding='utf-8')
+                ns.areas = root / '_in' / 'areas.json'
+                runs[name] = {a['id']: a for a in score(ns)['areas']}
+        got, alone = runs['with'], runs['without']
+        data = got.get('results', {})
+        code_max = max((got[k]['likelihood'] or 0) for k in ('app', 'lib') if k in got)
+        f = data.get('factors', {})
+        out.append((f'a data-only area does not outrank the code areas on likelihood (results {data.get("likelihood")}, '
+                    f'highest code area {code_max}; churn {f.get("churn")}, change {f.get("change_in_scope")})',
+                    data.get('likelihood') is not None and data['likelihood'] <= code_max))
+        out.append((f'the capped factors say why (churn evidence {f.get("churn", {}).get("evidence")})',
+                    any('data' in e and 'capped' in e for e in f.get('churn', {}).get('evidence') or [])))
+        same = all(got[k]['factors'][x]['score'] == alone[k]['factors'][x]['score']
+                   for k in ('app', 'lib') for x in ('churn', 'change_in_scope'))
+        out.append((f'a data-only area\'s line counts do not lower the code areas\' churn or change-in-scope percentiles '
+                    f'(with it: {[(k, got[k]["factors"]["churn"]["score"], got[k]["factors"]["change_in_scope"]["score"]) for k in ("app", "lib")]}, '
+                    f'without: {[(k, alone[k]["factors"]["churn"]["score"], alone[k]["factors"]["change_in_scope"]["score"]) for k in ("app", "lib")]})',
+                    same))
+    except Exception as e:                           # a missing function is a failed check, not a crash
+        import traceback
+        out.append((f'data-area checks raised {type(e).__name__}: {e} {traceback.format_exc()[-600:]}', False))
+    finally:
+        PRODUCT_DIRS.clear()
+        PRODUCT_DIRS.update(saved[0])
+        RUNNER_DIRS.clear()
+        RUNNER_DIRS.update(saved[1])
+    return out
+
+
 # A synthetic tool repository: a shared helper copied into two tool folders by a check_shared-style mapping, a scanner
 # whose pattern table holds the code it looks for, a script that carries its own --self-test (with a fixture page in a
 # string and temporary files it writes), an examples/ sample shop with planted defects, its own tests, a lockfile and a
@@ -3792,7 +4265,7 @@ def tool_repo_checks() -> list[tuple[str, bool]]:
                         f'beta {beta.get("id")!r})', alpha.get('id') == 'alpha-tool' and beta.get('id') == 'beta-tool'))
             outside = {x['path']: x['reason'] for x in res['scope_outside_areas']}
             out.append((f'changed lines in a sample project are named as such, not "in no area" (got {outside})',
-                        'sample or fixture project' in outside.get('alpha-tool/', '')))
+                        'sample or fixture project' in outside.get('alpha-tool/examples/', '')))
             res = run(True)
             got = {a['id']: a for a in res['areas']}
             at = got.get('alpha-tool', {})

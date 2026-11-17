@@ -48,8 +48,41 @@ def strip_merge_prefix(subject: str) -> tuple[str, str | None]:
     return (subject[m.end():], m.group(0).strip(' :-')) if m and subject[m.end():].strip() else (subject, None)
 
 
+def merge_own_changes(repo: Path, range_args: list[str]) -> dict[str, list[tuple[str, int, int]]]:
+    """{full sha: [(path, added, deleted)]} for the merge commits of the range whose own tree differs from every
+    parent in some file: `git log --merges --cc -p` prints a combined diff only for those hunks (a conflict resolved
+    by hand, or an edit made while merging), so a plain merge has no entry. Added and deleted are the lines the merge
+    itself wrote or dropped (a '+' or '-' in any parent column of the combined diff)."""
+    out: dict[str, list[tuple[str, int, int]]] = {}
+    log = git(repo, 'log', '--merges', '--cc', '-p', '--no-renames', '--no-color', *range_args, f'--format={SEP}%H%x1f%P')
+    for chunk in log.split(SEP)[1:]:
+        head, _, body = chunk.partition('\n')
+        sha, _, parents = head.partition('\x1f')
+        width = max(2, len(parents.split()))
+        stats: list[list] = []
+        in_hunk = False
+        for line in body.splitlines():
+            m = re.match(r'^diff --(?:cc|combined) (.+)$', line)
+            if m:
+                stats.append([m.group(1).strip().strip('"'), 0, 0])
+                in_hunk = False
+            elif line.startswith('@@@'):
+                in_hunk = True
+            elif in_hunk and stats and len(line) >= width:
+                cols = line[:width]
+                if '+' in cols:
+                    stats[-1][1] += 1
+                elif '-' in cols:
+                    stats[-1][2] += 1
+        if stats:
+            out[sha.strip()] = [(p, a, d) for p, a, d in stats]
+    return out
+
+
 def fix_kind(subject: str, merge: bool) -> str | None:
-    """Why a subject is a fix commit, or None. Merges never are (their changes are counted in the merged commits).
+    """Why a subject is a fix commit, or None. Plain merges never are (their changes are counted in the merged
+    commits); mine() passes merge=False for a merge commit that changed files itself (merge_own_changes), which is
+    then read like any other commit, by its own subject and its own changes.
     A conventional-commit type decides on its own (fix:, fix(scope):, hotfix:, revert: are fixes; feat:, chore:,
     docs: and the rest are not, even when the text says "fix"). Otherwise the subject must start with fix, fixes,
     fixed, bugfix, hotfix or revert (or "bug:" / "regression:"), or close an issue (fixes #12, closes PROJ-7): a
@@ -104,6 +137,7 @@ def mine(repo: Path, days: int, as_of: date | None) -> dict:
                          'window; omit --as-of to keep every ancestor of HEAD')
     log_args = ['log', '--numstat', '--no-renames', f'--since={since.isoformat()}T00:00:00', *until, f'--format={fmt}']
     out = git(repo, *log_args)
+    own_changes = merge_own_changes(repo, [f'--since={since.isoformat()}T00:00:00', *until]) if '\x1f' in out else {}
     first_touch: dict[str, str] = {}
     for line in git(repo, 'log', '--reverse', '--name-only', '--format=@%aI').splitlines():
         if line.startswith('@'):
@@ -126,7 +160,13 @@ def mine(repo: Path, days: int, as_of: date | None) -> dict:
                 stats.append((m.group(3), a, d))
             elif line.strip() and not stats:
                 msg += '\n' + line
-        kind = fix_kind(subject, merge)
+        # A merge commit whose tree differs from both parents carries changes no merged commit holds (a conflict
+        # resolved by hand, a fix made while merging): those lines are its own churn, and its subject is read.
+        own = own_changes.get(sha) if merge else None
+        if own:
+            stats = own
+        kind = fix_kind(subject, merge and not own)
+        plain_merge_fix = merge and not own and bool(fix_kind(subject, False))
         duplicate_of = None
         if kind:
             # The same fix landed twice (cherry-pick, re-applied patch, rebased duplicate): count it once.
@@ -146,6 +186,10 @@ def mine(repo: Path, days: int, as_of: date | None) -> dict:
              'files': [{'path': p, 'added': a, 'deleted': d} for p, a, d in stats]}
         if merge:
             c['merge'] = True
+        if own:
+            c['merge_own_changes'] = True
+        if plain_merge_fix:
+            c['fix_ignored'] = 'merge commit with no change of its own'
         if is_fix:
             c['fix_basis'] = kind
             prefix = strip_merge_prefix(subject)[1]
@@ -175,7 +219,21 @@ def mine(repo: Path, days: int, as_of: date | None) -> dict:
         notes.append(f'{len(later)} commit(s) of HEAD\'s ancestry are dated after HEAD ({head_date}): '
                      + ', '.join(f'{c["sha"][:7]} {c["date"]}' for c in later[:5])
                      + '; clock skew or rewritten dates; they are kept in the window because HEAD contains them')
-    docs_fixes = [c for c in commits if c.get('fix_ignored')]
+    own_merges = [c for c in commits if c.get('merge_own_changes')]
+    if own_merges:
+        notes.append(f'{len(own_merges)} merge commit(s) change files against both parents (a conflict resolved by hand or '
+                     'an edit made while merging): their own lines count as churn and their subjects are read like any '
+                     f'commit ({len([c for c in own_merges if c["fix"]])} counted as a fix): '
+                     + ', '.join(f'{c["sha"][:7]} {c["subject"][:60]}' for c in own_merges[:5])
+                     + (f' (+{len(own_merges) - 5})' if len(own_merges) > 5 else ''))
+    merge_fixes = [c for c in commits if c.get('fix_ignored') == 'merge commit with no change of its own']
+    if merge_fixes:
+        notes.append(f'{len(merge_fixes)} merge commit(s) have a fix subject but change nothing of their own, so they are '
+                     'not counted as fixes (the commits they merge are read one by one): '
+                     + ', '.join(f'{c["sha"][:7]} {c["subject"][:60]}' for c in merge_fixes[:5])
+                     + (f' (+{len(merge_fixes) - 5})' if len(merge_fixes) > 5 else '')
+                     + '; if one of them is the fix, count it by hand in the area it merged into')
+    docs_fixes = [c for c in commits if c.get('fix_ignored') == 'touches only documentation']
     if docs_fixes:
         notes.append(f'{len(docs_fixes)} fix commit(s) touch only documentation and are not counted as fixes: '
                      + ', '.join(c['sha'][:7] for c in docs_fixes[:5]))
@@ -221,7 +279,44 @@ def self_test() -> int:
         commit('Fix the menu crash on an empty list', '2026-06-04T10:00:00Z', {'app/menu.js': 'let m = 3;\n'})
         commit('Handle an empty basket on save, closes #12', '2026-06-05T10:00:00Z', {'app/menu.js': 'let m = 4;\n'})
         commit('fix(visual): compare at the same zoom', '2026-06-06T10:00:00Z', {'app/visual.js': 'let v = 2;\n'})
+        # Three merges: one whose commit carries a fix of its own (the merged tree differs from both parents), a plain
+        # one, and a plain one whose subject reads like a fix.
+        def merge(msg: str, when: str, branch_file: str, main_file: str, own: dict | None = None) -> None:
+            env = {**os.environ, 'GIT_AUTHOR_DATE': when, 'GIT_COMMITTER_DATE': when, 'GIT_AUTHOR_NAME': 'Sample Person',
+                   'GIT_AUTHOR_EMAIL': 'sample@example.test', 'GIT_COMMITTER_NAME': 'Sample Person',
+                   'GIT_COMMITTER_EMAIL': 'sample@example.test'}
+            g = lambda *a: subprocess.run(['git', '-C', str(tmp), *a], check=True, capture_output=True, env=env)  # noqa: E731
+            trunk = subprocess.run(['git', '-C', str(tmp), 'rev-parse', '--abbrev-ref', 'HEAD'], check=True,
+                                   capture_output=True, text=True).stdout.strip()
+            g('checkout', '-q', '-b', 'side')
+            commit(f'Add {branch_file}', when, {branch_file: 'let side = 1;\n'})
+            g('checkout', '-q', trunk)
+            commit(f'Add {main_file}', when, {main_file: 'let trunk = 1;\n'})
+            g('merge', '-q', '--no-ff', '--no-commit', 'side')
+            for rel, text in (own or {}).items():
+                (tmp / rel).write_text(text, encoding='utf-8')
+            g('add', '-A')
+            g('commit', '-q', '-m', msg)
+            g('branch', '-q', '-D', 'side')
+        merge('Fix stale frames when a texture keeps its identity', '2026-06-07T10:00:00Z', 'app/frames.js', 'app/a.js',
+              own={'app/frames.js': 'let side = 2;\nlet kept = 1;\n'})
+        merge("Merge branch 'side'", '2026-06-08T10:00:00Z', 'app/b.js', 'app/c.js')
+        merge('Fix the build after the merge', '2026-06-09T10:00:00Z', 'app/d.js', 'app/e.js')
         res = mine(tmp, 180, None)
+        by_subject = {c['subject']: c for c in res['commits']}
+        own_fix = by_subject.get('Fix stale frames when a texture keeps its identity', {})
+        if not (own_fix.get('fix') and own_fix.get('merge') and [f['path'] for f in own_fix.get('files', [])] == ['app/frames.js']):
+            fails.append(f'a merge commit that changes a file against both parents carries its own fix: it counts, with '
+                         f'the files it changed itself (got {own_fix})')
+        if own_fix.get('sha') not in res['files'].get('app/frames.js', {}).get('fix_commits', []):
+            fails.append('the merge\'s own fix counts against the file it changed')
+        if by_subject.get("Merge branch 'side'", {}).get('fix') or by_subject.get("Merge branch 'side'", {}).get('files'):
+            fails.append('a plain merge is not a fix and adds no churn')
+        plain_fix = by_subject.get('Fix the build after the merge', {})
+        if plain_fix.get('fix') or not any('Fix the build after the merge' in n or plain_fix.get('sha', '?')[:7] in n
+                                           for n in res['notes']):
+            fails.append(f'a merge with a fix subject and no change of its own is not counted, and a note names it '
+                         f'(got fix {plain_fix.get("fix")}, notes {res["notes"]})')
         text = json.dumps(res)
         if 'Sample Person' in text or 'Other Person' in text:
             fails.append('commit author names are not written to the history (only distinct-author counts are used)')

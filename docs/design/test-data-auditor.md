@@ -633,3 +633,58 @@ parametrised pytest suite globs:
   parameter that a caller fills with now (`covering(grants, today)`) is not followed across calls;
   the inventory still parses every Python module once (about 800 MB peak on that repository).
 - **Example.** Unchanged: rescanning `clinic-api` gives the same candidates.
+
+### v1.9.0: a Rust workspace with Python tooling scripts and committed run evidence
+
+- **Found on** a Rust workspace whose Python tests (a `unittest` suite) load hyphen-named tooling
+  scripts by file path, read JSON catalogues by repository path, and sit beside committed evidence:
+  a results tree of recorded runs (run logs, a single-line HTML report of several hundred kilobytes) and a zip
+  of an earlier copy of it. All 48 candidates were false (41 "unused" archived evidence files, 7
+  `local_path` hits on made-up account folders, a reserved-domain URL path and a CI runner home),
+  and the one real problem, an unredacted account name in hundreds of paths inside the zip, was
+  invisible: `.zip` was "binary" and `.log` an unknown format. The default inventory said 29
+  sources, nothing unused and no warning although tests read the catalogues by path; the scan took
+  303 s, 298 of them on the one-line HTML (the attribute look-behind searched the whole line before
+  every quoted string); `tests_found` (118) mixed Python tests with Rust files; a Rust helper
+  program under `tests/fixtures` counted as a test, `#[cfg(test)]` modules were not read and a Lua
+  fixture was dropped silently; a glob on `data/results` "loaded" every JSON directly under
+  `data/`; a file name a script only writes counted as loading the committed file; the
+  validator accepted a report with all limitations replaced by one sentence, rejected the word
+  "placeholder" in a headline about placeholder data, and protected nothing for a review finding
+  whose basis was an evidence file.
+- **Changed:** zip archives are read in memory through the shared `archive_text.py` (members as
+  `<archive>!<member>`, text members scanned, others `not_assessed` with the reason, the archive
+  `not_assessed` and warned about when partly read; other archive formats listed as not opened);
+  `.log`, `.out`, `.err`, `.stderr`, `.stdout` and `.trace` are text. `datafiles.text_at` and
+  `records_at` read a member, so the validator re-reads and protects values in one. The look-behind
+  reads 200 characters, and progress names the source being read and any that took 5 s or more.
+  Data files tests name by repository path are inventoried (`named_by_path`, with a warning for the
+  rest of the folder); `unlisted_data_dirs` starts at 10 files; a named data or evidence tree that
+  yields nothing is warned about. `loaded_by` follows scripts tests load by path (shared
+  `py_loads.py`), keeps a glob to the folder it runs on, and ignores names code only writes or
+  probes on a scratch folder. `--evidence-dir` scans committed evidence without the unused rule.
+  `local_path` skips URL paths and Windows and macOS runner homes, dismisses stand-in account
+  folders by rule, and is one candidate per file (`details.lines`, `details.count`); bracketed log
+  addresses and labelled ids are not cards. Rust is read through `cargo_project.py` (test ids,
+  `#[cfg(test)]` modules with `test_lines`, `fixture_bins` as support, unknown fixture types
+  listed). `residue.py` lists `dirs_added`. The validator requires limitations for text-only
+  languages, schema drift not assessed, data trees not scanned and unread archives; a review
+  personal-data or secret finding must cite a file and line; only stock placeholder headlines are
+  rejected. SKILL.md: the repository's own runner (`--preset unittest`), guarding child Python
+  processes with a `sitecustomize.py` folder on `PYTHONPATH`, and an OS account name in committed
+  evidence as personal data (RUBRIC.md). Schema 1.2 documents the new inventory fields.
+- **Numbers** (the review clone, Windows): default inventory 29 sources, 0 unused, no warning ->
+  48 sources (7 data files read by path, 8 Rust sources with `#[cfg(test)]` tests, 1 Lua fixture not
+  assessed),
+  warnings for the folders read by path. With the review's four `--data-dir` flags: 153 sources
+  (67 not assessed) -> 270 (1 not assessed; the zip's 103 members read); scan 303 s -> 16 s;
+  candidates 48 (all false) -> 178: 67 `local_path` (one per zip member holding the account name,
+  matching the 67 the review found by hand), 2 dismissed placeholder accounts, 109 unused in the
+  evidence tree. With the two evidence trees as `--evidence-dir` instead: 73
+  candidates, of which 4 unused (catalogues no test or script names). `tests_found` 118 -> 156 (111
+  Python tests and 45 Rust test functions).
+- **Not changed:** child Python processes are guarded by the documented `sitecustomize.py` folder,
+  not by a shipped wrapper (the test-suite evaluator's `py_guard.py` is not shared with this skill);
+  Rust tests are matched to data by file (every test of a file that names it), and Rust code rules
+  still do not exist (text only, said loudly).
+- **Example.** Unchanged: rescanning `clinic-api` gives the same inventory and candidates.

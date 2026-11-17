@@ -1,7 +1,7 @@
 ---
 name: privacy-flow-auditor
 description: Map where personal data goes in a web app - what it collects, where it stores it, what it logs, and which third parties receive it, and whether that happens before the user consents or after they reject. Combines a static scan of the code (collection points, logging, analytics, session replay, storage, SDKs, mobile permissions) with a live browser capture in three consent states (before a choice, after "Reject all", after "Accept all"), typing synthetic canary values and searching every request, cookie and storage entry for them raw, URL-encoded, Base64 and hashed. Produces a data inventory, recipients, a consent matrix and ranked findings with GDPR, UK GDPR and Australian Privacy Principles references for a privacy professional. Never types or stores real personal data, and never says an app is compliant.
-version: 1.10.0
+version: 1.11.0
 ---
 
 # Privacy flow auditor
@@ -177,7 +177,8 @@ vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), ev
      is listed too (`via: url_constant`), since a helper the scan does not follow makes the call. Loopback,
      `.test`/`.example` hosts and the documentation address blocks (192.0.2.x, 198.51.100.x, 203.0.113.x: a
      network guard's self-test) are not recipients. A server or tool call whose host the code does not spell out (read from a file, a
-     setting or an argument) is listed under `outbound_unresolved` for the review to trace. A proxy that copies the visitor's request headers
+     setting or an argument) is listed under `outbound_unresolved` for the review to trace; one whose URL,
+     followed through the same two variable steps, is loopback or the app's own path is not. A proxy that copies the visitor's request headers
      into an outbound call (`dict(request.headers)`, `request.headers.items()`, `{...req.headers}`) is a
      `header_passthrough` candidate (`side: server`): cookies, Authorization and Referer reach the upstream;
    - treats small app functions that pass a parameter to a logging, analytics or error-tracker call
@@ -211,20 +212,37 @@ vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), ev
      `os.getlogin()`, `Path.home()`, `os.homedir()`, `USERNAME`/`USER`/`LOGNAME`/`HOME`; category
      `identity`), in Python, JavaScript and TypeScript, and in Rust (`hostname::get`, `whoami`, `home_dir`,
      `env::var("COMPUTERNAME")`: identifiers only, Rust is still not scanned for sends or logs). A variable
-     assigned from one, or from an object built with one (`data = {"host": host}`), stands for it in that
-     file, so a log line naming it is a `personal_data_in_logs` candidate and a file write naming it
-     (`json.dump`, `write_text`, `.write`, `fs.writeFileSync`) is an `identifier_in_artifact` candidate
-     (`identifier_written`, with `machine_identifiers`): check whether that output file is committed or
-     published (results, scoreboards, logs kept in the repository). A value handed to a call as a keyword
-     argument (`subprocess.run(cmd, env=env).returncode`) does not make the call's result stand for it;
-   - reads committed text and data files (`.json`, `.txt`, `.md`, `.log`, `.csv`, `.yaml`, `.sarif`, `.html`
-     and the like; only files git tracks when the repository is a git work tree) for home-directory paths
-     that hold an account name (`C:/Users/<name>/`, `/Users/<name>/`, `/home/<name>/`): an
-     `identifier_in_artifact` candidate (subtype `home_path_in_artifact`, one per account, other places under
-     `also_at`), whoever wrote the file, so an example report that kept the maintainer's temp-folder paths is
-     found even when the code that wrote it is out of sight. CI and container accounts (`runner`, `vsts`,
-     `node`, `jenkins`...), placeholders (`<you>`, `$USER`, `%USERNAME%`) and paths inside URLs don't count;
-     the account name is never written to the output (`<account>` in the excerpt);
+     assigned from one, or from an object built with one (`data = {"host": host}`, a dict literal spread
+     over several lines, `dict(host=platform.node(), ...)`), stands for it in that file, so a log line naming
+     it is a `personal_data_in_logs` candidate and a file write naming it (`json.dump`, `write_text`,
+     `.write`, `fs.writeFileSync`, or a call to a small helper that writes one of its parameters to a file,
+     such as `write_json(path, payload)`, listed under `wrappers`) is an `identifier_in_artifact` candidate
+     (`identifier_written`, with `machine_identifiers`; `facts.written_to` names the file the write lands in
+     when the code spells it, and `facts.files_named_alike` the repository files of that name): check whether
+     that output file is committed or published (results, scoreboards, logs kept in the repository). A value
+     handed to a call as a keyword argument (`subprocess.run(cmd, env=env).returncode`) does not make the
+     call's result stand for it;
+   - lists what Rust code reads from the environment, the programs it launches and the libraries it loads
+     (the shared `cargo_project.py`) under `rust` (`env_reads`, `process_launches`, `library_loads`, each
+     with file and line) for the review to trace; Rust sends, logs and file writes are still not scanned;
+   - reads committed text and data files (`.json`, `.txt`, `.md`, `.log`, `.out`, `.csv`, `.yaml`, `.sarif`,
+     `.html` and the like; only files git tracks when the repository is a git work tree) and the text members
+     of committed `.zip` archives (the shared `archive_text.py`: read in memory under its member, size and
+     compression-ratio caps, nothing extracted) for home-directory paths that hold an account name
+     (`C:/Users/<name>/`, `/Users/<name>/`, `/home/<name>/`, a `file:///` URL): an `identifier_in_artifact`
+     candidate (subtype `home_path_in_artifact`, one per account, every other place once under `also_at`),
+     whoever wrote the file, so an example report that kept the maintainer's temp-folder paths is found even
+     when the code that wrote it is out of sight. A place inside an archive is cited as the archive's `file`
+     with `member` and the member's `line` (`also_at` writes it `archive!member:line`); `archives` lists each
+     archive with how many members were read. Nothing unread is silent: a binary file, the rest of a file over
+     `--max-bytes`, an archive that is not a zip (tar, 7z...) or cannot be opened, and a nested, encrypted or
+     oversized member are listed under `skipped` with the reason, and are not assessed. CI and container
+     accounts (`runner`, `vsts`, `node`, `jenkins`...), placeholders (`<you>`, `$USER`, `%USERNAME%`), redaction
+     tokens (`redacted`, `[REDACTED]`) and the same placeholders escaped inside embedded JSON
+     (`<user>`) don't count, and paths inside http URLs don't either; home paths that already carry
+     a placeholder are counted under `redacted_home_paths`. The account name is never written to the output
+     (`<account>` in the excerpt, and in any other string the scan writes). The scan reads the current tree
+     only (`history.scanned: false`): an identifier removed or replaced may remain in earlier commits;
    - leaves out sample and fixture projects nested in the repository (a project with its own manifest or
      app under `examples/`, `fixtures/`, `testdata/`, `samples/`, `__fixtures__/` and the like, found by the
      shared `repo_layout.py`; `--fixture-dir DIR` names another folder) when auditing the repository that
@@ -257,7 +275,12 @@ vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), ev
      limitation that names that language. Product lines decide (`decided_by: lines`): test files and tooling
      folders (`scripts/`, `tools/`, `docs/`) are counted apart, so a Rust workspace with many short Python
      helper scripts and tests is Rust-dominant, and a committed `dist/` the scan reads is merged into the
-     line counts too;
+     line counts too. Script languages the census counts apart (PowerShell, shell, batch: installers and
+     wrappers that download and write files) are named in `language_coverage.scripts` and
+     `needs_limitation_scripts`, printed, and each needs a limitation;
+   - records the repository by the path it was given when that is relative, else by its folder name, and the
+     merge records its inputs relative to the working directory: never an absolute path, which would put the
+     auditor's own home directory (and account name) into the evidence;
    - matches a sink only in code: a sink inside a JavaScript regex literal, or a call pattern inside a quoted
      string (a check that forbids `fetch(`, a list of banned call names), is not a sink; a field name, label or
      placeholder is matched with everyday look-alike words dropped first (`data/categories.json`
@@ -405,6 +428,15 @@ the limitations that the capture covered that page only). The rest still applies
   `committed` (2), with `artifacts: [{file, line, what}]` for every committed file and line that holds one
   (never quote the value) and reach from who can read the repository: 3 when it or its published docs are
   public, else 1 or 2. Categories are `device_identifier` for a host name and `identity` for an account name.
+- **Git history.** The scan, and a rescan after a fix, read the current tree only. When identifiers are
+  found in committed files, or home paths there already carry a placeholder (`redacted_home_paths`), add
+  a limitation that git history was not searched: the values may remain in earlier commits (search them
+  with `git log -S <value>` and say what you found; never quote the value). "The rescan finds nothing" does
+  not verify a fix that leaves the data reachable in history.
+- **Citing artifacts.** Each `artifacts` entry is `{file, line, what}`, plus `key` (the field the identifier
+  sits under, such as `host`) when the line holds a host or machine name rather than a home path, and
+  `member` for a text member of a committed zip (`line` then counts lines in that member). Cite the lines
+  that hold the identifier: the validator re-reads each one and rejects a line that holds none.
 - **Report.** A finding found this way is `source: agent`, type `telemetry`, with `domain` (the real
   endpoint's host, from the code) and a basis of the code lines plus `{"evidence": "<sink log>"}`; with
   that runtime evidence it may be `observed`. A send that happens with no choice made sets
@@ -424,7 +456,12 @@ recipient kind, consent states, flow basis, reach, sensitivity, flow, score, pri
 confidence, evidence, references, fix, verification; `source: agent` and `basis` for a finding found by review; `default_on` for a telemetry or beacon send with no choice made; `policy` for a `policy_mismatch`; `artifacts` for an `identifier_in_artifact`; `categories_basis` when the categories aren't derived), `triage[]`, `headline` (counts, third parties
 before consent and after rejection - `null` for a state that wasn't tested - `states_not_tested`, special-category
 flows, `recipients_in_findings` (domains the findings name, from code or runtime evidence outside the browser too), statement, disclaimer; `consent_banner: false` and `states_not_applicable` for an app with no banner),
-`metadata.session` (whose signed-in session the capture used), `limitations[]`.
+`metadata.session` (whose signed-in session the capture used), `limitations[]`. The current
+`schema_version` is `1.7.0` (1.1.0 to 1.6.0 reports are still accepted): 1.7.0 adds `member` and `key` to
+`artifacts`.
+
+`render_report.py --brief` prints the headline, the consent matrix, the findings table, each finding's title
+with where it is, and the limitations.
 
 ## What the validator enforces
 
@@ -437,9 +474,14 @@ and code lines that exist in the repo, and carry the references `data/provisions
 regions. Ratings, floors and caps are recomputed; `observed` needs a live candidate and `traced` a code
 path; agent judgment stays `pattern`, and `pattern` is never P0. Every candidate is triaged once, and each
 dismissal code is checked against the candidate's facts (`fixture` needs a candidate inside a listed sample
-or fixture project). Headline counts are recomputed, the disclaimer is present (it may name what was audited
+or fixture project). A dismissal or inventory reason is a sentence about the candidate ("no" is not one), and
+a `home_path_in_artifact` candidate whose line still holds an account cannot be dismissed as `false_match`,
+`not_personal_data` or `constant_in_source` unless the reason says why the name is no person's (a
+placeholder, a CI or service account, an invented sample). No text in the report or the evidence may hold a
+home-directory path naming an account (record paths relative to the repository). Headline counts are recomputed, the disclaimer is present (it may name what was audited
 instead of "the app": the site, service, tool or tools, library, code, repository or project,
-`data/provisions.json` `disclaimer_subjects`; nothing else in it may change), and no text calls the app compliant. A state that wasn't tested must be `null` in the headline,
+`data/provisions.json` `disclaimer_subjects`; a plural subject such as "the tools" takes "are or aren't";
+nothing else in it may change), and no text calls the app compliant. A state that wasn't tested must be `null` in the headline,
 listed in `states_not_tested`, and described as not tested in the statement (never "none"); when requests were
 blocked in the browser, a limitation must say that third parties were blocked. `run_status` equals the
 merge's; a `not_run` audit has no observed finding, captured request, consent state, live candidate or
@@ -454,6 +496,6 @@ the evidence fails. File upload points from the scan must be followed up in the 
 limitations: the text must speak of uploads (or attachments, spreadsheets, a dropzone or file input; a bare
 "files" does not count) and, when several files hold upload points, name each of them. A finding with
 `flow_basis: declared_unexpected` needs declared processors (`--declared` at merge, or
-`metadata.declared_processors`) that name its recipient (vendor, alias or parent company, or domain); one that names no recipient is at most `pattern`. `before_consent` from review needs `default_on: true` on a `telemetry` or `first_party_beacon` finding, or a `policy_mismatch` whose policy basis (re-read with `--repo`) promises a consent step; an unsupported `before_consent` names what would support it. Categories beyond the candidates', the fields' and (tracking findings) the vendor category's data, or leaving the vendor category's out, need a `categories_basis`. An inventory recipient needs a live candidate, or a traced or observed finding naming the domain and the field. When the static scan reports that most of the code is in a language it does not analyse (`language_coverage`), a limitation must name that language. `flow_basis: committed` goes with `identifier_in_artifact` only, and that finding needs `artifacts` (file and line of each committed file holding the identifier; the lines are re-read with `--repo`, the value is never quoted). With no consent banner, the statement says so. `--write-summary` fills missing ratings and the
+`metadata.declared_processors`) that name its recipient (vendor, alias or parent company, or domain); one that names no recipient is at most `pattern`. `before_consent` from review needs `default_on: true` on a `telemetry` or `first_party_beacon` finding, or a `policy_mismatch` whose policy basis (re-read with `--repo`) promises a consent step; an unsupported `before_consent` names what would support it. Categories beyond the candidates', the fields' and (tracking findings) the vendor category's data, or leaving the vendor category's out, need a `categories_basis`. An inventory recipient needs a live candidate, or a traced or observed finding naming the domain and the field. When the static scan reports that most of the code is in a language it does not analyse (`language_coverage`), a limitation must name that language. `flow_basis: committed` goes with `identifier_in_artifact` only, and that finding needs `artifacts` (file and line of each committed file holding the identifier, with `member` inside a zip archive; each line is re-read with `--repo` and must hold a home path naming an account, the `key` it names, or a host, user or machine field; the value is never quoted). Identifiers in committed files need a limitation saying git history was not searched. Script languages the scan does not read (`needs_limitation_scripts`) each need a limitation naming them. With no consent banner, the statement says so. `--write-summary` fills missing ratings and the
 headline instead of failing on them; `--fix-ratings` rewrites computed rating fields that are wrong and
 lists each change (the rating error shows the arithmetic).

@@ -1,5 +1,5 @@
 {
- "version": "1.8.0",
+ "version": "1.9.0",
  "about": "Security pitfall catalogue for scan_pitfalls.py, organised by CWE. Each entry is a pattern-level lead: a match is a candidate until a source-to-sink path is traced. cvss_hint is a typical CVSS v4.0 base vector for the weakness, to adjust per finding. tools maps rules from other scanners (tool:rule) to the entry. OWASP categories are the 2025 Top 10.",
  "owasp_2025": {
   "A01": "A01:2025 Broken Access Control",
@@ -153,6 +153,20 @@
     "_headers"
    ],
    "path_regex": "(^|/)(next\\.config\\.(js|mjs|cjs|ts|mts)|vercel\\.json|netlify\\.toml|_headers|staticwebapp\\.config\\.json|firebase\\.json)$"
+  },
+  "powershell": {
+   "extensions": [
+    ".ps1",
+    ".psm1"
+   ]
+  },
+  "shell": {
+   "extensions": [
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".ksh"
+   ]
   }
  },
  "pitfalls": [
@@ -608,7 +622,36 @@
    "suppress_file": "HTTPRedirectHandler|redirect_request|allow_redirects\\s*=\\s*False",
    "fix": "Install a redirect handler that refuses redirects (or drops Authorization) when the host changes, or use a client that strips credentials on cross-host redirects.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "tools": [],
+   "loopback_url": true
+  },
+  {
+   "id": "PY-SECRET-ARGV",
+   "pack": "python",
+   "cwe": "CWE-214",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "data_exposure",
+   "title": "Secret passed on a command line (--password=...): other local users and process listings can read it",
+   "regex": "(?i)[\"']--?[\\w-]*(?:password|passwd|secret|token|api[-_]?key)[\\w-]*=(?:\\{|[\"']\\s*\\+|%s)",
+   "require_file": "\\bsubprocess\\b|\\bPopen\\b|\\bos\\.(?:exec|spawn|system)|\\bcreate_subprocess_exec\\b",
+   "match_in_strings": true,
+   "fix": "Pass the secret through the child's environment, standard input or a file only the user can read; a command line is visible in process listings and often logged.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:P/PR:L/UI:N/VC:L/VI:N/VA:N/SC:N/SI:N/SA:N",
    "tools": []
+  },
+  {
+   "id": "PY-INSTALL-UNPINNED",
+   "pack": "python",
+   "cwe": "CWE-829",
+   "owasp": "A03:2025 Software Supply Chain Failures",
+   "category": "supply_chain_ci",
+   "title": "A script installs a package with a system package manager without pinning a version",
+   "regex": "[\\[,(]\\s*(?:[\"'](?:winget|choco|scoop)(?:\\.exe)?[\"']|\\w*(?:winget|choco|scoop)\\w*)\\s*,\\s*[\"'](?:install|upgrade)[\"']",
+   "match_in_strings": true,
+   "fix": "Pin the version (winget install --version, choco install --version) and, where the manager supports it, the installer hash, so a later release cannot change what the script installs.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [],
+   "suppress_line": "[\"']--?version[\"']|--version[= ]"
   },
   {
    "id": "PY-PATH-JOIN-INPUT",
@@ -767,7 +810,7 @@
    "owasp": "A05:2025 Injection",
    "category": "injection",
    "title": "eval, new Function or string timers",
-   "regex": "(?<![\\w.])eval\\s*\\(|\\bnew\\s+Function\\s*\\(|\\bset(Timeout|Interval)\\s*\\(\\s*[\"\\'`]|\\bvm\\.(runIn\\w+|Script)\\b",
+   "regex": "(?<![\\w.])eval\\s*\\(|\\bnew\\s+Function\\s*\\(|\\bset(Timeout|Interval)\\s*\\(\\s*[\"\\'`]",
    "fix": "Parse data with JSON.parse; never evaluate input.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
    "tools": [
@@ -775,6 +818,20 @@
     "eslint:no-implied-eval",
     "eslint:security/detect-eval-with-expression",
     "semgrep:eval-detected"
+   ]
+  },
+  {
+   "id": "JS-VM-RUN",
+   "pack": "javascript",
+   "cwe": "CWE-94",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "node:vm runs a script (vm.runIn*, vm.Script): a vm context is not a security boundary, so what matters is where the script text comes from",
+   "regex": "\\bvm\\.(runIn\\w+|Script)\\b",
+   "fix": "Run only code the repository itself produced; for untrusted code use a separate process or an isolate with its own permissions, never node:vm alone.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "eslint:security/detect-eval-with-expression"
    ]
   },
   {
@@ -2008,7 +2065,7 @@
    "require_near": "Command::new|Library::(?:new|open)|LoadLibrary|dlopen|\\.(?:exe|dll|so|dylib)\\b|\\bplugins?\\b|\\bbin\\b",
    "window": 8,
    "suppress_in_test_code": true,
-   "fix": "Resolve helpers and plugins from the executable's own directory (std::env::current_exe), a configured absolute path or the system search path, never the working directory: whoever controls the folder the tool is started in (a cloned repository, a download folder) can plant the file.",
+   "fix": "Resolve helpers and plugins from the executable's own directory (std::env::current_exe), a configured absolute path or the system search path, never the working directory: whoever controls the folder the tool is started in (a cloned repository, a download folder) can plant the file. Use that directory itself, not a search upward from it: looking in its parent folders is a search path again (RUST-SEARCH-PATH-EXE-ANCESTORS).",
    "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
    "tools": []
   },
@@ -2022,7 +2079,7 @@
    "regex": "(?:Library::(?:new|open)|Command::new|LoadLibrary\\w*|dlopen)\\s*\\(\\s*&?\\s*r?#*\"(?:\\.{1,2}[/\\\\]|[\\w-][\\w.-]*[/\\\\])|\"(?:\\.{1,2}[/\\\\]|[\\w-][\\w.-]*[/\\\\])[^\"\\s:]*\\.(?:dll|so|dylib|exe)(?:\\.\\d+)*\"",
    "require_file": "Library::|LoadLibrary|dlopen|Command::new|libloading",
    "suppress_in_test_code": true,
-   "fix": "Build the path from the executable's directory (std::env::current_exe()?.parent()) or a configured absolute path; a relative path is resolved against whatever directory the program is started in.",
+   "fix": "Build the path from the executable's directory (std::env::current_exe()?.parent()) or a configured absolute path; a relative path is resolved against whatever directory the program is started in. Use that directory itself, not a search upward from it: looking in its parent folders is a search path again (RUST-SEARCH-PATH-EXE-ANCESTORS).",
    "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
    "tools": []
   },
@@ -2032,13 +2089,45 @@
    "cwe": "CWE-427",
    "owasp": "A08:2025 Software or Data Integrity Failures",
    "category": "language_specific",
-   "title": "Windows DLL loaded by bare name or with the standard search order (application folder, PATH, working directory): CWE-427",
-   "regex": "\\bLoadLibrary(?:Ex)?[AW]?\\s*\\(|Library::(?:new|open)\\s*\\(\\s*r?#*\"[^\"/\\\\]+\\.dll\"",
+   "title": "Windows DLL loaded by bare name or with the standard search order (application folder, PATH, working directory), also when the name reaches the load through a variable or a list: CWE-427",
+   "regex": "\\bLoadLibrary(?:Ex)?[AW]?\\s*\\(|Library::(?:new|open)\\s*\\(\\s*r?#*\"[^\"/\\\\]+\\.dll\"|\"[^\"/\\\\\\s:]+\\.dll\"",
    "suppress_near": "LOAD_LIBRARY_SEARCH_(?:SYSTEM32|APPLICATION_DIR|DEFAULT_DIRS|USER_DIRS|DLL_LOAD_DIR)|SetDefaultDllDirectories|load_with_flags",
    "window": 4,
    "suppress_in_test_code": true,
    "fix": "Load with an absolute path, or with LOAD_LIBRARY_SEARCH_APPLICATION_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32 (libloading::os::windows::Library::load_with_flags), and call SetDefaultDllDirectories early.",
    "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [],
+   "require_file": "Library::|LoadLibrary|dlopen|libloading",
+   "suppress_line": "\\.(?:join|with_file_name|push|ends_with|starts_with|eq_ignore_ascii_case|contains|strip_suffix)\\s*\\(\\s*&?\\s*\""
+  },
+  {
+   "id": "RUST-LIB-BARE-NAME",
+   "pack": "rust",
+   "cwe": "CWE-427",
+   "owasp": "A08:2025 Software or Data Integrity Failures",
+   "category": "language_specific",
+   "title": "Shared library named without a directory (.dylib, .so): the loader search path decides which file is loaded (DYLD_* and LD_LIBRARY_PATH, rpath; macOS dlopen also falls back to the working directory): CWE-427",
+   "regex": "\"[^\"/\\\\\\s:]+\\.(?:dylib|so)(?:\\.\\d+)*\"",
+   "require_file": "Library::|LoadLibrary|dlopen|libloading",
+   "suppress_line": "\\.(?:join|with_file_name|push|ends_with|starts_with|eq_ignore_ascii_case|contains|strip_suffix)\\s*\\(\\s*&?\\s*\"",
+   "suppress_in_test_code": true,
+   "fix": "Load by absolute path (the bundle or install directory, a configured path) and keep a bare name only as a documented last resort for system libraries; on macOS prefer @rpath or @executable_path install names.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:H/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "RUST-SEARCH-PATH-EXE-ANCESTORS",
+   "pack": "rust",
+   "cwe": "CWE-427",
+   "owasp": "A08:2025 Software or Data Integrity Failures",
+   "category": "language_specific",
+   "title": "Executable or library searched for in the folders above the program (ancestors of current_exe()): whoever can write to a parent folder plants it: CWE-427",
+   "regex": "\\.ancestors\\s*\\(\\s*\\)|\\.parent\\s*\\(\\s*\\)\\s*(?:\\?\\s*)?\\.\\s*(?:and_then\\s*\\(\\s*(?:Path::parent|\\|\\s*\\w+\\s*\\|\\s*\\w+\\s*\\.\\s*parent\\s*\\(\\s*\\))|parent\\s*\\(\\s*\\))",
+   "require_near": "current_exe|\\bexecutable\\b|\\bexe\\b|\\.(?:exe|dll|so|dylib)\\b|tools/",
+   "window": 6,
+   "suppress_in_test_code": true,
+   "fix": "Look only in the program's own directory (current_exe()?.parent()) in release builds; keep a search of parent folders (a development checkout layout) behind a debug or developer-only switch.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
    "tools": []
   },
   {
@@ -2498,6 +2587,67 @@
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:L/VI:N/VA:N/SC:N/SI:N/SA:N",
    "tools": [],
    "match_in_strings": true
+  },
+  {
+   "id": "PS-INSTALL-UNPINNED",
+   "pack": "powershell",
+   "cwe": "CWE-829",
+   "owasp": "A03:2025 Software Supply Chain Failures",
+   "category": "supply_chain_ci",
+   "title": "PowerShell installs a module or package without pinning a version",
+   "regex": "(?i)\\bInstall-(?:Module|Package|Script|PSResource)\\b|\\b(?:winget|choco|scoop)(?:\\.exe)?\\s+(?:install|upgrade)\\b",
+   "suppress_line": "(?i)-(?:RequiredVersion|Version)\\b|--version\\b",
+   "fix": "Add -RequiredVersion (Install-Module, Install-Script), -Version (Install-PSResource) or --version (winget, choco) so a later release cannot change what the script installs.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "PS-SECRET-ARGV",
+   "pack": "powershell",
+   "cwe": "CWE-214",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "data_exposure",
+   "title": "Secret passed on a command line (--password=$x): other local users and process listings can read it",
+   "regex": "(?i)--?[\\w-]*(?:password|passwd|secret|token|api[-_]?key)[\\w-]*[=:]\\s*[\"\\']?\\$",
+   "fix": "Pass the secret through the child's environment, standard input or a protected file, not an argument.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:P/PR:L/UI:N/VC:L/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "PS-DOWNLOAD-EXEC",
+   "pack": "powershell",
+   "cwe": "CWE-494",
+   "owasp": "A03:2025 Software Supply Chain Failures",
+   "category": "supply_chain_ci",
+   "title": "Downloaded text run as code (Invoke-Expression of a web response)",
+   "regex": "(?i)\\b(?:iex|Invoke-Expression)\\b.*\\b(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod|DownloadString)\\b|\\b(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\\b[^|\\n]*\\|\\s*(?:iex|Invoke-Expression)\\b",
+   "fix": "Download to a file, check its hash or signature against a pinned value, then run it.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "SH-PIPE-TO-SHELL",
+   "pack": "shell",
+   "cwe": "CWE-494",
+   "owasp": "A03:2025 Software Supply Chain Failures",
+   "category": "supply_chain_ci",
+   "title": "Download piped straight into a shell (curl | sh)",
+   "regex": "\\b(?:curl|wget)\\b[^|\\n]*\\|\\s*(?:sudo\\s+)?(?:ba|z|k)?sh\\b",
+   "fix": "Download to a file, check its hash or signature against a pinned value, then run it.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "SH-SECRET-ARGV",
+   "pack": "shell",
+   "cwe": "CWE-214",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "data_exposure",
+   "title": "Secret passed on a command line (--password=$X): other local users and process listings can read it",
+   "regex": "(?i)--?[\\w-]*(?:password|passwd|secret|token|api[-_]?key)[\\w-]*[=:]\\s*[\"\\']?\\$",
+   "fix": "Pass the secret through the child's environment, standard input or a protected file, not an argument.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:P/PR:L/UI:N/VC:L/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "tools": []
   }
  ]
 }

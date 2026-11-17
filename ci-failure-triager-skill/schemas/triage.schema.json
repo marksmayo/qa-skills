@@ -19,9 +19,10 @@
   "schema_version": {
    "enum": [
     "1.2.0",
-    "1.3.0"
+    "1.3.0",
+    "1.4.0"
    ],
-   "description": "1.3.0 adds optional fields only; 1.2.0 reports still validate"
+   "description": "1.3.0 and 1.4.0 add optional fields only (1.4.0: failure groups, one draft per group, checks_not_run, summary.evidence_checks, which a 1.4.0 triage must carry when the run has them); 1.2.0 and 1.3.0 reports still validate"
   },
   "skill": {
    "type": "object",
@@ -32,11 +33,16 @@
    "properties": {
     "name": {
      "const": "ci-failure-triager"
+    },
+    "version": {
+     "type": "string",
+     "minLength": 1
     }
    }
   },
   "generated_at": {
-   "type": "string"
+   "type": "string",
+   "minLength": 10
   },
   "run": {
    "type": "object",
@@ -102,7 +108,8 @@
        "kind": {
         "enum": [
          "log",
-         "artifact"
+         "artifact",
+         "annotations"
         ]
        },
        "status": {
@@ -366,11 +373,25 @@
           "why"
          ]
         }
+       },
+       "ties": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "description": "other commits in range with the same score; the owner is the newest of the tied commits, and the report names the ties"
+       },
+       "override_reason": {
+        "type": "string",
+        "minLength": 20
        }
       }
      },
      "draft_defect": {
-      "type": "object",
+      "type": [
+       "object",
+       "null"
+      ],
       "required": [
        "kind",
        "title",
@@ -391,9 +412,45 @@
          "expected",
          "actual",
          "evidence"
-        ]
+        ],
+        "properties": {
+         "summary": {
+          "type": "string",
+          "minLength": 1
+         },
+         "steps": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
+         },
+         "expected": {
+          "type": "string"
+         },
+         "actual": {
+          "type": "string"
+         },
+         "evidence": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
+         }
+        }
+       },
+       "title": {
+        "type": "string",
+        "minLength": 5
+       },
+       "covers": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "description": "ids of the other failures of the same group (same classification) this draft also covers"
        }
-      }
+      },
+      "description": "one draft per defect: for a failure group the draft sits on one member and covers lists the group's other failures it stands for"
      },
      "test_id_source": {
       "enum": [
@@ -408,6 +465,18 @@
        "null"
       ],
       "description": "assertion, error or timeout for a test; for a step failure compile, lint, format or coverage_gate when its excerpt carries that real signature, else step; job for a job with no failed step"
+     },
+     "id": {
+      "type": "string",
+      "minLength": 1
+     },
+     "group": {
+      "type": "string",
+      "description": "the failure group this failure belongs to (failure_groups): one defect seen on several jobs, such as the legs of a matrix; recomputed by the validator"
+     },
+     "next_action": {
+      "type": "string",
+      "minLength": 1
      }
     }
    }
@@ -420,7 +489,32 @@
     "defects_drafted",
     "reruns",
     "evidence_completeness"
-   ]
+   ],
+   "properties": {
+    "headline": {
+     "type": "string",
+     "minLength": 10
+    },
+    "by_classification": {
+     "type": "object"
+    },
+    "defects_drafted": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "reruns": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "evidence_completeness": {
+     "type": "number",
+     "minimum": 0
+    },
+    "evidence_checks": {
+     "type": "object",
+     "description": "the five checks behind evidence_completeness, each true, false or \"not_applicable\" (scores 0: nothing to check, such as test results when no test step failed): logs, test_results, rerun, last_green, repository; recomputed by the validator"
+    }
+   }
   },
   "limitations": {
    "type": "array",
@@ -432,6 +526,66 @@
    "type": "array",
    "items": {
     "type": "string"
+   }
+  },
+  "failure_groups": {
+   "type": "array",
+   "description": "failures that are one defect on several jobs (extract_failures.py groups); every member keeps its own evidence and one draft covers the group; recomputed by the validator",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "failures",
+     "jobs",
+     "basis"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "failures": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "jobs": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "basis": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  "checks_not_run": {
+   "type": "object",
+   "required": [
+    "steps",
+    "jobs"
+   ],
+   "description": "what the failures kept from running (extract_failures.py checks_not_run): steps skipped after a job's first failed step, and skipped jobs; they gave no result on this commit; recomputed by the validator",
+   "properties": {
+    "steps": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": [
+       "job",
+       "after_step",
+       "steps"
+      ]
+     }
+    },
+    "jobs": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
    }
   }
  },

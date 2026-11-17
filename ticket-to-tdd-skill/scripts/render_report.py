@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 RESET="\033[0m"; BOLD="\033[1m"; DIM="\033[2m"

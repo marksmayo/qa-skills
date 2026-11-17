@@ -68,6 +68,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import scan_secrets  # noqa: E402
 
 VERSION = '1.1.0'
@@ -398,6 +399,26 @@ def command_env(home: Path) -> dict:
                 'https_proxy': 'http://127.0.0.1:9', 'NO_PROXY': '', 'CI': '1', 'NO_COLOR': '1'})
     return env
 
+def redact_workdir(text: str, workdir: str) -> str:
+    """The text with the work copy's path replaced by {workdir}, as written, JSON-escaped (doubled backslashes) and with
+    forward slashes: a program that prints JSON or a normalised path would otherwise put the home folder in evidence."""
+    bs = '\\'
+    forms = {workdir, workdir.replace(bs, bs * 2), workdir.replace(bs, '/'), workdir.replace('/', bs * 2)}
+    for form in sorted(forms, key=len, reverse=True):
+        if form:
+            text = text.replace(form, '{workdir}')
+    return text
+
+def marker_hint(marker: str, output: str) -> str:
+    """Why a marker that looks present was not matched: the program escaped its backslashes (JSON) or turned them
+    into forward slashes. The proof stays not passed; the hint says how to write the marker."""
+    bs = '\\'
+    if bs in marker and marker.replace(bs, bs * 2) in output:
+        return ' (it is in the output with escaped backslashes, as JSON prints them: write the marker that way)'
+    if bs in marker and marker.replace(bs, '/') in output:
+        return ' (it is in the output with forward slashes: write the marker that way)'
+    return ''
+
 def run_command_poc(poc: dict, workdir: Path, permission: str, poc_file: Path) -> dict:
     """Run a linted command PoC in the working copy and return the evidence (secrets and env values scrubbed)."""
     workdir = workdir.resolve()
@@ -430,7 +451,7 @@ def run_command_poc(poc: dict, workdir: Path, permission: str, poc_file: Path) -
             error = f"step {s.get('name')!r}: {exc}"
             break
         outputs[s.get('name')] = (code, out + '\n' + err)
-        shown = lambda t: scrub(t.replace(str(workdir), '{workdir}'), used_env)  # noqa: E731
+        shown = lambda t: scrub(redact_workdir(t, str(workdir)), used_env)  # noqa: E731
         records.append({'name': s.get('name'), 'argv': [shown(a) for a in argv], 'cwd': s.get('cwd') or '.',
                         'stdin': shown(s['stdin'])[:2000] if s.get('stdin') else None, 'exit_code': code,
                         'stdout_excerpt': shown(out[-1500:]), 'stderr_excerpt': shown(err[-1500:]),
@@ -442,6 +463,8 @@ def run_command_poc(poc: dict, workdir: Path, permission: str, poc_file: Path) -
         got = outputs.get(proof['step'])
         passed = bool(got) and str(proof['marker']) in got[1]
         observed = f"marker {'found' if passed else 'not found'} in the output of {proof['step']!r}"
+        if not passed and got:
+            observed += marker_hint(str(proof['marker']), got[1])
     elif proof['type'] == 'exit_code':
         got = outputs.get(proof['step'])
         passed = bool(got) and got[0] == proof.get('code')

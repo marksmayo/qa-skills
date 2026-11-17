@@ -42,6 +42,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from safe_http import open_url  # noqa: E402
 
 AC_NAMES = ['acceptance criteria', 'acceptance criterion', 'acceptance tests', 'definition of done']

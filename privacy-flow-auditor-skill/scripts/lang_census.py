@@ -51,6 +51,18 @@ UI markup for desktop and mobile toolkits (.slint Slint, .qml QML, .xaml XAML, .
 that it is present but not analysed (unless the caller names the kind among its supported languages); the status is
 unchanged.
 
+Script languages no skill parses (PowerShell .ps1/.psm1, shell .sh/.bash/.zsh, batch, and the rest of SCRIPT_BY_EXT)
+are counted under `scripts` ({kind: files}), `script_lines` (non-blank lines outside test and tooling folders),
+`script_total_lines` and `script_examples`: never a language of the census, never its dominant one, but
+language_coverage() always names them (`scripts` and a note each), because an installer or packaging script is
+shipped code. When their product lines outweigh every counted language's the status is 'unsupported_dominant'.
+
+A tooling-named folder may hold the product (a repository whose scripts/ are what it ships). The default is
+unchanged, but `tooling_dirs` lists each such folder with its lines and the `evidence` that it is product code (a
+test loads it, CI measures coverage on it or runs it, a manifest ships it); language_coverage() then says so
+(`tooling_as_product` and a note), and says when a supported language has no product line because all of it sits in
+tooling folders. `census(product_dirs=[...])` / `--product-dir DIR` counts such a folder as product code.
+
 Markup is counted apart, under `markup` (HTML, CSS, Templates; an .html file under templates/, views/, layouts/ or
 partials/ is a template). `server_rendered` names a Python web app that renders templates (Flask, Django, Jinja2,
 Starlette/FastAPI templating, Bottle, Pyramid ...: an import or a render call) with its template count and
@@ -82,6 +94,7 @@ from __future__ import annotations
 import argparse, json, os, re, shutil, sys, tempfile
 from collections import Counter
 from pathlib import Path, PurePosixPath
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 
 LANG_BY_EXT = {
     '.py': 'Python', '.pyi': 'Python',
@@ -98,6 +111,13 @@ LANG_BY_EXT = {
     '.hs': 'Haskell', '.ml': 'OCaml', '.mli': 'OCaml', '.lua': 'Lua', '.pl': 'Perl', '.pm': 'Perl',
     '.r': 'R', '.R': 'R', '.jl': 'Julia', '.zig': 'Zig', '.nim': 'Nim', '.cr': 'Crystal', '.elm': 'Elm',
 }
+
+# script languages no skill parses: counted apart (census `scripts`, `script_lines`, `script_examples`), never a
+# language of the census and never its dominant one, but always named by language_coverage(): an installer or
+# packaging script is shipped code even when nothing here reads it
+SCRIPT_BY_EXT = {'.ps1': 'PowerShell', '.psm1': 'PowerShell', '.sh': 'Shell', '.bash': 'Shell', '.zsh': 'Shell',
+                 '.ksh': 'Shell', '.fish': 'Shell', '.bat': 'Batch', '.cmd': 'Batch', '.awk': 'Awk', '.tcl': 'Tcl',
+                 '.vbs': 'VBScript', '.applescript': 'AppleScript', '.nsi': 'NSIS', '.iss': 'Inno Setup'}
 
 # installed package trees: excluded by name and listed without walking them (source_files_counted: false)
 DEPENDENCY_TREES = {'node_modules', 'bower_components', 'jspm_packages'}
@@ -306,6 +326,124 @@ def is_test_file(rel: str, manifest_dirs: set[str] | None = None) -> bool:
 def is_tooling_file(rel: str) -> bool:
     """Is rel (repo-relative) under a tooling folder (scripts/, tools/, docs/, hack/, ci/ ...)?"""
     return any(p.lower() in TOOLING_DIRS for p in rel.split('/')[:-1])
+
+
+def tooling_dir(rel: str) -> str | None:
+    """The tooling folder rel lies in (the path up to its first tooling-named part), or None."""
+    parts = rel.split('/')[:-1]
+    for i, p in enumerate(parts):
+        if p.lower() in TOOLING_DIRS:
+            return '/'.join(parts[:i + 1])
+    return None
+
+
+CI_FILE = re.compile(r'^(\.github/workflows/[^/]+\.ya?ml|azure-pipelines[^/]*\.ya?ml|\.gitlab-ci\.yml|'
+                     r'\.circleci/config\.yml|bitbucket-pipelines\.yml|Jenkinsfile)$')
+COVERAGE_CONFIG = ('.coveragerc', 'tox.ini', 'setup.cfg', 'pyproject.toml', 'noxfile.py', 'Makefile')
+PY_MANIFESTS = ('pyproject.toml', 'setup.py', 'setup.cfg', 'MANIFEST.in')
+TOOLING_EVIDENCE_TESTS_MAX = 300
+TOOLING_EVIDENCE_READ = 65536
+NO_EVIDENCE_DIRS = {'.github', 'docs', 'doc'}
+
+
+def tooling_evidence(root: Path, dirs: list[str], test_paths: list[str]) -> dict[str, list[dict]]:
+    """Signs that a tooling-named folder (scripts/, tools/ ...) holds product code rather than helper scripts:
+    {dir: [{kind, file, line, text}]}, at most two per kind.
+
+    tests        a test file names the folder (a sys.path insert, a path built with it, an import of it)
+    ci_coverage  a CI file or coverage configuration measures it (--source=scripts, --cov=scripts, source = scripts)
+    ci_runs      a CI file runs a file of it
+    manifest     a package manifest ships it (package.json bin/main/files, a quoted path in pyproject.toml, setup.py,
+                 setup.cfg or MANIFEST.in)
+
+    Read only for the folders given (the census passes those that hold code): CI files, the root manifests and at
+    most TOOLING_EVIDENCE_TESTS_MAX test files, the first 64 KB of each."""
+    dirs = [d for d in dirs if d.rsplit('/', 1)[-1].lower() not in NO_EVIDENCE_DIRS]
+    out: dict[str, list[dict]] = {d: [] for d in dirs}
+    if not dirs:
+        return out
+    rx = {}
+    for d in dirs:
+        n, full = re.escape(d.rsplit('/', 1)[-1]), re.escape(d)
+        rx[d] = {
+            'tests': re.compile(r'[\'"/\\]%s[\'"/\\]|^\s*(?:from|import)\s+%s\b' % (n, n), re.M),
+            'ci_coverage': re.compile(r'(?:--cov|--source|--include)[= ]\S*(?<![\w-])%s(?![\w-])|'
+                                      r'^\s*source\s*=.*(?<![\w-])%s(?![\w-])' % (n, n)),
+            'ci_runs': re.compile(r'(?<![\w/.-])(?:\./)?%s/[\w./-]+\.\w+' % full),
+            'manifest': re.compile(r'[\'"](?:\./)?%s(?:/[^\'"]*)?[\'"]' % full),
+        }
+
+    def add(d, kind, file, line, text):
+        have = [e for e in out[d] if e['kind'] == kind]
+        if len(have) < 2:
+            out[d].append({'kind': kind, 'file': file, 'line': line, 'text': text.strip()[:120]})
+
+    def lines_of(rel):
+        text = _read_head(root / rel, TOOLING_EVIDENCE_READ)
+        return text, (text.splitlines() if text else [])
+    ci_files = []
+    wf = root / '.github' / 'workflows'
+    if wf.is_dir():
+        ci_files += sorted(f'.github/workflows/{f}' for f in os.listdir(wf) if f.endswith(('.yml', '.yaml')))
+    try:
+        top = sorted(os.listdir(root))
+    except OSError:
+        top = []
+    ci_files += [f for f in top if CI_FILE.match(f)]
+    if (root / '.circleci' / 'config.yml').is_file():
+        ci_files.append('.circleci/config.yml')
+    for rel in ci_files:
+        _text, lines = lines_of(rel)
+        for i, line in enumerate(lines, 1):
+            for d in dirs:
+                if rx[d]['ci_coverage'].search(line):
+                    add(d, 'ci_coverage', rel, i, line)
+                elif rx[d]['ci_runs'].search(line):
+                    add(d, 'ci_runs', rel, i, line)
+    for rel in (f for f in COVERAGE_CONFIG if f in top):
+        _text, lines = lines_of(rel)
+        for i, line in enumerate(lines, 1):
+            for d in dirs:
+                if rx[d]['ci_coverage'].search(line):
+                    add(d, 'ci_coverage', rel, i, line)
+    for rel in (f for f in PY_MANIFESTS if f in top):
+        _text, lines = lines_of(rel)
+        for i, line in enumerate(lines, 1):
+            for d in dirs:
+                if rx[d]['manifest'].search(line) and not rx[d]['ci_coverage'].search(line):
+                    add(d, 'manifest', rel, i, line)
+    if 'package.json' in top:
+        try:
+            pj = json.loads((root / 'package.json').read_text(encoding='utf-8', errors='replace'))
+        except (OSError, ValueError):
+            pj = {}
+        named = []
+        for key in ('bin', 'main', 'module', 'files', 'exports') if isinstance(pj, dict) else ():
+            v = pj.get(key)
+            stack = [v]
+            while stack:
+                x = stack.pop()
+                if isinstance(x, str):
+                    named.append((key, x))
+                elif isinstance(x, dict):
+                    stack += list(x.values())
+                elif isinstance(x, list):
+                    stack += x
+        for key, value in named:
+            v = value.replace('\\', '/').lstrip('./')
+            for d in dirs:
+                if v == d or v.startswith(d + '/'):
+                    add(d, 'manifest', 'package.json', 0, f'"{key}": {value}')
+    for rel in test_paths[:TOOLING_EVIDENCE_TESTS_MAX]:
+        text, _lines = lines_of(rel)
+        for d in dirs:
+            if rel.startswith(d + '/'):
+                continue
+            m = rx[d]['tests'].search(text)
+            if m:
+                line = text.count('\n', 0, m.start()) + 1
+                add(d, 'tests', rel, line, text.splitlines()[line - 1] if text else '')
+    return out
 
 
 def count_lines(text: str) -> int:
@@ -617,7 +755,7 @@ def exclusion_reason(rel_dir: str, name: str, files: list[str], subs: set[str]) 
 
 
 def census(root: Path | str, extra_exclude: list[str] | None = None, include: list[str] | None = None,
-           exclude_fixtures: bool = False, fixture_dirs=()) -> dict:
+           exclude_fixtures: bool = False, fixture_dirs=(), product_dirs=()) -> dict:
     """Source files per language under root, with vendored and third-party trees left out (see the module doc).
     extra_exclude: repo-relative directories the caller also knows are not product code. include: repo-relative
     directories to count even though a rule would leave them out (recorded under `included`).
@@ -628,7 +766,13 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
     Folders named like build output (dist/, build/, out/, obj/) are decided by evidence (BuildEvidence) and every
     decision is listed under `build_output` ({path, decision: source|build_output, reason}). JavaScript and
     TypeScript files that look generated (minified, bundled, Emscripten glue or file-packager manifests) are counted
-    under `generated` and listed in `generated_files`, not as hand-written code; their folder is still walked."""
+    under `generated` and listed in `generated_files`, not as hand-written code; their folder is still walked.
+
+    Script languages no skill parses (SCRIPT_BY_EXT: PowerShell, shell, batch ...) are counted under `scripts`
+    ({kind: files}), `script_lines` (non-blank lines outside test and tooling folders) and `script_examples`.
+    `tooling_dirs` lists each tooling-named folder that holds code ({path, files, lines, languages: {lang: lines},
+    evidence}) with the signs that it is product code after all (tooling_evidence()); product_dirs names
+    tooling-named folders to count as product code (recorded under `product_dirs`)."""
     root = Path(root).resolve()
     subs = submodules(root)
     extra = {e.replace('\\', '/').strip('/') for e in (extra_exclude or [])}
@@ -666,6 +810,14 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
     tooling_files: Counter = Counter()
     tooling_lines: Counter = Counter()
     manifest_dirs: set[str] = set()
+    prod_dirs = sorted({e.replace('\\', '/').strip('/') for e in (product_dirs or []) if e.strip('/\\.')})
+    prod_prefix = tuple(d + '/' for d in prod_dirs)
+    tooling: dict[str, dict] = {}
+    test_paths: list[str] = []
+    scripts: Counter = Counter()
+    script_lines: Counter = Counter()
+    script_all_lines: Counter = Counter()
+    script_examples: dict[str, list[str]] = {}
     for dp, dns, fns in os.walk(root):
         rel = Path(dp).relative_to(root).as_posix()
         rel = '' if rel == '.' else rel
@@ -707,7 +859,7 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
                 continue
             keep.append(d)
         dns[:] = keep
-        for f in fns:
+        for f in sorted(fns):   # sorted: examples and notes must not depend on the filesystem's listing order
             frel = f'{rel}/{f}' if rel else f
             lang = LANG_BY_EXT.get(PurePosixPath(f).suffix)
             if lang:
@@ -724,9 +876,14 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
                 if is_test_file(frel, manifest_dirs):
                     test_files[lang] += 1
                     test_lines[lang] += n_lines
-                elif is_tooling_file(frel):
+                    test_paths.append(frel)
+                elif is_tooling_file(frel) and not (prod_prefix and frel.startswith(prod_prefix)):
                     tooling_files[lang] += 1
                     tooling_lines[lang] += n_lines
+                    t = tooling.setdefault(tooling_dir(frel), {'files': 0, 'lines': 0, 'languages': Counter()})
+                    t['files'] += 1
+                    t['lines'] += n_lines
+                    t['languages'][lang] += n_lines
                 else:
                     product_files[lang] += 1
                     lines[lang] += n_lines
@@ -736,6 +893,22 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
                 by_lang_dirs.setdefault(lang, Counter())[top] += 1
                 if lang == 'Python':
                     py_files.append(frel)
+                continue
+            sk = SCRIPT_BY_EXT.get(PurePosixPath(f).suffix.lower())
+            if sk:
+                scripts[sk] += 1
+                n_lines = count_lines(_read_head(Path(dp) / f, LINE_READ_MAX))
+                script_all_lines[sk] += n_lines
+                product = not is_test_file(frel, manifest_dirs) and (
+                    not is_tooling_file(frel) or bool(prod_prefix and frel.startswith(prod_prefix)))
+                if product:
+                    script_lines[sk] += n_lines
+                ex = script_examples.setdefault(sk, [])
+                if product and frel not in ex:
+                    ex.insert(0, frel)      # shipped scripts are shown before test and tooling ones
+                elif len(ex) < 3:
+                    ex.append(frel)
+                del ex[3:]
                 continue
             mk = markup_kind(frel)
             if mk:
@@ -767,6 +940,11 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
         dominant_by = 'files' if dominant else None
     def _sorted(cnt: Counter) -> dict:
         return dict(sorted(((k, v) for k, v in cnt.items()), key=lambda kv: (-kv[1], kv[0])))
+    # tooling-named folders that hold code: is any of it product code after all? (read only when there is one)
+    tool_ev = tooling_evidence(root, sorted(tooling), sorted(test_paths)) if tooling else {}
+    tooling_dirs = [{'path': d, 'files': t['files'], 'lines': t['lines'], 'languages': _sorted(t['languages']),
+                     'evidence': tool_ev.get(d, [])}
+                    for d, t in sorted(tooling.items(), key=lambda kv: (-kv[1]['lines'], kv[0]))]
     # app modules first (shallow paths, app/main/server names), so the framework import is found early
     py_files.sort(key=lambda r: (r.count('/'), not re.search(r'(^|/)(app|main|server|wsgi|asgi|views|urls|routes)\.py$', r), r))
     return {'root': root.name, 'languages': ordered, 'total_source_files': sum(langs.values()),
@@ -776,6 +954,9 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
             'lines': _sorted(lines), 'product_files': _sorted(product_files),
             'test_files': _sorted(test_files), 'test_lines': _sorted(test_lines),
             'tooling_files': _sorted(tooling_files), 'tooling_lines': _sorted(tooling_lines),
+            'tooling_dirs': tooling_dirs, 'product_dirs': prod_dirs,
+            'scripts': dict(sorted(scripts.items())), 'script_lines': _sorted(script_lines),
+            'script_total_lines': _sorted(script_all_lines), 'script_examples': script_examples,
             'total_product_lines': sum(lines.values()), 'total_test_lines': sum(test_lines.values()),
             'top_dirs': {k: dict(v.most_common(5)) for k, v in by_lang_dirs.items()},
             'examples': examples,
@@ -845,6 +1026,12 @@ def language_coverage(c: dict, supported, tool: str = 'this script', what: str =
     files): the templates are the browser-facing code it reads, and the server language is outside its scope rather
     than unanalysed product UI. That case is status 'partial' with `server_rendered` and a `note` to carry into the
     report instead of a warning."""
+    # the tool may be one script ('scan_rs.py', 'this script') or several ("this report's mutation engines")
+    last = tool.split()[-1] if tool.split() else ''
+    if last.endswith('s') and not last.endswith('ss') and '.' not in last:
+        does, counts, reads, it, its = 'do', 'count', 'read', 'they', 'their'
+    else:
+        does, counts, reads, it, its = 'does', 'counts', 'reads', 'it', 'its'
     supported = set(supported)
     reads_templates = reads_templates or 'HTML' in supported
     supported.discard('HTML')
@@ -884,6 +1071,46 @@ def language_coverage(c: dict, supported, tool: str = 'this script', what: str =
             shown = ', '.join((c.get('ui_markup_examples') or {}).get(kind, [])[:3])
             notes.append(f'{n} {kind} UI markup file(s){" (" + shown + ("" if n <= 3 else ", ...") + ")" if shown else ""} '
                          f'present but not analysed by {tool}: the user interface they describe is not assessed.')
+    scr = {k: v for k, v in (c.get('scripts') or {}).items() if k not in supported}
+    scr_lines = {k: (c.get('script_lines') or {}).get(k, 0) for k in scr}
+    if scr:
+        out['scripts'] = scr
+        all_lines = c.get('script_total_lines') or {}
+        for kind, n in sorted(scr.items(), key=lambda kv: (-kv[1], kv[0])):
+            shown = ', '.join((c.get('script_examples') or {}).get(kind, [])[:3])
+            notes.append(f'{n} {kind} script(s), {all_lines.get(kind, 0)} line(s)'
+                         f'{" (" + shown + ("" if n <= 3 else ", ...") + ")" if shown else ""} present but not '
+                         f'analysed by {tool}: record {kind} as not assessed, never as clean; an installer or '
+                         f'packaging script among them is shipped code.')
+    # code in tooling-named folders that the tests, the CI or a manifest treat as the product
+    kind_text = {'tests': 'a test loads it', 'ci_coverage': 'coverage is measured on it', 'ci_runs': 'CI runs it',
+                 'manifest': 'a manifest ships it'}
+    as_product = []
+    for t in c.get('tooling_dirs') or []:
+        ev = t.get('evidence') or []
+        mine = {k: v for k, v in (t.get('languages') or {}).items() if k in supported}
+        if not ev or not mine:
+            continue
+        as_product.append({'path': t['path'], 'lines': sum(mine.values()), 'languages': mine,
+                           'evidence': sorted({e['kind'] for e in ev})})
+        seen, why = set(), []
+        for e in ev:
+            if e['kind'] not in seen:
+                seen.add(e['kind'])
+                why.append(f'{kind_text.get(e["kind"], e["kind"])} ({e["file"]}' + (f':{e["line"]}' if e.get('line') else '') + ')')
+        total = sum((c.get('lines') or {}).values())
+        notes.append(f'{sum(mine.values())} line(s) of {", ".join(mine)} under {t["path"]}/ are counted as tooling, '
+                     f'apart from the {total} product line(s), although {"; ".join(why)}. If that folder is product '
+                     f'code, say so (lang_census.py --product-dir {t["path"]}, or the calling script\'s own option) '
+                     f'and do not read the product-line figures as the whole product.')
+    if as_product:
+        out['tooling_as_product'] = as_product
+    for lang in sorted(k for k in (c.get('tooling_lines') or {}) if k in supported):
+        if (c.get('lines') or {}).get(lang) or not sum((c.get('lines') or {}).values()):
+            continue
+        where = [t['path'] + '/' for t in c.get('tooling_dirs') or [] if lang in (t.get('languages') or {})][:3]
+        notes.append(f'{lang} has no product line in this census: its {c["tooling_lines"][lang]} line(s) are all in '
+                     f'tooling folders ({", ".join(where)}), counted apart from product code.')
     gen = c.get('generated') or {}
     if gen:
         out['generated'] = gen
@@ -892,10 +1119,27 @@ def language_coverage(c: dict, supported, tool: str = 'this script', what: str =
                      f'hand-written code (census generated_files lists them).')
     if notes:
         out['notes'] = notes
+    def script_dominant(counted_lines: int):
+        """The script language whose product lines outweigh every counted language's, with its lines, else None."""
+        if not scr_lines:
+            return None
+        kind = max(scr_lines, key=lambda k: (scr_lines[k], k))
+        n = scr_lines[kind]
+        return (kind, n) if n > counted_lines and (n >= LINE_RULE_MIN_LINES or scr[kind] >= min_files
+                                                   or not counted_lines) and n else None
     if not langs:
         out['status'] = 'no_source'
         if hint:
             out['warning'] = f'No source file was counted.{hint}'
+        sd = script_dominant(0)
+        if sd:
+            out.update({'status': 'unsupported_dominant', 'dominant_unsupported_language': sd[0],
+                        'dominant_unsupported_files': scr[sd[0]], 'dominant_unsupported_lines': sd[1],
+                        'decided_by': 'lines', 'supported_lines': 0, 'unsupported_lines': sum(scr_lines.values())})
+            out['warning'] = (f'This repository holds no source file in a language {tool} {counts}, only {sd[0]} '
+                              f'scripts ({sd[1]} lines in {scr[sd[0]]} file(s)), which {it} {does} not analyse: {its} '
+                              f'output is NOT a '
+                              f'{what} of this repository. Record {sd[0]} as not assessed.' + hint)
         return out
     if uns:
         lines = c.get('lines') or {}
@@ -933,7 +1177,7 @@ def language_coverage(c: dict, supported, tool: str = 'this script', what: str =
             out['server_rendered'] = sr
             out['note'] = (f'This repository is a server-rendered {sr["framework"]} web app: its {sr["templates"]} '
                            f'template file(s) ({", ".join(sr["template_dirs"][:3])}) are the browser-facing code, which '
-                           f'{tool} reads. Its {n} {lang} file(s) are the server that renders them, not browser code; '
+                           f'{tool} {reads}. Its {n} {lang} file(s) are the server that renders them, not browser code; '
                            f'record that server code as outside this {what}, not as the UI left unread.')
         elif dominates:
             out['status'] = 'unsupported_dominant'
@@ -941,13 +1185,29 @@ def language_coverage(c: dict, supported, tool: str = 'this script', what: str =
             if by_lines:
                 out['dominant_unsupported_lines'] = n_l
             out['warning'] = (f'This repository is predominantly {lang} ({size}, vendored and third-party '
-                              f'trees excluded), which {tool} does not analyse: it covers '
+                              f'trees excluded), which {tool} {does} not analyse: {it} cover{"" if it == "they" else "s"} '
                               f'{", ".join(sorted(supported)) or "no language"} only. {n_sup} supported source '
-                              f'file(s) were found, so its output covers that minority and is NOT a {what} of this '
+                              f'file(s) were found, so {its} output covers that minority and is NOT a {what} of this '
                               f'repository\'s {lang} code. Do not present it as one; record {lang} as not assessed.'
                               + hint)
         else:
             out['status'] = 'partial'
+    if out['status'] != 'unsupported_dominant' and c.get('dominant_by') == 'lines':
+        product_lines = sum((c.get('lines') or {}).values())
+        sd = script_dominant(product_lines) if product_lines or c.get('dominant_basis') == 'product' else None
+        if sd:
+            sup_l = sum((c.get('lines') or {}).get(k, 0) for k in sup)
+            out.update({'status': 'unsupported_dominant', 'dominant_unsupported_language': sd[0],
+                        'dominant_unsupported_files': scr[sd[0]], 'dominant_unsupported_lines': sd[1],
+                        'decided_by': 'lines', 'supported_lines': sup_l,
+                        'unsupported_lines': product_lines - sup_l + sum(scr_lines.values())})
+            out['warning'] = (f'This repository is predominantly {sd[0]} scripts ({sd[1]} lines in {scr[sd[0]]} '
+                              f'file(s) outside test and tooling folders, against {product_lines} product line(s) in '
+                              f'every counted language), which {tool} {does} not analyse: {it} '
+                              f'cover{"" if it == "they" else "s"} '
+                              f'{", ".join(sorted(supported)) or "no language"} only, so {its} output is NOT a {what} '
+                              f'of this repository\'s {sd[0]} code. Do not present it as one; record {sd[0]} as not '
+                              f'assessed.' + hint)
     return out
 
 
@@ -1177,6 +1437,90 @@ def _line_checks(tree) -> list:
     checks.append(('language_coverage names UI markup as present but not analysed, without changing the status',
                    cov.get('status') == 'ok' and 'Slint' in notes and 'panel0.slint' in notes and 'not analysed' in notes
                    and (cov.get('ui_markup') or {}).get('Slint') == 4, cov))
+    real_walk = os.walk
+
+    def reversed_walk(top, *a, **kw):   # a filesystem (ext4) that lists files in no particular order
+        for dp, dns, fns in real_walk(top, *a, **kw):
+            fns.reverse()
+            yield dp, dns, fns
+    os.walk = reversed_walk
+    try:
+        rc = census(tree(ui))
+    finally:
+        os.walk = real_walk
+    checks.append(('the examples a note names do not depend on the order the filesystem lists files in',
+                   rc.get('ui_markup_examples') == c.get('ui_markup_examples'),
+                   (rc.get('ui_markup_examples'), c.get('ui_markup_examples'))))
+    # installer and packaging scripts in a language no tool reads: counted apart and named, never invisible
+    sc = dict(ws)
+    sc.update({'packaging/Install-Runtime.ps1': 'Write-Host "installing"\n' * 60,
+               'packaging/setup.sh': '#!/bin/sh\necho setup\n', 'scripts/fix-perms.psm1': 'function Fix {}\n',
+               'tests/fixtures/fake.bash': 'echo fake\n'})
+    c = census(tree(sc))
+    checks.append(('PowerShell and shell scripts are counted apart (scripts, script_lines), never as a language',
+                   c.get('scripts') == {'PowerShell': 2, 'Shell': 2} and 'PowerShell' not in c['languages']
+                   and (c.get('script_lines') or {}).get('PowerShell') == 60 and c.get('dominant') == 'Rust',
+                   (c.get('scripts'), c.get('script_lines'), c.get('dominant'))))
+    cov = language_coverage(c, {'Rust', 'Python'}, tool='scan_rs.py')
+    notes = ' '.join(cov.get('notes') or [])
+    checks.append(('language_coverage names unanalysed script languages with an example, status unchanged',
+                   cov.get('status') == 'ok' and 'PowerShell' in notes and 'Install-Runtime.ps1' in notes
+                   and 'Shell' in notes and (cov.get('scripts') or {}).get('PowerShell') == 2, cov))
+    cov = language_coverage(c, {'Rust', 'Python', 'PowerShell', 'Shell'}, tool='scan_all.py')
+    checks.append(('a tool that reads the script languages gets no note about them',
+                   'PowerShell' not in ' '.join(cov.get('notes') or []) and not cov.get('scripts'), cov))
+    so = census(tree({'install.sh': 'echo step\n' * 600, 'lib/common.sh': 'echo lib\n' * 50}))
+    cov = language_coverage(so, {'Python'}, tool='scan_py.py')
+    checks.append(('a repository of shell scripts alone is unsupported_dominant with a warning, never no_source',
+                   cov.get('status') == 'unsupported_dominant' and 'Shell' in (cov.get('warning') or '')
+                   and cov.get('dominant_unsupported_language') == 'Shell', cov))
+    plural = language_coverage(so, {'Python'}, tool="this report's mutation engines")
+    checks.append(('a plural tool name takes a plural verb in the warning, a singular one keeps its own',
+                   'engines count, ' in (plural.get('warning') or '')
+                   and 'they do not analyse: their output' in (plural.get('warning') or '')
+                   and 'scan_py.py counts, ' in (cov.get('warning') or '')
+                   and 'it does not analyse: its output' in (cov.get('warning') or ''),
+                   (plural.get('warning') or '')[:160]))
+    sd = census(tree({'install.sh': 'echo step\n' * 600, 'helper.py': py_body * 5}))
+    cov = language_coverage(sd, {'Python'}, tool='scan_py.py')
+    checks.append(('shell scripts that outweigh the analysed product code are unsupported_dominant',
+                   cov.get('status') == 'unsupported_dominant' and cov.get('dominant_unsupported_language') == 'Shell'
+                   and cov.get('decided_by') == 'lines' and '600' in (cov.get('warning') or ''), cov))
+    # product code that lives in a tooling-named folder: the CI measures it and the tests load it
+    tp = dict(ws)
+    tp.update({f'scripts/report{i}.py': py_body * 60 for i in range(8)})
+    tp['tests/test_reports.py'] = ('import sys\nfrom pathlib import Path\n'
+                                   'sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))\n'
+                                   'import report0\n')
+    tp['.github/workflows/ci.yml'] = ('jobs:\n  test:\n    steps:\n'
+                                      '      - run: coverage run --source=scripts -m unittest discover -s tests\n'
+                                      '      - run: python scripts/report1.py --check\n')
+    tp['pyproject.toml'] = '[project]\nname = "tides"\n[tool.setuptools]\nscript-files = ["scripts/report2.py"]\n'
+    c = census(tree(tp))
+    td = (c.get('tooling_dirs') or [{}])[0]
+    kinds = {e.get('kind') for e in td.get('evidence') or []}
+    checks.append(('a tooling-named folder lists the evidence that it holds product code (tooling_dirs)',
+                   td.get('path') == 'scripts' and td.get('lines') == 960 and td.get('languages') == {'Python': 960}
+                   and {'tests', 'ci_coverage', 'ci_runs', 'manifest'} <= kinds
+                   and (c.get('lines') or {}).get('Python') == 16, (c.get('tooling_dirs'), c.get('lines'))))
+    cov = language_coverage(c, {'Python'}, tool='scan_py.py')
+    notes = ' '.join(cov.get('notes') or [])
+    checks.append(('language_coverage says that scripts/ was counted as tooling although tests and CI use it',
+                   'scripts/' in notes and 'counted as tooling' in notes and '--product-dir scripts' in notes
+                   and '960' in notes and 'ci.yml:4' in notes
+                   and [t.get('path') for t in cov.get('tooling_as_product') or []] == ['scripts'], cov))
+    cov = language_coverage(c2, {'Python'}, tool='scan_py.py')
+    checks.append(('helper scripts nothing tests, measures or ships are not called product code',
+                   not cov.get('tooling_as_product') and '--product-dir' not in ' '.join(cov.get('notes') or []), cov))
+    c = census(tree(tp), product_dirs=['scripts'])
+    checks.append(('product_dirs counts a tooling-named folder as product code',
+                   (c.get('lines') or {}).get('Python') == 976 and not (c.get('tooling_lines') or {}).get('Python')
+                   and c.get('product_dirs') == ['scripts'], (c.get('lines'), c.get('tooling_lines'))))
+    zp = census(tree({'scripts/build.py': py_body * 40, 'src/main.rs': rs_body}))
+    cov = language_coverage(zp, {'Python'}, tool='scan_py.py')
+    checks.append(('a language whose every line is in a tooling folder is said to have no product line',
+                   'no product line' in ' '.join(cov.get('notes') or []) and 'scripts/' in ' '.join(cov.get('notes') or []),
+                   cov.get('notes')))
     return checks
 
 
@@ -1353,9 +1697,11 @@ def main(argv=None) -> int:
                     help='leave out nested sample and fixture projects (repo_layout.py); listed under fixtures_excluded')
     ap.add_argument('--fixture-dir', action='append', default=[], metavar='NAME|PATH',
                     help='with --exclude-fixtures: also treat this directory as a fixture parent')
+    ap.add_argument('--product-dir', action='append', default=[], metavar='DIR',
+                    help='count this tooling-named folder (scripts/, tools/ ...) as product code')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args(argv)
-    c = census(args.repo, args.exclude, args.include, args.exclude_fixtures, args.fixture_dir)
+    c = census(args.repo, args.exclude, args.include, args.exclude_fixtures, args.fixture_dir, args.product_dir)
     if args.supported is not None:
         c['language_coverage'] = language_coverage(c, [s.strip() for s in args.supported.split(',') if s.strip()],
                                                    tool=args.tool)
@@ -1373,6 +1719,15 @@ def main(argv=None) -> int:
           file=sys.stderr)
     for b in c['build_output']:
         print(f'{b["decision"]}: {b["reason"]}', file=sys.stderr)
+    if c['scripts']:
+        print('scripts counted apart (no skill parses them): '
+              + ', '.join(f'{k} {v} file(s), {c["script_total_lines"].get(k, 0)} line(s)' for k, v in c['scripts'].items()),
+              file=sys.stderr)
+    for t in c['tooling_dirs']:
+        if t['evidence']:
+            print(f'{t["path"]}/ is counted as tooling ({t["lines"]} lines) although '
+                  f'{", ".join(sorted({e["kind"] for e in t["evidence"]}))} point at product code: '
+                  f'--product-dir {t["path"]} counts it as product', file=sys.stderr)
     cov = c.get('language_coverage')
     if cov and cov['warning']:
         print('WARNING: ' + cov['warning'], file=sys.stderr)

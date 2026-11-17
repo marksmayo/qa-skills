@@ -32,6 +32,7 @@ import argparse, copy, datetime as dt, hashlib, json, re, sys, urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import jsonschema_lite as jl  # noqa: E402
 import yaml_lite  # noqa: E402
 

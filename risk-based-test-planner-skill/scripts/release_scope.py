@@ -42,16 +42,26 @@ def git(repo: Path, *args: str) -> str:
     return r.stdout
 
 
-def release_tags(repo: Path, package: str | None, prerelease: bool) -> list[dict]:
-    """Release tags merged into HEAD, newest commit first, each with the commit it points at."""
+def release_tags(repo: Path, package: str | None, prerelease: bool, passed: dict | None = None) -> list[dict]:
+    """Release tags merged into HEAD, newest commit first, each with the commit it points at. `passed`, when given,
+    collects the tags merged into HEAD that were not taken: 'prerelease' (skipped without --include-prerelease),
+    'other_package' (with --package) and 'not_a_release' (no version shape this script reads)."""
     out = []
+    passed = passed if passed is not None else {}
+    for k in ('prerelease', 'other_package', 'not_a_release'):
+        passed.setdefault(k, [])
     fmt = '%(refname:short)%09%(objectname)%09%(*objectname)%09%(committerdate:unix)%09%(*committerdate:unix)'
     for line in git(repo, 'for-each-ref', '--merged', 'HEAD', f'--format={fmt}', 'refs/tags').splitlines():
         name, obj, peeled, ts, pts = (line.split('\t') + [''] * 5)[:5]
         m = TAG.match(name.strip())
-        if not m or (m.group('pre') and not prerelease):
+        if not m:
+            passed['not_a_release'].append(name.strip())
             continue
         if package is not None and m.group('pkg') != package:
+            passed['other_package'].append(name.strip())
+            continue
+        if m.group('pre') and not prerelease:
+            passed['prerelease'].append(name.strip())
             continue
         out.append({'tag': name.strip(), 'package': m.group('pkg'), 'version': m.group('ver'),
                     'shape': 'changesets' if m.group('pkg') else 'semver', '_sha': peeled or obj,
@@ -297,9 +307,41 @@ def self_test() -> int:
             == ['v1.0.1', 'v1.0.2'],
         }
         bad += [k for k, ok in want.items() if not ok]
+        # A project whose only releases so far are previews: the default run finds no base, and must say that a
+        # prerelease tag was skipped and name --include-prerelease, never just "no release tag".
+        repo = Path(tmp) / 'preview'
+        repo.mkdir()
+        run('init', '-q', '-b', 'main')
+        write('app.py', 'print(1)\n')
+        run('add', '-A')
+        run('commit', '-q', '-m', 'feat: first preview')
+        run('tag', 'v0.0.1-preview.1')
+        run('tag', 'nightly')
+        write('app.py', 'print(2)\n')
+        run('add', '-A')
+        run('commit', '-q', '-m', 'feat: more', when='2026-01-02T00:00:00')
+        import contextlib, io
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            main(['--repo', str(repo), '--out', str(out)])
+        res = json.loads(out.read_text(encoding='utf-8'))
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            main(['--repo', str(repo), '--include-prerelease', '--out', str(out)])
+        res2 = json.loads(out.read_text(encoding='utf-8'))
+        want = {
+            f'only prerelease tags: no base, the skipped tag is listed (got {res.get("prerelease_tags_skipped")})':
+            res.get('base') is None and res.get('prerelease_tags_skipped') == ['v0.0.1-preview.1'],
+            f'only prerelease tags: the message names the tag and --include-prerelease (got {err.getvalue()!r})':
+            'v0.0.1-preview.1' in err.getvalue() and '--include-prerelease' in err.getvalue(),
+            f'the tags merged into HEAD are reported, with the ones that are no release (got {res.get("tags_merged")})':
+            (res.get('tags_merged') or {}).get('not_a_release') == ['nightly'],
+            '--include-prerelease takes the preview as the base': (res2.get('base') or {}).get('tag') == 'v0.0.1-preview.1'
+            and res2.get('prerelease_tags_skipped') == [],
+        }
+        bad += [k for k, ok in want.items() if not ok]
     for b in bad:
         print('FAIL ' + b)
-    print(f'self-test: {9 - len(bad)} passed, {len(bad)} failed')
+    print(f'self-test: {13 - len(bad)} passed, {len(bad)} failed')
     return 1 if bad else 0
 
 
@@ -320,8 +362,10 @@ def main(argv=None) -> int:
         base = {'tag': args.base, 'package': args.package, 'version': None, 'shape': 'given', 'sha': sha[:12],
                 'commits_since': int(git(repo, 'rev-list', '--count', f'{sha}..HEAD').strip() or 0)}
         tags, head_release, skipped = [], None, []
+        passed = {'prerelease': [], 'other_package': [], 'not_a_release': []}
     else:
-        tags = release_tags(repo, args.package, args.include_prerelease)
+        passed = {}
+        tags = release_tags(repo, args.package, args.include_prerelease, passed)
         base, head_release, skipped = nearest(repo, tags, expand_ranges(withdrawn_versions(repo), tags))
     if base:
         base['command'] = ('git for-each-ref --merged HEAD refs/tags; git rev-list --count <tag>..HEAD (nearest release tag'
@@ -346,7 +390,12 @@ def main(argv=None) -> int:
         if t['package'] and t['package'] not in latest:
             latest[t['package']] = t['tag']
     res = {'repo': repo.name, 'head': head, 'base': base, 'head_release': head_release, 'skipped_releases': skipped,
-           'release_tags_found': len(tags), 'last_release_per_package': dict(sorted(latest.items())),
+           'release_tags_found': len(tags),
+           # every tag merged into HEAD, by what was done with it: an empty base is never a bare "no tag"
+           'tags_merged': {'release': sorted(t['tag'] for t in tags), 'prerelease_skipped': sorted(passed['prerelease']),
+                           'other_package': sorted(passed['other_package']), 'not_a_release': sorted(passed['not_a_release'])},
+           'prerelease_tags_skipped': sorted(passed['prerelease']),
+           'last_release_per_package': dict(sorted(latest.items())),
            'changesets': cs, 'packages': dict(sorted(pk.items())),
            'unknown_packages': sorted(n for n, p in pk.items() if p['dir'] is None),
            'breaking_commits': breaking_commits(repo, base['sha'] if base else None)}
@@ -359,8 +408,19 @@ def main(argv=None) -> int:
     if base:
         print(f'release base {base["tag"]} ({base["sha"]}, {base["commits_since"]} commits before HEAD {head}); '
               f'diff_scope.py --base {base["tag"]}')
-    else:
-        print('no release tag merged into HEAD: give --base, or scope the plan another way', file=sys.stderr)
+    pre = sorted(passed['prerelease'])
+    shown = ', '.join(pre[:5]) + (f' (+{len(pre) - 5})' if len(pre) > 5 else '')
+    if not base and pre:
+        print(f'no release tag merged into HEAD, but {len(pre)} prerelease tag(s) were skipped ({shown}): pass '
+              '--include-prerelease if previews are your releases (the nearest one becomes the base), or give --base',
+              file=sys.stderr)
+    elif not base:
+        other = passed['other_package'] + passed['not_a_release']
+        print('no release tag merged into HEAD' + (f' ({len(other)} tag(s) merged into HEAD are not release tags'
+              + (' of this package' if passed['other_package'] else '') + f': {", ".join(sorted(other)[:5])})' if other else '')
+              + ': give --base, or scope the plan another way', file=sys.stderr)
+    elif pre:
+        print(f'{len(pre)} prerelease tag(s) skipped ({shown}); --include-prerelease counts them as releases', file=sys.stderr)
     brk = [n for n, p in pk.items() if p['breaking']]
     print(f'{len(cs)} pending changeset(s) for {len(pk)} package(s); breaking: {", ".join(brk) or "none"}; '
           f'{len(res["breaking_commits"])} breaking commit(s) -> {args.out}')

@@ -100,6 +100,7 @@ GENERATED_PATH = re.compile(r'_pb2(_grpc)?\.pyi?$|\.pb\.go$|\.g\.dart$|\.freezed
 # lang_census.py next to this script) the name alone decides, as before: generated.
 BUILD_DIR_NAMES = ('dist', 'build')
 _EVIDENCE: dict[str, object] = {}
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 try:   # shipped next to this script in the skills that carry diff_scope.py
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import lang_census as _lc   # noqa: E402

@@ -36,6 +36,7 @@ import argparse, json, re, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from langs import prune_dir, keep_build_dir, INCLUDE, build_dirs, report_build_skips  # noqa: E402  (data dirs, build output)
 
 # directories never descended into (pruned before descending)

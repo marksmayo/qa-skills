@@ -1,7 +1,7 @@
 ---
 name: code-security-auditor
 description: Audit a codebase for security weaknesses with open-source scanners (Semgrep OSS, Bandit, gosec, Brakeman, gitleaks, osv-scanner, pip-audit, npm audit, zizmor, Trivy, Checkov and more) plus a deep manual review, trace each finding from attacker-controlled input to the dangerous operation, rate it with CVSS v4.0, and write safe reproduction steps, a fix and a regression test. Optionally confirms findings with canary-only proofs of concept against localhost or a test environment the user names. Every candidate is triaged, every tool's status is recorded, and the report never calls the code secure.
-version: 1.9.0
+version: 1.10.0
 ---
 
 # Code Security Auditor
@@ -35,10 +35,11 @@ What sets this apart from asking for a quick review:
    Informational issues go in `observations`, not findings.
 3. **Every candidate is triaged.** Promote it to a finding, record it as an observation, or dismiss
    it with a reason someone else can check (the guard and its line, the invariant, or why the input
-   is not attacker-controlled). "False positive" on its own is not a reason. A triage row links to
+   is not attacker-controlled). "False positive" on its own is not a reason. Each triage row has
+   `decision: "promoted"` (it became a finding), `decision: "observation"` or `decision: "dismissed"`
+   (the seed writes every row as dismissed only because the schema needs a value). A row links to
    what it became through `finding`: `"finding": "F-3"` for a promoted candidate and
-   `"finding": "O-1"` (with `decision: observation`) for an observation; there is no separate
-   `observation` field. A grouped candidate (`grouped_lines`, documented FFI `unsafe` blocks in one
+   `"finding": "O-1"` for an observation; there is no separate `observation` field. A grouped candidate (`grouped_lines`, documented FFI `unsafe` blocks in one
    file) is triaged once, and its reason covers every line in the group.
 4. **Dynamic verification needs permission and a safe target.** Only after the user has explicitly
    agreed, and only against localhost or a test environment they named. Never production unless
@@ -86,7 +87,9 @@ repeated across generated pages is listed once with `also_in`; server code, conf
 setup are not client sources), a first guess at each route's auth requirement, data stores,
 outbound calls, secret configuration, dependency manifests, CI workflows and review leads. Then
 read the code to confirm it: add entry points the patterns missed (CI workflows, dynamically
-registered routes), correct auth guesses (`unknown` is not `public`), and write the trust
+registered routes), correct auth guesses (`unknown` is not `public`; a local program with no accounts, run by the user it
+acts for, is `local_user` with exposure `local`, which `seed_report.py` seeds for local CLI and
+environment entry points), and write the trust
 boundaries and the auth model (authentication, sessions, authorisation). The map decides where the
 deep review goes; record it in `recon`. If you drop an entry point recon found (a duplicate, a
 string that only looks like a listener), list it in `recon.removed_entry_points` with the reason:
@@ -350,8 +353,12 @@ path cannot run) and `package`/`module` as `no` with govulncheck's basis; a `-sc
 `Cargo.lock` (`cargo-audit audit --json`); with `--offline` it runs `--no-fetch --stale` against a
 local RustSec copy (`--cargo-audit-db`, default `CARGO_HOME/advisory-db`) and needs no network, and
 its tool row records the database's advisory count and last update (`advisory_db`). An offline copy
-is only as current as that date: say so in the limitations (`seed_report.py` adds the line). The
-yanked check reads the crates.io index and may fail offline; the error is kept in the row's reason.
+is only as current as that date: say so in the limitations (`seed_report.py` adds the line). Offline,
+cargo-audit runs with `CARGO_NET_OFFLINE=true` and HTTP(S) proxies on a closed loopback port, so
+nothing leaves the machine; its yanked-crate check can then only read the local crates.io index
+cache, and the row records the guard (`network_guard`) and where the yanked answers came from
+(`yanked_check`: from the cache, which is only as current as the last online cargo command, or not
+assessed when the index could not be read). Name a not-assessed yanked check in the limitations.
 cargo-deny (`check advisories`, JSON on stderr) runs too when installed. `merge_findings.py --deps`
 reads both: vulnerabilities, unmaintained, unsound and yanked crates become `DEP-nnn` rows with a
 `kind` (a yanked release's advisory is `yanked:<crate>@<version>`); an unmaintained crate needs a
@@ -526,11 +533,18 @@ instances, nothing safe, and nothing on a fixed copy. Ship it in `variant_rules`
 a file outside the repository) so the team can add it to CI.
 
 Without Semgrep, test a variant as a regex: write a catalogue with one entry in the
-`data/pitfalls.json` shape (pack, regex, optional `require_near`/`suppress_near`/`suppress_file`)
-to a scratch file, run `scan_pitfalls.py <repo> --catalogue <that file>` on the repository and on
-a fixed copy, and record it in `variant_rules` with `engine: "grep"` (the regex in `rule`, the
-catalogue file in `file`, what it matched in `matches`). When no finding is pattern-shaped, say so
-in the limitations instead.
+`data/pitfalls.json` shape to a scratch file, `{"version": "variant", "pitfalls": [{"id", "pack",
+"cwe", "category", "title", "regex", "fix", optional "require_near"/"suppress_near"/"suppress_file"/
+"window"/"suppress_in_test_code"}]}`. A top-level `packs` is optional: a pack the built-in catalogue
+defines (`rust`, `python`, ...) is taken from it, and a new pack needs
+`"packs": {"name": {"extensions": [".ext"]}}` (an undefined pack is refused with that hint). Run
+`scan_pitfalls.py <repo> --catalogue <that file>` on the repository and on a fixed copy, and record
+it in `variant_rules` with `id` (`R-1`, `R-2` ...), `for_findings` (the finding ids it generalises),
+`engine` (`grep`, or `semgrep`), `rule` (the regex or rule text), `file` (the catalogue or rule file,
+outside the repository), `matches` (`path:line` of each hit), `tested` and `test_note` (where it ran
+and what it matched: the repository, a fixed copy; `tested: false` with a `test_note` saying why it
+could not run). When no finding is pattern-shaped, say so in the limitations
+instead.
 
 ### 7. Verify (opt-in)
 
@@ -644,14 +658,28 @@ service). Desktop tools and tools that load plugins or helper programs have one 
 uncontrolled search paths (CWE-427): `RUST-SEARCH-PATH-CWD` (a path built from
 `env::current_dir()` next to a launch, a library load or an `.exe`/`.dll`/`.so` name),
 `RUST-SEARCH-PATH-RELATIVE` (a relative program or library path such as `"lib/x.so"` or
-`"tools/x.exe"`, which resolves against the working directory) and `RUST-DLL-SEARCH-ORDER` (a DLL
-loaded by bare name or `LoadLibrary` without `LOAD_LIBRARY_SEARCH_*` flags: the Windows search order
-includes the application folder, the PATH and, for a relative path, the working directory). The
-attacker is whoever controls the folder the tool starts in (a cloned repository, a download folder)
-or the environment: exposure `local`, `AV:L` with `UI:P`. The fix resolves from `current_exe()` or an
-absolute configured path. Noise is held down: matches inside `#[cfg(test)]` items and `#[test]`
-functions are skipped (`--include-tests` keeps them), a narrowing cast of a value clamped, `min`'d
-or asserted just before, or of a float (`.floor() as usize`, `x >= 0.0`), is not a candidate, and
+`"tools/x.exe"`, which resolves against the working directory), `RUST-DLL-SEARCH-ORDER` (a DLL
+named by bare name anywhere in a file that loads libraries, also in a `vec!` of candidates or a
+const that reaches `Library::new(name)`, or `LoadLibrary` without `LOAD_LIBRARY_SEARCH_*` flags: the
+Windows search order includes the application folder, the PATH and, for a relative path, the
+working directory), `RUST-LIB-BARE-NAME` (a `.dylib` or `.so` named without a directory: the
+loader's search path decides, and macOS `dlopen` of a leaf name also tries the working directory;
+a bare name kept as the last fallback after absolute paths is still one) and
+`RUST-SEARCH-PATH-EXE-ANCESTORS` (a search of the folders above the program: `current_exe()` then
+`.ancestors()`, or `.parent()` of a parent, joined with a tool or library path). The attacker is
+whoever controls the folder the tool starts in (a cloned repository, a download folder), a folder
+above the installed program, or the environment: exposure `local`, `AV:L` with `UI:P`. The fix
+resolves from the program's own folder (`current_exe()?.parent()`) or an absolute configured path;
+walking up from `current_exe()` to its parent or grandparent (a development checkout layout) puts
+the search path back, so a release build should look in the program's folder only. Recon raises a
+review lead for each of these sites too. A program that hands URLs or files to an embedded engine (a
+media player, a browser engine, a script host) needs one more read: which of the engine's own
+script, configuration and helper-launch features (a downloader hook, user scripts, config files in
+the working directory) are left on. Noise is held down: matches inside `#[cfg(test)]` items,
+`#[test]` functions, files declared `#[cfg(test)] mod name;` (listed in `test_only_modules`) and
+`benches/` are skipped (`--include-tests` keeps them), a narrowing cast of a value clamped, `min`'d,
+asserted, bounded by a match-arm guard (`x if x <= 2 =>`) or widened from a smaller type, of a
+pointer compared as an address, or of a float (`.floor() as usize`, `x >= 0.0`), is not a candidate, and
 `unsafe` blocks that carry a `// SAFETY:` comment and call foreign code are grouped into one
 low-confidence candidate per file (`grouped_lines`); an undocumented or non-FFI `unsafe` block stays
 on its own. Recon reads Rust crates with the shared Cargo model: clap CLIs and subcommands are entry
@@ -665,7 +693,15 @@ not flagged), secret-named values and userinfo URLs passed to a logger, `http://
 remote hosts and fixed `/tmp` paths. If the repository's dominant language (vendored trees
 excluded) has no pack, `scan_pitfalls.py` prints a loud warning and records `language_coverage`
 (`unsupported_dominant`) rather than a clean-looking candidate list drawn from the minority it did
-scan; add a pack before trusting the run.
+scan; add a pack before trusting the run. Script languages (PowerShell, shell, batch ...) are never
+the dominant language but are always named: the `powershell` and `shell` packs read only a few
+patterns (secrets passed on a command line such as `--password=$x`, `Install-Module` or `winget
+install` without a pinned version, a download piped into a shell or `Invoke-Expression`), and
+`language_coverage.script_packs` and a note say so; every other script kind is named as not analysed.
+`merge_findings.py` carries `language_coverage` into `candidates.json`, `seed_report.py` writes its
+notes as limitations, and `validate_security_audit.py --candidates` rejects a report whose
+limitations (or `coverage.not_reviewed`) do not name each unanalysed language and script kind. The
+`python` pack has the same two command-line rules (`PY-SECRET-ARGV`, `PY-INSTALL-UNPINNED`).
 
 ### 9. Repro steps, fix and regression test
 
@@ -764,7 +800,11 @@ and leaves sibling ones to that report.
   (`C:\Users\<name>\...`, `/home/<name>/...`, `/Users/<name>/...`) outside
   `verification.local_copy` and `files_written`: `seed_report.py` writes `~` for the home directory in
   tool commands, output paths and database paths, and the validator expands `~` when it reads a
-  dependency tool's output.
+  dependency tool's output. A command PoC's evidence is checked too: its steps' argv and output
+  excerpts may not hold a home path (run_poc.py writes `{workdir}` for the work copy, also when the
+  program prints it JSON-escaped or with forward slashes). When the problem itself is a home path
+  in a committed file, quote the line with the account part replaced by `<user>` (say so in the
+  note) and give the file and line, which the reader can check.
 - With `--recon`, every fixture project recon left out (`fixtures_excluded`) is named in
   `target.excluded` or the limitations.
 - Secret blocks agree with the scanner: a secret it found in history is not reported as absent,

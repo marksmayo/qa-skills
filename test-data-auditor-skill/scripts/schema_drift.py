@@ -31,6 +31,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import datafiles, detect_conventions, inventory as inv, lang_census  # noqa: E402
 
 MODEL_BASES = {'BaseModel', 'Model', 'Base', 'DeclarativeBase', 'TypedDict', 'Schema', 'SQLModel'}
@@ -172,8 +173,8 @@ def drift(root: Path, inventory: dict) -> dict:
         if item['kind'] not in RECORD_KINDS or item['status'] != 'scanned':
             continue
         try:
-            records = datafiles.load_records(root / item['path'], item['path'])
-        except datafiles.NotAssessed:
+            records = datafiles.records_at(root, item['path'])
+        except (datafiles.NotAssessed, OSError):
             continue
         for r in records:
             model = match_model(r, item['path'], models, roots)

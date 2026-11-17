@@ -52,6 +52,7 @@ python scripts/detect_tools.py <repo>
 python scripts/diff_scope.py --repo <repo> --base main --out run/scope.json
 #   or, for a path scope:  python scripts/path_scope.py --repo <repo> --path src/billing --out run/scope.json
 python scripts/run_tests.py --preset pytest --cwd <repo> --out run/runs.json --repeat 2 --label baseline --run-prefix G
+python scripts/baseline_tests.py --repo <repo> --scope run/scope.json        # which test files reach the scope
 python scripts/builtin_mutator.py --repo <repo> --scope run/scope.json --run-dir run --tests tests/unit
 #   a unittest suite (CI runs python -m unittest):  ... --runner unittest --unittest-args "-s tests"
 #   scripts tested by their own self-test:  ... --runner selftest --tests tools/x.py [--selftest-cmd "python tools/check.py"]
@@ -154,6 +155,8 @@ python scripts/self_test.py
 - `scripts/run_tests.py`, `scripts/parse_results.py`, `scripts/detect_conventions.py`: test runs and conventions (shared)
 - `scripts/path_scope.py`: a path scope (every line of the files under a path) in `scope.json` form
 - `scripts/builtin_mutator.py`: stdlib AST mutation engine and per-test line coverage for pytest, unittest or scripts' own self-tests (`--runner selftest`), limited to `--tests`; checks the tree after every mutant and restores the source when stopped; Go through `go_mutator.py`
+- `scripts/baseline_tests.py`: lists the Python test files that reach the scoped modules (imports, re-exports, loads by file path, child processes), with the `--tests` arguments for the baseline
+- `scripts/rust_gates.py`: lists scoped Rust lines not compiled on this platform or with the default features (`#[cfg(unix)]`, `#[cfg(feature = ...)]`), to report as not assessed
 - `scripts/unittest_runner.py`: runs a unittest suite as `python -m unittest discover` does, with per-test results and tracing (used by the builtin engine and `prove_kill.py`)
 - `scripts/go_mutator.py`, `scripts/go_scan.py`: the builtin engine's Go half (Go tokens, `go test -overlay`, per-test coverprofiles) and the Go helpers the validator and `prove_kill.py` use
 - `scripts/self_test.py`: synthetic cases for the Go engine, loud refusals, engine naming, merged duplicates, proximity, evidence completeness, the product-language and tooling warnings, unittest suites, the budget estimate, cargo-mutants and Rust proofs

@@ -86,6 +86,7 @@ from urllib.parse import urljoin, urlsplit, parse_qsl, urlencode
 HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from browser_harness import Harness, check_authorised, NotAuthorised, now, is_loopback  # noqa: E402
 from classify import recovery_actions, recovery_kind  # noqa: E402
 

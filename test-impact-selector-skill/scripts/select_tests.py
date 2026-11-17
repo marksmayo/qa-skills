@@ -32,6 +32,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import build_command, diff_scope, import_graph, parse_results, run_tests  # noqa: E402
 from unified_diff import apply_patch, parse_patch  # noqa: E402,F401
 
@@ -269,6 +270,8 @@ def naming_matches(path: str, tests: list[str], package_of) -> list[str]:
     stem = p.name.split('.')[0]
     if stem.lower() in NAMING_SKIP:
         return []
+    if '-' in stem and p.suffix == '.py':
+        stem = stem.replace('-', '_')        # test_install_gauge.py tests install-gauge.py (loaded by file path)
     names = {f'test_{stem}.py', f'{stem}_test.py', f'{stem}_test.go', f'{stem}_test.dart', f'{stem}_spec.rb',
              f'{stem}Test.java', f'{stem}Tests.java', f'{stem}IT.java', f'{stem}Test.kt', f'{stem}Tests.kt',
              f'{stem}Tests.swift', f'{stem}Test.swift', f'{stem}Tests.cs', f'{stem}Test.cs'}
@@ -327,6 +330,11 @@ class Selector:
         self.reasons: dict[str, list[dict]] = {}
         self.blind: list[dict] = []
         self.notes: list[str] = []
+        self._left_out: dict[str, dict] = {}
+        self._named_by: dict[str, str] = {}
+        if cargo_metadata is not None:
+            self.notes.append(self.g_new.cargo_metadata_note or '--cargo-metadata: no Cargo.toml at the repository '
+                              'root, so the cargo metadata was not used.')
 
     # ------------------------------------------------------------ sources
     def coverage_status(self) -> list[dict]:
@@ -472,8 +480,16 @@ class Selector:
         if widen:
             for t in tests:
                 self.add(t, 'blind_spot', f'{bid} {kind}: {scope}', entry['path'], strength=0)
-        self.blind.append({'id': bid, 'path': entry['path'], 'kind': kind, 'action': action, 'required_scope': scope,
-                           'widened_to': tests if widen else [], 'would_widen_to': tests, 'note': note})
+        spot = {'id': bid, 'path': entry['path'], 'kind': kind, 'action': action, 'required_scope': scope,
+                'widened_to': tests if widen else [], 'would_widen_to': tests, 'note': note}
+        left = self._left_out.get(entry['path']) if scope in ('package', 'package_and_contract') else None
+        if left:
+            # the package scope was narrowed by evidence (package_tests): say what was left out and why
+            spot['left_out'] = [{k: x[k] for k in ('family', 'tests', 'reason')} for x in left['left_out']]
+            spot['note'] = note + ' ' + left['note']
+        elif scope in ('package', 'package_and_contract') and self._named_by.get(entry['path']):
+            spot['note'] = note + ' ' + self._named_by[entry['path']]
+        self.blind.append(spot)
 
     def package_tests(self, path: str) -> list[str]:
         """The tests of path's package that a change to it can reach by language (import_graph.same_family): a Rust
@@ -493,7 +509,58 @@ class Selector:
             reach = set(self.g_new.tests_reaching(path)) | set(self.g_base.tests_reaching(path))
             return import_graph.same_family(path, sorted(set(mine) | reach))
         mine = self.tests if pkg == '.' else [t for t in self.tests if self.g_new.package_of(t) == pkg]
-        return import_graph.same_family(path, mine)
+        mine = import_graph.same_family(path, mine)
+        if pkg == '.' and import_graph.family(path) is None:
+            mine = self.by_evidence(path, mine)
+        return mine
+
+    FAMILY_NAME = {'rust': 'Rust', 'go': 'Go'}
+
+    def by_evidence(self, path: str, tests: list[str]) -> list[str]:
+        """Narrow the root package's tests for a file of no language (a data file, a PowerShell or shell script, UI
+        markup) by what the sources show. A compiled test (Rust, Go) can read such a file only through a path written
+        in its language's source, so those tests stay in only when a file of that language names the file or its
+        folder; otherwise they are left out, and the blind spot says so (`left_out`). Tests of interpreted languages
+        stay: they build paths at run time too freely to rule out. The tests that name the file are noted."""
+        if path in self._left_out or path in self._named_by:
+            return [t for t in tests if import_graph.family(t) not in self._left_out.get(path, {}).get('families', ())]
+        g = self.g_new
+        name = PurePosixPath(path).name
+        folder = PurePosixPath(path).parent.name
+        needles = [name] + ([f'{folder}/', f'"{folder}"', f"'{folder}'"] if folder else [])
+
+        def names_it(f: str) -> int | None:
+            text = g.text(f) or ''
+            hit = min((i for i in (text.find(n) for n in needles) if i >= 0), default=-1)
+            return None if hit < 0 else text.count(chr(10), 0, hit) + 1
+        families, left = [], []
+        for fam, label in self.FAMILY_NAME.items():
+            mine = [t for t in tests if import_graph.family(t) == fam]
+            if not mine:
+                continue
+            ext = '.rs' if fam == 'rust' else '.go'
+            if any(names_it(f) for f in sorted(g.all_paths) if f.endswith(ext) and not g.excluded_dir(f)):
+                continue
+            families.append(fam)
+            left.append({'family': fam, 'tests': len(mine), 'label': label,
+                         'reason': f'no {label} file names {name}' + (f' or its folder {folder}/' if folder else '') +
+                                   ', and a compiled test reads a file only through a path in its source'})
+        named = []
+        for t in tests:
+            if import_graph.family(t) in families or t not in g.all_paths:
+                continue
+            text = g.text(t) or ''
+            at = text.find(name)
+            if at >= 0:
+                named.append(f'{t}:{text.count(chr(10), 0, at) + 1}')
+        said = (f'Named in {", ".join(named[:3])}' + (f' and {len(named) - 3} more test file(s)' if len(named) > 3 else '')
+                + '.') if named else ''
+        if left:
+            self._left_out[path] = {'families': families, 'left_out': left, 'note': (said + ' ' if said else '') + ' '.join(
+                f'Left out: the {x["tests"]} {x["label"]} test file(s), because {x["reason"]}.' for x in left)}
+        else:
+            self._named_by[path] = said
+        return [t for t in tests if import_graph.family(t) not in families]
 
     def root_folder(self, path: str) -> str | None:
         """The top-level folder that stands in for a package: path's package is a repository root with no manifest
@@ -622,13 +689,22 @@ class Selector:
                                         'imports (a package manifest, a JSON fixture read by path): its reach is the package.',
                                         'package', self.package_tests(path))
                     else:
-                        self.blind_spot(entry, 'shared_fixture', 'Test helper or setup file no test imports: it is probably '
-                                        'loaded by runner configuration (setupFiles, globalSetup), so its reach is the package.',
-                                        'package', self.package_tests(path))
+                        pkg_fw = next((p.get('frameworks') or [] for p in self.g_new.packages
+                                       if p['root'] == self.g_new.package_of(path)), [])
+                        how = ('it is probably loaded by runner configuration (setupFiles, globalSetup)'
+                               if set(pkg_fw) & build_command.JS_FWS else
+                               'the tests that read or load it by path are not visible as imports')
+                        self.blind_spot(entry, 'shared_fixture', f'Test helper or setup file no test imports: {how}, so '
+                                        'its reach is the package.', 'package', self.package_tests(path))
             elif kind == 'global_config' and import_graph.is_rust_config(path) and self.g_new.rust_crates:
                 rust = [t for t in self.tests if import_graph.family(t) == 'rust']
                 self.blind_spot(entry, 'global_config', 'Cargo workspace manifest, lockfile or toolchain: it can change how '
                                 'every Rust test builds and runs, and not the tests of other languages.', 'language', rust)
+            elif kind == 'global_config' and entry['status'] == 'added' and import_graph.match(path, KINDS['ci']):
+                self.blind_spot(entry, 'global_config', 'A new CI file: it adds jobs or steps and nothing that exists '
+                                'refers to it yet, so it cannot change how an existing test runs or what it tests. No '
+                                'test is widened for it; what it runs is checked by running the new workflow itself. (A '
+                                'modified CI file widens to the full suite.)', 'no_existing_test', [])
             elif kind == 'global_config':
                 self.blind_spot(entry, 'global_config', 'Lockfile, CI or repository-level build configuration: it can change '
                                 'how every test runs.', 'full_suite', self.tests)
@@ -671,6 +747,7 @@ class Selector:
                 if sites:
                     self.blind_spot(entry, 'dynamic_reference', 'Loaded by a computed name, so imports cannot show every '
                                     'test that reaches it: ' + '; '.join(sites[:3]), 'package', self.package_tests(path))
+                self.unresolved_importers(entry)
                 if entry['status'] in ('deleted', 'renamed'):
                     gone = entry.get('old_path') or path
                     importers = sorted(self.g_base.tests_reaching(gone))
@@ -687,6 +764,36 @@ class Selector:
                             'full_suite', self.tests)
         return self.result(changes, cov)
 
+    def unresolved_importers(self, entry: dict) -> None:
+        """Files whose bare import could not be resolved (sys.path set from the environment, PYTHONPATH) and whose
+        candidate is the changed file: the tests among them, and the tests that reach them, are one blind spot
+        widened to exactly those tests, unless import evidence already links each of them to the file."""
+        path = entry['path']
+        sites: dict[str, int] = {}
+        for graph, target in ((self.g_new, path), (self.g_base, entry.get('old_path') or path)):
+            for src, e in graph.files.items():
+                for u in e.get('unresolved') or ():
+                    if target in (u.get('candidates') or ()):
+                        sites.setdefault(src, u['line'])
+        if not sites:
+            return
+        tests: set[str] = set()
+        for src in sites:
+            if src in self.test_set:
+                tests.add(src)
+            tests |= set(self.g_new.tests_reaching(src)) & self.test_set
+        linked = {t for t, rs in self.reasons.items()
+                  if any(r['changed_path'] == path and r['source'] == 'import_graph' for r in rs)}
+        tests -= linked
+        if not tests:
+            return
+        shown = [f'{src}:{line}' for src, line in sorted(sites.items())]
+        self.blind_spot(entry, 'dynamic_reference',
+                        f'{len(sites)} file(s) import a module of this name that the graph could not resolve (sys.path or '
+                        f'PYTHONPATH set at run time): {", ".join(shown[:4])}' + (' and more' if len(shown) > 4 else '') +
+                        f'. This file is a candidate, so the {len(tests)} test file(s) among them and reaching them '
+                        'are run.', 'unresolved_importers', sorted(tests))
+
     def unmapped(self, entry: dict, linked: bool) -> None:
         """An unmapped source file: widened to its package; the note says what is known about its tests, and says
         "No tests found" only when nothing links it and its package scope holds no test. A file in a language with no
@@ -695,6 +802,8 @@ class Selector:
         node = self.g_new.files.get(path, {})
         lang = node.get('lang')
         unparsed = bool(lang) and self.g_new.languages.get(lang) == 'no_parser'
+        if not lang and self.unread_language(path):
+            lang, unparsed = self.unread_language(path), True
         tests = self.package_tests(path)
         weak = sorted({t for t, rs in self.reasons.items() for r in rs if r['changed_path'] == path and r['source'] != 'blind_spot'})
         importers = sorted({src for src, e in self.g_new.files.items() for u in e.get('unresolved', [])
@@ -750,6 +859,9 @@ class Selector:
                     'journey_priority': next((p for p, r in PRIORITY_RANK.items() if r == prio), None),
                     'past_failures': f'{fr[0]}/{fr[1]}' if fr[1] else None,
                     'widened_by': sorted({r['evidence'].split()[0] for r in rs if r['source'] == 'blind_spot'})}
+            if t in self.g_new.rust_tests:
+                # its libtest ids: a verify run may record a unit test under its crate's root file
+                item['test_ids'] = [x['id'] for x in self.g_new.rust_tests[t]]
             (selected if chosen else considered).append(item)
         selected.sort(key=lambda s: (-s['strength'], PRIORITY_RANK.get(s['journey_priority'], 9),
                                      -(int(s['past_failures'].split('/')[0]) / int(s['past_failures'].split('/')[1])
@@ -795,6 +907,7 @@ class Selector:
                                       go_flags=go_flags, go_flags_from=go_from, cargo=self.cargo_info(),
                                       python_runners=self.g_new.python_runners, self_tests=self_tests,
                                       run_roots=run_roots, excluded=[x['dir'] for x in g.excluded])
+        self.notes += build_command.not_run_lines(command)
         sources = self.sources(changes, cov)
         n_docs = len([c for c in changes if c['kind'] == 'docs'])
         out = {
@@ -816,14 +929,26 @@ class Selector:
                               (' and more' if len(nt) > 5 else '') + '.')
         return out
 
+    def unread_language(self, path: str) -> str | None:
+        """The language of a file nothing here parses and the graph does not list (lang_census's names): script
+        languages (PowerShell, Shell, Batch ...), UI markup (Slint, QML, XAML ...) and languages outside the graph's
+        own table (Lua, C, C++ ...). None for a file the graph gives a language, and for data, styles and documents."""
+        import lang_census
+        ext = PurePosixPath(path).suffix
+        low = ext.lower()
+        if low in import_graph.NO_PARSER or low in import_graph.PY_EXT or low in import_graph.JS_EXT or low == '.pyi':
+            return None
+        return (lang_census.SCRIPT_BY_EXT.get(low) or lang_census.UI_MARKUP_BY_EXT.get(low)
+                or lang_census.LANG_BY_EXT.get(ext) or lang_census.LANG_BY_EXT.get(low))
+
     def language_coverage(self, changes: list[dict]) -> dict | None:
-        """Which languages the import graph parsed, and the changed files in a language it has no parser for. With
-        any such file, `warning` is set: those files are not traced to tests (each is an unmapped blind spot,
-        widened), and the report must name the language in its limitations. None when every language was parsed."""
+        """Which languages the import graph parsed, and the changed files in a language it has no parser for: the
+        graph's own no_parser languages (Kotlin, Swift ...) and, for changed source files, the languages nothing here
+        reads at all (unread_language: Slint, Lua, PowerShell, shell ...). With any such file, `warning` is set: those
+        files are not traced to tests (each is an unmapped blind spot, widened), and the report must name the language
+        in its limitations. None when every language was parsed and no changed file is in an unread one."""
         langs = {**self.g_base.languages, **self.g_new.languages}
         no_parser = sorted(l for l, s in langs.items() if s == 'no_parser')
-        if not no_parser:
-            return None
         hit: dict[str, list[str]] = {}
         for c in changes:
             if c['kind'] in ('docs', 'bench'):
@@ -831,7 +956,13 @@ class Selector:
             node = self.g_new.files.get(c['path']) or self.g_base.files.get(c.get('old_path') or c['path']) or {}
             if node.get('lang') in no_parser:
                 hit.setdefault(node['lang'], []).append(c['path'])
-        out = {'parsed': sorted(l for l, s in langs.items() if s == 'parsed'), 'no_parser': no_parser,
+            elif not node.get('lang') and c['kind'] in ('source', 'unknown'):
+                name = self.unread_language(c['path'])
+                if name:
+                    hit.setdefault(name.lower(), []).append(c['path'])
+        if not no_parser and not hit:
+            return None
+        out = {'parsed': sorted(l for l, s in langs.items() if s == 'parsed'), 'no_parser': sorted(set(no_parser) | set(hit)),
                'changed_unparsed': sorted(hit), 'changed_unparsed_files': {l: fs[:10] for l, fs in sorted(hit.items())},
                'warning': None}
         if hit:
@@ -840,7 +971,7 @@ class Selector:
                               f'({", ".join(f for v in hit.values() for f in v[:2])}): nothing traces them to tests, so '
                               'each is an unmapped blind spot widened to its package (to the full suite when no test '
                               'of its package could be found), and tests in that language are found by file name '
-                              'only. Name this in the report\'s limitations.')
+                              "only. Name this in the report's limitations.")
         return out
 
     def cargo_info(self) -> dict | None:
@@ -918,9 +1049,10 @@ class Selector:
                         'factor': None if share is None else round(share * (0.5 if stale else 1.0), 4)})
         langs = self.g_new.languages
         graph_changes = [c for c in changes if c['kind'] not in ('docs', 'global_config')]
+        unread = {c['path']: self.unread_language(c['path']) for c in graph_changes if c['kind'] in ('source', 'unknown')}
         parsed = [c for c in graph_changes if (self.g_new.files.get(c['path']) or self.g_base.files.get(c['path']) or {}).get('lang')
-                  in (None, *[l for l, s in langs.items() if s == 'parsed'])]
-        unparsed_langs = sorted(l for l, s in langs.items() if s == 'no_parser')
+                  in (None, *[l for l, s in langs.items() if s == 'parsed']) and not unread.get(c['path'])]
+        unparsed_langs = sorted({l for l, s in langs.items() if s == 'no_parser'} | {v.lower() for v in unread.values() if v})
         out.append({'name': 'import_graph', 'status': 'ran', 'version': 'import_graph.py',
                     'reason': f'Parsed {", ".join(sorted(l for l, s in langs.items() if s == "parsed")) or "nothing"}.' +
                               (f' No parser for {", ".join(unparsed_langs)}.' if unparsed_langs else ''),
@@ -1130,9 +1262,8 @@ def main(argv=None) -> int:
         print(f'  {len(res["excluded"])} fixture project(s) or folder(s) left out: '
               + ', '.join(x['dir'] for x in res['excluded'][:6]) + (' ...' if len(res['excluded']) > 6 else '')
               + ' (--include-fixtures to count their tests)', file=sys.stderr)
-    for g in res['command'].get('feature_gated', []):
-        print(f'  note: {len(g["tests"])} selected test(s) of {g["crate"]} need --features {g["feature"]}; the commands '
-              'above do not run them', file=sys.stderr)
+    for line in build_command.not_run_lines(res['command']):
+        print('  note: ' + line, file=sys.stderr)
     warning = (res.get('language_coverage') or {}).get('warning')
     if warning:
         print('WARNING: ' + warning, file=sys.stderr)

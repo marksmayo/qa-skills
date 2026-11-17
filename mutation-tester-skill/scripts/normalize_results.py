@@ -49,6 +49,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import diff_scope  # noqa: E402
 import ts_scan  # noqa: E402
 OPS = json.loads((HERE.parent / 'data' / 'operators.json').read_text(encoding='utf-8'))
@@ -586,6 +587,10 @@ def main(argv=None) -> int:
                 # the engine stopped early (a mutant wrote outside the scoped files, a broken test command, an
                 # interrupt): the report keeps the record and a limitation must name it
                 rec['stopped'] = {k: v for k, v in raw['stopped'].items() if k in ('kind', 'mutant', 'files', 'detail')}
+            if raw.get('unmutated_changes'):
+                # changes no mutant stands for (removed lines, comment-only edits): a limitation must name them
+                rec['unmutated_changes'] = [{k: u.get(k) for k in ('file', 'function', 'lines', 'deleted_at', 'reason')}
+                                            for u in raw['unmutated_changes']]
             ms = from_builtin(raw)
         elif kind == 'mutmut':
             e = raw['engine']
@@ -696,6 +701,11 @@ def main(argv=None) -> int:
     if lc['tooling_scope_files']:
         print('WARNING: the mutated files are tooling, not the product (' + ', '.join(lc['tooling_scope_files'][:5]) +
               '); the report must say so in a limitation', file=sys.stderr)
+    for e in engines:
+        for u in e.get('unmutated_changes') or []:
+            print(f'WARNING: no mutant stands for the change to {u["file"]}'
+                  + (f' {u["function"]}()' if u.get('function') else '') + f': {u.get("reason")}; the report must say '
+                  'so in a limitation', file=sys.stderr)
     for p in problems:
         print('PROBLEM:', p)
     return 1 if problems else 0

@@ -42,6 +42,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import schema_check  # noqa: E402
 
 CLAIMS = re.compile(r'\b(fully|completely|100\s*%)\s+(locali[sz]ed|translated|internationali[sz]ed)\b|\btranslation (is )?complete\b|\ball strings (are )?translated\b', re.I)

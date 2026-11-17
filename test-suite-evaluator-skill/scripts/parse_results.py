@@ -56,6 +56,7 @@ import argparse, hashlib, json, os, re, sys
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 
 EXCERPT = 600
 ASSERTION_RX = re.compile(r'AssertionError|AssertError|assert\s|expect\(|Expected|expected .* (to|but)|toBe|toEqual|toHave|'
@@ -621,7 +622,9 @@ def parse_libtest(text: str, run_id: str, cargo: dict | None = None,
                   packages: list[str] | None = None) -> tuple[list[dict], list[str]]:
     """(cases, notes) from `cargo test` output (libtest's text format, or `--format json` lines). Ids are
     `<target>::<path::name>`, the target found from cargo's `Running <source> (<binary>)` line by libtest_binary
-    (with `cargo`, the cargo_project.read_cargo model of the project the run was in, target names are the model's, so
+    (with `cargo`, the cargo_project.read_cargo model of the project the run was in, each case's `file` is the source
+    file that defines the test, a unit test in src/model.rs included, with a failed test's panic location kept
+    apart as `panic_file`; target names are the model's, so
     runtime ids equal cargo_project's, and a target name two crates share is `<crate>/<target>` as qualified_target
     gives it, the crate told apart by `packages` (the run's -p), cargo's `to rerun pass -p <crate>` hint, or which
     crate's test file holds the tests the binary ran; `doctest:<crate>` for doc tests). Each case records its
@@ -786,6 +789,21 @@ def parse_libtest(text: str, run_id: str, cargo: dict | None = None,
             notes.append(f"{info['src']}: crates {', '.join(x[0].get('name') for x in info['cands'])} each have a "
                          f"target `{info['cands'][0][1]['name']}` built from it and the output does not say which ran; "
                          'its ids name the target only')
+    if cargo:
+        # the source file that defines each test (cargo_project's tests[].file): a unit test of a src/ target has no
+        # file in cargo's output, and a failed test would otherwise be filed under wherever it panicked
+        defined = {t['id']: t['file'] for c in cargo.get('crates') or [] for t in c.get('tests') or []
+                   if t.get('id') and t.get('file')}
+        for c in cases if defined else ():
+            cid, src = c['id'], None
+            while cid and src is None:      # a generated case (fn::case_1) is defined where its function is
+                src = defined.get(cid)
+                cid = cid.rpartition('::')[0]
+            if src and c.get('file') != src:
+                if c.get('file') and c['status'] in ('failed', 'error') and c.get('file_base') != 'package':
+                    c['panic_file'] = c['file']
+                c['file'] = src
+                c.pop('file_base', None)
     pkg_files = sorted({c['file'] for c in cases if c.get('file_base') == 'package'})
     if pkg_files:
         notes.append(f"{len(pkg_files)} test file(s) ({', '.join(pkg_files[:5])}) are relative to their package "
@@ -1234,6 +1252,30 @@ def libtest_workspace_checks() -> list:
                 files.get('tide-log/cli::writes_log') == 'crates/tide-log/tests/cli.rs'
                 and files.get('tidectl/cli::prints_help') == 'crates/tidectl/tests/cli.rs'
                 and files.get('round-trip::reads_back') == 'crates/tide-log/tests/round-trip.rs', files))
+    unit_out = ('     Running unittests src/lib.rs (target/debug/deps/tide_log-0a1b2c3d4e5f6a7b)\n\nrunning 3 tests\n'
+                'test store::tests::opens ... ok\ntest store::tests::sizes::case_2 ... ok\n'
+                'test store::tests::rejects ... FAILED\n\nfailures:\n\n---- store::tests::rejects stdout ----\n'
+                "thread 'store::tests::rejects' panicked at crates/tide-log/src/check.rs:9:5:\nassertion failed\n\n"
+                'failures:\n    store::tests::rejects\n\n'
+                'test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n')
+    unit_model = {'crates': [{'name': 'tide-log', 'dir': 'crates/tide-log',
+                              'targets': [_ws_target('lib', 'tide_log', 'src/lib.rs')],
+                              'tests': [dict(_ws_test(n, 'tide_log', 'lib'), id='tide_log::' + n,
+                                             file='crates/tide-log/src/store.rs')
+                                        for n in ('store::tests::opens', 'store::tests::rejects',
+                                                  'store::tests::sizes')]}]}
+    ucases, _ = fn(unit_out, 'U', cargo=unit_model)
+    uf = {c['name']: (c.get('file'), c.get('panic_file')) for c in ucases}
+    out.append(('libtest (model known): a unit test is filed under the source file that defines it (also a generated '
+                'case of a parameterised test), and a failed one keeps its panic location apart (panic_file)',
+                uf == {'store::tests::opens': ('crates/tide-log/src/store.rs', None),
+                       'store::tests::sizes::case_2': ('crates/tide-log/src/store.rs', None),
+                       'store::tests::rejects': ('crates/tide-log/src/store.rs', 'crates/tide-log/src/check.rs')}, uf))
+    nomodel, _ = fn(unit_out, 'U')
+    nf = {c['name']: c.get('file') for c in nomodel}
+    out.append(('libtest (no model): a unit test has no file unless it panicked (then the panic location)',
+                nf == {'store::tests::opens': None, 'store::tests::sizes::case_2': None,
+                       'store::tests::rejects': 'crates/tide-log/src/check.rs'}, nf))
     pc = next((c for c in plain if c['name'] == 'writes_log'), {})
     _, pnotes = fn(LIBTEST_WS_OUTPUT, 'W')
     out.append(('libtest (no model): the file cargo prints is recorded as package-relative (file_base: package), '

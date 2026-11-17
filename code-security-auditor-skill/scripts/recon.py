@@ -88,6 +88,7 @@ import code_mask  # noqa: E402
 import data_dirs as data_dir_rule  # noqa: E402
 import go_entries  # noqa: E402
 import lang_census  # noqa: E402
+import scan_pitfalls  # noqa: E402
 import next_app  # noqa: E402
 import next_surface  # noqa: E402
 import nextjs_auth  # noqa: E402
@@ -158,6 +159,8 @@ STORES = [('sqlite', r'\bsqlite3\b'), ('postgres', r'\bpsycopg2?\b|\bpg\b\s*=|fr
 OUTBOUND = re.compile(r'\b(requests|httpx|aiohttp\.ClientSession|urllib\.request|urlopen|axios|fetch|got|http\.Get|http\.Post|'
                       r'http\.Head|http\.PostForm|http\.NewRequest\w*|grpc\.Dial\w*|grpc\.NewClient|websocket\.Dial\w*|'
                       r'RestTemplate|WebClient|HttpClient|Net::HTTP|Faraday|HTTParty|curl_exec|Guzzle)\b[.(]')
+OUTBOUND_RUST = re.compile(r'\b(?:reqwest|ureq|isahc|surf|attohttpc|minreq)::|\bhyper(?:_util)?::(?:client|Client)\b|'
+                           r'\bcurl::easy\b|\b(?:TcpStream|UnixStream)::connect\s*\(|\btungstenite::connect\s*\(')
 SECRET_CFG = re.compile(r'\b(os\.environ|os\.getenv|process\.env|System\.getenv|ENV\[|ENV\.fetch|getenv\(|Configuration\[)'
                         r'[^\n]{0,40}(SECRET|KEY|TOKEN|PASSWORD|PASSWD|CREDENTIAL|DSN|DATABASE_URL)', re.I)
 QUEUE = re.compile(r'@(app\.task|shared_task|celery\.task)|@KafkaListener|@RabbitListener|@SqsListener|\.subscribe\(|'
@@ -751,6 +754,64 @@ def ios_entries(rel: str, text: str) -> list[dict]:
     return [{'kind': 'deep_link', 'framework': 'ios', 'method': 'URL_SCHEME', 'path': s + '://', 'handler': f'{rel}:{line}',
              'function': None, 'auth': 'public', 'auth_evidence': None} for s in re.findall(r'<string>([^<]+)</string>', m.group(1))]
 
+RUST_PATH_HINT = re.compile(r'\.ancestors\s*\(|\.parent\s*\(|\.(?:dll|dylib|so)(?:\.\d+)*"')
+RUST_PATH_RULES = ('RUST-SEARCH-PATH-EXE-ANCESTORS', 'RUST-LIB-BARE-NAME', 'RUST-DLL-SEARCH-ORDER')
+
+def rust_search_path_leads(files: list[tuple[Path, str]]) -> list[dict]:
+    """Review leads for the search-path shapes the Cargo model's launch and load sites do not show: a search of the
+    folders above the program, and a library named without a directory in a list or a variable (the pattern scan's
+    own rules, so the two agree)."""
+    cat = scan_pitfalls.load_catalogue()
+    rules = [scan_pitfalls.compile_pitfall(p) for p in cat['pitfalls'] if p['id'] in RUST_PATH_RULES]
+    leads = []
+    for path, rel in files:
+        for h in scan_pitfalls.scan_file(path, rel, rules):
+            at = f"{h['file']}:{h['line']}"
+            if h['pitfall_id'] == 'RUST-SEARCH-PATH-EXE-ANCESTORS':
+                why = (f"{at} searches the folders above the program (ancestors of current_exe(), or its parent's parent) "
+                       'for a file it runs or loads: anyone who can write to one of those folders plants it (CWE-427); '
+                       "check how far up it looks, where the program is installed, and whether only the program's own "
+                       'folder would do in a release build')
+            else:
+                names = re.findall(r'"([^"/\\\s:]+\.(?:dll|dylib|so)(?:\.\d+)*)"', h['snippet'])
+                if not names or re.search(r'Library::(?:new|open)\s*\(\s*r?#*"', h['snippet']):
+                    continue  # a literal inside the load call is already a lead of the load site
+                why = (f"{at} names {', '.join(repr(n) for n in names)} without a directory in a file that loads libraries: "
+                       'if that name reaches the load (through a list, a variable or a fallback), the loader search path '
+                       'decides which file is loaded (Windows: application folder, PATH, working directory; macOS: DYLD_* '
+                       'paths and the working directory as a fallback; Linux: LD_LIBRARY_PATH and rpath) (CWE-427)')
+            leads.append({'area': 'language_specific', 'entry_point': None, 'why': why})
+    return leads
+
+ARTIFACT_IN = re.compile(r'uses\s*:\s*["\']?([\w.-]+/[\w.-]*download-artifact[\w.-]*)@|\b(gh\s+run\s+download)\b')
+
+def artifact_jobs(text: str) -> list[dict]:
+    """GitHub Actions jobs that take in artifacts (actions/download-artifact, gh run download) while their token has
+    a write permission: [{job, line, via, write}]. The artifact's content is whatever the producing job made of the
+    code it built, so a job that commits, releases or publishes from it deserves a look."""
+    lines = text.splitlines()
+    out: dict[str, dict] = {}
+    for i, line in enumerate(lines):
+        m = ARTIFACT_IN.search(line)
+        if not m or line.lstrip().startswith('#') or scan_pitfalls.gha_token_writes(lines, i) is not True:
+            continue
+        ind = lambda k: len(lines[k]) - len(lines[k].lstrip())  # noqa: E731
+        jobs = next((k for k, l in enumerate(lines) if re.match(r'^jobs\s*:\s*$', l)), None)
+        head = None
+        if jobs is not None and i > jobs:
+            code = [k for k in range(jobs + 1, i) if lines[k].strip() and not lines[k].lstrip().startswith('#')]
+            job_indent = ind(code[0]) if code else 2
+            head = next((k for k in reversed(code) if ind(k) == job_indent), None)
+        name = lines[head].strip().rstrip(':').strip('"\'') if head is not None else '?'
+        if name in out:
+            continue
+        end = next((k for k in range((head or 0) + 1, len(lines)) if lines[k].strip() and not lines[k].lstrip().startswith('#')
+                    and ind(k) <= ind(head)), len(lines)) if head is not None else len(lines)
+        body = '\n'.join(lines[(head or 0):end])
+        write = re.findall(r'^\s*([\w-]+)\s*:\s*write\b', body if re.search(r'^\s*permissions\s*:', body, re.M) else text, re.M)
+        out[name] = {'job': name, 'line': i + 1, 'via': m.group(1) or m.group(2), 'write': sorted(set(write))}
+    return list(out.values())
+
 def workflow_info(rel: str, text: str) -> dict:
     found = gha_triggers(text)
     triggers = [t for t, _ in found]
@@ -759,6 +820,7 @@ def workflow_info(rel: str, text: str) -> dict:
     perms = re.findall(r'^\s*(contents|pull-requests|issues|packages|id-token|actions|deployments)\s*:\s*write', text, re.M)
     return {'file': rel, 'triggers': sorted(set(triggers)), 'untrusted_input_triggers': risky,
             'write_permissions': sorted(set(perms)) + (['write-all'] if 'write-all' in text else []),
+            'artifact_jobs': artifact_jobs(text),
             'uses_secrets': bool(re.search(r'\$\{\{\s*secrets\.', text)),
             '_lines': {t: n for t, n in reversed(found)}}
 
@@ -884,6 +946,8 @@ def main() -> int:
     vendored: list[dict] = []
     cli_flags: list[dict] = []
     rust_cli_lines: list[dict] = []
+    rs_test_mods: list[tuple[str, str, int]] = []
+    rs_path_files: list[tuple[Path, str]] = []
     templates: list[str] = []
     limiter_libs: dict[str, list[str]] = {}
     forwarded_keys: list[dict] = []
@@ -1005,14 +1069,24 @@ def main() -> int:
         # outbound calls are matched on code only: prose in a string ("whatever you have got.") is not a call, and files
         # under public/ are served to browsers as they are (a service worker's fetch is not a server-side request)
         code_lines = [] if STATIC_ASSET_DIR.search(rel) else code_only(text, p.suffix.lower()).splitlines()
+        # Rust has its own HTTP clients (a variable named `requests` is not Python's library), and code inside
+        # #[cfg(test)] items or behind `#[cfg(test)] mod name;` makes no call in the shipped program
+        is_rust = p.suffix == '.rs'
+        out_rx = OUTBOUND_RUST if is_rust else OUTBOUND
+        rs_test_lines: set[int] = set()
+        if is_rust and 'cfg' in text:
+            rs_test_lines, mods = scan_pitfalls.rust_test_scope(text)
+            rs_test_mods += [(rel, name, ln) for name, ln in mods]
+        if is_rust and RUST_PATH_HINT.search(text):
+            rs_path_files.append((p, rel))
         for i, line in enumerate(text.splitlines(), 1):
             for kind, rx in STORES:
                 if CONFIG_FILE.search(rel):
                     break  # next.config.ts listing @prisma/client in serverExternalPackages is not a data store
                 if re.search(rx, line) and not any(s['kind'] == kind and s['file'] == rel for s in stores):
                     stores.append({'kind': kind, 'file': rel, 'line': i})
-            m = OUTBOUND.search(code_lines[i - 1]) if i <= len(code_lines) else None
-            if m and not line.lstrip().startswith(('import ', 'from ', '#', '//')) and (m.group(1) != 'got' or GOT_IMPORT.search(text)):
+            m = out_rx.search(code_lines[i - 1]) if i <= len(code_lines) else None
+            if m and not line.lstrip().startswith(('import ', 'from ', 'use ', '#', '//')) and i not in rs_test_lines                     and (is_rust or m.group(1) != 'got' or GOT_IMPORT.search(text)):
                 outbound.append({'file': rel, 'line': i, 'snippet': line.strip()[:160]})
             at = lambda rx: code_line_search(rx, line, spans, starts[i - 1])  # noqa: E731
             if at(SECRET_CFG):
@@ -1066,6 +1140,12 @@ def main() -> int:
     for mw in middleware:
         if mw['auth_check']:
             global_hooks.append(f"{mw['file']}:{mw['line']}")
+    only = scan_pitfalls.test_only_files(rs_test_mods, set(source_read)) if rs_test_mods else []
+    t_files, t_dirs = {t['file'] for t in only}, tuple(t['dir'] for t in only)
+    if only:
+        outbound = [o for o in outbound if not (o['file'] in t_files or o['file'].startswith(t_dirs))]
+    rust_path_leads = rust_search_path_leads([(p, rel) for p, rel in rs_path_files
+                                              if not (rel in t_files or rel.startswith(t_dirs))]) if rs_path_files else []
     # Rust: clap CLIs, binaries, env-chosen executables and libraries from the Cargo model
     rust = {'entries': [], 'cli_flags': [], 'leads': [], 'crates': 0, 'notes': []}
     if langs.get('Rust') or any(Path(m).name == 'Cargo.toml' for m in manifests):
@@ -1162,6 +1242,7 @@ def main() -> int:
                                  "paths or URLs"})
     leads += node_leads
     leads += rust['leads']
+    leads += rust_path_leads
     # Availability: rate limiting and routes that return collections (an uncapped search is a denial of service)
     limited = limited_routes(entries, py_files)
     for k in forwarded_keys:
@@ -1211,6 +1292,13 @@ def main() -> int:
         if w['untrusted_input_triggers']:
             leads.append({'area': 'supply_chain_ci', 'entry_point': None,
                           'why': f"{w['file']} runs on {', '.join(w['untrusted_input_triggers'])}: check for untrusted checkout and expression injection"})
+        for j in w.get('artifact_jobs') or []:
+            leads.append({'area': 'supply_chain_ci', 'entry_point': None,
+                          'why': f"{w['file']}:{j['line']} job {j['job']} takes in artifacts ({j['via']}) while its token can "
+                                 f"write ({', '.join(j['write']) or 'write-all'}): check which job produced them (one that "
+                                 "builds pull-request or fork code makes their content attacker-controlled), that file names "
+                                 "and paths inside are not trusted, that nothing from them is executed or sourced, and that "
+                                 "what the job then commits, releases or publishes cannot be chosen by the artifact"})
         if w.get('system') != 'azure_pipelines':
             continue
         privileged = w['service_connections'] or w['uses_secrets']

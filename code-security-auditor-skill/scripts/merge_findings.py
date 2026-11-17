@@ -117,6 +117,15 @@ def from_patterns(path: Path) -> list[dict]:
         out.append(cand)
     return out
 
+def coverage_of(path: Path) -> dict | None:
+    """The pattern scan's language_coverage, trimmed to what the report needs (status, the languages and script kinds
+    it did not analyse, the ones a small pack read, and the notes)."""
+    cov = json.loads(path.read_text(encoding='utf-8')).get('language_coverage')
+    if not isinstance(cov, dict):
+        return None
+    return {k: cov[k] for k in ('status', 'dominant', 'unsupported', 'scripts', 'script_packs', 'ui_markup', 'notes', 'warning')
+            if cov.get(k) is not None}
+
 def layout_of(root: Path, include_fixtures: bool = False, fixture_dirs=()) -> dict:
     """The sample and fixture projects to leave out (none with include_fixtures) and, for every file kept identical
     in several places outside them, its representative copy."""
@@ -720,6 +729,7 @@ def main() -> int:
     root = args.root.resolve()
     idx = tool_index()
     code, secrets, deps, tools, cred_files = [], [], [], [], []
+    coverage = None
     set_aside: list[dict] = []
     versions: dict[str, str] = {}
     if args.scanners:
@@ -732,6 +742,7 @@ def main() -> int:
     try:
         if args.patterns:
             c = from_patterns(args.patterns); code += c
+            coverage = coverage_of(args.patterns)
             tools.append({'tool': 'scan_pitfalls', 'input': str(args.patterns), 'results': len(c)})
         if args.secrets:
             data = json.loads(args.secrets.read_text(encoding='utf-8'))
@@ -810,6 +821,9 @@ def main() -> int:
         'dependencies': merge_deps(deps),
         # credential files and references to them (paths, not secrets): note them in the report, no triage needed
         'credential_files': cred_files,
+        # what the pattern scan did not analyse (unsupported languages, script kinds): seed_report.py writes its notes as
+        # limitations and the validator requires each language to be named there
+        'language_coverage': coverage,
         # gitleaks hits scan_secrets.py's own rules call placeholders or test fixtures: listed, not triaged
         'secrets_set_aside': {'count': len(set_aside), 'items': set_aside},
     }

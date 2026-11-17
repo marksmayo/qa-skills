@@ -15,8 +15,11 @@ under <out>/raw/ in the same layout a recorded directory uses, then normalised:
 
   github: run.json, attempts/<n>/run.json, attempts/<n>/jobs.json, attempts/<n>/artifacts.json,
           attempts/<n>/artifacts/<name>/*.xml, logs/<job id>.txt (or logs/<job id>.error.json),
-          history.json (runs of the same workflow on the branch, started before this run, and runs of the
-          same commit), history_jobs/<run id>.json (the jobs of every other run of the same commit),
+          history.json (runs of the same workflow on the branch and on the default branch, started before this
+          run, and runs of the same commit), repository.json (the repository, read for its default branch: the
+          repository object inside a workflow run is the minimal one and does not carry it),
+          history_jobs/<run id>.json (the jobs of every other run of the same commit),
+          same_commit_runs.json (only for a run in which no job ran: every workflow's runs of the commit),
           annotations/<job id>.json (the check-run annotations of every failed job: the CI's only
           explanation of a job that never started on a runner, such as a billing or spending-limit stop)
   azure:  build.json, timeline.json, logs/<log id>.txt, artifacts.json, artifacts/<name>/*.xml,
@@ -31,7 +34,8 @@ conclusion, workflow, workflow_id}, attempts[{n, triggered_by, jobs_rerun, jobs[
 started_at, steps[{number, name, conclusion}], log, log_status, log_error, junit[], never_started (no steps and no
 runner: log_status never_started, no log exists), annotations[{level, title, message}]}]}], history[{id, commit,
 conclusion, started_at, event, workflow_id, jobs}], history_scope, last_green{id, commit, event, basis},
-fetch_problems[]}. Logs and JUnit are copied into <out>/logs and <out>/junit, so the run directory is
+history_query{..., default_branch, default_branch_source (option, run, repository or unknown)}, same_commit_runs[{id,
+workflow, event, conclusion}] (a run with no job), fetch_problems[]}. Logs and JUnit are copied into <out>/logs and <out>/junit, so the run directory is
 self-contained.
 """
 from __future__ import annotations
@@ -45,6 +49,7 @@ GH_API = 'https://api.github.com'
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 # SafeRedirect (shared/scripts/safe_http.py): credentials are sent only to the origin they were given for; an https
 # URL is never followed to plain http except on loopback. OPENER is module-level so the self-test can swap it.
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from safe_http import CREDENTIAL_HEADERS, SafeRedirect, _loopback, origin as _origin  # noqa: E402,F401
 OPENER = urllib.request.build_opener(SafeRedirect)
 
@@ -182,6 +187,38 @@ def fetch_artifact(url: str, h: dict, dest: Path, raw: Path, name: str, size: in
 SAME_COMMIT_RUNS = 50   # runs of the same commit asked for (before and after the failing run)
 
 
+def find_default_branch(api: str, repo: str, run: dict, h: dict, raw: Path, given: str | None) -> tuple[str | None, str]:
+    """(default branch, where it came from). --default-branch wins; a recording may carry it on the run; live GitHub
+    does not (the repository inside a workflow-run response is the minimal object), so the repository itself is read
+    (one GET, saved as repository.json). When that fails too it is `unknown`, said on stderr with what to do."""
+    if given:
+        return given, 'option'
+    named = (run.get('repository') or {}).get('default_branch')
+    if named:
+        return named, 'run'
+    try:
+        doc = _get(f'{api}/repos/{repo}', h)
+        save(raw / 'repository.json', doc)
+        if isinstance(doc, dict) and doc.get('default_branch'):
+            return doc['default_branch'], 'repository'
+        why = 'the repository record names none'
+    except Exception as e:  # noqa: BLE001 - said, never swallowed
+        why = describe_error(e)['error']
+    warn(f'the default branch of {repo} could not be read ({why}), so its runs are not searched for a last green run: '
+         'give it with --default-branch NAME')
+    return None, 'unknown'
+
+
+def last_green_hint(run: dict) -> str | None:
+    """What to say when a run has no last green run and the default branch was never searched."""
+    hq = run.get('history_query') or {}
+    if run.get('last_green') or hq.get('default_branch') or hq.get('default_branch_source') != 'unknown':
+        return None
+    return (f'no last green run of this workflow on the branch {run["run"].get("branch")}, and the default branch is not known, so its '
+            'runs were not searched: fetch again with --default-branch NAME (the default branch\'s newest green run before this one '
+            'then starts the range of changes)')
+
+
 def history_queries(base: str, run: dict, history: int, default_branch: str | None) -> list[str]:
     """The history a GitHub run is read against, each query bounded: up to `history` runs of the same workflow on the
     branch, created up to this run; as many on the default branch (a pull request branch often has no green run of its
@@ -220,14 +257,14 @@ def fetch_github(repo: str, run_id: int, raw: Path, history: int, max_mb: int, d
     # history: the same workflow, on the branch and on the default branch, created up to this run; and runs of the same commit
     wid, created = run.get('workflow_id'), run.get('created_at') or run.get('run_started_at')
     base = f'{GH_API}/repos/{repo}/actions/workflows/{wid}/runs' if wid else f'{GH_API}/repos/{repo}/actions/runs'
-    default = default_branch or (run.get('repository') or {}).get('default_branch')
+    default, default_source = find_default_branch(GH_API, repo, run, h, raw, default_branch)
     runs: dict = {}
     for q in history_queries(base, run, history, default):
         for r in _get(q, h).get('workflow_runs', []):
             runs[r['id']] = r
     save(raw / 'history.json', {'query': {'workflow_id': wid, 'branch': run['head_branch'], 'created_before': created, 'head_sha': run['head_sha'],
                                           'per_page': history, 'default_branch': default if default != run['head_branch'] else None,
-                                          'same_commit_per_page': SAME_COMMIT_RUNS},
+                                          'default_branch_source': default_source, 'same_commit_per_page': SAME_COMMIT_RUNS},
                                 'workflow_runs': sorted(runs.values(), key=lambda r: r.get('run_started_at') or '', reverse=True)})
     for r in runs.values():
         if r['head_sha'] == run['head_sha'] and r['id'] != run['id']:
@@ -235,6 +272,13 @@ def fetch_github(repo: str, run_id: int, raw: Path, history: int, max_mb: int, d
                 save(raw / 'history_jobs' / f'{r["id"]}.json', _get(f'{GH_API}/repos/{repo}/actions/runs/{r["id"]}/jobs?filter=latest&per_page=100', h))
             except Exception as e:  # noqa: BLE001
                 warn(f'jobs of history run {r["id"]} not downloaded: {describe_error(e)["error"]}')
+    # a run in which no job ran has no log to explain it: whether the commit's other workflows stopped the same way is the
+    # only clue to a common cause (a workflow file or repository setting), so their runs are read (one GET, only then)
+    if not jobs['jobs']:
+        try:
+            save(raw / 'same_commit_runs.json', _get(f'{GH_API}/repos/{repo}/actions/runs?head_sha={run["head_sha"]}&per_page={SAME_COMMIT_RUNS}', h))
+        except Exception as e:  # noqa: BLE001
+            warn(f'the other workflows\' runs of this commit not downloaded: {describe_error(e)["error"]}')
 
 
 def fetch_azure(org: str, project: str, build_id: int, raw: Path, history: int, max_mb: int, default_branch: str | None = None):
@@ -274,6 +318,14 @@ def fetch_azure(org: str, project: str, build_id: int, raw: Path, history: int, 
                 save(raw / 'history_jobs' / f'{r["id"]}.json', _get(f'{base}/{r["id"]}/timeline?api-version=7.1', h))
             except Exception as e:  # noqa: BLE001
                 warn(f'timeline of history build {r["id"]} not downloaded: {describe_error(e)["error"]}')
+
+
+def same_way(run: dict) -> list[dict]:
+    """Other workflows' runs of the same commit and event that concluded as this run did (recorded only for a run in
+    which no job ran)."""
+    r = run['run']
+    return [x for x in run.get('same_commit_runs') or [] if x.get('event') == r.get('event') and x.get('conclusion') == r.get('conclusion')
+            and r.get('conclusion') not in ('success', None)]
 
 
 def junit_for(job_name: str, art_dir: Path) -> list[Path]:
@@ -412,6 +464,11 @@ def normalise_github(raw: Path, out: Path, repo: str | None) -> dict:
     elif other:
         print(f'note: {other} history run(s) of other workflows ignored', file=sys.stderr)
     api_repo = run.get('repository', {}).get('full_name')
+    repo_doc = json.loads((raw / 'repository.json').read_text(encoding='utf-8')) if (raw / 'repository.json').exists() else {}
+    default = hq.get('default_branch') or (run.get('repository') or {}).get('default_branch') or (repo_doc.get('default_branch') if isinstance(repo_doc, dict) else None)
+    sib_doc = json.loads((raw / 'same_commit_runs.json').read_text(encoding='utf-8')) if (raw / 'same_commit_runs.json').exists() else None
+    siblings = [{'id': r['id'], 'workflow': r.get('path') or r.get('name'), 'event': r.get('event'), 'conclusion': r.get('conclusion')}
+                for r in (sib_doc or {}).get('workflow_runs', []) if r['id'] != run['id'] and not same_wf(r)]
     out_run = {'system': 'github', 'repo': repo or api_repo,
                'run': {'id': run['id'], 'url': run.get('html_url'), 'attempt': int(run.get('run_attempt') or 1), 'commit': run['head_sha'],
                        'branch': run.get('head_branch'), 'event': run.get('event'), 'started_at': run.get('run_started_at'),
@@ -419,8 +476,9 @@ def normalise_github(raw: Path, out: Path, repo: str | None) -> dict:
                'attempts': attempts, 'history': history, 'history_scope': 'same workflow' if (wid or wpath) else 'unknown workflow',
                'last_green': _pick_green(history, run.get('created_at') or run.get('run_started_at'), run.get('event'),
                                          {j['name'] for j in attempts[0]['jobs'] if j['conclusion'] not in ('success', 'skipped', None)} if attempts else None,
-                                         run.get('head_branch'), hq.get('default_branch') or (run.get('repository') or {}).get('default_branch')),
-               'fetch_problems': problems, **({'history_query': hq} if hq else {})}
+                                         run.get('head_branch'), default),
+               'fetch_problems': problems, **({'history_query': hq} if hq else {}),
+               **({'same_commit_runs': siblings} if sib_doc is not None else {})}
     if repo and api_repo and api_repo.lower() != repo.lower():
         out_run['repo_api'] = api_repo
     return out_run
@@ -531,7 +589,7 @@ def self_test() -> int:
 
         def do_GET(self):
             seen.setdefault('api', []).append((self.path, self.headers.get('Authorization')))
-            routes = {'/jobs/1/logs': f'http://localhost:{sport}/blob/log?sig=fake', '/artifacts/1/zip': f'http://localhost:{sport}/blob/zip?sig=fake',
+            routes = {'/jobs/1/logs': f'http://127.0.0.1:{sport}/blob/log?sig=fake', '/artifacts/1/zip': f'http://127.0.0.1:{sport}/blob/zip?sig=fake',
                       '/jobs/2/logs': '/moved/2/logs'}
             if self.path in routes:
                 self.send_response(302); self.send_header('Location', routes[self.path]); self.end_headers(); return
@@ -543,13 +601,53 @@ def self_test() -> int:
                 self.send_response(200); self.end_headers(); self.wfile.write(body.encode()); return
             if self.path == '/jobs/3/logs':
                 self.send_response(410); self.end_headers(); return
+            doc = live_api(self.path)
+            if doc is not None:
+                self.send_response(200); self.end_headers(); self.wfile.write(json.dumps(doc).encode()); return
             if self.path == '/jobs/4/logs':
-                self.send_response(302); self.send_header('Location', f'http://localhost:{sport}/blob/log'); self.end_headers(); return
+                self.send_response(302); self.send_header('Location', f'http://127.0.0.1:{sport}/blob/log'); self.end_headers(); return
             self.send_response(404); self.end_headers()
 
         def do_POST(self):
             self.rfile.read(int(self.headers.get('Content-Length') or 0))
             self.do_GET()
+
+    def live_api(path: str):
+        """GitHub's REST shapes for three repositories, as the live API gives them: the repository object inside a
+        workflow run is the minimal one, with no default_branch. acme/y: a pull request branch with no green run;
+        acme/w: the same, and the repository endpoint is not readable; acme/z: a run that concluded failure with no
+        job, beside other workflows of the same commit that did the same."""
+        import re
+        m = re.match(r'^/repos/acme/([wyz])(?:/([^?]*))?(?:\?(.*))?$', path)
+        if not m:
+            return None
+        repo, rest, q = m.group(1), m.group(2), m.group(3) or ''
+        sha, t = 'f' * 40, '2026-01-05T00:00:00Z'
+        wr = lambda i, c, br, started, wid=7, ev='pull_request', head=sha, **k: {  # noqa: E731
+            'id': i, 'head_sha': head, 'head_branch': br, 'conclusion': c, 'run_started_at': started, 'created_at': started, 'workflow_id': wid,
+            'event': ev, 'repository': {'full_name': f'acme/{repo}'}, **k}
+        run = wr(60, 'failure', 'feature/tides', t, run_attempt=1, path='.github/workflows/checks.yml')
+        if rest is None:
+            return {'full_name': f'acme/{repo}', 'default_branch': 'main'} if repo != 'w' else None
+        if rest in ('actions/runs/60', 'actions/runs/60/attempts/1'):
+            return run
+        if rest == 'actions/runs/60/attempts/1/jobs':
+            return {'jobs': [] if repo == 'z' else [{'id': 1, 'name': 'test', 'conclusion': 'failure', 'started_at': t, 'runner_name': 'hosted 1',
+                                                     'steps': [{'number': 1, 'name': 'Unit tests', 'conclusion': 'failure'}]}]}
+        if rest == 'actions/runs/60/artifacts':
+            return {'artifacts': []}
+        if rest == 'actions/workflows/7/runs':
+            if 'branch=main' in q:
+                return {'workflow_runs': [wr(58, 'success', 'main', '2026-01-03T00:00:00Z', ev='push', head='d' * 40),
+                                          wr(57, 'success', 'main', '2026-01-02T00:00:00Z', ev='push', head='a' * 40)]}
+            if 'branch=feature' in q:
+                return {'workflow_runs': [run, wr(59, 'failure', 'feature/tides', '2026-01-04T00:00:00Z', head='e' * 40)]}
+            return {'workflow_runs': [run]}
+        if rest == 'actions/runs' and 'head_sha=' in q:
+            return {'workflow_runs': [run, wr(71, 'failure', 'feature/tides', t, wid=8, path='.github/workflows/lint.yml'),
+                                      wr(72, 'failure', 'feature/tides', t, wid=9, path='.github/workflows/docs.yml'),
+                                      wr(73, 'success', 'feature/tides', t, wid=10, path='.github/workflows/labels.yml')]}
+        return None
 
     api = http.server.HTTPServer(('127.0.0.1', 0), Api)
     aport = api.server_address[1]
@@ -621,6 +719,42 @@ def self_test() -> int:
             check((raw / 'attempts' / '1' / 'artifacts' / 'junit-a' / 'junit.xml').exists(), 'artifact xml not unzipped')
             fetch_artifact(f'{base}/artifacts/1/zip', h, raw / 'attempts' / '1' / 'artifacts' / 'big', raw, 'big', 80 * 1024 * 1024, 50)
             check(not (raw / 'attempts' / '1' / 'artifacts' / 'big').exists(), 'an artifact over the size cap should be skipped')
+        # live GitHub: the default branch is read from the repository (the run's own repository object does not have it)
+        import contextlib
+        saved_api, saved_tok = GH_API, os.environ.get('GITHUB_TOKEN')
+        globals()['GH_API'], os.environ['GITHUB_TOKEN'] = base, 'fake-token-0000'
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                got = {}
+                for repo in 'ywz':
+                    raw, err, before = Path(td) / repo / 'raw', io.StringIO(), len(seen['api'])
+                    with contextlib.redirect_stderr(err):
+                        fetch_github(f'acme/{repo}', 60, raw, 20, 50)
+                        r = normalise_github(raw, Path(td) / repo / 'out', f'acme/{repo}')
+                        said = last_green_hint(r) if 'last_green_hint' in globals() else None
+                    got[repo] = (r, err.getvalue(), [p for p, _ in seen['api'][before:]], said)
+                r, _, asked, said = got['y']
+                lg, hq = r['last_green'] or {}, r.get('history_query') or {}
+                check(lg.get('id') == 58 and lg.get('branch') == 'main' and hq.get('default_branch') == 'main'
+                      and hq.get('default_branch_source') == 'repository' and any('branch=main' in p for p in asked) and said is None,
+                      f'live GitHub, a branch with no green run: the default branch comes from the repository endpoint and its newest green run '
+                      f'(58) starts the range; got last_green {r["last_green"]}, history_query {hq}')
+                check(not any(p.startswith('/repos/acme/y/actions/runs?head_sha') for p in asked) and 'same_commit_runs' not in r,
+                      f'a run whose jobs ran: other workflows of the commit are not asked for (asked {asked})')
+                r, err, asked, said = got['w']
+                hq = r.get('history_query') or {}
+                check(r['last_green'] is None and hq.get('default_branch') is None and hq.get('default_branch_source') == 'unknown'
+                      and '--default-branch' in err and said and '--default-branch' in said,
+                      f'the default branch could not be read: recorded as unknown, with the hint to give --default-branch, on stderr and '
+                      f'in the record; got history_query {hq}, hint {said!r}, stderr {err.strip()[-200:]!r}')
+                r, _, asked, _ = got['z']
+                sib = r.get('same_commit_runs') or []
+                check([(x.get('id'), x.get('workflow'), x.get('conclusion')) for x in sib] ==
+                      [(71, '.github/workflows/lint.yml', 'failure'), (72, '.github/workflows/docs.yml', 'failure'), (73, '.github/workflows/labels.yml', 'success')],
+                      f'a run with no job: the other workflows\' runs of the same commit are recorded (the only clue to a common cause); got {sib}')
+        finally:
+            globals()['GH_API'] = saved_api
+            os.environ.pop('GITHUB_TOKEN') if saved_tok is None else os.environ.__setitem__('GITHUB_TOKEN', saved_tok)
         # https -> http downgrade is refused (checked on the handler directly, no TLS server needed)
         req = urllib.request.Request('https://api.example.test/x', headers=h)
         try:
@@ -694,7 +828,8 @@ def self_test() -> int:
         print('fetch_run self-test: FAILED'); [print('  -', f) for f in fails]
         return 1
     print('fetch_run self-test: ok (cross-host redirect drops the token, same-host keeps it, https->http refused, '
-          'failed log/artifact downloads recorded, history limited to the workflow, re-run jobs from started_at)')
+          'failed log/artifact downloads recorded, history limited to the workflow, re-run jobs from started_at, the default '
+          'branch read from the repository on a live fetch and said when unknown, other workflows of a commit read for a run with no job)')
     return 0
 
 
@@ -707,7 +842,8 @@ def main() -> int:
     ap.add_argument('--from-dir', type=Path, help='a recorded directory of API responses (offline)')
     ap.add_argument('--history', type=int, default=20, help='runs of the workflow asked for on the branch (and as many on the default branch)')
     ap.add_argument('--default-branch', help='the default branch, whose newest green run before this one starts the range when the branch has '
-                                             'none (GitHub: read from the repository; Azure DevOps: give it)')
+                                             'none (GitHub: read from the repository, and needed only when that cannot be read; '
+                                             'Azure DevOps: give it)')
     ap.add_argument('--max-artifact-mb', type=int, default=50, help='skip (and record) larger artifacts; only their XML is kept')
     ap.add_argument('--out', type=Path)
     ap.add_argument('--self-test', action='store_true')
@@ -742,6 +878,9 @@ def main() -> int:
           f'{len(run["history"])} history run(s) of the same workflow; last green {run["last_green"]} -> {a.out / "run.json"}')
     if run.get('repo_api'):
         print(f'note: requested {run["repo"]}, the API names it {run["repo_api"]} (renamed or transferred)')
+    hint = last_green_hint(run) if run['system'] == 'github' else None
+    if hint:
+        print(f'WARNING: {hint}', file=sys.stderr)
     for j in (run['attempts'][0]['jobs'] if run['attempts'] else []):
         if j.get('queued_for_s') is not None:
             m, s = divmod(j['queued_for_s'], 60)
@@ -752,6 +891,11 @@ def main() -> int:
         print(f'WARNING: the run concluded {r["conclusion"]} but no job ran on a runner (a workflow file error, a startup failure, a '
               'billing or runner stop, or a fork pull request whose run was never approved): there is nothing to triage; the triage '
               'is run_status not_run' + (f'. The CI says: {said[0][:300]}' if said else ''), file=sys.stderr)
+        same = same_way(run)
+        if same:
+            print(f'WARNING: {len(same)} other workflow run(s) of this commit also concluded {r["conclusion"]} on the same event '
+                  f'({", ".join(str(x["workflow"]) for x in same)}): a cause common to them (a workflow file, a repository or account '
+                  'setting) is likelier than one of this workflow alone; the triage must say so', file=sys.stderr)
     if run['fetch_problems']:
         print(f'WARNING: {len(run["fetch_problems"])} download(s) failed; the triage must say so:', file=sys.stderr)
         for p in run['fetch_problems']:

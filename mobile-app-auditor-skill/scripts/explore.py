@@ -34,6 +34,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from adb_device import (Device, PendingRestore, PROBE_KEY, anr_reason_from_log, input_event, label_of,  # noqa: E402
                         newest_anr, parse_dropbox, short_reason, visible_name)
 

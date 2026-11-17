@@ -2,7 +2,11 @@
 """Seed security_audit.json from the recon, scanner and candidate files, for the agent to complete.
 
     python seed_report.py --recon recon.json --candidates candidates.json [--scanners scanners.json]
-                          [--repo <repo>] --out security_audit.json
+                          [--repo <repo>] [--name NAME] --out security_audit.json
+
+target.repository is --name, else the last part of the repository's origin URL, else the folder name (a clone in a
+scratch folder would otherwise name the report after the scratch folder). The pattern scan's language notes (languages
+and script kinds it did not analyse, carried in candidates.json) become limitations.
 
 Writes the parts of the report that are copied, not judged: the target, recon entry points (kind,
 method, path, handler line, the script's auth guess and its evidence), data stores, outbound calls
@@ -52,6 +56,23 @@ def git_commit(repo: Path | None) -> str | None:
     except (OSError, subprocess.TimeoutExpired):
         return None
 
+def origin_name(url: str | None) -> str | None:
+    """The repository name in a remote URL: git@host:owner/name.git, https://host/owner/name(.git), a local path."""
+    if not url:
+        return None
+    tail = re.split(r'[/:\\]', url.strip().rstrip('/'))[-1]
+    return re.sub(r'\.git$', '', tail) or None
+
+def repo_name(repo: Path | None) -> str | None:
+    if not repo:
+        return None
+    try:
+        p = subprocess.run(['git', '-C', str(repo), 'remote', 'get-url', 'origin'], capture_output=True, text=True, timeout=30)
+        url = p.stdout.strip() if p.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        url = None
+    return origin_name(url)
+
 def exposure_of(e: dict) -> str:
     """local: the attacker supplies a file, argument, stdin, environment or config (a CLI, a stdio MCP server, a
     loopback listener); internal: reached through a platform (queues, timers); internet otherwise. A listener or
@@ -69,6 +90,8 @@ def exposure_of(e: dict) -> str:
 def entry_point(e: dict) -> dict:
     out = {'id': e['id'], 'kind': e['kind'], 'method': e['method'], 'path': e['path'], 'handler': e['handler'],
            'auth': e['auth'], 'exposure': exposure_of(e), 'reviewed': False}
+    if out['auth'] == 'unknown' and out['exposure'] == 'local' and str(e.get('auth_evidence') or '').startswith('local invocation'):
+        out['auth'] = 'local_user'  # a local program run by the user it acts for: no account to check (correct it if it has one)
     if e.get('auth_evidence'):
         out['auth_evidence'] = e['auth_evidence']
     notes = []
@@ -103,6 +126,10 @@ def tool_rows(scanners: dict | None, cands: dict, recon: dict) -> list[dict]:
         if t.get('covers') and t['area'] == 'dependencies':  # which lockfiles this tool read (or would have)
             shown = ', '.join(t['covers'][:4]) + (f' and {len(t["covers"]) - 4} more' if len(t['covers']) > 4 else '')
             row['config'] = (row.get('config') + '; ' if row.get('config') else '') + f'lockfiles: {shown}'
+        if t.get('network_guard'):  # an offline run: how the network was kept closed, and what that left out
+            row['config'] = (row.get('config') + '; ' if row.get('config') else '') + t['network_guard']
+            if t.get('yanked_check'):
+                row['config'] += f"; {t['yanked_check']}"
         if t.get('advisory_db'):  # cargo-audit: the RustSec database it read (a stale offline copy belongs in limitations)
             db = t['advisory_db']
             row['config'] = (row.get('config') + '; ' if row.get('config') else '') + \
@@ -189,18 +216,19 @@ def validator_areas() -> set[str]:
     schema = json.loads(validator.SCHEMA.read_text(encoding='utf-8'))
     return set(schema['$defs']['area']['enum'])
 
-def seed(recon: dict, cands: dict, scanners: dict | None, repo: Path | None) -> dict:
+def seed(recon: dict, cands: dict, scanners: dict | None, repo: Path | None, name: str | None = None) -> dict:
     eps = [entry_point(e) for e in recon.get('entry_points') or []]
     tools = tool_rows(scanners, cands, recon)
     not_ran = [t['name'] for t in tools if t['status'] in ('not_run', 'errored')]
     stores = list(OrderedDict((f"{s['kind']} ({s['file']}:{s['line']})", None) for s in recon.get('data_stores') or []))
     d = {
-        'schema_version': '1.6',
+        'schema_version': '1.7',
         'skill': {'name': 'code-security-auditor', 'version': skill_version()},
         'sensitive': True,
         'notice': NOTICE,
         'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-        'target': {'repository': recon.get('repository') or (repo.name if repo else 'unknown'), 'commit': git_commit(repo),
+        'target': {'repository': name or repo_name(repo) or recon.get('repository') or (repo.name if repo else 'unknown'),
+                   'commit': git_commit(repo),
                    'scope': ['.'], 'excluded': [f"{f['dir']}/ (sample or fixture project: {f['reason']})"
                                                 for f in recon.get('fixtures_excluded') or []]},
         'recon': {
@@ -249,6 +277,11 @@ def seed(recon: dict, cands: dict, scanners: dict | None, repo: Path | None) -> 
         if t.get('advisory_db') and t.get('status') == 'ran':
             d['limitations'].append(f"{t['name']} read a local RustSec database (last updated "
                                     f"{t['advisory_db'].get('last_updated') or 'unknown'}); advisories published since are not covered.")
+    lc = cands.get('language_coverage') or {}
+    for note in lc.get('notes') or []:  # unanalysed languages and script kinds: not assessed, never clean
+        d['limitations'].append(note)
+    if lc.get('warning'):
+        d['limitations'].append(lc['warning'])
     fx = recon.get('fixtures_excluded') or []
     if fx:  # sample projects left out of recon and the scans: their planted defects are not the repository's findings
         d['limitations'].append(f"{len(fx)} sample or fixture project(s) were left out of recon, the pattern scan and the "
@@ -287,6 +320,7 @@ def main() -> int:
     ap.add_argument('--candidates', type=Path, required=True)
     ap.add_argument('--scanners', type=Path)
     ap.add_argument('--repo', type=Path)
+    ap.add_argument('--name', help='the repository name for the report (default: from the origin URL, else the folder)')
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--force', action='store_true')
     args = ap.parse_args()
@@ -300,7 +334,7 @@ def main() -> int:
     except (OSError, ValueError) as exc:
         print(f'Unable to read input: {exc}', file=sys.stderr)
         return 2
-    d = seed(recon, cands, scanners, args.repo.resolve() if args.repo else None)
+    d = seed(recon, cands, scanners, args.repo.resolve() if args.repo else None, args.name)
     args.out.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     todo = sum(text.count(TODO) for _, text in validator.json_strings(d))
     print(f"seeded {len(d['recon']['entry_points'])} entry point(s), {len(d['tools'])} tool row(s), {len(d['triage'])} triage row(s), "

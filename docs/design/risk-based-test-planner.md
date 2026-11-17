@@ -1,6 +1,6 @@
 # Design: `risk-based-test-planner-skill`
 
-Status: Built (v1.10.0), see "As built" at the end. Build order: 13.
+Status: Built (v1.11.0), see "As built" at the end. Build order: 13.
 
 ## Mission
 
@@ -586,3 +586,39 @@ Where the build differs from the design above, and what the example showed.
   copy evidence lines (`fetch_ticket.py:469`, `browser_harness.py:367`) from 18 to 2, sample-project areas from 1 to 0
   and sample tests counted from 12 to 0; `shared` now has its self-tests (test weakness 5 to 3) and no false fix
   commits. The sample repository's scores are unchanged.
+
+### v1.11.0: found planning a Rust workspace with Python, PowerShell and shell tooling and preview-only releases
+
+- **Tests that load a script by file path.** A test that loads a hyphenated script with
+  `importlib.util.spec_from_file_location` linked to nothing, so a well-tested installers area read "no test imports this
+  area" (test weakness 5). `Imports.loaded()` now uses the shared `py_loads.loaded_files()` (spec_from_file_location,
+  SourceFileLoader, runpy.run_path, bare imports through a sys.path folder, and the scripts' sibling imports); the
+  evidence counts the tests that load by path, and loads whose path cannot be worked out are named in a warning.
+- **Changed files of unread types.** The scope loop skipped any suffix outside CODE_EXT and ASSET_EXT, so a changed Slint
+  panel, a Lua fixture and Cargo.toml counted nowhere. Files in a language or format nothing here reads (UNREAD_EXT:
+  the census's other languages, UI markup and script languages) are now area assets (churn, defects, change in scope);
+  changed manifests and build files inside an area add to its change in scope; everything else is listed in
+  `scope_outside_areas`. Only docs, binaries, generated and vendored files, lockfiles, dotfiles and media stay out.
+  Entries are listed under the shortest directory no area sits in (`crates/x/benches/`, never `crates/`).
+- **Script languages.** `script_languages` (from the census's SCRIPT_BY_EXT) lists PowerShell, shell and the rest with
+  a warning, and the validator requires the plan to name each kind.
+- **Validator.** The `scope_outside_areas` check was a token match ("What about docs/?" passed, and `crates/` matched
+  every area id). It now needs the name outside any area id or path, in a sentence of six or more words besides paths.
+  `--write-summary` no longer rewrites a plan it calls INVALID for a rule failure; it prints the computed counts.
+- **Data-only areas.** A folder of regenerated JSON had churn and change in scope 5 from line counts and the highest
+  likelihood in the repository. Such an area is capped at 3, left out of the code areas' percentile pool, and never left
+  above every code area on likelihood (the evidence says so).
+- **History and releases.** A merge whose tree differs from both parents counts its own lines and is read by its
+  subject (`merge_own_changes`), with a note; a plain merge with a fix subject is noted. `release_scope.py` reports
+  `tags_merged` and `prerelease_tags_skipped` and, with only prerelease tags, names them and `--include-prerelease`.
+- **Rust.** Process launches behind a nested `use std::{.., process::Command}` and `.exec()` come from the shared Cargo
+  reader (a regression check here); tests a default `cargo test` does not run (`runs_by_default`) are named in the
+  test-weakness evidence and `tests_not_run_by_default`.
+- `--coverage` is documented as Go-only and names any other format it is given (`coverage_not_read`); the `--areas`
+  format is documented; guidance for a per-run loopback credential (3, or 2 when never on a command line or written).
+- On the review clone: an installers area loaded by path went from test weakness 5 to 1; the regenerated-data area's
+  likelihood from 4.1 (highest) to 3.0; the desktop crate's change in scope from 4 to 5 (55 Slint lines now counted);
+  `scope_outside_areas` names `crates/<crate>/benches/` instead of `crates/`; 7 PowerShell and shell scripts (228 lines)
+  are named; process-launch evidence lines 1 to 3; 9 tests not run by a default `cargo test` noted; one merge that
+  carries its own fix counted; the preview-only tag is named with `--include-prerelease`. The sample repository's
+  scores are unchanged.

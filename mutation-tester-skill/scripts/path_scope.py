@@ -22,6 +22,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import diff_scope  # noqa: E402
 
 PRUNE = {'.git', '.hg', '.svn', 'node_modules', '__pycache__', '.venv', 'venv', 'env', '.tox', '.nox', '.mypy_cache',

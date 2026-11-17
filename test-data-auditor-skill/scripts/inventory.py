@@ -10,8 +10,13 @@ A file that a documented command (Markdown shell blocks, shell scripts, Makefile
 names, or a folder of it, or that a used data file names, is used_by_commands rather than unused; a script's own
 self-test that builds a path to it (or to its sample project) loads it as <script>::*.
 
-A directory outside the test areas holding 50+ data files that test code names, but not inventoried, is listed under
-unlisted_data_dirs (and warned about); --max-files-per-dir samples a big directory evenly and records the rest as
+A directory outside the test areas holding 10+ data files that test code names, but not inventoried, is listed under
+unlisted_data_dirs (and warned about); a data file anywhere that test code names by its repository path
+("catalog/features.json") is inventoried, its folder listed under named_by_path. Files a test reaches through a script it
+loads by path (spec_from_file_location, runpy, a sys.path folder: py_loads.py) count as loaded by that test; a glob
+reaches only the folder it runs on; a file name code only writes or probes (.write_text, .exists) is not a load. A zip
+archive is read in memory (archive_text.py): its members are listed as <archive>!<member>, text members scanned, the
+rest not_assessed with the reason; other archives are listed as not opened. --max-files-per-dir samples a big directory evenly and records the rest as
 not_assessed ("not sampled") under sampled_dirs.
 
 Finds fixture files (JSON, YAML, CSV, SQL, XML, SVG), factories, seed scripts, snapshots, HTTP
@@ -45,12 +50,15 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import datafiles, detect_conventions, jsparse, repo_layout  # noqa: E402
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
+import archive_text, datafiles, detect_conventions, jsparse, py_loads, repo_layout  # noqa: E402
 
 SKIP_DIRS = detect_conventions.SKIP_DIRS | {'.git', '.turbo', '.cache', '.venv', 'venv', '__pycache__'}
 # text formats read line by line (no records): pages, tickets and notes, patches, settings and styles keep invented people
 # in their prose as often as JSON does
-TEXT_DATA_EXT = {'.html', '.htm', '.md', '.markdown', '.diff', '.patch', '.toml', '.css'}
+TEXT_DATA_EXT = {'.html', '.htm', '.md', '.markdown', '.diff', '.patch', '.toml', '.css',
+                 # run logs and captured output: where machine paths, account names and host names end up
+                 '.log', '.out', '.err', '.stderr', '.stdout', '.trace'}
 DATA_EXT = {'.json', '.yaml', '.yml', '.csv', '.tsv', '.sql', '.xml', '.har', '.snap', '.ambr', '.txt', '.ndjson', '.jsonl',
             '.svg'} | TEXT_DATA_EXT
 # documentation beside test data (a fixture tree's README) is not test data
@@ -60,6 +68,7 @@ MEDIA_EXT = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.bmp', '.ico', 
              '.woff2', '.eot', '.mp3', '.mp4', '.wav', '.ogg', '.webm', '.mov', '.m4a', '.flac'}
 BINARY_EXT = {'.db', '.sqlite', '.sqlite3', '.dump', '.bak', '.gz', '.zip', '.tar', '.tgz', '.7z', '.enc', '.gpg', '.age',
               '.pgp', '.bin', '.parquet', '.avro', '.xlsx', '.xls', '.pdf'}
+BINARY_EXT |= set(archive_text.ARCHIVE_EXT)     # every archive format is listed; a .zip is opened in memory
 TEST_DIRS = {'tests', 'test', '__tests__', 'spec', 'e2e', 'fixtures', 'testdata', 'test_data', 'test-data', 'testData', 'TestData',
              'test-fixtures', 'test_fixtures', 'sample-data', 'sample_data', 'sampledata', 'sampleData', 'androidTest', 'testFixtures'}
 # extra trees named with --data-dir (repo-relative), treated as test data areas; scan_data.py reads them back from the inventory
@@ -94,6 +103,9 @@ CODE_EXT = {'.py', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.mts', '.cts',
 # named with --data-dir; only the files a test loads are listed, the rest are counted under served_dirs
 SERVED_DIRS = {'public', 'static', 'wwwroot', 'www', 'htdocs'}
 DATA_MODULE_MAX_BYTES = 1_000_000
+# test directories that hold fixtures: a file of any type there is test data (an unknown type is listed not_assessed)
+FIXTURE_TEST_DIRS = {'fixtures', 'testdata', 'test_data', 'test-data', 'testData', 'TestData', 'test-fixtures', 'test_fixtures',
+                     'sample-data', 'sample_data', 'sampledata', 'sampleData', 'testFixtures'}
 MOBILE_ASSETS = re.compile(r'(^|/)(androidTest|test)/assets/|\.xctest|TestResources?/|(^|/)Fixtures/')
 
 
@@ -306,6 +318,9 @@ def kind_of(path: str) -> str | None:
         return None
     if (in_test_area(path) or MOBILE_ASSETS.search(path)) and (ext in DATA_EXT or ext in BINARY_EXT or ext in MEDIA_EXT):
         return 'fixture'
+    if set(p.parts[:-1]) & FIXTURE_TEST_DIRS and ext not in CODE_EXT and not DOC_NAME.match(p.name) and test_dirs_of(path) \
+            and not p.name.startswith('.'):
+        return 'fixture'          # a fixture of a type the inventory does not read (a script, a save file): listed, not_assessed
     if in_data_dir(path) and ext not in CODE_EXT:
         return 'fixture'          # a tree named with --data-dir: every file is listed, an unknown format as not_assessed
     return None
@@ -336,6 +351,25 @@ class PyTests:
                     fx[n.name] = n
             if fx:
                 self.fixtures[p] = fx
+
+    def path_reach(self) -> dict[str, set[str]]:
+        """{test file: the repository files it loads by path}: scripts loaded with spec_from_file_location, runpy or
+        an import from a folder the test (or a conftest.py above it) puts on sys.path, and what those scripts import
+        from their own folder (py_loads.loaded_files). Computed once, only for test files whose text names a loader."""
+        if '_path_reach' not in self.__dict__:
+            out: dict[str, set[str]] = {}
+            for tp in self.tests:
+                try:
+                    text = (self.root / tp).read_text(encoding='utf-8', errors='replace')
+                except OSError:
+                    continue
+                if not py_loads.may_load(text):
+                    continue
+                reach = set(py_loads.loaded_files(self.root, tp).get('reaches') or [])
+                if reach:
+                    out[tp] = reach
+            self._path_reach = out
+        return self._path_reach
 
     def test_id(self, path: str, fn: ast.FunctionDef) -> str:
         cache = self.__dict__.setdefault('_cache_ids', {})
@@ -434,6 +468,61 @@ def strings_in(node: ast.AST) -> list[str]:
     return _node_strings(node)[1]
 
 
+# calls that write a path, and calls that only probe one: a file name used only to write (and to probe a path built on a
+# scratch or output folder) is the code's own output, never a load; a probe of a committed fixture is a use of it
+WRITE_ATTRS = {'write_text', 'write_bytes', 'touch', 'mkdir', 'unlink', 'rmdir'}
+PROBE_ATTRS = {'exists', 'is_file', 'is_dir'}
+OUTPUT_NAMES = {'tmp_path', 'tmpdir', 'tmp', 'tmp_dir', 'temp_dir', 'tempdir', 'tmpdirname', 'output', 'out', 'out_dir',
+                'output_dir', 'outdir', 'scratch', 'workdir', 'work_dir'}
+_WRITE_ONLY: dict[int, tuple[ast.AST, set[str]]] = {}
+
+
+def _write_mode(call: ast.Call) -> bool:
+    mode = call.args[1] if len(call.args) > 1 else next((k.value for k in call.keywords if k.arg == 'mode'), None)
+    return isinstance(mode, ast.Constant) and isinstance(mode.value, str) and bool(set(mode.value) & set('wax'))
+
+
+def write_only_names(module: ast.AST) -> set[str]:
+    """The string constants of a module that are used only to build paths it writes or probes for existence
+    (`path = out / "report.json"; path.write_text(...)`, `(tmp / "x.json").exists()`, `open(p, "w")`): naming such a
+    file is not loading one. Cached per module; empty unless the module writes."""
+    hit = _WRITE_ONLY.get(id(module))
+    if hit and hit[0] is module:
+        return hit[1]
+    out: set[str] = set()
+    calls = [n for n in ast.walk(module) if isinstance(n, ast.Call)]
+    def on_output(e) -> bool:
+        return any(isinstance(x, ast.Name) and x.id in OUTPUT_NAMES for x in ast.walk(e))
+    writes = [c for c in calls if (isinstance(c.func, ast.Attribute) and (c.func.attr in WRITE_ATTRS or (
+              c.func.attr in PROBE_ATTRS and on_output(c.func.value))))
+              or (isinstance(c.func, ast.Name) and c.func.id == 'open' and c.args and _write_mode(c))]
+    if writes:
+        targets = [c.func.value if isinstance(c.func, ast.Attribute) else c.args[0] for c in writes]
+        written_vars = {t.id for t in targets if isinstance(t, ast.Name)}
+        target_ids = {id(t) for t in targets}
+        # a variable counts as written only when every use of it is the receiver of a write or probe
+        for n in ast.walk(module):
+            if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id in written_vars and id(n) not in target_ids:
+                written_vars.discard(n.id)
+        exprs = [t for t in targets if not isinstance(t, ast.Name)]
+        for n in ast.walk(module):
+            if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id in written_vars for t in n.targets):
+                exprs.append(n.value)
+        written: dict[str, int] = {}
+        for e in exprs:
+            for c in ast.walk(e):
+                if isinstance(c, ast.Constant) and isinstance(c.value, str):
+                    written[c.value] = written.get(c.value, 0) + 1
+        if written:
+            total: dict[str, int] = {}
+            for c in ast.walk(module):
+                if isinstance(c, ast.Constant) and isinstance(c.value, str) and c.value in written:
+                    total[c.value] = total.get(c.value, 0) + 1
+            out = {v.replace('\\', '/') for v, k in written.items() if total.get(v) == k}
+    _WRITE_ONLY[id(module)] = (module, out)
+    return out
+
+
 _PARENT: dict[tuple[int, str], tuple[list[str], bool]] = {}
 _ROOT_OF: dict[str, str] = {}
 
@@ -483,6 +572,24 @@ class FileRef:
             hit = _PARENT[key] = (strs, any(self.parent in s.strip('/').split('/') for s in strs))
         return hit[1]
 
+    def glob_dir_named(self, strs: list[str]) -> bool:
+        """The code names this file's folder as a folder to glob: a string ending in it (`data/results`, "results"), or
+        a pattern in it (`results/*.json`). A folder above it (`data` in `data/results`) or beside a named file
+        (`data/features.json`) is not this file's folder."""
+        if not self.parent:
+            return False
+        key = (id(strs), '\0glob', self.parent)
+        hit = _PARENT.get(key)
+        if hit is None or hit[0] is not strs:
+            found = False
+            for s in strs:
+                segs = s.strip('/').split('/')
+                if segs[-1] == self.parent or (len(segs) > 1 and segs[-2] == self.parent and ('*' in segs[-1] or '?' in segs[-1])):
+                    found = True
+                    break
+            hit = _PARENT[key] = (strs, found)
+        return hit[1]
+
     def dir_named(self, strs: list[str]) -> bool:
         """The code names this file's directory (`seeds/families`, or Path(...) / "seeds" / "families") and none of the
         other files in it: a loader of the files there (DIR.glob(f"{name}.yaml"), os.listdir(DIR))."""
@@ -492,13 +599,15 @@ class FileRef:
         named = any(s.rstrip('/').endswith(pair) for s in strs) or (self.parent in strs and self.grand in strs)
         return named and not any(n in s for s in strs for n in self.siblings)
 
-    def decide(self, bare: bool, globbed: bool, dir_ref: bool, parent_in_module: bool, rel: str) -> bool:
+    def decide(self, bare: bool, globbed: bool, dir_ref: bool, parent_in_module: bool, rel: str,
+               glob_dir: bool | None = None) -> bool:
         if dir_ref:
             return True
         if not (bare or globbed):
             return False
         if globbed and not bare:
-            return parent_in_module
+            # a glob reaches the files of the folder it is run on: the module must name this file's own folder
+            return parent_in_module if glob_dir is None else glob_dir
         # a bare name: in the same root it must be the only file of that name (or the directory is named too); from an
         # enclosing root the code must name the directory as well, or it may only be naming a file it never reads
         return (self.unique or parent_in_module) if rel == 'same' else parent_in_module
@@ -515,9 +624,13 @@ class FileRef:
         if not rel:
             return False
         bare = self.name in blob and bool(self.name_rx.search(blob))
+        if bare and self.name in write_only_names(module):
+            bare = False                   # the code only writes or probes a file of this name (its own output)
         globbed = any(rx.match(self.name_case) for rx in globs)
         dir_ref = self.dir_named(strs) if self.parent and self.parent in blob else False
-        return self.decide(bare, globbed, dir_ref, self.parent_named(strings_in(module)), rel)
+        mod_strs = strings_in(module)
+        return self.decide(bare, globbed, dir_ref, self.parent_named(mod_strs), rel,
+                           self.glob_dir_named(mod_strs) if globbed and not bare else None)
 
     def named_in_text(self, view: tuple[str, list[str]], where: str) -> bool:
         """The same test for a JavaScript or TypeScript file, on its text (view: js_view()'s text and string literals)."""
@@ -530,7 +643,8 @@ class FileRef:
         bare = bool(self.name_rx.search(t) or re.search(r'''['"/]''' + re.escape(self.stem) + r'''['"]''', t))
         globbed = any(('*' in s or '?' in s) and s.rsplit('/', 1)[-1].strip('*?.')
                       and fnmatch.fnmatch(self.name, s.rsplit('/', 1)[-1]) for s in strs)
-        return self.decide(bare, globbed, self.dir_named(strs), self.parent_named(strs), rel)
+        return self.decide(bare, globbed, self.dir_named(strs), self.parent_named(strs), rel,
+                           self.glob_dir_named(strs) if globbed and not bare else None)
 
 
 def count_lines(p: Path) -> int:
@@ -581,7 +695,11 @@ def importers(py: PyTests, module_path: str) -> set[str]:
 def _importers(py: PyTests, module_path: str) -> set[str]:
     mod = PurePosixPath(module_path).with_suffix('').as_posix().replace('/', '.')
     out = set()
+    reach = py.path_reach()
     for tp, fns in py.tests.items():
+        if module_path in reach.get(tp, ()):
+            out |= {py.test_id(tp, fn) for fn in fns}      # loaded by file path, not by an import statement
+            continue
         for n in ast.walk(py.modules[tp]):
             names = [a.name for a in n.names] if isinstance(n, ast.Import) else [n.module or ''] if isinstance(n, ast.ImportFrom) else []
             if any(x and (x == mod or mod.endswith('.' + x) or x.endswith('.' + mod)) for x in names):
@@ -832,7 +950,7 @@ def named_by_used_data(root: Path, items: list[dict], rounds: int = 3) -> None:
     for _ in range(rounds):
         pending: dict[str, list[dict]] = {}
         for i in items:
-            if i['kind'] != 'inline' and not i['loaded_by'] and not i.get('used_by_commands'):
+            if i['kind'] != 'inline' and not i['loaded_by'] and not i.get('used_by_commands') and not i.get('archive'):
                 p = PurePosixPath(i['path'])
                 pending.setdefault(f'{p.parent.name}/{p.name}', []).append(i)
         if not pending:
@@ -878,7 +996,7 @@ def fixture_data_dirs(root: Path, files: list[str], projects: list[dict]) -> lis
     return out
 
 
-UNLISTED_MIN_FILES = 50     # a directory outside the test areas with this many data files, named by test code, is reported
+UNLISTED_MIN_FILES = 10     # a directory outside the test areas with this many data files, named by test code, is reported
 
 
 def unlisted_data_dirs(root: Path, all_files: list[str], py: 'PyTests', js_tests: list[str]) -> list[dict]:
@@ -915,13 +1033,101 @@ def unlisted_data_dirs(root: Path, all_files: list[str], py: 'PyTests', js_tests
     return out
 
 
+def rust_tests(root: Path, all_files: list[str]) -> dict:
+    """The Rust tests of a Cargo project or workspace (cargo_project.py, read only when a Cargo.toml is present):
+    ids: {file: ['<target>::<path>', ...]} for every #[test] function (doc tests have no id and are left out);
+    unit_files: {src file holding #[cfg(test)] tests: [[first, last] line ranges of its test code]};
+    fixture_bins: helper programs under tests/fixtures, which are run by tests and are not tests."""
+    out: dict = {'ids': {}, 'unit_files': {}, 'fixture_bins': set()}
+    if not any(PurePosixPath(f).name == 'Cargo.toml' for f in all_files):
+        return out
+    try:
+        import cargo_project
+        model = cargo_project.read_cargo(root)
+    except Exception:                     # an unreadable manifest: Rust stays read as text, as before
+        return out
+    for c in model.get('crates', []):
+        out['fixture_bins'] |= {f['file'] for f in c.get('fixture_bins', [])}
+        for t in c.get('tests', []):
+            if t.get('id') and t.get('file'):
+                out['ids'].setdefault(t['file'], []).append(t['id'])
+                if t.get('kind') == 'unit' and not in_test_area(t['file']):
+                    out['unit_files'][t['file']] = None
+    for f in list(out['unit_files']):
+        try:
+            lines = sorted(cargo_project.test_lines((root / f).read_text(encoding='utf-8', errors='replace')))
+        except OSError:
+            lines = []
+        ranges: list[list[int]] = []
+        for n in lines:
+            if ranges and n == ranges[-1][1] + 1:
+                ranges[-1][1] = n
+            else:
+                ranges.append([n, n])
+        out['unit_files'][f] = ranges
+    out['ids'] = {f: sorted(set(v)) for f, v in out['ids'].items()}
+    out['fixture_bins'] -= set(out['ids'])
+    return out
+
+
+def archive_members(p: Path, rel: str, entry: dict) -> list[dict]:
+    """Fill the inventory entry of an archive and return one entry per member of a zip (path <archive>!<member>):
+    a text member read in memory is `scanned` with its line count, every other member is `not_assessed` with the
+    reason (binary, nested archive, encrypted, a limit). The archive itself is `scanned` only when every member that
+    could hold text was read whole; an archive in another format (tar, gzip, 7z ...) is not opened and says so."""
+    fmt = archive_text.is_archive_name(rel)
+    entry['format'] = fmt
+    if PurePosixPath(rel).suffix.lower() not in archive_text.OPENED:
+        entry.update(status='not_assessed', reason=f'{fmt} archive: not opened (only .zip archives are read), so its '
+                                                   'contents were not scanned')
+        return []
+    res = datafiles.archive_read(p)
+    if res['error']:
+        entry.update(status='not_assessed', reason=f'zip archive that could not be opened ({res["error"]}): not scanned')
+        entry['archive_members'] = {'members': 0, 'read': 0, 'not_read': 0, 'complete': False}
+        return []
+    listing = archive_text.list_archive(p)
+    skipped = {s['name']: s['reason'] for s in res['skipped']}
+    out = []
+    for m in listing['members']:
+        name = m['name']
+        if m['kind'] == 'dir':
+            continue
+        e = {'path': f'{rel}{datafiles.MEMBER_SEP}{name}', 'kind': entry['kind'],
+             'format': datafiles.fmt_of(Path(name)) if name in res['by_name'] else (PurePosixPath(name).suffix.lower()[1:] or 'unknown'),
+             'bytes': m['size'], 'loaded_by': [], 'status': 'scanned', 'reason': None, 'archive': rel, 'member': name}
+        if name in res['by_name']:
+            text = res['by_name'][name]
+            e['lines'] = text.count('\n') + (0 if text.endswith('\n') or not text else 1)
+            cut = next((r for r in res['read'] if r['name'] == name and r['truncated']), None)
+            if cut:
+                e['note'] = f'only the first {cut["bytes"]} bytes were read (member size limit): the rest is not assessed'
+        else:
+            e.update(status='not_assessed', reason='archive member not read: ' + skipped.get(
+                name, 'past the member or byte limit of one archive'))
+        out.append(e)
+    n_read = len(res['by_name'])
+    entry['archive_members'] = {'members': len(out) + max(0, listing['member_count'] - len(listing['members'])),
+                                'read': n_read, 'not_read': len(out) - n_read, 'complete': bool(res['complete'])}
+    if not res['complete']:
+        why = [f'{s["name"]} ({s["reason"]})' for s in res['skipped'] if 'binary' not in s['reason']]
+        cut = [r['name'] + ' (cut at the member size limit)' for r in res['read'] if r['truncated']]
+        entry.update(status='not_assessed', reason=f'zip archive partly read: {n_read} member(s) read as text, not read: '
+                                                   + '; '.join((why + cut)[:5]) + (' ...' if len(why + cut) > 5 else ''))
+    else:
+        entry['note'] = (f'zip archive read in memory: {n_read} text member(s) scanned as {rel}!<member>'
+                         + (f', {len(out) - n_read} binary member(s) not read' if len(out) > n_read else ''))
+    return out
+
+
 def sample_of(n: int, cap: int) -> set[int]:
     """Indices of an evenly spaced sample of cap items out of n (the first and the spread, deterministic)."""
     return {i * n // cap for i in range(cap)}
 
 
 def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[str] | None = None,
-          max_files_per_dir: int = 0, progress: bool = False, fixture_dirs: bool = True) -> dict:
+          max_files_per_dir: int = 0, progress: bool = False, fixture_dirs: bool = True,
+          evidence_dirs: list[str] | None = None) -> dict:
     """max_files_per_dir: above this many data files in one directory, only an evenly spaced sample of that many is
     scanned; the rest stay listed as not_assessed ('not sampled'), and sampled_dirs records the directory. 0 = all.
     progress: print a line to stderr every few seconds, so a long run is never mistaken for a hung one.
@@ -930,6 +1136,10 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
     import time
     DATA_DIRS.clear()
     DATA_DIRS.update(d.replace('\\', '/').strip('/') for d in data_dirs or [] if d.strip('/'))
+    # committed evidence trees (recorded runs, results, published reports): read like a --data-dir for personal data,
+    # secrets and hosts, but nothing in them is called unused: tests are not their readers
+    evidence = sorted({d.replace('\\', '/').strip('/') for d in evidence_dirs or [] if d.strip('/')})
+    DATA_DIRS.update(evidence)
     _VIEWS.clear()
     all_files = walk(root)
     set_product_dirs(root, all_files)
@@ -945,6 +1155,11 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
         files = [f for f in files if any(f == p or f.startswith(p.rstrip('/') + '/') for p in paths)]
     py = PyTests(root, all_files)
     js_tests = [f for f in files if detect_conventions.is_test_file(f) and not f.endswith('.py') and not is_support(f)]
+    # Rust through cargo_project.py: #[test] ids per file, src/ files holding #[cfg(test)] tests, helper programs
+    # under tests/fixtures (not tests). Their text is matched for data file names like other non-Python tests
+    rust = rust_tests(root, all_files)
+    js_tests = [f for f in js_tests if f not in rust['fixture_bins']] + \
+        [f for f in sorted(rust['unit_files']) if f not in js_tests and f in set(files)]
     roots = package_roots(all_files)
     name_counts: dict[tuple[str, str], int] = {}
     for f in all_files:
@@ -958,10 +1173,32 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
     kinds = {rel: k for rel, k in kinds.items() if k}
     # a module named like a test (test_paths.py, path_test.py) outside every test area, with no test functions and no
     # self-test, is product code
+    for rel in rust['fixture_bins']:
+        if rel in kinds:
+            kinds[rel] = 'support'
+    for rel in rust['unit_files']:
+        if rel in set(files):
+            kinds[rel] = 'inline'
     for rel in [r for r, k in kinds.items() if k == 'inline' and r.endswith('.py')]:
         if not test_dirs_of(rel) and PurePosixPath(rel).name != 'conftest.py' and not py.tests.get(rel) \
                 and rel not in SELF_TEST_FILES:
             del kinds[rel]
+    # product data that test code names by its repository path (ROOT / "catalog/features.json"): read by the tests, so
+    # inventoried whatever folder it sits in; its folder is named so the rest of it is not taken as covered
+    named_by_path: dict[str, list[str]] = {}
+    blob = '\n'.join([s for tp, tree in py.modules.items() if in_test_area(tp) for s in strings_in(tree)]
+                     + [v[0] for v in (js_view(root, t) for t in js_tests) if v is not None])
+    if blob:
+        for rel in files:
+            pp = PurePosixPath(rel)
+            if rel in kinds or '/' not in rel or pp.suffix.lower() not in DATA_EXT or TOOLING.match(pp.name) \
+                    or DOC_NAME.match(pp.name) or rel not in blob:
+                continue
+            if not fixture_dirs and set(pp.parts[:-1]) & set(repo_layout.FIXTURE_PARENTS):
+                continue                   # --no-fixture-dirs: sample projects stay out, even those a test names
+            if re.search(r'(?<![\w.-])' + re.escape(rel) + r'(?![\w/-])', blob):
+                kinds[rel] = 'fixture'
+                named_by_path.setdefault(pp.parent.as_posix(), []).append(rel)
     # source code under a --data-dir tree: a data module is listed as a fixture; the rest is recorded, never dropped silently
     module_notes: dict[str, str] = {}
     code_under: dict[str, list[str]] = {}
@@ -995,6 +1232,7 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
                     skipped[rel] = why
             sampled[d] = {'files': len(fs), 'scanned': max_files_per_dir, 'how': 'evenly spaced in path order'}
     items = []
+    archives: list[dict] = []
     t_start = t_last = time.monotonic()
     for n_done, rel in enumerate(kinds, 1):
         k = kinds[rel]
@@ -1006,6 +1244,7 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
         size = p.stat().st_size
         entry = {'path': rel, 'kind': k, 'format': datafiles.fmt_of(p) if ext not in ('.snap', '.ambr', '.har') else ext[1:],
                  'bytes': size, 'loaded_by': [], 'status': 'scanned', 'reason': None}
+        archive_entries: list[dict] = []
         if rel in skipped:
             entry.update(status='not_assessed', reason=skipped[rel])
         elif ext in ('.xlsx', '.xlsm'):
@@ -1022,6 +1261,10 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
                 entry['note'] = f'{entry["format"].upper()} text with an .xls extension (sniffed), scanned as text'
             except UnicodeDecodeError:
                 entry.update(status='not_assessed', reason=f'{entry["format"].upper()} with an .xls extension, not UTF-8 text')
+        elif archive_text.is_archive_name(rel):
+            # a zip is opened in memory (never extracted): its text members are listed and scanned as <archive>!<member>;
+            # any other archive is named as not opened, never passed over as "binary"
+            archive_entries = archive_members(p, rel, entry)
         elif ext in BINARY_EXT:
             entry.update(status='not_assessed', reason='binary, compressed or encrypted file', format=ext[1:])
         elif ext in MEDIA_EXT:
@@ -1046,6 +1289,10 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
             entry['loaded_by'] = sorted(py.requesting(rel, set(py.fixtures.get(rel, {}))))
         elif k == 'inline':
             entry['loaded_by'] = ([py.test_id(rel, fn) for fn in py.tests.get(rel, [])] if rel.endswith('.py') else [f'{rel}::*'])
+            if rel in rust['unit_files']:
+                entry['test_lines'] = rust['unit_files'][rel]
+                entry['note'] = ('Rust source with #[cfg(test)] tests: only its test lines (test_lines) are read as test '
+                                 'data; the rest is product code')
             if rel in SELF_TEST_FILES:
                 entry['loaded_by'].append(f'{rel}::*')
         elif k == 'support' and GLOBAL_SETUP.match(PurePosixPath(rel).name):
@@ -1087,9 +1334,29 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
             cmds = uses.commands_for(rel)
             if cmds:
                 entry['used_by_commands'] = cmds[:5] + ([f'... {len(cmds) - 5} more'] if len(cmds) > 5 else [])
+        if any(rel == e or rel.startswith(e + '/') for e in evidence):
+            entry['evidence_tree'] = True
         items.append(entry)
+        for m in archive_entries:          # a member is loaded by whatever loads its archive
+            m['loaded_by'] = entry['loaded_by']
+            if entry.get('evidence_tree'):
+                m['evidence_tree'] = True
+            if entry.get('used_by_commands'):
+                m['used_by_commands'] = entry['used_by_commands']
+            items.append(m)
+        if entry['status'] == 'not_assessed' and archive_text.is_archive_name(rel) and rel not in skipped:
+            archives.append(entry)
     named_by_used_data(root, items)
-    tests = sorted({py.test_id(p, fn) for p, fn in py.all_tests()} | {f'{t}::*' for t in js_tests}
+    # a Rust test file's file::* stands for its #[test] functions (cargo_project ids)
+    for i in items:
+        if any(t.endswith('.rs::*') and t[:-3] in rust['ids'] for t in i['loaded_by']):
+            i['loaded_by'] = sorted({x for t in i['loaded_by'] for x in (rust['ids'].get(t[:-3]) or [t])})
+    for rel in rust['fixture_bins']:
+        for i in items:
+            if i['path'] == rel:
+                i['note'] = 'a helper program under tests/fixtures (cargo_project fixture_bins): run by tests, not a test'
+    js_ids = {x for t in js_tests for x in (rust['ids'].get(t) or [f'{t}::*'])}
+    tests = sorted({py.test_id(p, fn) for p, fn in py.all_tests()} | js_ids
                    | {f'{t}::*' for t in SELF_TEST_FILES})
     warnings: list[str] = []
     # a served folder named with --data-dir: its files are the site's assets; only those a test loads are test data
@@ -1114,6 +1381,18 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
                         f'(data_dir_code): {", ".join(sorted(fs)[:3])}{", ..." if len(fs) > 3 else ""}. A module of records '
                         'written as code is listed and scanned; personal data in other product code belongs to '
                         'code-security-auditor and privacy-flow-auditor')
+    # a tree named with --data-dir or --evidence-dir that yields nothing: said, with what it held, never silent
+    fixture_trees = {f['dir'] for f in fdirs}
+    for d in sorted(DATA_DIRS - fixture_trees):
+        if any(i['path'].startswith(d + '/') for i in items) or d in served or d in code_under:
+            continue
+        there = [f for f in all_files if f.startswith(d + '/')]
+        if not (root / d).is_dir():
+            warnings.append(f'{d}/ (named with --data-dir or --evidence-dir) does not exist: nothing was read there')
+        else:
+            warnings.append(f'{d}/ (named with --data-dir or --evidence-dir) gave no data source: {len(there)} file(s) there'
+                            + (f' ({", ".join(PurePosixPath(f).name for f in there[:5])}{", ..." if len(there) > 5 else ""}), '
+                               'documentation and code are not test data' if there else ', it is empty'))
     extra = {}
     if served:
         extra['served_dirs'] = served
@@ -1122,6 +1401,19 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
     unlisted = unlisted_data_dirs(root, all_files, py, js_tests)
     if unlisted:
         extra['unlisted_data_dirs'] = unlisted
+    if named_by_path:
+        per_dir: dict[str, int] = {}
+        for f in all_files:
+            pp = PurePosixPath(f)
+            if pp.parent.as_posix() in named_by_path and pp.suffix.lower() in DATA_EXT:
+                per_dir[pp.parent.as_posix()] = per_dir.get(pp.parent.as_posix(), 0) + 1
+        extra['named_by_path'] = [{'dir': d, 'files': sorted(fs), 'data_files_in_dir': per_dir.get(d, len(fs))}
+                                  for d, fs in sorted(named_by_path.items())]
+        for e in extra['named_by_path']:
+            rest = e['data_files_in_dir'] - len(e['files'])
+            warnings.append(f'{e["dir"]}/: {len(e["files"])} data file(s) there that tests read by repository path were '
+                            'inventoried (named_by_path)' + (f'; the other {rest} data file(s) in it were NOT: pass '
+                                                             f'--data-dir {e["dir"]} to read the folder whole' if rest > 0 else ''))
     if sampled:
         extra['sampled_dirs'] = sampled
     if fdirs:
@@ -1135,12 +1427,17 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
     if SELF_TEST_FILES:
         extra['self_tests'] = sorted(SELF_TEST_FILES)
     extra['commands_read'] = uses.commands
+    for a in archives:
+        warnings.append(f'{a["path"]}: {a["reason"]}. What the archive holds beyond the members listed as read was NOT '
+                        'scanned; name it in the limitations')
     if not tests:
         # loud, like language_coverage: an empty inventory is not a clean one
         extra['no_tests'] = True
         warnings.insert(0, NO_TESTS)
     if warnings:
         extra['warnings'] = warnings
+    if evidence:
+        extra['evidence_dirs'] = evidence
     return {'repo': root.name, 'data_dirs': sorted(DATA_DIRS), 'product_dirs': dict(sorted(PRODUCT_DIRS.items())),
             **extra, 'inventory': items, 'tests': tests,
             'summary': {'sources': len(items), 'by_kind': {k: len([i for i in items if i['kind'] == k])
@@ -1148,10 +1445,11 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
                         'not_assessed': len([i for i in items if i['status'] == 'not_assessed']),
                         # with no tests, "no test loads it" says nothing about a file
                         'unused': [i['path'] for i in items if not i['loaded_by'] and i['kind'] != 'inline'
-                                   and not i.get('used_by_commands')] if tests else [],
+                                   and not i.get('used_by_commands') and not i.get('archive')
+                                   and not i.get('evidence_tree')] if tests else [],
                         # read by a documented command or script only: used, but by commands, not tests
                         'used_by_commands': [i['path'] for i in items if not i['loaded_by'] and i['kind'] != 'inline'
-                                             and i.get('used_by_commands')]}}
+                                             and i.get('used_by_commands') and not i.get('archive')]}}
 
 
 def main(argv=None) -> int:
@@ -1164,12 +1462,16 @@ def main(argv=None) -> int:
     ap.add_argument('--max-files-per-dir', type=int, default=0, metavar='N',
                     help='scan only an evenly spaced sample of N data files in any directory holding more (the rest are '
                          'listed as not_assessed, "not sampled"); 0, the default, scans every file')
+    ap.add_argument('--evidence-dir', action='append', default=[], metavar='DIR',
+                    help='a committed evidence tree (recorded runs, results, reports): inventoried and scanned for personal '
+                         'data, secrets and hosts like --data-dir, but never called unused (repeatable)')
     ap.add_argument('--no-fixture-dirs', action='store_true',
                     help='do not read fixture folders (examples/, samples/, ... with data files) as test data by default')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args(argv)
     markers = json.loads(args.markers.read_text(encoding='utf-8')) if args.markers else {}
     res = build(args.repo.resolve(), args.paths, markers, args.data_dir, args.max_files_per_dir, progress=True,
+                evidence_dirs=args.evidence_dir,
                 fixture_dirs=not args.no_fixture_dirs)
     for u in res.get('unlisted_data_dirs', []):
         print(f"WARNING: {u['dir']}/ holds {u['files']} data files ({u['bytes'] / 1e6:.1f} MB) that test code names "

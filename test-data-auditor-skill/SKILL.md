@@ -1,7 +1,7 @@
 ---
 name: test-data-auditor
 description: Audit the data tests depend on (fixtures, factories, seeds, snapshots, HTTP recordings and inline literals, in Python, JavaScript/TypeScript and Go suites) for time bombs, real-looking personal data, magic ids, environment coupling, shared mutable fixtures, unseeded randomness, schema drift, snapshot rot, unused or duplicate files, locale assumptions and files tests leave behind. Every rule runs statically; time bombs, shared state and locale assumptions are then confirmed with real runs under a moved clock, reversed order or another locale. Personal data is never echoed (only file, line, field and data type), secrets are handed to code-security-auditor, and the report never calls test data "clean".
-version: 1.8.0
+version: 1.9.0
 ---
 
 # Test data auditor
@@ -79,6 +79,7 @@ Output:
 | Repo | required | |
 | Paths | auto | Test directories (`tests/`, `fixtures/`, `testdata/`, `test-data/`, `sample-data/` and the like), seeds, `__snapshots__`, cassettes and recordings, mocks, mobile test assets |
 | Data dirs | fixture folders | `--data-dir <dir>` (repeatable) for a tree of test data under a name the inventory doesn't know. Fixture folders (`examples/`, `samples/` and the like holding data files) are read by default; `--no-fixture-dirs` leaves them out |
+| Evidence dirs | none | `--evidence-dir <dir>` (repeatable) for committed evidence the product keeps (recorded runs, results, published reports): inventoried and scanned for personal data, secrets, hosts and home paths like a data dir, but nothing in it is called unused, since tests are not its readers |
 | Today | the real date | The date the time-bomb arithmetic counts from; record it |
 | Clock shift | `+400d` | For confirming time bombs, plus a month-end and a 29 February run |
 | Markers | none | `{"anonymised_by": {"path": "reference"}}`: lowers personal data one level (Critical to Serious), is cited in the finding, and never hides it |
@@ -88,7 +89,8 @@ Output:
 ## Step 1: Inventory
 
 ```bash
-python scripts/inventory.py <repo> --out <run>/inventory.json [--markers markers.json] [--data-dir <dir> ...]     [--max-files-per-dir N] [--no-fixture-dirs]
+python scripts/inventory.py <repo> --out <run>/inventory.json [--markers markers.json] [--data-dir <dir> ...] \
+    [--evidence-dir <dir> ...] [--max-files-per-dir N] [--no-fixture-dirs]
 ```
 
 **Fixture folders and sample projects.** A tool or library repository keeps its test data as
@@ -119,9 +121,13 @@ is product code, not a test file; a product script whose name only starts with "
 **Product data trees the tests read.** A site often keeps its records as thousands of data files
 (one JSON file per record) outside any test directory, and a parametrised suite globs them. The
 inventory does not walk such a tree unless told to, but it never skips one silently: a directory
-outside the test areas with 50 or more data files whose name test code mentions is listed under
+outside the test areas with 10 or more data files whose name test code mentions is listed under
 `unlisted_data_dirs` (with its file count, size and the test files that name it), a WARNING is
-printed, and `scan_data.py` repeats it in its notes as NOT scanned. Inventory it with
+printed, and `scan_data.py` repeats it in its notes as NOT scanned. A data file anywhere that test
+code names by its repository path (`ROOT / "catalog/features.json"`) is inventoried by default:
+its folder is listed under `named_by_path`, with a WARNING when the folder holds other data files
+that were not read. A tree named with `--data-dir` or `--evidence-dir` that yields no source (only
+a README, or a folder that does not exist) gets a WARNING saying what it held. Inventory it with
 `--data-dir <dir>`: the walk indexes each module's strings once, so thousands of files take
 seconds, and the scan reads every record (an address embedded in one record of thousands is
 found). When the tree is too big to scan in the time you have, add `--max-files-per-dir N`: an
@@ -188,7 +194,10 @@ A test loads a source when the source's file name appears in one of four places:
 - **a test module outside any function:** every test in the module;
 - **a conftest fixture:** the tests requesting that fixture, directly or through other fixtures;
 - **a source module:** the tests in modules that import it (a seed loaded by the app, for
-  example).
+  example), and the tests that load it by file path: `importlib.util.spec_from_file_location`,
+  `runpy.run_path`, or an import from a folder the test (or a conftest.py above it) puts on
+  `sys.path`, with what that script imports from its own folder (the shared `py_loads.py`). A
+  template a script reads is then loaded by the tests that load the script.
 
 How a mention is matched, so reach isn't overstated in a monorepo:
 
@@ -198,12 +207,38 @@ How a mention is matched, so reach isn't overstated in a monorepo:
   `package.json` and the like) when no other file there has that name, or when the module also
   names the directory. Data in an enclosing root (a repo-level `test-data/`) needs the directory
   named too. A file name in another service never counts;
-- a glob (`DIR.glob("*.yaml")`) counts when the module names the directory, and so does code that
-  names the directory alone (`seeds/families`) and none of its files: a loader of what is there;
+- a glob (`DIR.glob("*.yaml")`) counts when the module names that directory itself (`data/results`,
+  `"results"`, `results/*.json`), not a folder above it (`data` in `data/results` reaches nothing
+  directly under `data/`); so does code that names the directory alone (`seeds/families`) and none
+  of its files: a loader of what is there;
+- a file name the code only writes, or probes on a scratch or output folder (`path = out /
+  "report.json"; path.write_text(...)`, `(tmp_path / "report.json").exists()`, `open(p, "w")`), is
+  its own output, never a load of a committed file of that name;
 - helper functions in a test module (a loader used by `parametrize`) count for every test in it.
 
 Binary and encrypted files, and images, fonts and media (PNG, OTF, MP4), are `not_assessed`.
-SVG is text, and is scanned. HTML pages, Markdown (tickets, notes), diffs and patches, TOML and CSS
+SVG is text, and is scanned. Run logs and captured output (`.log`, `.out`, `.err`, `.stderr`,
+`.stdout`, `.trace`) are read as text: machine paths, account names and host names end up there.
+
+**Archives.** A `.zip` in a test area or a data, evidence or fixture tree is opened in memory with
+the shared `archive_text.py` (nothing is extracted to disk; members are read through a bounded
+stream, a member whose compression ratio is suspicious is not opened, nested archives are never
+opened). Every member is listed as `<archive>!<member>` (`results/run.zip!logs/player.log`) with
+`archive` and `member`; a text member is `scanned` and its candidates cite the member and the line
+in it; every other member is `not_assessed` with the reason (binary, nested archive, encrypted, a
+size limit). The archive's own entry records `archive_members` (members, read, not read, complete)
+and is `not_assessed` ("zip archive partly read: ...") when anything that could hold text was not
+read, with a WARNING. Other archive formats (tar, gzip, 7z) are listed as not opened. Members are
+loaded by whatever loads the archive and are never called unused. `python scripts/datafiles.py
+'<archive>!<member>' --text` prints a member's text, the form its line numbers count.
+
+**Rust.** In a Cargo project the inventory reads the tests through the shared `cargo_project.py`:
+`#[test]` functions keep their libtest ids (`<target>::<path>`), so `tests_found` counts test
+functions, not files; a `src/` file holding a `#[cfg(test)]` module is inventoried as test code
+with `test_lines` (only those lines are scanned as test data); a helper program under
+`tests/fixtures/` is `support` (run by tests, not a test); and a fixture of a type the inventory
+does not read (a Lua script, a save file) under a fixture folder is listed `not_assessed`
+("unknown format"), never dropped. HTML pages, Markdown (tickets, notes), diffs and patches, TOML and CSS
 are read as text: an address in a sentence counts, not only one in quotes (a README beside the
 data is documentation and is not inventoried). An `.xls` file is sniffed: report tools save HTML tables and XML
 spreadsheets with that extension, and those are scanned as text (HTML tables as rows under their
@@ -229,7 +264,7 @@ assessed for that language.
 | `personal_data` | A tabular extract (CSV, TSV, HTML or `.xlsx` sheet, JSON list) with 20 or more rows whose column is named for a person or customer (`customer_name`, `client`, `Cust Name`) and holds mostly names: judged by the header and the row count, reported by file, header line and column only (`customer_extract`; extend `person_columns` in `data/rules.json` for a repo's own abbreviations); email at a public or non-reserved domain (a package spec such as `name@1.2.3`, a host given as an IP address, a file name such as `icon@2x.png` and a URL's user-info `scheme://user:key@host`, which is a `url_credentials` secret, are not addresses); phone outside the reserved ranges; Luhn-valid card not on a test list, written unbroken or in the groups card schemes print (4-4-4-4, 4-6-5, 4-6-4, 4-4-4-4-3; space-separated small numbers such as screen coordinates or process-listing columns are never cards) (dates, times, version strings and epoch timestamps are never phones or cards); Medicare, TFN or NHS number with a valid check digit; SSN or National Insurance number in valid format; IBAN with a valid checksum; full name with a street address; date of birth beside a name |
 | `time_bomb` | A fixed expiry date in the future that the code compares with now (directly, through a parser such as `date.fromisoformat(x["expires"])`, or through a variable holding today), giving the date it fails on; the comparison must be in the same sample project as the data (or, for the host's own data, in the host's code), never another project's code that uses the same field name; data in a top-level folder with product code of its own (a tool's component) is linked only to that folder's code; a future literal date in a test that also reads the clock |
 | `magic_id` | A lookup by a literal id where a database or seed is in reach (the test loads a seed, has a database or integration marker, requests a database fixture, or sits in an integration tree), checked against the seed rows; not a large id in a "not found" test, nor an all-nines sentinel; a literal UUID; an equality assertion on an auto-increment id (`x.id == 3`, not `x.id > 0`) |
-| `environment_coupling` | A production or staging host, a real bucket, an AWS account id, an absolute path on someone's machine, a test in a subdirectory that opens a top-level repository directory by a cwd-relative path (`open("data/x.json")`, `os.listdir("data")`: it passes only when run from the root; `cwd_relative_path`, not flagged when the test changes directory itself) (platform roots such as `/home/site/wwwroot` or a CI runner's home are the same everywhere, so they are not). Tests that reach a live endpoint through product code (an update check, telemetry) are not a literal in test data: report them as a review finding with `host` and `live_endpoint: true`, and a basis that names the host (the calling line, or the proxy log that recorded the tests reaching it) |
+| `environment_coupling` | A production or staging host, a real bucket, an AWS account id, an absolute path on someone's machine (`local_path`: one candidate per file, citing the first line, with every line in `details.lines` and `details.count`; a path inside a URL such as `https://example.org/home/...` is not one, and a home folder whose name is made of stand-in words such as `private-account` or `some-user` is dismissed by rule as a placeholder account), a test in a subdirectory that opens a top-level repository directory by a cwd-relative path (`open("data/x.json")`, `os.listdir("data")`: it passes only when run from the root; `cwd_relative_path`, not flagged when the test changes directory itself) (platform roots such as `/home/site/wwwroot` or a CI runner's home, `/home/runner/`, `/Users/runner/`, `C:\Users\runneradmin\`, are the same everywhere, so they are not). A real account name in committed evidence (a recorded run, a log, an archive of either) is the person's: promote it as `personal_data` by review (an OS account name), not only as environment coupling, when the repository is or may become public. Tests that reach a live endpoint through product code (an update check, telemetry) are not a literal in test data: report them as a review finding with `host` and `live_endpoint: true`, and a basis that names the host (the calling line, or the proxy log that recorded the tests reaching it) |
 | `shared_mutable` | A session, module, package or class-scoped fixture that returns a mutable value a test mutates; `importlib.reload(module)` in test code, with the module's import-time environment reads (`module_reload`): later tests see the reloaded state, so a test can pass only after it; Go tests that change process state by hand (`go_os_setenv`, `go_os_chdir`) or reassign a package-level variable with nothing putting it back (`go_package_var_reassigned`) |
 | `nondeterministic` | `random` or Faker with no seed in the file; `uuid4()` in test data; Go `math/rand` with no seeded source in the file |
 | `schema_drift` | A fixture field the model no longer has; a missing required field; an enum value the model doesn't allow (dataclasses, pydantic, SQLAlchemy, TypedDict, JSON Schema, OpenAPI JSON). Only models from the fixture's own package root count, and a record matches a model only when half its keys are the model's fields. Models in other languages (Go structs, Java classes) are not read: when the repository is mostly another language (counted by the shared `lang_census.py`, vendored and embedded third-party trees left out), `drift.json` carries `language_coverage` with status `unsupported_dominant` and a `warning` (also printed, and added to the scan's notes), and the report must not read "no drift" from it |
@@ -285,7 +320,10 @@ contents masked:
 Test files in other languages (Swift, Kotlin, Rust, Java...) are scanned as text only: strings,
 secrets, hosts and personal data, but none of the code rules. `candidates.json` lists them under
 `language_coverage.text_only`, the scan prints a warning, and a note says which rules were not
-assessed; carry that into the limitations.
+assessed; carry that into the limitations: the validator rejects a report whose limitations do not
+name each text-only language, that does not say schema drift was not assessed when the drift
+check warned about the dominant language, that leaves out a data tree the notes call NOT scanned,
+or that leaves out an archive that was not opened or only partly read.
 
 **Numbers that aren't personal data.**
 
@@ -332,6 +370,11 @@ bomb a moved clock exposed, or files a run left behind. Report it as a finding w
   checks the excerpt is on it.
 - `{"evidence": "<path in the run dir>"}` for a run artefact, such as `residue.json` or a JUnit file.
 
+A value inside a zip member is cited as `{"file": "<archive>!<member>", "line", "excerpt"}`; the
+validator re-reads the member in memory. A `personal_data` or `secret` finding from review must cite
+at least one file and line (an evidence file alone protects nothing, so it is rejected): the leak
+check then keeps the values on that line out of the report and the evidence.
+
 An excerpt quotes the code around a value, never the value. The validator rejects an excerpt that
 holds six or more digits or a non-reserved email address. A confirmed time bomb found this way:
 
@@ -343,7 +386,9 @@ The renderer labels these findings "found by review".
 ## Step 4: Experiments
 
 Run the affected tests with `run_tests.py`, and compare each experiment with green baseline runs
-(label `baseline`). Confirm on the affected test files only, with two baselines. A whole-suite run
+(label `baseline`). Use the runner the repository's CI uses: `--preset unittest` for a suite CI runs
+with `python -m unittest` (ids then match what CI prints), `--preset pytest` for pytest, the
+`vitest`/`jest`/`go-test`/`cargo` presets for the others; the pytest examples below are examples. Confirm on the affected test files only, with two baselines. A whole-suite run
 on a busy machine times out and makes a poor baseline.
 
 **A crashed or empty run is not a result.** A run that parsed no tests, timed out, or exited with
@@ -359,8 +404,14 @@ internet is refused and logged rather than passing or failing on the network:
 `scripts/net_guard.cjs` for Node runners (`--env "NODE_OPTIONS=--require <abs path with forward
 slashes>/net_guard.cjs" QA_NET_GUARD_LOG=<run>/net_guard.log`, which reaches Vitest's and Jest's
 workers; combine it with the clock preload in the same `NODE_OPTIONS`) and `scripts/net_guard.py`
-for pytest (`PYTHONPATH` to a directory holding a copy, `PYTEST_ADDOPTS=-p net_guard`). Check the
-log has a `net_guard: loaded` line per process, or the guard was not on; each refusal names the
+for pytest (`PYTHONPATH` to a directory holding a copy, `PYTEST_ADDOPTS=-p net_guard`). The pytest
+plugin guards the pytest process only: for a `python -m unittest` suite, and for tests that start
+child Python processes (`subprocess.run([sys.executable, ...])`), run the command through
+`scripts/py_guard.py run --log <run>/net_guard.log -- <command>` (or set the variables
+`py_guard.py env --log <log>` prints): it puts `scripts/py_guard_site/` first on `PYTHONPATH`, whose
+`sitecustomize.py` loads `net_guard.py` at start-up in every process that inherits the variable, so
+each logs its own `loaded` line (a process started with `-I`, `-E` or `-S` is not guarded; say so). Check the log has a `net_guard: loaded` line per
+process, or the guard was not on; each refusal names the
 host and the calling file and line (`from <file>:<line>`). Keep the log with the run's evidence
 and say in the limitations which tests were refused. Unset provider credentials as well.
 
@@ -438,7 +489,9 @@ python scripts/run_tests.py --preset pytest --cwd <copy> --out <run>/runs.json -
   python scripts/residue.py diff <copy> --before <run>/tree.before.json --out <run>/residue.json --also home=<empty home>
   ```
 
-  Files added or changed outside the ignored build and dependency directories are a `residue`
+  Files added or changed outside the ignored build and dependency directories, and directories a
+  run created (`dirs_added`, empty ones included: a suite that keeps scratch folders inside the
+  repository and removes only its own subfolder leaves the parents behind), are a `residue`
   finding, with `source: agent` and basis `{"evidence": "residue.json"}`. Tests also write outside
   the tree (downloaded browsers, caches and settings under the home directory): run them with HOME
   (and USERPROFILE on Windows) pointing at an empty folder and pass that folder as `--also home=...`;
@@ -495,7 +548,8 @@ lines (addresses at non-reserved domains, numbers) must not appear in the report
 so describe them by file, line, field and type there too.
 
 Write the headline yourself, naming the P0 findings; the validator rejects a placeholder left
-in it ("Draft headline", TODO, TBD, an empty headline). Fix every error rather than editing
+in it ("Draft headline", "Placeholder headline", TODO, TBD, an empty headline); the word
+"placeholder" describing the data itself is fine. Fix every error rather than editing
 computed fields. The validator checks a finding count in the headline against the report. With
 no findings, say what was read rather than what wasn't found, for example: "No findings from the
 rules or the runs: 16 inline test files scanned, no fixture files; no experiment was needed."
@@ -525,9 +579,9 @@ Show the user:
 
 | Field | Content |
 |---|---|
-| `schema_version` | `"1.1"` (absent means 1.0, still accepted) |
+| `schema_version` | `"1.2"` (1.1 and 1.0, absent, are still accepted; 1.2 documents the archive, Rust and evidence-tree inventory fields) |
 | `metadata` | Repo, date the audit counts from, clock shift, `apply_fixes`, candidates and runs files, critical tests, platform, `tests_found` (required from 1.1: the candidates' `tests_found`) |
-| `inventory[]` | Every data source: kind, format, the tests that load it, scanned or not assessed, any `anonymised_by` |
+| `inventory[]` | Every data source: kind, format, the tests that load it, scanned or not assessed, any `anonymised_by`; archive members (`<archive>!<member>`, `archive`, `member`), the archive's `archive_members`, a Rust source's `test_lines`, `evidence_tree` for files under `--evidence-dir` |
 | `tools[]` | Each tool ran, not run, errored or not applicable, and what that leaves unchecked |
 | `findings[]` | Category, candidates (or `source: agent` with a `basis`), location, data type, why flagged, `real_looking`, confidence, experiment, fails-on date, `host` and `live_endpoint` (a review finding whose basis names the live host tests reach), affected tests, fix, verification step; severity, reach, score and priority are computed |
 | `dismissed[]` | Each candidate set aside, by rule or by review, with the reason |

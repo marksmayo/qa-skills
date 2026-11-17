@@ -45,6 +45,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import merge_findings as mf  # noqa: E402
 import schema_check  # noqa: E402
 from send_cases import REDACTED, SENSITIVE_HEADERS, SENSITIVE_NAME, SAFE_METHODS  # noqa: E402

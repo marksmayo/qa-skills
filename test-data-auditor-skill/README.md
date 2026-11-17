@@ -36,6 +36,13 @@ It is strict about what it shows:
   a cap on the pairs it confirms, so a repository of thousands of fixtures scans in minutes.
   A time-bomb date is linked only to a comparison with now in the same sample project (or the
   host's own code), and the validator rejects a placeholder headline.
+- Zip archives are opened in memory (members listed as `<archive>!<member>`, text members scanned,
+  the rest not assessed with the reason) and run logs (`.log`, `.out`, `.err`) are read as text.
+  `--evidence-dir` reads committed evidence (recorded runs, results) for personal data and paths
+  without calling it unused. Rust tests are read through `cargo_project.py` (test functions
+  counted, unit-test modules in `src/` inventoried, helper programs under `tests/fixtures` not
+  counted as tests). The validator requires limitations for text-only languages, schema drift not
+  assessed, unscanned data trees and unread archives.
 - Large product data trees are never skipped silently: a tree of data files that test code
   names but the inventory does not cover is listed as `unlisted_data_dirs` and warned about;
   `--data-dir` inventories it quickly, and `--max-files-per-dir N` samples it, recording the rest
@@ -85,7 +92,7 @@ Node), which refuse and log every connection that is not loopback.
 > Audit our test fixtures for personal data and anything that will break by itself.
 
 ```bash
-python scripts/inventory.py <repo> --out run/inventory.json [--data-dir <dir>]
+python scripts/inventory.py <repo> --out run/inventory.json [--data-dir <dir>] [--evidence-dir <dir>]
 python scripts/scan_data.py <repo> --inventory run/inventory.json --out run/candidates.json
 python scripts/run_tests.py --preset pytest --cwd <copy> --out run/runs.json --label baseline --run-prefix B --repeat 2
 python scripts/run_tests.py --preset custom --cmd "python -m pytest -q -p no:cacheprovider -p clock_shift --junitxml={junit}" \

@@ -48,6 +48,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import run_tests  # noqa: E402
 
 CTX_SUFFIX = re.compile(r'\|(run|setup|teardown)$')

@@ -20,6 +20,16 @@ stable or fine. run_status is not_run when no job ran (the headline then says th
 partial when a log could not be downloaded; a check over nothing scores 0 in the evidence completeness. An
 agent may name the test of a step failure (`test_id_source: "agent"`) only when the log lines it quotes show
 that test. Local repeat runs (local_runs.json) must each give the command, the environment and the counts.
+
+The triage is checked against schemas/triage.schema.json first (required fields, types, enumerations, the shape of a
+draft); a triage that fails it is not checked further. Failures that are one defect on several jobs (the legs of a
+matrix; extract_failures.py groups them) carry their `group`, get one draft (on one member, `covers` listing the
+others; a draft per failure is still accepted from a 1.2.0 or 1.3.0 triage), and name the same owning change: a leg
+left not_identified while another leg of its group names a commit is an error. The steps a failed step skipped and
+the jobs the CI skipped (`checks_not_run`) must be in the triage, in that field (required from 1.4.0) or named in
+the limitations. A run with no job whose commit's other workflows concluded the same way must say so, and so must a
+triage whose run has no last green run because the default branch was never searched. summary.evidence_checks names
+the five checks behind the evidence completeness.
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -27,11 +37,58 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from extract_failures import SECRET, TEST_STEP, extract, redact, strip  # noqa: E402
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
+from extract_failures import SECRET, TEST_STEP, checks_not_run, extract, failure_groups, redact, strip  # noqa: E402
 from classify import decide, local_run_problem, local_runs, signals  # noqa: E402
+from fetch_run import last_green_hint, same_way  # noqa: E402
 
-SCHEMA_VERSION = '1.3.0'
-ACCEPTED_SCHEMAS = ('1.2.0', '1.3.0')   # 1.3.0 adds optional fields only
+SCHEMA_VERSION = '1.4.0'
+ACCEPTED_SCHEMAS = ('1.2.0', '1.3.0', '1.4.0')   # 1.3.0 and 1.4.0 add optional fields only
+SCHEMA = HERE.parent / 'schemas' / 'triage.schema.json'
+
+
+def _is(v, t) -> bool:
+    if isinstance(t, list):
+        return any(_is(v, x) for x in t)
+    num = isinstance(v, (int, float)) and not isinstance(v, bool)
+    return {'object': isinstance(v, dict), 'array': isinstance(v, list), 'string': isinstance(v, str), 'boolean': isinstance(v, bool),
+            'integer': isinstance(v, int) and not isinstance(v, bool), 'number': num, 'null': v is None}.get(t, True)
+
+
+def schema_errors(v, sch: dict, path: str = '$') -> list[str]:
+    """The part of JSON Schema that schemas/triage.schema.json uses: type (one or several), required, properties, items,
+    enum, const, minLength, minimum, if/then/else and allOf. A value of the wrong type is not looked into further."""
+    if 'type' in sch and not _is(v, sch['type']):
+        t = sch['type']
+        return [f'{path}: should be {" or ".join(t) if isinstance(t, list) else t}, is {type(v).__name__}']
+    out = []
+    if 'const' in sch and v != sch['const']:
+        out.append(f'{path}: {v!r} should be {sch["const"]!r}')
+    if 'enum' in sch and v not in sch['enum']:
+        out.append(f'{path}: {v!r} is not one of {", ".join(map(repr, sch["enum"]))}')
+    if isinstance(v, str) and len(v.strip()) < sch.get('minLength', 0):
+        out.append(f'{path}: needs at least {sch["minLength"]} character(s)')
+    if 'minimum' in sch and isinstance(v, (int, float)) and not isinstance(v, bool) and v < sch['minimum']:
+        out.append(f'{path}: {v} is below {sch["minimum"]}')
+    if isinstance(v, dict):
+        out += [f'{path}: missing {k}' for k in sch.get('required', []) if k not in v]
+        for k, sub in sch.get('properties', {}).items():
+            if k in v:
+                out += schema_errors(v[k], sub, f'{path}.{k}')
+    if isinstance(v, list) and 'items' in sch:
+        for i, x in enumerate(v):
+            out += schema_errors(x, sch['items'], f'{path}[{i}]')
+    if 'if' in sch:
+        branch = 'then' if not schema_errors(v, sch['if'], path) else 'else'
+        if branch in sch:
+            out += schema_errors(v, sch[branch], path)
+    for sub in sch.get('allOf', []):
+        out += schema_errors(v, sub, path)
+    return out
+
+
+def vnum(version: str) -> tuple:
+    return tuple(int(x) for x in str(version).split('.') if x.isdigit())
 CONF = {'confirmed': 3, 'indicated': 2, 'low': 1}
 CLASSES = ('real', 'flaky', 'environment', 'data', 'consequence', 'unclassified')
 BANNED = re.compile(r'(?i)\b(build is (fine|green|healthy|ok)|all (green|good|clear)|stable build|nothing (is )?wrong|safe to merge|(?<!not )green build|ready to merge)\b')
@@ -46,7 +103,14 @@ def expected_priority(f: dict, run: dict) -> str | None:
 
 
 def completeness(run: dict, run_dir: Path, changes: dict | None, failures: list[dict] | None = None) -> float:
-    """Five checks: logs for every failed job (or, for a job that never started on a runner, the CI's annotation on it); test results (JUnit, or a test runner's console summary)
+    checks = evidence_checks(run, run_dir, changes, failures)
+    return round(sum(1 for v in checks.values() if v is True) / len(checks), 2)
+
+
+def evidence_checks(run: dict, run_dir: Path, changes: dict | None, failures: list[dict] | None = None) -> dict:
+    """The five checks behind the evidence completeness, by name, each True, False or 'not_applicable' (nothing to check:
+    it earns nothing, and the report says which it was, so a decisive log with no test step reads differently from no log
+    at all). Five checks: logs for every failed job (or, for a job that never started on a runner, the CI's annotation on it); test results (JUnit, or a test runner's console summary)
     for every failed job with a test step; a re-run; a last green run; the repository for the owning change."""
     first = run['attempts'][0]
     failed = [j for j in first['jobs'] if j['conclusion'] not in ('success', 'skipped', None)]
@@ -59,11 +123,10 @@ def completeness(run: dict, run_dir: Path, changes: dict | None, failures: list[
     # that never started, a lint-only failure) no test result
     # a job that never started on a runner wrote no log; the CI's check-run annotation on it is its only record, and when
     # there is one it stands in for the log (it says why the job did not run)
-    checks = [bool(failed) and all((j.get('log') and (run_dir / j['log']).exists()) or (j.get('never_started') and j.get('annotations'))
-                                   for j in failed),
-              bool(test_jobs) and all(j.get('junit') or j['id'] in with_tests for j in test_jobs),
-              len(run['attempts']) > 1, bool(run.get('last_green')), bool(changes and changes.get('commits') is not None)]
-    return round(sum(checks) / len(checks), 2)
+    return {'logs': 'not_applicable' if not failed else all((j.get('log') and (run_dir / j['log']).exists()) or (j.get('never_started') and j.get('annotations'))
+                                                            for j in failed),
+            'test_results': 'not_applicable' if not test_jobs else all(bool(j.get('junit')) or j['id'] in with_tests for j in test_jobs),
+            'rerun': len(run['attempts']) > 1, 'last_green': bool(run.get('last_green')), 'repository': bool(changes and changes.get('commits') is not None)}
 
 
 def annotation_texts(run: dict) -> list[str]:
@@ -95,8 +158,10 @@ NOTHING = re.compile(r'(?i)\b(nothing to triage|no jobs? (ran|were run|was run|s
 
 def summarise(d: dict, run: dict, run_dir: Path, changes: dict | None, failures: list[dict] | None = None) -> dict:
     by = {c: sum(1 for f in d['failures'] if f['classification'] == c) for c in CLASSES}
+    checks = evidence_checks(run, run_dir, changes, failures)
     return {'by_classification': by, 'defects_drafted': sum(1 for f in d['failures'] if f.get('draft_defect')),
-            'reruns': len(d.get('reruns', [])), 'evidence_completeness': completeness(run, run_dir, changes, failures)}
+            'reruns': len(d.get('reruns', [])), 'evidence_completeness': round(sum(1 for v in checks.values() if v is True) / len(checks), 2),
+            'evidence_checks': checks}
 
 
 def found_file(name: str, triage: Path) -> Path | None:
@@ -153,6 +218,17 @@ def main() -> int:
             e(f'missing {k}')
     if E:
         print('\n'.join(E)); return 1
+    # the contract first: a triage that is not the shape the schema gives is not checked further (with --write-summary the
+    # computed summary fields are still to be written, so only they may be missing)
+    shape = schema_errors(d, json.loads(SCHEMA.read_text(encoding='utf-8')))
+    if a.write_summary:
+        shape = [x for x in shape if not (x.startswith('$.summary: missing ') and x.split()[-1] != 'headline')]
+    if shape:
+        print(f'{a.triage}: {len(shape)} problem(s) against schemas/triage.schema.json')
+        for x in shape[:40]:
+            print('  - schema:', x)
+        return 1
+    new = vnum(d['schema_version']) >= (1, 4, 0)    # 1.4.0 triages carry groups, checks_not_run and evidence_checks
     if d['schema_version'] not in ACCEPTED_SCHEMAS:
         e(f'schema_version {d["schema_version"]} should be {SCHEMA_VERSION} (or {", ".join(ACCEPTED_SCHEMAS[:-1])})')
     if d['run']['id'] != run['run']['id'] or d['run']['commit'] != run['run']['commit']:
@@ -193,6 +269,41 @@ def main() -> int:
 
     # failures --------------------------------------------------------------------------------------
     want = extract(a.run, run, 1)
+    said_all = squash(' '.join([d['summary'].get('headline') or '', d.get('run_status_reason') or ''] + d['limitations']))
+
+    # a run with no job: the commit's other workflows that stopped the same way are the only clue to the cause
+    same = same_way(run) if want_status == 'not_run' else []
+    if same and not re.search(r'other (\w+ )?workflows?', said_all):
+        e(f'no job ran, and {len(same)} other workflow run(s) of this commit concluded {run["run"].get("conclusion")} on the same event '
+          f'({", ".join(str(x["workflow"]) for x in same)}): the reason or a limitation must say that other workflows stopped the same way '
+          '(a cause common to them is likelier than one of this workflow alone)')
+    # no last green run because the default branch was never searched: there is no range of changes, and the triage says why
+    hint = last_green_hint(run) if want and run.get('system') == 'github' else None
+    if hint and 'default branch' not in said_all:
+        e(f'{hint}; until then a limitation must say the default branch was not searched for a last green run')
+
+    # what the failures kept from running: named in the triage, never passed over
+    nr = checks_not_run(run, 1)
+    has_nr = bool(nr['steps'] or nr['jobs'])
+    if 'checks_not_run' in d and d['checks_not_run'] != nr and (has_nr or d['checks_not_run'] != {'steps': [], 'jobs': []}):
+        e(f'checks_not_run differs from the run: it should be {json.dumps(nr, ensure_ascii=False)}')
+    elif has_nr and 'checks_not_run' not in d:
+        unnamed = [f'step "{n}" of job {x["job"]}' for x in nr['steps'] for n in x['steps'] if squash(n) not in said_all] + \
+                  [f'job {j}' for j in nr['jobs'] if squash(j) not in said_all]
+        if new:
+            e(f'{sum(len(x["steps"]) for x in nr["steps"])} step(s) after a failed step and {len(nr["jobs"])} skipped job(s) never ran: a {SCHEMA_VERSION} '
+              f'triage carries them as checks_not_run: {json.dumps(nr, ensure_ascii=False)}')
+        elif unnamed:
+            e(f'checks that never ran on this commit are not named in the limitations ({"; ".join(unnamed[:8])}'
+              + (f' and {len(unnamed) - 8} more' if len(unnamed) > 8 else '') + '): name each, or carry them as checks_not_run')
+
+    # one defect on several jobs: the groups the extractor gives
+    groups = failure_groups(want)
+    in_group = {i: g for g in groups for i in g['failures']}
+    if new and groups and d.get('failure_groups') != groups:
+        e(f'failure_groups differs from the run: it should be {json.dumps(groups, ensure_ascii=False)}')
+    if 'failure_groups' in d and not groups and d['failure_groups']:
+        e('failure_groups lists a group the run does not have')
     got = {}
     for f in d['failures']:
         if f['id'] in got:
@@ -275,11 +386,34 @@ def main() -> int:
                     e(f'{w["id"]}: owning change differs from changes.json without a reason')
         elif fc == 'real' and owner and owner.get('status') == 'identified':
             e(f'{w["id"]}: changes.json identifies {owner["commit"][:8]} but the triage does not')
-        # drafts
+        # the same defect on another job has one owner: a leg left not_identified beside a leg that names a commit is an
+        # inconsistency (the extractor read no file on this leg, or the agent set only one), never a finding
+        g = in_group.get(w['id'])
+        mates = [got[i] for i in (g['failures'] if g else []) if i != w['id'] and i in got]
+        if g and (new or 'group' in f) and f.get('group') != g['id']:
+            e(f'{w["id"]}: group {f.get("group")!r} should be {g["id"]!r} ({g["basis"]})')
+        if not g and f.get('group'):
+            e(f'{w["id"]}: group {f["group"]!r}, but the run puts this failure in no group')
+        if oc.get('status') != 'identified':
+            named = next((m for m in mates if (m.get('owning_change') or {}).get('status') == 'identified'), None)
+            if named:
+                e(f'{w["id"]}: owning change not_identified, but {named["id"]}, the same failure on another job (group {g["id"]}), names '
+                  f'{str(named["owning_change"].get("commit"))[:8]}: one defect has one owner; name it here too '
+                  '(owning_change.override_reason says why changes.json did not find it on this job)')
+        # drafts: one per defect. In a group the draft sits on one member and covers the others
         dk = DRAFT_KIND.get(fc)
         dd = f.get('draft_defect')
-        if dk and not dd:
-            e(f'{w["id"]}: a {fc} failure needs a draft ({dk})')
+        peers = [m for m in mates if m.get('classification') == fc]
+        covered_by = next((m for m in peers if w['id'] in ((m.get('draft_defect') or {}).get('covers') or [])), None)
+        if dd:
+            stray = [i for i in dd.get('covers') or [] if i not in {m['id'] for m in peers}]
+            if stray:
+                e(f'{w["id"]}: its draft covers {", ".join(stray)}, which is not another failure of its group with the same classification')
+            if new and dk and peers and (covered_by or any(m.get('draft_defect') for m in peers if m['id'] < w['id'])):
+                e(f'{w["id"]}: group {g["id"]} is one defect on {len(g["jobs"])} jobs and gets one draft (covers lists the other failures), '
+                  'not a draft per job')
+        if dk and not dd and not covered_by:
+            e(f'{w["id"]}: a {fc} failure needs a draft ({dk})' + (f', or a draft on another failure of its group {g["id"]} that lists it in covers' if peers else ''))
         if not dk and dd:
             e(f'{w["id"]}: no draft for a {fc} failure (it gets a next action instead)')
         if dd and dd.get('kind') != dk:
@@ -323,6 +457,8 @@ def main() -> int:
         d['summary'].update(want_s)
         a.triage.write_text(json.dumps(d, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
     for k, v in want_s.items():
+        if k == 'evidence_checks' and not new and k not in d['summary']:
+            continue        # a 1.2.0 or 1.3.0 triage need not carry it
         if d['summary'].get(k) != v:
             e(f'summary.{k} {d["summary"].get(k)!r} should be {v!r}')
 

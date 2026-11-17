@@ -20,6 +20,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import fetch_run, extract_failures  # noqa: E402
 from classify import decide, signals  # noqa: E402
 from validate_triage import expected_run_status  # noqa: E402
@@ -116,11 +117,30 @@ def triage_from(run: dict, cands: list[dict]) -> dict:
             'files_written': []}
 
 
+def run_validator(*args: str) -> tuple[int, str]:
+    """validate_triage.py's main() in this process (an interpreter start per call was most of the self-test's time)."""
+    import io, contextlib, traceback
+    import validate_triage
+    buf, argv = io.StringIO(), sys.argv
+    sys.argv = ['validate_triage.py', *args]
+    try:
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            try:
+                rc = validate_triage.main()
+            except SystemExit as e:
+                rc = e.code if isinstance(e.code, int) else 1
+            except Exception:  # noqa: BLE001 - a crash is a failure the caller reports
+                rc = 99
+                traceback.print_exc()
+    finally:
+        sys.argv = argv
+    return rc, buf.getvalue()
+
+
 def validate(t: dict, where: Path) -> tuple[int, str]:
     p = where / 'triage.json'
     p.write_text(json.dumps(t, indent=1, ensure_ascii=False), encoding='utf-8')
-    r = subprocess.run([sys.executable, str(HERE / 'validate_triage.py'), str(p), '--run', str(RUN)], capture_output=True, text=True, encoding='utf-8')
-    return r.returncode, r.stdout + r.stderr
+    return run_validator(str(p), '--run', str(RUN))
 
 
 def go_signature_checks(fails: list) -> None:
@@ -251,8 +271,145 @@ def finish(t: dict, where: Path) -> tuple[int, str]:
     """Validate after letting the validator write the computed summary fields."""
     p = where / 'triage.json'
     p.write_text(json.dumps(t, indent=1, ensure_ascii=False), encoding='utf-8')
-    subprocess.run([sys.executable, str(HERE / 'validate_triage.py'), str(p), '--run', str(RUN), '--write-summary'], capture_output=True)
+    run_validator(str(p), '--run', str(RUN), '--write-summary')
     return validate(json.loads(p.read_text(encoding='utf-8')), where)
+
+
+def render(*args: str) -> str:
+    r = subprocess.run([sys.executable, str(HERE / 'render_report.py'), *args, '--color', 'never'], capture_output=True, text=True, encoding='utf-8')
+    return r.stdout + r.stderr
+
+
+OWNER, TIE = 'a1' * 20, 'b2' * 20
+TABLES = 'crates/tides-core/src/tables.rs'
+
+
+def matrix_checks(fails: list) -> None:
+    """One formatting defect on the three legs of an OS matrix (the Windows leg prints an extended-length path), with a
+    linter and a coverage gate skipped after it and a skipped job: the three failures are one group with one draft, each
+    leg names the same owning change, the checks that never ran are in the triage, the schema is applied, and --brief
+    keeps the limitations."""
+    global RUN
+    import io, contextlib
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        raw, RUN = td / 'raw', td / 'run'
+        s = fetch_run.save
+        s(raw / 'run.json', {'id': 960, 'head_sha': SHA, 'head_branch': 'feature/tables', 'event': 'push', 'run_attempt': 1, 'workflow_id': 12,
+                             'path': '.github/workflows/checks.yml', 'created_at': '2026-03-02T10:00:00Z', 'run_started_at': '2026-03-02T10:00:00Z',
+                             'conclusion': 'failure', 'html_url': 'https://ci.example.test/run/960', 'repository': {'full_name': 'acme/tides'}})
+        jobs = []
+        for i, (name, (script, step, body)) in enumerate(extract_failures.RUST_MATRIX_LOGS.items(), 1):
+            if not name.startswith('checks'):
+                continue
+            jid = 9600 + i
+            jobs.append({'id': jid, 'name': name, 'conclusion': 'failure', 'started_at': '2026-03-02T10:01:00Z', 'completed_at': '2026-03-02T10:02:00Z',
+                         'runner_name': 'hosted 1', 'html_url': f'https://ci.example.test/job/{jid}',
+                         'steps': [{'number': 1, 'name': 'Set up job', 'conclusion': 'success'}, {'number': 2, 'name': step, 'conclusion': 'failure'},
+                                   {'number': 3, 'name': 'cargo clippy --workspace -- -D warnings', 'conclusion': 'skipped'},
+                                   {'number': 4, 'name': 'Coverage gate', 'conclusion': 'skipped'}, {'number': 5, 'name': 'Complete job', 'conclusion': 'success'}]})
+            s(raw / 'logs' / f'{jid}.txt', extract_failures._gh_log([(script, [script], body)]))
+        jobs.append({'id': 9699, 'name': 'release build', 'conclusion': 'skipped', 'started_at': '2026-03-02T10:02:00Z', 'steps': []})
+        s(raw / 'attempts' / '1' / 'jobs.json', {'jobs': jobs})
+        s(raw / 'history.json', {'query': {'workflow_id': 12, 'branch': 'feature/tables', 'default_branch': 'main', 'default_branch_source': 'repository'},
+                                 'workflow_runs': [{'id': 940, 'head_sha': GREEN, 'head_branch': 'main', 'conclusion': 'success',
+                                                    'run_started_at': '2026-03-01T10:00:00Z', 'workflow_id': 12, 'event': 'push'}]})
+        with contextlib.redirect_stderr(io.StringIO()):
+            run = fetch_run.normalise_github(raw, RUN, 'acme/tides')
+        run['source'] = 'recorded'
+        s(RUN / 'run.json', run)
+        s(RUN / 'reruns.json', {'reruns': []})
+        cands = candidates(run, RUN)
+        ids = [c['id'] for c in cands]
+        own = {'status': 'identified', 'commit': OWNER, 'subject': 'format the tables module', 'score': 3,
+               'files_shared': [{'file': TABLES, 'why': 'traceback frame'}], 'ties': [TIE], 'others': [{'commit': TIE, 'score': 3}], 'files_considered': [TABLES]}
+        s(RUN / 'changes.json', {'range': {'from': GREEN, 'to': SHA, 'spec': f'{GREEN}..{SHA}'},
+                                 'commits': [{'commit': TIE, 'subject': 'sort the unit imports', 'files': [TABLES]},
+                                             {'commit': OWNER, 'subject': 'format the tables module', 'files': [TABLES]}],
+                                 'per_failure': {i: own for i in ids}})
+        got = [(c['failure']['job'], c['failure'].get('group'), c['failure']['frames'][:1]) for c in cands]
+        if len(cands) != 3 or {g for _, g, _ in got} != {'G01'} or any(fr != [{'file': TABLES, 'line': 12}] for _, _, fr in got):
+            fails.append(f'matrix: three legs, one group, the same file and line on each (the Windows leg included): {got}')
+            return
+        t = triage_from(run, cands)
+        t['schema_version'] = '1.4.0'
+        for f, c in zip(t['failures'], cands):
+            f.update(owning_change=copy.deepcopy(own), group=c['failure']['group'], priority='P2')
+            f.pop('draft_defect', None)
+        t['failures'][0]['draft_defect'] = {'kind': 'defect', 'title': 'cargo fmt --check fails on tables.rs on every leg', 'covers': ids[1:],
+                                            'body': {'summary': 's', 'steps': ['cargo fmt --all -- --check'], 'expected': 'e', 'actual': 'a', 'evidence': ['l']}}
+        t['failure_groups'] = extract_failures.failure_groups([c['failure'] for c in cands])
+        t['checks_not_run'] = extract_failures.checks_not_run(run, 1)
+        t['summary']['headline'] = 'One formatting defect fails the Format step on all three legs; clippy, the coverage gate and the release build never ran.'
+        t['limitations'] = ['Formatting is the first check, so the linter, the coverage gate and the release build gave no result on this commit.']
+        rc, out = finish(t, td)
+        done = json.loads((td / 'triage.json').read_text(encoding='utf-8'))
+        if rc or done['summary'].get('defects_drafted') != 1:
+            fails.append(f'matrix: one draft covering the group\'s three failures should validate (drafts {done["summary"].get("defects_drafted")}):\n{out}')
+        want_checks = {'logs': True, 'test_results': 'not_applicable', 'rerun': False, 'last_green': True, 'repository': True}
+        if done['summary'].get('evidence_checks') != want_checks:
+            fails.append(f'matrix: summary.evidence_checks should say which checks the completeness counts, got {done["summary"].get("evidence_checks")}')
+
+        def seeded(name, mutate, expect):
+            x = copy.deepcopy(done)
+            mutate(x)
+            rc, out = validate(x, td)
+            if rc == 0 or expect not in out:
+                fails.append(f'seeded "{name}" not caught (expected {expect!r}):\n{out}')
+        draft = done['failures'][0]['draft_defect']
+        seeded('a draft per leg of one defect', lambda x: [f.update(draft_defect=copy.deepcopy(draft)) for f in x['failures'][1:]], 'one draft')
+        seeded('a leg no draft covers', lambda x: x['failures'][0]['draft_defect'].update(covers=ids[1:2]), 'needs a draft')
+        seeded('a draft covering a failure outside its group', lambda x: x['failures'][0]['draft_defect'].update(covers=ids[1:] + ['X09']), 'covers X09')
+        seeded('one leg left without the owning change its siblings name',
+               lambda x: x['failures'][1].update(owning_change={'status': 'not_identified', 'basis': 'no file of this failure is known'}),
+               'the same failure on another job')
+        seeded('group left off a failure', lambda x: x['failures'][2].pop('group'), 'group')
+        seeded('failure groups left out', lambda x: x.pop('failure_groups'), 'failure_groups')
+        seeded('the checks that never ran left out', lambda x: x.pop('checks_not_run'), 'never ran')
+        seeded('the checks that never ran altered', lambda x: x['checks_not_run']['steps'][0]['steps'].pop(), 'checks_not_run')
+        seeded('evidence checks altered', lambda x: x['summary']['evidence_checks'].update(test_results=True), 'evidence_checks')
+        # the schema is applied: required fields, types and the shape of a draft
+        seeded('schema: generated_at missing', lambda x: x.pop('generated_at'), 'generated_at')
+        seeded('schema: empty headline', lambda x: x['summary'].update(headline=''), 'headline')
+        seeded('schema: skill as a string', lambda x: x.update(skill='ci-failure-triager'), '$.skill')
+        seeded('schema: a draft holding only its kind', lambda x: x['failures'][0].update(draft_defect={'kind': 'defect'}), 'title')
+        seeded('schema: files_written missing', lambda x: x.pop('files_written'), 'files_written')
+        # a report of an earlier schema version: a draft per failure is still accepted, the skipped checks must be named in words
+        old = copy.deepcopy(done)
+        old['schema_version'] = '1.3.0'
+        for k in ('failure_groups', 'checks_not_run'):
+            old.pop(k)
+        old['summary'].pop('evidence_checks')
+        for f in old['failures']:
+            f.pop('group')
+            f['draft_defect'] = {k: v for k, v in draft.items() if k != 'covers'}
+        old['summary']['defects_drafted'] = 3
+        rc, out = validate(old, td)
+        if rc == 0 or 'never ran' not in out or 'cargo clippy' not in out:
+            fails.append(f'matrix: a 1.3.0 triage that does not name the skipped checks not caught:\n{out}')
+        old['limitations'] = ['After the failed Format step, cargo clippy --workspace -- -D warnings and the Coverage gate never ran on any leg, and the job '
+                              'release build was skipped: none gave a result on this commit.']
+        rc, out = validate(old, td)
+        if rc:
+            fails.append(f'matrix: a 1.3.0 triage with a draft per failure that names the skipped checks should still validate:\n{out}')
+        # the default branch was never searched for a last green run: the triage must say so
+        keep = (RUN / 'run.json').read_text(encoding='utf-8')
+        blind = json.loads(keep)
+        blind['last_green'], blind['history_query'] = None, {'workflow_id': 12, 'branch': 'feature/tables', 'default_branch': None, 'default_branch_source': 'unknown'}
+        s(RUN / 'run.json', blind)
+        seeded('default branch never searched, not said', lambda x: x['run'].update(last_green=None), 'default branch')
+        s(RUN / 'run.json', json.loads(keep))
+        # the reports: --brief keeps the limitations and says what it left out; ties, the group and the skipped checks are shown
+        (td / 'triage.json').write_text(json.dumps(done, indent=1, ensure_ascii=False), encoding='utf-8')
+        brief = render(str(td / 'triage.json'), '--brief')
+        for what, text in (('the limitations', done['limitations'][0]), ('what --brief left out', 'Left out of --brief'), ('the tied commit', f'tied with `{TIE[:8]}`'),
+                           ('the failure group', 'G01'), ('the checks that never ran', 'Coverage gate'), ('the evidence checks', 'test results not applicable')):
+            if text not in brief:
+                fails.append(f'matrix: render_report.py --brief should show {what} ({text!r}):\n{brief}')
+        render(str(td / 'triage.json'), '--defects-md', str(td / 'drafts.md'))
+        md = (td / 'drafts.md').read_text(encoding='utf-8') if (td / 'drafts.md').exists() else ''
+        if md.count('\n## ') != 1 or not all(i in md for i in ids) or 'checks (windows-latest)' not in md:
+            fails.append(f'matrix: the drafts file should hold one draft naming the three failures and their jobs:\n{md}')
 
 
 def no_jobs_checks(fails: list) -> None:
@@ -290,6 +447,20 @@ def no_jobs_checks(fails: list) -> None:
         rc, out = validate(bad, Path(td))
         if rc == 0 or 'evidence_completeness' not in out:
             fails.append(f'no jobs: vacuous completeness credit not caught:\n{out}')
+        # other workflows of the same commit concluded the same way: the only clue to the cause, so the triage says it
+        run['same_commit_runs'] = [{'id': 801, 'workflow': '.github/workflows/lint.yml', 'event': 'push', 'conclusion': 'failure'},
+                                   {'id': 802, 'workflow': '.github/workflows/docs.yml', 'event': 'push', 'conclusion': 'failure'},
+                                   {'id': 803, 'workflow': '.github/workflows/labels.yml', 'event': 'push', 'conclusion': 'success'}]
+        fetch_run.save(RUN / 'run.json', run)
+        rc, out = validate(good, Path(td))
+        if rc == 0 or '2 other workflow' not in out:
+            fails.append(f'no jobs: two other workflows of the commit failed the same way and the triage does not say so, not caught:\n{out}')
+        said = copy.deepcopy(good)
+        said['limitations'].append('Two other workflows of this commit (lint and docs) also concluded failure without running a job, so the cause is '
+                                   'likely common to them; it was not established.')
+        rc, out = validate(said, Path(td))
+        if rc:
+            fails.append(f'no jobs: a triage naming the other workflows that stopped the same way should validate:\n{out}')
 
 
 NOT_STARTED = ("The job was not started because the account's spending limit for Actions has been reached. "
@@ -453,7 +624,9 @@ def owning_change_checks(fails: list) -> None:
     no failures returns at once; a Go test file named by its import path is found in the tree."""
     import os
     env = {**os.environ, 'GIT_AUTHOR_NAME': 'Sample', 'GIT_AUTHOR_EMAIL': 'sample@example.test',
-           'GIT_COMMITTER_NAME': 'Sample', 'GIT_COMMITTER_EMAIL': 'sample@example.test'}
+           'GIT_COMMITTER_NAME': 'Sample', 'GIT_COMMITTER_EMAIL': 'sample@example.test',
+           # the machine's own git configuration (hooks, signing, a file monitor) is not part of the test, and costs seconds
+           'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': os.devnull}
     with tempfile.TemporaryDirectory() as td:
         repo, rd = Path(td) / 'repo', Path(td) / 'run'
         repo.mkdir()
@@ -478,7 +651,7 @@ def owning_change_checks(fails: list) -> None:
                                               if last_green else None})
             fetch_run.save(rd / 'failures.json', {'failures': failures})
             r = subprocess.run([sys.executable, str(HERE / 'owning_change.py'), '--run', str(rd), '--repo', str(repo), '--out', str(rd / 'changes.json'), *extra],
-                               capture_output=True, text=True, encoding='utf-8')
+                               capture_output=True, text=True, encoding='utf-8', env=env)
             return json.loads((rd / 'changes.json').read_text(encoding='utf-8')) if r.returncode == 0 else {'error': r.stderr}
         c = oc(None, [f1])
         x = (c.get('per_failure') or {}).get('X01') or {}
@@ -522,6 +695,7 @@ def main() -> int:
     global RUN
     fails = []
     go_signature_checks(fails)
+    matrix_checks(fails)
     no_jobs_checks(fails)
     never_started_checks(fails)
     rust_run_checks(fails)
@@ -615,7 +789,7 @@ def main() -> int:
         seeded('observed re-run credited to the wrong person and jobs', lambda t: t.update(reruns=bad['reruns']), "triggered_by 'someone-else' should be 'maintainer-a'")
         bad['reruns'][0].update(triggered_by='maintainer-a', jobs_rerun=['publish'], mode='recorded', authorised_by=None)
         rr.write_text(json.dumps(bad), encoding='utf-8')
-        seeded('a re-run claimed as this triage\'s without an authoriser', lambda t: t.update(reruns=bad['reruns']), 'without authorised_by')
+        seeded('a re-run claimed as this triage\'s without an authoriser', lambda t: t.update(reruns=bad['reruns']), 'authorised_by')
         rr.write_text(keep, encoding='utf-8')
         seeded('flaky from a same-commit run of another job', lambda t: by(t, 'unit').update(
             classification='flaky', confidence='confirmed', override_reason='The workflow passed on this commit in run 701 earlier.', draft_defect=None, priority=None),

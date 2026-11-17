@@ -13,6 +13,15 @@
   "head_release": null,
   "skipped_releases": [],
   "release_tags_found": 1,
+  "tags_merged": {
+    "release": [
+      "v1.4"
+    ],
+    "prerelease_skipped": [],
+    "other_package": [],
+    "not_a_release": []
+  },
+  "prerelease_tags_skipped": [],
   "last_release_per_package": {},
   "changesets": [],
   "packages": {},

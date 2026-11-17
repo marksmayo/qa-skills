@@ -116,6 +116,7 @@ from urllib.parse import parse_qs, urlparse
 HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from browser_harness import Harness, check_authorised, NotAuthorised, now, retry_decision  # noqa: E402
 from fetch_assets import asset_path, cache_root, load_lock  # noqa: E402
 from attribute import http_cache_disabled  # noqa: E402

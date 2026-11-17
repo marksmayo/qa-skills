@@ -1,7 +1,7 @@
 ---
 name: mutation-tester
 description: Run mutation testing on the code that changed (or a path you name) and turn the surviving mutants into a short, ranked list of weak assertions and missing cases, each naming the test that should have caught it and the assertion or input that would. Uses the repo's own mutation tool when it is configured, the standard open-source tool otherwise (from a scratch config, never added to the repo), and a stdlib engine for Python (pytest or unittest) and Go as a fallback; reads cargo-mutants for Rust. It says loudly when the product language was not mutated or the mutated code is tooling. Every score is shown with its counts and scope; equivalent mutants need a checkable reason; timeouts and errors are never counted as kills; no-coverage mutants are coverage gaps, not weak assertions. Never claims code is "well tested".
-version: 1.9.0
+version: 1.10.0
 ---
 
 # Mutation tester
@@ -178,6 +178,18 @@ line may be unexecuted: check before calling it a weak assertion (a `missing_cas
 `should_have_caught` is the honest default), and proximity is 1. Prove suggestions with
 `prove_kill.py` (Step 7: cargo test by test id). `builtin_mutator.py` does not mutate Rust.
 
+**cfg-gated Rust.** Code under a `#[cfg(...)]` that is false on this machine (`#[cfg(unix)]` on
+Windows) or behind a feature the crate's defaults leave out (`#[cfg(feature = "x")]`) is not
+compiled here, so no engine can mutate it, and the tests that would catch a mutant there are
+usually gated the same way (cargo_project.py's `runs_by_default`/`why` on each test says which
+tests a plain `cargo test` skips and why). `run_engine.py cargo-mutants` prints a WARNING for
+every scoped item so gated, before it runs (and also when cargo-mutants is missing), and records
+them in `cargo-mutants.run.json` (`gated`); `python scripts/rust_gates.py --repo <repo> --scope
+<run>/scope.json [--platform linux]` lists them on its own. Never report those lines as
+survivors, kills or unviable: list them in the limitations as not assessed, with where they can
+be mutated (on Linux or macOS, or with `--cargo-mutants-arg=--features=x`), and run them there if
+the change is in them.
+
 **Go.** The builtin engine mutates Go: `builtin_mutator.py` picks Go when the scope's changed
 source is Go (`--language go` when Python changed too). It makes text-level mutants from Go
 tokens on the changed lines, never inside comments or string, raw-string and rune literals
@@ -220,6 +232,16 @@ Only `source` files' added or changed lines (or, for a path, all their lines) ar
 Tests, generated code, migrations, vendored code, type declarations, config and docs are
 excluded and listed with the reason.
 
+**Deletions and comment-only changes.** Removed code cannot be mutated, and a changed line that
+is a comment, a blank line, a docstring or an import gives no mutant. A change made only of these
+gives "0 mutants", which says nothing about the change: never report it as "no survivors". The
+builtin engine prints a WARNING naming each function that lost lines with no mutant on its
+changed lines (`scope.json` `deleted_at` and `functions[].deletions`), with the path scope that
+mutates what is left of it (`path_scope.py --path <file>:<first>-<last>`, the outermost
+enclosing function), records them in `builtin.json` `unmutated_changes`, and the report's engine
+record keeps them; the validator then needs a limitation naming each function (or file). Run the
+path scope on those functions when the change matters, and say which run is which.
+
 When `--repo` is a package inside a larger git repository (a monorepo's `libs/<name>`), check
 that `scope.json` lists the changed files with `present: true` and their functions; if the
 paths came back relative to the git root instead, make the diff yourself with
@@ -228,7 +250,9 @@ paths came back relative to the git root instead, make the diff yourself with
 ## Step 3: Green baseline
 
 ```bash
-python scripts/run_tests.py --preset pytest --cwd <repo> --out <run>/runs.json --repeat 2 --label baseline --run-prefix G --check-tree
+python scripts/baseline_tests.py --repo <repo> --scope <run>/scope.json --out <run>/baseline_tests.json
+python scripts/run_tests.py --preset pytest --cwd <repo> --out <run>/runs.json --repeat 2 --label baseline --run-prefix G --check-tree \
+    --tests tests/test_rules.py --tests tests/test_access.py        # or --preset unittest for a unittest suite
 ```
 
 Both runs must pass on the same code hash. If either fails, or a test passes in one and fails in
@@ -241,7 +265,15 @@ files that exercise the scoped code: the files that import the scoped modules (d
 through the module that re-exports them), or the related tests the engine itself selects
 (Stryker's `related` mode, mutmut's per-function test map). Pass those files with `--tests`, use
 the repo's own test command and environment (`--cmd`, `--env TZ=...` when `npm test` sets them),
-and list the files, and how you chose them, in `baseline.note`. A failure elsewhere in the suite
+and list the files, and how you chose them, in `baseline.note`. For Python, `baseline_tests.py`
+finds them by reading the code: each test file that imports a scoped module (from the root,
+`src/`, its own folder, or a folder it or a `conftest.py` puts on `sys.path`), imports a module
+that does (a re-export or a caller: `through <file>`), loads one by file path
+(`spec_from_file_location`, `runpy.run_path`), or runs one as a child process. It prints the
+`--tests` arguments for the baseline, the engine and the prover, and lists the test files that
+reach none (`not_reaching`) and loads whose path it could not read (`unresolved`): read those
+before leaving a test out. It is static, so a test that reaches the code through a plugin or a
+name built at run time is missed. A failure elsewhere in the suite
 doesn't stop a scoped run, but it goes in the limitations.
 
 **Use the repository's runner.** `detect_conventions.py` gives each area's `python_runner`
@@ -250,10 +282,9 @@ pytest) and the CI command (`ci_gates`). For a unittest suite, run the builtin e
 proofs with `--runner unittest --unittest-args "-s tests"` (the CI's discovery options), so the
 same tests run as in CI. pytest also runs `unittest.TestCase` classes, but it collects more: a
 plain function named `test_*` (a `@contextmanager` helper, say) becomes a passing "test", and
-pytest may not be installed at all. `run_tests.py` has no unittest preset yet: when pytest is
-installed, take the baseline with `--preset pytest --tests <the TestCase files>` and say in
-`baseline.note` that pytest ran the unittest suite; otherwise the builtin engine's own coverage
-and timing runs (both must pass unmutated) are the only green runs, which the baseline must say.
+pytest may not be installed at all. Take the baseline of a unittest suite with `run_tests.py
+--preset unittest --runner-args "-s tests" --tests <the TestCase files>` (discovery as `python -m
+unittest discover`, one case per `file::Class::method`), never with `--preset pytest`.
 For Rust, the baseline is `run_tests.py --preset cargo` (cargo-mutants also runs its own
 baseline and stops when it fails).
 
@@ -372,7 +403,19 @@ classified. The per-mutant timeout is 3 times one untraced suite run, at least 1
   and mutant run with unittest's own discovery (the CI's `python -m unittest discover` options),
   traced per TestCase method; test ids are `tests/test_x.py::Class::test_method`, and `--tests`
   takes test files, folders or such ids. A test module that fails to import under a mutant is a
-  `runtime_error`, never a kill. `--runner auto` (the default) uses pytest when it imports.
+  `runtime_error`, never a kill. `--runner auto` (the default) uses pytest when it imports. The
+  runner prints failures through UTF-8 streams that never raise, so a failure message holding
+  characters the console's code page lacks (an emoji in rendered HTML on Windows) is still a kill.
+- **Dict keys.** Emptying the key of a subscript read (`row['event']` to `row['']`) raises the
+  same KeyError at every read of that key, so the reads of one key in one function are one
+  mutant, on the first read; its note and `also_at` name the other lines (`builtin.json`
+  `grouped.key_reads` counts them). Writes (`out['rank'] = ...`), `.get()` reads and dict literal
+  keys keep a mutant each. `--all-key-reads` mutates every read.
+- **Regular expressions.** A pattern given to `re.compile`, `re.sub` and the like is one mutant
+  (the whole pattern emptied), noted as such: its alternatives, classes and flags are not
+  mutated, so a kill there says the pattern is used, not that it is tested. When the pattern is
+  the point of the change (a redaction, a validator), say so in the limitations and check its
+  cases by reading the tests.
 - **Scripts tested by their own `--self-test`.** `--runner selftest --tests tools/x.py` runs
   `python tools/x.py --self-test` (a `self_test.py` runs as it is), and `--selftest-cmd "python
   tools/check_all.py"` (repeatable) names any other command that runs a Python script. Each
@@ -534,7 +577,14 @@ python scripts/render_report.py <run>/mutation_report.json [--brief]
 `--write-summary` computes each ranked finding's kind factor, proximity, score and priority, and
 every count, score and score text in the summary, and sorts the findings by priority; errors
 name the finding id as well as its index. `render_report.py` needs the computed summary, so
-run `--write-summary` first. Write `"schema_version": "1.4.0"`. When an engine record carries
+run `--write-summary` first. Write `"schema_version": "1.5.0"`. It takes two passes: the headline
+must name every P0 finding, and the priorities are computed by `--write-summary`, so run it with
+a draft headline (at least 20 characters), read the `computed priorities:` line it prints (the
+report is written even though the draft headline fails), write the headline and run the
+validator again. When an engine record carries `unmutated_changes`, a limitation names each
+function (or file) the change touched that no mutant stands for. Evidence completeness (schema
+1.5.0) counts a mutation engine listed in `tools[]` as `not_run` or `errored` among the engines
+that did not run, and is never 1.0 when `language_coverage.unmutated_dominant` is set. When an engine record carries
 `stopped`, a limitation names it (the mutant id, and for `tree_changed` the files its run
 changed, which also go in `files_changed`). Write the headline yourself: it
 names every P0 finding by id (`F1`), and a placeholder is rejected. Copy
@@ -548,6 +598,10 @@ not the product. Fix every error rather than editing computed fields. Show the u
    suggestion and whether it's proved;
 3. the coverage gaps;
 4. each engine's score text, and what wasn't run.
+
+`render_report.py --brief` leaves out the code, the unranked triage and the mutant list, but keeps
+the counts and ids of mutants not counted as kills (timeouts, runtime errors, not run), every
+engine or tool that did not run or stopped early, and the limitations in full.
 
 ## Stack notes
 

@@ -29,6 +29,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from parse_results import parse_junit  # noqa: E402
 from safe_http import open_url  # noqa: E402  (credentials are never sent to another origin on a redirect)
 

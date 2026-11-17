@@ -20,6 +20,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from adapters import SEV_RANK, CONF_RANK, TYPES  # noqa: E402
 
 PRIO_RANK = {'P0': 0, 'P1': 1, 'P2': 2, 'P3': 3}

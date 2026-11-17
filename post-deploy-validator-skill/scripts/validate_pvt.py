@@ -24,6 +24,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from recommend import analyse, REPORT_CHECK_FIELDS  # noqa: E402
 from run_pvt import plan_sha, plan_errors, expected_status_ok, compare  # noqa: E402
 import schema_check  # noqa: E402

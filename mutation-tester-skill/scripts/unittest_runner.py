@@ -149,7 +149,16 @@ def main():
         if files and not any(path == f or path.startswith(f + '/') for f in files) and not tid.endswith('::(import)'):
             continue
         chosen.append(t)
-    with open(os.devnull, 'w') as null:
+    # A failure message may hold any character (an emoji in rendered HTML); a stream in the locale encoding (cp1252
+    # on Windows) would raise while printing it and turn a real kill into a crashed run. So the runner's own stream
+    # is UTF-8, and the process's stdout and stderr never raise on a character they cannot encode.
+    for std in (sys.stdout, sys.stderr):
+        if hasattr(std, 'reconfigure'):
+            try:
+                std.reconfigure(errors='backslashreplace')
+            except (ValueError, OSError):
+                pass
+    with open(os.devnull, 'w', encoding='utf-8', errors='backslashreplace') as null:
         runner = unittest.TextTestRunner(stream=null, verbosity=0, failfast=bool(_CFG.get('failfast')),
                                          resultclass=Result)
         result = runner.run(unittest.TestSuite(chosen))
