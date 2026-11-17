@@ -29,6 +29,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import score_risk  # noqa: E402
 
 SCHEMA = HERE.parent / 'schemas' / 'test_plan.schema.json'
@@ -248,12 +249,36 @@ def check(plan: dict, risk: dict, inputs: dict) -> list[str]:
                         f'name {m.group(1)} and say why it is not scored (or re-score with --areas that include it)')
     # Changed lines that count in no scored area (scope_outside_areas): the plan names each directory, so a release
     # whose changes sit in docs/, workflows or scripts never reads as covered by an unrelated assumption.
+    # The name must stand on its own (inside an area's id or path it names the area, not the lines outside it), in a
+    # sentence that says something about it: a bare token ("What about docs/?") is not a reason.
+    plan_items = [plan['summary'].get('headline', '')] + list(plan['assumptions']) + list(plan['open_questions']) + \
+        [n['reason'] for n in plan['not_tested']]
+    area_names = {str(n) for a in risk.get('areas') or [] for n in [a.get('id')] + list(a.get('paths') or []) if n}
+    outside_names = {str(x.get('path', '')).rstrip('/') for x in risk.get('scope_outside_areas') or []}
     for x in risk.get('scope_outside_areas') or []:
         name = str(x.get('path', '')).rstrip('/')
-        if name and x.get('lines') and not re.search(rf'(?<![\w.-]){re.escape(name)}(?![\w-])', plan_text):
+        if not name or not x.get('lines'):
+            continue
+        named, reasoned = outside_mention(name, plan_items, area_names, outside_names)
+        if not named:
             errs.append(f'scope_outside_areas: {x["lines"]} changed line(s) in {x["path"]} ({x.get("reason")}) count in no '
                         f'scored area; the headline, an assumption, an open question or a not_tested reason must name '
-                        f'{x["path"]} and say why it needs no testing (or re-score with --areas)')
+                        f'{x["path"]} and say why it needs no testing (or re-score with --areas); a mention inside an '
+                        'area\'s id or path names the area, not these lines')
+        elif not reasoned:
+            errs.append(f'scope_outside_areas: the plan names {x["path"]} ({x["lines"]} changed line(s), {x.get("reason")}) '
+                        f'but gives no reason: the sentence that names it must say why it needs no testing or how it '
+                        f'will be tested ({MIN_REASON_WORDS}+ words besides the paths)')
+    # Script languages no script measures (PowerShell, shell, batch ...): shipped installers and release scripts are
+    # code, so the plan names each kind and says how it is tested or why it is not.
+    for s in risk.get('script_languages') or []:
+        kind = str(s.get('kind') or '')
+        words = SCRIPT_WORDS.get(kind, [kind])
+        if kind and s.get('files') and not any(re.search(rf'(?<![\w#+]){re.escape(w)}(?![\w#+])', plan_text, re.I) for w in words):
+            errs.append(f'script_languages: {s["files"]} {kind} file(s), {s.get("lines", 0)} line(s) '
+                        f'({", ".join((s.get("examples") or [])[:2])}) are not measured by these scripts (no complexity, '
+                        f'no surface); the headline, an assumption, an open question or a not_tested reason must name '
+                        f'{kind} and say how it is tested or why it needs no testing')
     # When no area has journey criticality or reach assessed, impact is the surface factor alone and the ranking is a
     # ranking by surface patterns: the headline itself must say so (an assumption is not enough).
     surface_only = plan['areas'] and all(a['factors'][k]['status'] == 'not_assessed'
@@ -262,6 +287,35 @@ def check(plan: dict, risk: dict, inputs: dict) -> list[str]:
         errs.append('summary.headline: no area has journey criticality or reach assessed, so impact is the surface factor '
                     'alone; the headline must say the ranking rests on surface patterns')
     return errs
+
+
+MIN_REASON_WORDS = 6
+# what a plan may call a script kind (the census name first)
+SCRIPT_WORDS = {'Shell': ['Shell', 'bash', 'sh scripts', 'shell scripts'], 'Batch': ['Batch', 'cmd scripts', '.bat'],
+                'PowerShell': ['PowerShell', '.ps1']}
+
+
+def outside_mention(name: str, items: list[str], area_names: set[str], outside_names: set[str]) -> tuple[bool, bool]:
+    """(named, reasoned) for one scope_outside_areas path in the plan's own sentences. A match inside an area's id or
+    path (crates/ in "crates/station-core") names that area, so it does not count. Reasoned: the sentence holding the
+    name has at least MIN_REASON_WORDS words that are not paths."""
+    named = reasoned = False
+    longer = sorted((a for a in area_names if name in a and a != name), key=len, reverse=True)
+    rx = re.compile(rf'(?<![\w./-]){re.escape(name)}(?![\w-])')
+    for item in items:
+        for sentence in re.split(r'(?<=[.?!;])\s+', str(item)):
+            spans = [(m.start(), m.end()) for a in longer for m in re.finditer(re.escape(a), sentence)]
+            hits = [m for m in rx.finditer(sentence) if not any(s <= m.start() and m.end() <= e for s, e in spans)]
+            if not hits:
+                continue
+            named = True
+            rest = sentence
+            for other in sorted(outside_names | area_names, key=len, reverse=True):
+                rest = rest.replace(other, ' ')
+            rest = re.sub(r'\S*/\S*', ' ', rest)
+            if len(re.findall(r"[A-Za-z][\w'-]*", rest)) >= MIN_REASON_WORDS:
+                reasoned = True
+    return named, reasoned
 
 
 NO_HIGH = re.compile(r'\bno (?:area|areas|part)\b[^.;,]{0,25}\b(?:reaches|is|are|scores?|rated|in)\b[^.;,]{0,10}\bhigh\b|'
@@ -353,8 +407,62 @@ def self_test() -> int:
     said_out['assumptions'].append('The 4200 changed lines in docs/ are generated scoreboards and need no testing.')
     if any('docs/' in e for e in check(said_out, out_w, inputs)):
         bad.append('a plan that names the directory of the changed lines outside the areas should pass that check')
-    # --write-summary does not write a plan the schema rejects
+    # naming the directory is not a reason: a bare token in a question does not satisfy the check
+    token = json.loads(json.dumps(plan))
+    token['open_questions'].append('What about docs/ and tools/?')
+    if not any('docs/' in e for e in check(token, out_w, inputs)):
+        bad.append('a plan whose only mention of the changed directory is a bare token ("What about docs/ and tools/?") '
+                   'gives no reason and should fail')
+    # an area id that contains the directory name does not name the changed lines outside the areas
+    aid = risk['areas'][0]['id']
+    in_id = {**risk, 'scope_outside_areas': [{'path': 'crates/', 'reason': 'Cargo bench target', 'files': 1, 'lines': 40}],
+             'areas': [{**a, 'id': f'crates/{a["id"]}'} for a in risk['areas']]}
+    renamed = json.loads(json.dumps(plan))
+    for a in renamed['areas']:
+        a['id'] = f'crates/{a["id"]}'
+    for s in renamed['strategy'] + renamed['not_tested']:
+        s['area_id'] = f'crates/{s["area_id"]}'
+    renamed['assumptions'].append(f'The area crates/{aid} is ranked first because its refunds changed twice in the window.')
+    errs = check(renamed, in_id, inputs)
+    if not any(e.startswith('scope_outside_areas') and 'crates/' in e for e in errs):
+        bad.append(f'a mention of crates/ that is only part of an area id should not satisfy scope_outside_areas (got {errs[:3]})')
+    renamed['assumptions'].append('The 40 changed lines under crates/ outside the areas are a benchmark target, which '
+                                  'ships to nobody and needs no testing.')
+    errs = check(renamed, in_id, inputs)
+    if any(e.startswith('scope_outside_areas') for e in errs):
+        bad.append(f'a sentence that names crates/ itself with a reason should pass scope_outside_areas (got {errs[:3]})')
+    # script languages no script measures: the plan names each kind
+    scr_w = {**risk, 'warnings': list(risk.get('warnings') or []) + [
+        f'{getattr(score_risk, "SCRIPT_LANGUAGE_WARNING", "script languages these scripts do not measure")}: PowerShell 3 '
+        'file(s), 180 lines (packaging/install-runtime.ps1; no area)'],
+        'script_languages': [{'kind': 'PowerShell', 'files': 3, 'lines': 180, 'areas': [], 'examples': ['packaging/install-runtime.ps1']}]}
+    errs = check(plan, scr_w, inputs)
+    if not any('PowerShell' in e for e in errs):
+        bad.append(f'a plan that never names a script language the risk file lists should fail (got {errs[:3]})')
+    said_scr = json.loads(json.dumps(plan))
+    said_scr['assumptions'].append('The PowerShell installer scripts are not scored; they are run by hand on a clean '
+                                   'machine before each release.')
+    if any('PowerShell' in e for e in check(said_scr, scr_w, inputs)):
+        bad.append('a plan that names the script language should pass that check')
+    # --write-summary does not rewrite the plan while it prints INVALID for a rule failure
     import contextlib, io, tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        draft = json.loads(json.dumps(plan))
+        draft['summary']['headline'] = 'The release is safe to ship; every area is covered by the existing tests.'
+        draft['areas'][0]['risk'] = 0
+        p = Path(tmp) / 'plan.json'
+        p.write_text(json.dumps(draft), encoding='utf-8')
+        before = p.read_text(encoding='utf-8')
+        said = io.StringIO()
+        with contextlib.redirect_stdout(said):
+            rc = main([str(p), '--risk', str(ex / 'run' / 'risk.json'), '--input',
+                       f'security={ex / "inputs" / "security_audit.json"}', '--write-summary'])
+        if rc == 0 or p.read_text(encoding='utf-8') != before or 'nothing written' not in said.getvalue():
+            bad.append('--write-summary must not rewrite a plan it calls INVALID for a rule failure, and must say that '
+                       f'nothing was written (exit {rc}, rewritten {p.read_text(encoding="utf-8") != before})')
+        if not re.search(r'\d+ High, \d+ Medium, \d+ Low', said.getvalue()):
+            bad.append('--write-summary on an invalid plan prints the computed band counts, so the headline can be fixed')
+    # --write-summary does not write a plan the schema rejects
     with tempfile.TemporaryDirectory() as tmp:
         draft = json.loads(json.dumps(plan))
         draft['summary']['headline'] = 'TODO'
@@ -368,7 +476,7 @@ def self_test() -> int:
             bad.append('--write-summary must not write a plan that fails the schema (it wrote, or exited 0)')
     for b in bad:
         print('FAIL ' + b)
-    print(f'validate_test_plan self-test: {9 - len(bad)} passed, {len(bad)} failed')
+    print(f'validate_test_plan self-test: {16 - len(bad)} passed, {len(bad)} failed')
     return 1 if bad else 0
 
 
@@ -398,15 +506,25 @@ def main(argv=None) -> int:
         for e in errs[:40]:
             print('  ' + e)
         return 1
-    if args.write_summary:
-        args.plan.write_text(json.dumps(plan, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+    # ... and so are the rules: a plan that is INVALID is never rewritten, so "INVALID" and a changed file never
+    # arrive together. The computed fields are checked as filled in (in memory), and the computed counts are printed
+    # so the headline can be corrected before the next run writes them.
     errs = check(plan, risk, load_inputs(args.input))
+    s = plan['summary']
     if errs:
-        print('INVALID')
+        print('INVALID' + (': nothing written (the computed fields are written once the rules below pass)'
+                           if args.write_summary else ''))
         for e in errs:
             print('  ' + e)
+        if args.write_summary:
+            print(f'  computed: {s["areas"]} areas ({s["high"]} High, {s["medium"]} Medium, {s["low"]} Low), '
+                  f'{s["planned"]} planned, {s["not_tested"]} not tested'
+                  + (f', {s["sessions_allocated"]} sessions' if s['sessions_allocated'] is not None else '')
+                  + (f', {s["sessions_short"]} short' if s['sessions_short'] else '') + '; areas by risk: '
+                  + ', '.join(f'{a["id"]} {a["risk"]} {a["band"]}' for a in sorted(plan['areas'], key=lambda a: -(a['risk'] or 0))))
         return 1
-    s = plan['summary']
+    if args.write_summary:
+        args.plan.write_text(json.dumps(plan, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     print(f'VALID: {s["areas"]} areas ({s["high"]} High, {s["medium"]} Medium, {s["low"]} Low), {s["planned"]} planned, '
           f'{s["not_tested"]} not tested' + (f', {s["sessions_allocated"]} sessions' if s['sessions_allocated'] is not None else '') +
           (f', {s["sessions_short"]} short' if s['sessions_short'] else ''))

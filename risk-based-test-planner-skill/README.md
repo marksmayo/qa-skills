@@ -30,7 +30,13 @@ It is strict about evidence:
   journey map at all, the plan must say that UI impact rests on surface patterns alone.
 - Squash-merged pull requests ("Merged PR 123: fix(x): ...") count as fixes by their own type,
   and Python tests count through the import roots `sys.path` would have (src layouts, service
-  directories, pytest `pythonpath`).
+  directories, pytest `pythonpath`); a test that loads a script by file path
+  (`spec_from_file_location`) is a test of that script's area.
+- A changed file is never dropped for its type: Slint, PowerShell, a crate's `Cargo.toml` count
+  in their area's change or are listed in `scope_outside_areas`, which the plan must explain
+  with a reason. Script languages (PowerShell, shell) are listed and must be named in the plan.
+- `--areas` takes `{"areas": [{"id": "...", "paths": ["dir", "a/file.py", "dir/*"]}]}`;
+  `--coverage` reads Go coverprofiles only and says so loudly for any other format.
 - Every area is either planned or in `not_tested`, with the reason and the residual risk.
 - The plan never says a release is safe. Exit criteria are conditions to check.
 
