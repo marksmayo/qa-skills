@@ -1,7 +1,7 @@
 ---
 name: flaky-test-hunter
-description: Find tests that pass and fail on the same code, show why with experiments, and propose a fix for each. Reruns the suite under controlled variations (repeats, reversed and shuffled order, isolation, hash seeds, parallel workers, time zone, clock, locale, CPU load), bisects order-dependent failures to their polluter, reports every rate as failures/runs with a 95% Wilson interval, separates flakes from tests that simply fail, and ranks flakes by rate, CI gate and what they hide. Never calls a test or suite "not flaky"; never proposes a retry as the fix; never changes product code.
-version: 1.7.0
+description: Find tests that pass and fail on the same code, show why with experiments, and propose a fix for each. Reruns the suite under controlled variations (repeats, reversed and shuffled order, isolation, hash seeds, parallel workers, time zone, clock, locale, CPU load), bisects order-dependent failures to their polluter, reports every rate as failures/runs with a 95% Wilson interval, separates flakes from tests that simply fail, from tests that cannot run alone and from failures only its own probes cause, and ranks flakes by rate, CI gate and what they hide. Never calls a test or suite "not flaky"; never proposes a retry as the fix; never changes product code.
+version: 1.8.0
 ---
 
 # Flaky test hunter
@@ -60,6 +60,16 @@ Output:
   timed out, pytest exited 2–5 (collection error, internal error, unknown id, nothing collected)
   or no JUnit was written. Its cases never count, and a variation whose runs all errored is
   `not_run` with the error as the reason; the validator enforces both.
+- **A test that errors alone and passes in the suite is `cannot_run_alone`.** When every run of a
+  test on its own (an `--isolate` run, or its file run alone) errored and the test never failed in
+  the runs that did run it, it depends on something an earlier test or file did: usually an import
+  (`sys.path`) or a fixture another file set up. It is not a flake, not consistently failing, and
+  never "not observed flaky": the validator gives it its own status and requires an entry in
+  `cannot_run_alone[]` (Step 4).
+- **A failure only under a probe this skill applied is a probe artefact until shown otherwise.** A
+  test that failed only in runs where you moved the clock (and never without) is capped at P3 and at
+  most `indicated`, unless control runs still fail with the clock moved and file times left real
+  (`probe_confirmation`, Step 3). The probe may have made a state no real clock change produces.
 
 ## Inputs
 
@@ -68,7 +78,7 @@ Output:
 | Repo | required | |
 | Targets | whole suite | Paths, node ids or a tag; or tests named by another skill or by CI history |
 | Budget | 20 repeats, 60-minute cap | `--minutes` changes the cap; stopping early is recorded |
-| Variations | all that apply | order, isolate, seed, parallel, tz, clock, locale, cpu_load, latency (e2e) |
+| Variations | all that apply | order, isolate, seed, parallel, tz, clock, locale, cpu_load, suite_load, latency (e2e) |
 | History | none | JUnit XML from past CI runs. Use `gh run download` only if the user allows it |
 | Gate | `ci` if a CI workflow runs the tests, else `local` | `required` only when the user says the check blocks merging |
 | Critical tests | none | Tests covering P0/P1 journeys (from journey-mapper), which double the ranking |
@@ -93,7 +103,8 @@ else, listed under `excluded`. Say what was left out in `limitations`. A file ke
 several folders (a shared helper copied into every package, a vendored file) is scanned once, on
 its canonical copy, and its smells list the other paths under `copies` (`copies_scanned_once` lists
 the groups): one smell, one entry in `static_smells`. Patterns match code only: text inside a
-string, docstring or comment (a fixture source held in a string, a usage example) is never a smell.
+string, docstring or comment (a fixture source held in a string, a usage example) is never a smell
+(the flag of `fixed-window-child-process` is the exception: it is an argument, so it is a string).
 Python module state (`module-global-state`) is reported only in modules a test imports, or in a
 script that tests itself; a script no test imports shares nothing between tests.
 
@@ -113,8 +124,21 @@ session the file creates (`real-network-session`), an assertion on elapsed secon
 `expect(elapsed < 5)`, `self.assertLess(elapsed, 0.5)`, or a two-sided bound on a ratio of timings
 such as `0.7 <= est / actual <= 1.6`; load-sensitive: confirm it with a `--cpu-load` variation), and a file
 modification time read in a test file that also reads the wall clock (`mtime-vs-wall-clock`: two
-clocks that disagree across midnight, a month end or a moved test clock). Don't install anything without asking; a variation you can't apply is
-`not_run` with the reason.
+clocks that disagree across midnight, a month end or a moved test clock). Two leads need runs of
+their own to confirm:
+
+- `script-sibling-not-on-path`: a test file loads a script by file path
+  (`spec_from_file_location`, `SourceFileLoader`, `runpy.run_path`, read with `py_loads.py`) and
+  neither it, a `conftest.py` above it nor pytest's `pythonpath` puts the script's folder on
+  `sys.path`, while the script imports a module from that folder. The file can be collected only
+  after another test file inserted the folder: run it alone (`--tests <file>`, 2 or 3 times) and
+  expect a collection error, then see **Cannot run alone** in Step 4.
+- `fixed-window-child-process` (Python and Rust): a test hands a child process a fixed
+  `--duration`/`--seconds` window and asserts only that it succeeded. Whatever the child must do
+  inside the window (start a further process, see a first event) starts late on a loaded machine.
+  Confirm it with the suite-load variation (Step 3), not only `--cpu-load`.
+
+Don't install anything without asking; a variation you can't apply is `not_run` with the reason.
 
 CI configuration is the source of truth for how the suites run: `detect_conventions.py` reads
 GitHub Actions, GitLab and the rest, and Azure DevOps pipelines and templates under any name
@@ -162,12 +186,25 @@ definitions), plus a `self-test` suite for script self-tests (`tests: null`: the
 printed, not declared). Copy each into `metadata.suites` (keep `language`, `tests`,
 `count_source` and `presets`; the report schema takes no other inventory field) with `status` `ran` (its runs used one of
 its `presets`) or `not_run` with the reason ("cargo was not installed", "out of budget").
-Evidence completeness is multiplied by the share of tests in suites that ran, so a report that ran
-only the Python half of a Rust and Python repository says so in its number, not only in a
-limitation. A suite that ran with `tests: null` counts the distinct test ids its presets' runs
+Evidence completeness is multiplied by the share of the repository's tests that ran: for a suite
+that ran, the distinct tests its runs recorded (at most its static count); for one that did not,
+none. A report that ran only the Python half of a Rust and Python repository says so in its
+number, not only in a limitation, and so does one whose `cargo test` left out a fifth of the Rust
+tests. A suite that ran with `tests: null` counts the distinct test ids its presets' runs
 recorded (the self-test checks), so a repository whose tests are mostly self-tests is measured by
 its checks. The validator checks every language the scan found is listed (pass `--smells`), and
 that `ran` and `not_run` agree with the runs.
+
+**Tests a plain run leaves out.** The Rust suite entry lists `not_run_by_default`: every test a
+plain `cargo test` does not run on at least one platform, with its gate (`ignored` for
+`#[ignore]`, `feature` for a `#[cfg(feature = ...)]` the defaults don't enable,
+`required_features` for a target cargo skips, `platform` for `#[cfg(unix)]` and the like), from
+`cargo_project.py`; `undecided` lists tests behind a cfg it cannot decide. Run them if you can
+(`"--runner-args=--features desktop -- --include-ignored"`, the commands CI's gates use). Each one
+that still has no counted run gets a row in `tests[]` with status `not_run` and its
+`not_run_reason`: pass `--smells` with `--write-summary` and the validator writes the rows, counts
+them in `summary.not_run` and checks none is missing. Say in `limitations` which gates were left
+closed and why.
 
 **Script self-tests.** Many tool repositories test themselves with scripts that print a line per
 check (`ok name`, `FAIL name`, `name: ok`) instead of a test framework. Run them with
@@ -196,11 +233,17 @@ other:
 
 - `--preset cargo` runs `cargo test --no-fail-fast` and parses libtest's own output per test (no
   extra tool). Ids are `<target>::<module path::name>`: the library's name for unit tests in
-  `#[cfg(test)]` modules (`tidecalc::tests::height_is_linear`), the file stem for an integration
-  test in `tests/` (`table::odd_nanos_pass`), `doctest:<crate>::...` for doc tests. A failing case
+  `#[cfg(test)]` modules (`tidecalc::tests::height_is_linear`, underscores as cargo prints the
+  library), the binary's name for unit tests of a `src/main.rs` (`tide-cli::runner::parses_args`,
+  hyphens kept), the file stem for an integration test in `tests/` (`table::odd_nanos_pass`),
+  `doctest:<crate>::...` for doc tests. A target name two crates share is spelled
+  `<crate>/<target>::<path>` (`<crate>/<kind>/<target>` inside one crate), so one run can hold all
+  three shapes: copy ids from `runs.json`, don't build them by hand. A failing case
   carries its panic message and file; a test binary that dies mid-run is a `<target>::(crashed)`
   error case. A compile error, a missing target or a selection that matched nothing is an errored
-  run that says so; a run whose tests ran is never errored.
+  run that says so; a run whose tests ran is never errored. Stable libtest prints no per-test
+  time, so cargo cases have `time: null`: slow Rust tests cannot be picked out of `runs.json`
+  (time a suspect alone, or use nextest, which reports durations).
 - `--preset nextest` runs `cargo nextest run --no-fail-fast` with the default profile, or the one
   in `--runner-args "--profile ci"` (or `NEXTEST_PROFILE`); a profile must exist in
   `.config/nextest.toml`, so don't name `ci` unless the repository defines it. The JUnit a profile
@@ -218,6 +261,15 @@ other:
   writes `Cargo.lock` when the repository has none, which changes the `code_hash` between runs, and
   compile time lands in the first run's duration. Set `CARGO_TARGET_DIR` to a scratch directory
   when the repository's `target/` is shared or large; remove it afterwards.
+- **Never share a target directory between two checkouts.** Cargo keys a build by the package's
+  path inside its workspace, so a second copy of the repository with the same sources reuses the
+  first copy's test binaries, and `env!("CARGO_MANIFEST_DIR")` inside them still names the first
+  copy: the tests read fixtures from it and write scratch files into it, and the run's `code_hash`
+  (taken from `--cwd`) no longer describes what ran. `run_tests.py` checks this for the `cargo`
+  preset when the target directory lies outside the run's folder and adds a note to the run ("cargo
+  reused a test binary built from another checkout ..."). Give such runs a target directory of their
+  own and run again; if you keep them, the validator requires a limitation naming the shared target
+  directory.
 
 Rust variation recipes (record each under its kind):
 
@@ -238,8 +290,11 @@ mitigation), fixed ports, hardcoded `/tmp` paths and `env::temp_dir()`, process-
 changes (`env::set_var`, `set_current_dir`: they leak across cargo's parallel test threads),
 `static mut`, an assertion on elapsed time (`wall-time-assertion-rust`), a lower bound on a count
 of samples taken over a fixed duration (`wall-time-count-assertion`, Python too), and a scratch
-folder created and never removed in the file (`scratch-dir-leak-rust`: folders pile up across runs
-under the temp or target directory, a `resource_contention` lead). A Rust smell names a function
+folder created and never removed in the file, or removed only by a statement on the success path
+with no `Drop` guard or `TempDir` (`scratch-dir-leak-rust`: folders pile up across runs under the
+temp or target directory, a `resource_contention` lead; a failing run leaves its folder, which is
+also the evidence to read), and a fixed `--duration` window handed to a child process whose
+success the test asserts (`fixed-window-child-process`). A Rust smell names a function
 only when it has a test attribute (`#[test]`, `#[tokio::test]`, `#[rstest]`); a smell in a helper
 has no test. Not counted as leads: a clock read or `uuid4()` that only makes a unique folder or
 file name and never reaches an assertion, a sleep inside a string passed to a child process, and
@@ -319,6 +374,14 @@ $R --repeat 20 --minutes 60 --label repeat --run-prefix N        # suspects only
 Suspects are tests that failed once, tests history says flaked, and tests with a static smell. For
 a slow suite, repeat only the suspects and say how many tests were never repeated.
 
+**Plan the time before the budget.** Every invocation pays the runner's start-up on top of the
+tests (interpreter and plugin start, collection, a cargo freshness check), often as much as a
+small suite takes itself, and `--isolate` pays it once per test: time one whole-suite run and one
+isolated test first, then multiply (`isolated seconds x number of tests`) before starting an
+`--isolate` pass over the suite or asking for a time window on a shared machine. Isolating a whole
+suite is worth it once (it is what finds tests that cannot run alone); repeat isolation only for
+suspects.
+
 **Suites too big to run once in the budget.** When `--collect-only` shows far more cases than the
 budget allows (a data-validation suite parametrised over thousands of data files, one case per file
 and check), don't start a whole-suite baseline you cannot finish. Count cases per file
@@ -343,6 +406,27 @@ rate counts only `baseline` and `repeat` runs, so a test whose suspect-only repe
 show "normal 0/1": spell those runs out in the headline or the flake's experiment ("0/1 normal,
 0/3 in suspect-only repeats, 2/3 under load").
 
+**A failure seen only in whole-suite runs.** When a test fails in some full-suite runs and never
+in runs of its own (alone, repeated alone, alone under `--cpu-load`), the suite is part of the
+cause and single-test repeats will not show it. Don't stop at "not reproduced alone":
+
+1. Run the test beside the rest of its file or target (`--tests <its file>`, or for cargo
+   `"--runner-args=-p <crate> --test <target>"`), 5 or more times: the neighbours start the same
+   child processes and compete for the same resources, at a fraction of the suite's cost.
+2. Run it alone under process-creation load with `scripts/spawn_load.py` (the suite-load
+   variation, Step 3): `--cpu-load` keeps the CPU busy, which does not slow down what such a test
+   usually waits on (a child process starting, a freshly built executable loading, the disk).
+3. Keep and read what the failed run left behind: the test's scratch folder, the child's log or
+   event file, a timestamped record. JUnit holds the assertion; the files often hold the timing
+   that explains it (the first event arriving after the window closed). If the test deletes its
+   scratch folder, a failed run's folder is the one that remains (`scratch-dir-leak-rust`): read it
+   before cleaning up, and quote the times in `experiment.result`.
+
+Record these runs under the `suite_load` variation. A cause shown this way (3+ passes alone, 2+
+failures under suite load) is `confirmed`; when only the whole suite fails, it stays `indicated`:
+say that the failure needs the full population, give the whole-suite rate, and name the mechanism
+the leftover files point to.
+
 ## Step 3: Variations
 
 Run each variation over the suspects it applies to, once at first, then repeat the ones that
@@ -356,15 +440,24 @@ other). Typical commands:
 | Seed | `--hash-seed 0`, `--hash-seed 1` (PYTHONHASHSEED); framework seeds through `--env` |
 | Parallel | `--workers 2` on the suspects (needs pytest-xdist for pytest); the same tests serially as the "off" side |
 | Time zone (`tz`) | `--tz UTC`, `--tz Pacific/Kiritimati`, `--tz America/St_Johns` (IANA names) |
-| Clock (`clock`) | Python: `--env PYTHONPATH=<path to plugins/> "PYTEST_ADDOPTS=-p clock_shift" TDA_CLOCK_DATE=2026-11-10` (or `TDA_CLOCK_SHIFT=-1d`); Node: `--env "NODE_OPTIONS=--import=<file URL of plugins/clock_shift.mjs>" TDA_CLOCK_SHIFT=-1d`; against the same tests without it |
+| Clock (`clock`) | Python: `--env PYTHONPATH=<path to plugins/> "PYTEST_ADDOPTS=-p clock_shift" TDA_CLOCK_DATE=2026-11-10` (or `TDA_CLOCK_SHIFT=-1d`); Node: `--env "NODE_OPTIONS=--import=<file URL of plugins/clock_shift.mjs>" TDA_CLOCK_SHIFT=-1d`; against the same tests without it. Control for a failure: the same with `TDA_CLOCK_FILES=0 --record-env TDA_CLOCK_FILES` |
 | Locale | `--locale tr_TR.UTF-8`, `--locale de_DE.UTF-8` |
 | Load | `--cpu-load 20` (busy sibling processes) against the same tests without load |
+| Suite load (`suite_load`) | `python scripts/spawn_load.py --procs 4 -- python scripts/run_tests.py ... --tests <id> --repeat 8 --label suite_load --record-env QA_SPAWN_LOAD` (workers that keep starting processes and writing files while the runs go), or the test beside the rest of its file or target; against the same test alone |
 | Race (`race`) | Go `--runner-args=-race`, a sanitizer build elsewhere; against the same tests without it |
 | Platform (`platform`) | The same code on a second OS, each run recording `platform` (below) |
 
+**One `--env` word per variable.** `--env` takes `K=V` words, so a value with spaces must be one
+quoted word: `"PYTEST_ADDOPTS=-p net_guard -p clock_shift"`, never `PYTEST_ADDOPTS=-p net_guard -p
+clock_shift` (the shell splits it, and `-p` is read as an option of `run_tests.py`). Two plugins
+go in one `PYTEST_ADDOPTS`; a second `PYTEST_ADDOPTS=` word replaces the first. In a script, keep
+the pairs in an array (`ENVS=(PYTHONPATH=plugins "PYTEST_ADDOPTS=-p net_guard")` and
+`--env "${ENVS[@]}"`); `bisect_polluter.py --env` takes the same words.
+
 **Two platforms, one code hash.** Runs of the same code on two operating systems can share one
-`runs.json` only if every run records its `platform` (add `"platform": "linux"` / `"windows"` to
-each run record; `run_tests.py` does not write it). The validator then works per platform: a test
+`runs.json` when every run records its `platform`; `run_tests.py` writes it (`sys.platform`:
+`win32`, `linux`, `darwin`), so merge the two machines' run files, and add the field by hand only
+to runs another tool recorded. The validator then works per platform: a test
 that passes every run on one platform and fails every run on another is `platform_dependent`, a
 deterministic portability failure listed in `consistently_failing` with `platforms` (the ones it
 failed on), never a flake. Only a test that both passes and fails on one platform is flaky. Without
@@ -386,16 +479,38 @@ classes while they load, so they import safely after it, but their own clocks
 them. `python plugins/clock_shift.py --self-test`, run with the repo's interpreter, checks the
 plugin there first.
 
-`clock_shift.mjs` also moves the times `fs.stat` and its relatives report, so code that ages a
-lock or cache file by `Date.now() - mtimeMs` stays consistent; `clock_shift.py` does not move
-`os.stat` times. Child processes that don't load the preload or plugin, databases and other
-services keep the real clock, so lock, cache or row ages computed against them look far in the
-past or the future under a shifted clock. A test that fails only under the shift for that reason
-shows skew sensitivity between two clocks, not a date bug: say which clocks disagree in the
-flake's experiment. Such a shift makes the failure certain (3/3), so the worst rate ranks the
-flake far above what the real race (a write just before midnight) gives in normal runs: say so
-in the flake's `experiment.result`, quote the normal rate beside it, and propose a fix that pins
-one clock (`os.utime` the file, or derive the expected date from the file time).
+Both plugins move file times with the clock, so code that ages a lock or cache file by
+"now minus mtime" stays consistent: `clock_shift.mjs` moves what `fs.stat` and its relatives
+report, and `clock_shift.py` moves what `os.stat` and `os.lstat` report (so `os.path.getmtime` and
+`Path.stat()` too) by the same offset. Nothing is written to disk. Two limits keep the shift from
+inventing a failure: a file time before 1980-01-01 is reported unchanged (a test stamped it, with
+`os.utime(path, (1, 1))` or similar, to mean "ancient"), and a moved time is never reported below
+1980-01-01. Not moved in Python: `os.scandir` entries' `stat()`, `os.fstat`, and `os.utime`, so a
+time a test writes from the moved clock reads back shifted twice. `TDA_CLOCK_FILES=0` leaves file
+times real: it is the control run for any failure under a shift that involves file times. Child
+processes that don't load the preload or plugin, databases and other services keep the real
+clock, so lock, cache or row ages computed against them look far in the past or the future under
+a shifted clock. A test that fails only under the shift for that reason shows skew sensitivity
+between two clocks, not a date bug: say which clocks disagree in the flake's experiment, and
+propose a fix that pins one clock (`os.utime` the file, or derive the expected date from the file
+time).
+
+**Probe artefacts.** A shift makes a failure certain (3/3), so by the worst rate alone a failure
+your own probe caused would outrank a real one-in-ten flake. The validator therefore marks a test
+whose every failure came in a run that moved the clock, and that passed without (`tests[].probe_only:
+"clock"`), and treats its flake as a probe artefact: capped at P3, at most `indicated`, and worded
+that way in the rendered report. Before reporting it as more, run the control: the same shift
+with `TDA_CLOCK_FILES=0` (add `--record-env TDA_CLOCK_FILES`, or the value is redacted in
+`runs.json`; `NO_FAKE_STAT=1` with libfaketime), 3 runs.
+
+- The control passes: the failure came from moved file times or from two clocks disagreeing, not
+  from the date. Leave it a probe artefact, say so in `experiment.result` with the normal rate
+  beside it (0/N), and propose pinning the file time in the test.
+- The control still fails (2 or more runs): the code is sensitive to the date itself. Name those
+  runs in the flake's `probe_confirmation` (`run_ids`, `note`); the cap is lifted and the rubric
+  ranks it by its rate.
+
+A failure that also appears without the probe, even once, is an ordinary flake.
 
 **Network guard.** Run every suite with the network guard so a test that reaches the internet is
 refused and logged instead of passing or failing on the network: `plugins/net_guard.cjs` for Node
@@ -438,14 +553,16 @@ than counting a run that varied nothing.
   hook timeout, type with `userEvent.setup({ delay: null })`, or give the file a timeout that
   matches its real work (`vi.setConfig({ testTimeout })`); never a retry.
 
-## Step 4: Polluters and enablers
+## Step 4: Polluters, enablers and tests that cannot run alone
 
-Order dependence comes in two shapes:
+Order dependence comes in three shapes:
 
 - **Polluted:** the test passes alone and fails after some earlier test (which left state behind).
 - **Enabled:** the test fails alone, and passes only because an earlier test ran first (it
   reloaded a module with other settings, filled a cache, created a row). It looks fine in the
   given order and fails reversed or isolated.
+- **Cannot run alone:** the test (usually its whole file) cannot even be collected on its own, and
+  runs in the suite only because an earlier file was imported first. See below.
 
 ```bash
 python scripts/bisect_polluter.py --runs <scratch>/runs.json --from-run <failing run> --victim <case id> \
@@ -463,6 +580,41 @@ flakes: a test that reloads a module without reloading it back pollutes the test
 original settings and enables the ones that need the changed ones. Fix the polluter first, then
 check the enabled tests fail consistently (they were relying on it) and fix them too. Pass every
 bisect file to the validator (`--bisect a.json b.json`).
+
+`--from-run` may be any run of the suite, including the usual baseline started from a directory
+(`--tests tests`): the bisection takes the order the run's cases were recorded in. Tests in
+classes (`unittest.TestCase`, pytest classes) work: the case id
+`tests.test_fares.FareTest::test_cache` is run as `tests/test_fares.py::FareTest::test_cache`. The
+steps run in a fresh environment, so give the bisection what the from-run had with `--env`
+(`--env PYTHONPATH=plugins "PYTEST_ADDOPTS=-p net_guard" HOME=<scratch>`, the same words
+`run_tests.py --env` takes); without it the network guard and the scratch home are not on, and a
+test that needs a variable fails alone for that reason.
+
+**Cannot run alone (import-time coupling).** An `--isolate` pass, or a file run by itself, sometimes
+ends in a collection error (`ModuleNotFoundError` while importing the test module) for tests that
+pass in every suite run. `run_tests.py` records each such run as errored ("pytest exit 4: collection
+error (a test module could not be imported: ...)"), and an errored run counts for nothing, so
+without care these tests end up as "not observed flaky, 0 failures". They are not: they depend on
+another file having run. Typical cause: the file loads a script by path, the script imports a
+sibling module, and only some other test file puts that folder on `sys.path`
+(`script-sibling-not-on-path` in the scan).
+
+- Reverse and shuffled orders cannot show it. pytest imports every selected file, in file order,
+  before it runs or reorders any test, so `--order reverse` and `--order shuffle` reorder tests
+  whose modules are all imported already. Only running the file (or test) by itself does.
+- Confirm it: run the file alone 2 or 3 times (`--tests <file> --label file_alone`), then after
+  the file you believe it needs (`--tests <enabler file> <file> --label file_after_enabler`, 3
+  times). Bisection does not apply (nothing can be collected alone).
+- Report it in `cannot_run_alone[]`, one entry per file: `test_ids`, `file`, `alone_run_ids` (the
+  errored runs), `error_excerpt`, `cause` (`import_order`, `fixture_order` or `unknown`), `needs`
+  and `needs_run_ids` (the earlier file and the runs that passed after it; `null` and `[]` when
+  you did not find it), and a `note`. The validator computes the status from the runs (every run
+  that selected only the test, or only its file, errored; no failure in the runs that ran it),
+  requires the entry, and counts the tests in `summary.cannot_run_alone`, apart from
+  `not_observed_flaky`. Record the `isolate` variation as `ran` when other isolated runs succeeded;
+  the errored ones stay out of every rate.
+- The fix is test code: put the folder on `sys.path` in that file or in `conftest.py`. Give it as
+  a diff in the entry's `note` or beside the report; there is no flake entry, so no ranking.
 
 Bisection is pytest-only: it needs a runner that runs explicit test ids in the order given.
 Vitest and Jest rerun a file with a `-t` name pattern in file order, and node:test (`--preset node-test`) with a
@@ -529,10 +681,15 @@ python scripts/validate_flaky_report.py <scratch>/flaky_report.json --runs <scra
 python scripts/render_report.py <scratch>/flaky_report.json [--brief]
 ```
 
-`--brief` lists only the flaky and consistently failing tests and summarises the rest in one line.
+`--brief` keeps the headline, the ranked flakes with each one's experiment and result (and the
+probe-artefact wording), the tests that need attention (flaky, consistently failing, platform
+dependent, unable to run alone), what was not run and every limitation; it leaves out fixes,
+smells, tools and the table of tests that never failed (summarised in one line).
+`python scripts/render_report.py --self-test` checks both forms.
 
 `--write-summary` computes every test's counts, intervals and status from the runs, each flake's
-score and priority, and the summary counts (with `single_test_runs`, the `--isolate` runs of one
+score and priority, the `not_run` rows for tests a plain run leaves out (from `--smells`), and the
+summary counts (with `single_test_runs`, the `--isolate` runs of one
 test each, so "87 runs" is read as suite runs plus single-test runs). An "upper bound N%" in the headline must be a Wilson
 upper bound of the runs (`python scripts/stats.py 0 21` gives 0/21); the validator checks it, and
 checks every priority label the headline names ("ranks P2", "2 P1 flakes", "no P0") against the
@@ -544,7 +701,8 @@ Show the rendered report:
 1. the headline;
 2. the ranked flakes, each with its cause and the experiment;
 3. the consistently failing tests, which are real failures to fix first;
-4. what wasn't run, and why.
+4. what wasn't run, and why (tests that cannot run alone, tests a plain run leaves out, variations
+   not run, and every limitation).
 
 ## Report fields
 
@@ -552,25 +710,33 @@ Show the rendered report:
 |---|---|
 | `metadata` | Repo, code hash, framework, run command, budget, gate and its evidence, critical tests, platform, `suites` (each language with tests: ran or not run, with its test count) |
 | `tools[]`, `variations[]` | Each with ran, not run or not applicable and the reason; variations name their run labels |
-| `tests[]` | Per test: runs, passes, fails, the normal rate and the worst label with Wilson bounds, `by_platform` when runs name more than one platform, and status (computed; `platform_dependent` for an all-pass/all-fail split by platform) |
-| `flakes[]` | Cause, confidence, experiment, evidence runs, polluter or enabler (`polluter.relation`), excerpts, ranking, fix and optional quarantine; `history_only` with `history_evidence` for a flake seen only in CI |
+| `tests[]` | Per test: runs, passes, fails, the normal rate and the worst label with Wilson bounds, `by_platform` when runs name more than one platform, and status (computed; `platform_dependent` for an all-pass/all-fail split by platform, `cannot_run_alone` with `alone` when every run of its own errored, `not_run` with `not_run_reason` for a test a plain run leaves out); `probe_only: "clock"` when it failed only under the clock shift |
+| `flakes[]` | Cause, confidence, experiment, evidence runs, polluter or enabler (`polluter.relation`), excerpts, ranking, fix and optional quarantine; `history_only` with `history_evidence` for a flake seen only in CI; `probe_confirmation` (control run ids and a note) for a clock-only failure that is more than a probe artefact |
+| `cannot_run_alone[]` | Tests that error in every run of their own and pass in the suite, one entry per file: test ids, the errored runs, the error, the cause, what they need and the runs that showed it |
 | `consistently_failing[]` | Tests that failed every run (or every run on some platforms, with `platforms`), with what they show |
 | `static_smells[]` | Every smell from `scan_pitfalls.py` and what became of it |
-| `summary` | Headline, counts, causes, priorities, total runs (and `single_test_runs`), minutes and evidence completeness (variations ran × share of tests in suites that ran) |
+| `summary` | Headline, counts (with `cannot_run_alone` when there are any), causes, priorities, total runs (and `single_test_runs`), minutes and evidence completeness (variations ran × share of the repository's tests that ran) |
 | `limitations[]`, `files_changed[]` | What the runs couldn't show; files changed by applied fixes |
 
 Values the schema fixes (each one otherwise costs a validation round):
 
-- `"schema_version": "1.3.0"` for a new report: the report schema's own version, not the skill's
-  `version` (1.0.0 to 1.2.0 reports are still accepted).
+- `"schema_version": "1.4.0"` for a new report: the report schema's own version, not the skill's
+  `version` (1.0.0 to 1.3.0 reports are still accepted, and keep their older rules: no
+  `cannot_run_alone`, no probe-artefact cap, no `not_run` rows, a suite that ran counted whole).
 - `"skill": {"name": "flaky-test-hunter", "version": "<the skill version>"}` is an object, not a
   string.
 - `tools[].status` is `ran`, `not_run` or `errored` (no `not_applicable`: leave out a tool that
   does not apply, or record it `not_run` with the reason); each tool has `name`, `version`,
   `status` and `reason`.
-- `variations[].status` is `ran`, `not_run` or `not_applicable`, with `kind`, `labels` and `reason`.
+- `variations[].status` is `ran`, `not_run` or `not_applicable`, with `kind`, `labels` and `reason`;
+  `kind` is one of `repeat`, `order`, `isolate`, `seed`, `parallel`, `tz`, `clock`, `locale`,
+  `cpu_load`, `latency`, `race`, `platform`, `suite_load`.
 - `metadata.suites[].status` is `ran` or `not_run`; `static_smells[].status` is `linked_to_flake`,
   `linked_to_failure`, `not_observed` or `not_run`.
+- A `cannot_run_alone[]` entry carries all of `test_ids`, `file`, `alone_run_ids`, `error_excerpt`,
+  `cause`, `needs`, `needs_run_ids` and `note`.
+- A limitation must name a target directory shared with another checkout when a counted cargo run
+  carries that note.
 - Every flake carries `quarantine` (null when you propose none) and `polluter` (null unless a
   bisection named one); the validator fills the scores, so write them as the rubric gives or run
   `--write-summary`.
