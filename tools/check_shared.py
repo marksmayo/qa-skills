@@ -120,6 +120,11 @@ SHARED = {
                                 'exploratory-charter-writer-skill', 'i18n-checker-skill', 'performance-budget-auditor-skill',
                                 'post-deploy-validator-skill', 'resilience-prober-skill', 'visual-regression-reviewer-skill'],
     'scripts/py_extras.py': ['test-suite-evaluator-skill', 'journey-mapper-skill'],
+    # py_loads.py: the files a Python test loads by path (spec_from_file_location, runpy, sys.path folders) and
+    # in-process main() calls; for every skill that links tests to the scripts they exercise
+    'scripts/py_loads.py': ['risk-based-test-planner-skill', 'test-impact-selector-skill', 'dead-test-finder-skill',
+                            'test-data-auditor-skill', 'test-suite-evaluator-skill', 'flaky-test-hunter-skill',
+                            'mutation-tester-skill'],
     # repo_layout.py (fixture projects, copy groups) and code_mask.py (strings and comments blanked): the skills that
     # audit a host repository, plus every skill whose detect_conventions.py or lang_census.py imports them
     'scripts/repo_layout.py': REPO_AWARE,
