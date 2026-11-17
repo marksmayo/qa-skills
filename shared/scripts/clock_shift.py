@@ -19,8 +19,17 @@ other C code keep the real time. Code that imported the names before the plugin 
 processes and databases keep the real clock too. File times move with the clock, as clock_shift.mjs
 moves fs.stat: `os.stat` and `os.lstat` (so `os.path.getmtime` and `pathlib.Path.stat()` too) report
 atime, mtime, ctime and birth time shifted by the same offset, so a file written a moment ago is a
-moment old. `TDA_CLOCK_FILES=0` keeps them real. Not moved: `os.scandir` entries' stat(), `os.fstat`,
-and times written with `os.utime(time.time())` (they land shifted on disk and read back shifted twice).
+moment old. `TDA_CLOCK_FILES=0` keeps them real.
+
+What happens to stat times, exactly: each of the four times is reported as its real value plus the offset, in
+seconds and in nanoseconds. Two limits keep the shift from manufacturing a failure no real clock change causes: a
+time before 1980-01-01 is reported unchanged (no clock wrote it; a test stamped the file with `os.utime(path, (1,
+1))` or similar to mean "ancient", and compares the value), and a moved time is never reported below 1980-01-01,
+so a negative shift cannot produce a time before the epoch (an OSError in `time.localtime` on Windows). Nothing is
+written to disk: only what `os.stat` and `os.lstat` return changes. Not moved: `os.scandir` entries' stat(),
+`os.fstat`, and other processes' view. `os.utime` is not wrapped, so a time written from the moved clock
+(`os.utime(path, (time.time(), ...))`) lands shifted on disk and reads back shifted twice; when a failure under a
+shift involves file times, rerun with `TDA_CLOCK_FILES=0` before calling it a time bomb.
 Prefer the repo's own freezegun, time-machine,
 Jest fake timers or injected clock when it has one, and libfaketime for whole processes.
 """
@@ -142,18 +151,33 @@ _real_stat, _real_lstat = os.stat, os.lstat
 _TIME_FIELDS = ('st_atime', 'st_mtime', 'st_ctime', 'st_birthtime')
 
 
+FILE_TIME_FLOOR = 315532800   # 1980-01-01T00:00:00Z
+
+
+def _moved(seconds, scale=1):
+    """A file time moved by OFFSET (scale 1 for seconds, 1e9 for nanoseconds). A time before 1980 is left as it is:
+    no clock wrote it, a test did (os.utime(path, (0, 0)) to mean "ancient"), and it is a value to compare, not an
+    age. A moved time never goes below that floor either, so no shift can report a time before the epoch (which
+    time.localtime refuses on Windows)."""
+    floor = FILE_TIME_FLOOR * scale
+    if seconds < floor:
+        return seconds
+    out = seconds + (OFFSET if scale == 1 else int(OFFSET * scale))
+    return out if out >= floor else (floor if isinstance(out, float) else int(floor))
+
+
 def _shift_stat(st):
-    """The stat result with its times moved by OFFSET, as clock_shift.mjs moves fs.stat."""
+    """The stat result with its times moved by OFFSET (see _moved), as clock_shift.mjs moves fs.stat."""
     cls, (seq, extra) = st.__reduce__()
     seq = list(seq)
     for i in (7, 8, 9):   # the integer atime, mtime and ctime of the sequence part
-        seq[i] = int(seq[i] + OFFSET)
+        seq[i] = int(_moved(seq[i]))
     extra = dict(extra)
     for k in _TIME_FIELDS:
         if extra.get(k) is not None:
-            extra[k] = extra[k] + OFFSET
+            extra[k] = _moved(extra[k])
         if extra.get(k + '_ns') is not None:
-            extra[k + '_ns'] = extra[k + '_ns'] + int(OFFSET * 1e9)
+            extra[k + '_ns'] = int(_moved(extra[k + '_ns'], 10**9))
     return cls(seq, extra)
 
 
@@ -208,6 +232,13 @@ age = time.time() - os.stat(fh.name).st_mtime
 out["file_age_s"] = {"stat": age, "getmtime": time.time() - os.path.getmtime(fh.name),
                      "path": time.time() - pathlib.Path(fh.name).stat().st_mtime,
                      "ns": time.time_ns() - os.stat(fh.name).st_mtime_ns}
+os.utime(fh.name, (1, 1))     # a time the test sets itself, far before any clock: a sentinel, not an age
+try:
+    st = os.stat(fh.name)
+    out["sentinel"] = {"mtime": st.st_mtime, "ns": st.st_mtime_ns, "getmtime": os.path.getmtime(fh.name),
+                       "localtime_year": time.localtime(max(st.st_mtime, 86400)).tm_year}
+except Exception as e:
+    out["sentinel"] = {"error": repr(e)}
 os.unlink(fh.name)
 print(json.dumps(out))
 '''
@@ -241,12 +272,22 @@ def _self_test() -> int:
         checks.append(('file times move with the clock: a file just written is seconds old, not 400 days',
                        ages and all(abs(ages[k]) < 600 for k in ('stat', 'getmtime', 'path'))
                        and abs(ages['ns']) < 600e9, ages))
+        checks.append(('+400d leaves a file time the test set before 1980 as it is (a sentinel is not an age)',
+                       out.get('sentinel', {}).get('mtime') == 1 and out['sentinel'].get('ns') == 10**9, out.get('sentinel')))
         if 'pandas' in out:
             checks.append(('pandas accepts a shifted datetime', out['pandas']['ts_year'] == want.year and out['pandas']['isinstance']))
         if 'numpy' in out:
             checks.append(('numpy datetime64 from a datetime', out['numpy']['dt64'].startswith('2030-01-02T03:04:05')))
         if 'pandas' not in out and 'numpy' not in out:
             print('NOTE pandas and numpy are not installed here; the compiled-module checks only covered the stdlib')
+    r = run({'TDA_CLOCK_SHIFT': '-1d'})
+    back = json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 and r.stdout.strip() else {}
+    sent = back.get('sentinel', {})
+    checks.append(('-1d never moves a file time below zero: a file stamped with os.utime(path, (1, 1)) still reads 1 '
+                   '(a negative time is an OSError in time.localtime on Windows)',
+                   sent.get('mtime') == 1 and sent.get('getmtime') == 1 and sent.get('ns') == 10**9, sent or r.stderr[-300:]))
+    ages = back.get('file_age_s', {})
+    checks.append(('-1d still moves the time of a file just written', bool(ages) and abs(ages.get('stat', 1e9)) < 600, ages))
     r = run({'TDA_CLOCK_DATE': '2031-02-28'})
     ok = r.returncode == 0 and json.loads(r.stdout.strip().splitlines()[-1])['today'] == '2031-02-28'
     checks.append(('TDA_CLOCK_DATE jumps to the date', ok, r.stderr.strip()[-200:]))
