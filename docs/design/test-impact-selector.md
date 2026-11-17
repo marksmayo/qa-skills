@@ -1,6 +1,6 @@
 # Design: `test-impact-selector-skill`
 
-Status: Built (v1.7.0), see "As built" at the end. Build order: 10.
+Status: Built (v1.8.0), see "As built" at the end. Build order: 10.
 
 ## Mission
 
@@ -487,3 +487,44 @@ full suite and the commands were wrong (a bare `pytest` at the root, `unittest d
   `--self-test`s, 16 `self_test.py`, 41 guide checks and 3 benchmark files. Not addressed: copies of a
   shared script are still separate files (each copy's own `--self-test` selects it), and there is no
   per-test coverage for self-tests. The five examples are unchanged and validate with `--recompute`.
+- **v1.8.0: a Rust workspace with Python tooling scripts, second review.** Red/green cases in
+  `scripts/self_test.py` on synthetic fixtures (helper scripts importing each other by bare name with
+  hyphenated scripts loaded by path; the "tide tables" workspace with a gated crate; the same workspace
+  with Slint, Lua, PowerShell and shell files and a root-level data folder).
+  - **Script imports** (`sibling_script_imports`, `load_by_file_path`, `unresolved_load_is_a_blind_spot`):
+    a bare import resolves in the importing file's own folder (`via: import (script folder)`), so a change
+    to a script selects the tests of every script importing it; `spec_from_file_location`,
+    `SourceFileLoader` and `runpy.run_path` loads are edges through the shared `py_loads.py` (only files
+    whose text names one are parsed for it); a load whose path cannot be worked out is a dynamic site; a
+    changed file that is the candidate of an unresolved import is a `dynamic_reference` blind spot with
+    the new scope `unresolved_importers`. Naming maps `-` to `_`. `import_graph.eval_path` is now
+    `py_loads.eval_path`.
+  - **--cargo-metadata** (`cargo_metadata_from_another_checkout`, `cargo_metadata_that_does_not_map`):
+    with metadata written in another checkout (POSIX or Windows paths) the selection equals the static
+    one (binary modules keep their links, benches stay benches). Crates whose metadata targets are not
+    files of the tree are read from their manifests, and the note says how many crates came from cargo
+    and which did not; metadata naming no crate of the repository is ignored with a note.
+  - **Tests the command does not run** (`rust_tests_the_command_does_not_run`,
+    `validator_requires_not_run_limitation`): `cargo_project.default_run` per test; selected tests with
+    required-features, `#[ignore]`, feature or platform gates go to `command.not_run_by_default` with
+    `run_with`, are left out of `--exact` names, and commands count `not_run` and `platform_dependent`;
+    a binary whose every test is gated gets no command. The validator needs a limitation naming each gate.
+  - **Unread languages** (`unread_language_warns`): changed PowerShell, shell, Slint, Lua (lang_census's
+    `SCRIPT_BY_EXT`, `UI_MARKUP_BY_EXT`, `LANG_BY_EXT`) set `language_coverage.warning`, and do not count
+    as parsed in the import-graph factor.
+  - **Widening by evidence** (`root_files_widen_by_evidence`, `added_ci_file_widens_nothing`,
+    `fixture_note_names_no_js_runner`): a root-package data file or unread script widens to Rust and Go
+    tests only when a file of that language names it or its folder (`left_out` otherwise, with the tests
+    that name it in the note); an added CI file widens to no test (scope `no_existing_test`, which the
+    validator allows only for an added CI file); a `tests/fixtures` helper outside a JavaScript package
+    is not said to be loaded by `setupFiles`.
+  - **Verify** (`verify_compares_by_test_id`, `verify_known_flaky_or_baseline_failure`): selected Rust
+    files carry `test_ids`, and a failed case whose id is one of them is inside the selection whatever
+    file the run recorded; a label whose last word is no package means the root; `verify.known_failures`
+    (`flaky`: a pass and a failure on the same code hash in the named runs; `baseline`: a failure in a
+    `verify-base` run) are not misses but must be named in limitations. `--brief` keeps the limitations.
+  - Schema: optional `selected[].test_ids`, `blind_spots[].left_out`, the scopes `unresolved_importers`
+    and `no_existing_test`, `command.not_run_by_default`, `commands[].not_run`/`platform_dependent`,
+    `verify.known_failures`; old reports still validate. The examples are unchanged and validate with
+    `--recompute`. Not done: optional path dependencies are still followed as if enabled
+    (over-selection only), and feature unification across workspace members is not modelled.

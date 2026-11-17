@@ -101,10 +101,10 @@ python scripts/render_report.py run/impact_report.json [--brief]
 | `changes` | Each changed file and its kind |
 | `selected` | Test files in run order, with strength and reasons |
 | `excluded` | Fixture projects and folders left out of the tests (their planted tests are not the repository's) |
-| `blind_spots` | Kind, action, the tests it widened to |
-| `command` | Commands per package and framework |
+| `blind_spots` | Kind, action, the tests it widened to, and the compiled-language tests left out (`left_out`) with the reason |
+| `command` | Commands per package and framework, and the selected Rust tests they do not run by default (`not_run_by_default`) |
 | `replay` | Recall with its interval, and every miss with why and the fix |
-| `verify` | Failures inside and outside the selection from a real run |
+| `verify` | Failures inside and outside the selection from a real run, and known failures (flaky, or failing at the base) the runs bear out |
 | `summary` | Headline, counts, evidence completeness, recall status |
 
 ## Example
