@@ -125,6 +125,8 @@ SHARED = {
     'scripts/py_loads.py': ['risk-based-test-planner-skill', 'test-impact-selector-skill', 'dead-test-finder-skill',
                             'test-data-auditor-skill', 'test-suite-evaluator-skill', 'flaky-test-hunter-skill',
                             'mutation-tester-skill'],
+    # archive_text.py: the text inside committed zip archives and .log files, read in memory under caps
+    'scripts/archive_text.py': ['privacy-flow-auditor-skill', 'test-data-auditor-skill'],
     # repo_layout.py (fixture projects, copy groups) and code_mask.py (strings and comments blanked): the skills that
     # audit a host repository, plus every skill whose detect_conventions.py or lang_census.py imports them
     'scripts/repo_layout.py': REPO_AWARE,
