@@ -257,8 +257,8 @@ def run_validator(rep: dict, extra: list[str] | None = None, cands: dict | None 
         p.write_text(json.dumps(rep, indent=1), encoding='utf-8')
         cp = CANDS
         if static is not None:   # a changed static scan, recorded beside the candidates file (never by absolute path)
-            cands = dict(cands if cands is not None else json.loads(CANDS.read_text(encoding='utf-8')), static='static.json')
-            (Path(d) / 'static.json').write_text(json.dumps(static), encoding='utf-8')
+            cands = dict(cands if cands is not None else json.loads(CANDS.read_text(encoding='utf-8')), static='selftest-changed-static.json')
+            (Path(d) / 'selftest-changed-static.json').write_text(json.dumps(static), encoding='utf-8')
         if cands is not None:
             cp = Path(d) / 'candidates.json'
             cp.write_text(json.dumps(cands), encoding='utf-8')
