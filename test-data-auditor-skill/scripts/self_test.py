@@ -1321,8 +1321,35 @@ def rust_tests_modelled() -> None:
     check(any(t.endswith('reads_fixture') for t in clip), f'inventory: a fixture a Rust test names is loaded by that test (got {clip})')
 
 
+def required_limitations() -> None:
+    """The limitations SKILL.md asks for are enforced: languages read as text only, schema drift not assessed for the
+    dominant language, a data tree tests name but nothing scanned, a partly read archive. The word placeholder in a
+    headline that describes placeholder data is fine; a stock draft headline still is not."""
+    cand_doc = {'tests_found': 12, 'candidates': [], 'language_coverage': {'code_rules': ['python'], 'text_only': {'rust': 7}},
+                'notes': ['schema drift: This repository is predominantly Rust ... NOT a schema drift check',
+                          'catalog/ holds 60 data files that test code names, but the inventory does not cover it: NOT scanned '
+                          'for personal data, time bombs or duplicates (inventory it with --data-dir catalog)'],
+                'inventory_status': {'results/runs.zip': {'status': 'not_assessed', 'reason': 'zip archive partly read: 3 '
+                                                          'member(s) read as text, not read: a.tar (nested archive: not opened)'}}}
+    ex = report_with(limitations=['Static rules only.'])
+    ex['metadata']['tests_found'] = 12
+    errs = vtd.check(ex, None, None, None, None, json.dumps(ex), None, None, cand_doc=cand_doc)
+    for what in ('rust', 'schema drift', 'catalog/', 'results/runs.zip'):
+        check(any('limitation' in e and what in e for e in errs),
+              f'validator: a report whose limitations leave out {what} is rejected (got {[e[:90] for e in errs]})')
+    ex['limitations'] = ['Rust test code (7 files) was read as text only: no Rust code rules ran.',
+                         'Schema drift was not assessed: the models are Rust structs, which schema_drift.py does not read.',
+                         'catalog/ (60 data files the tests read) was not inventoried or scanned.',
+                         'results/runs.zip was only partly read: a nested archive in it was not opened.']
+    errs = vtd.check(ex, None, None, None, None, json.dumps(ex), None, None, cand_doc=cand_doc)
+    check(not any('limitation' in e for e in errs), f'validator: limitations that name them pass (got {errs})')
+    ex['summary']['headline'] = 'The unpacked copies carry a placeholder instead of the account name; the archive does not.'
+    errs = vtd.check(ex, None, None, None, None, json.dumps(ex), None, None)
+    check(not any('is a placeholder' in e for e in errs), 'validator: a headline about placeholder data is not itself a placeholder')
+
+
 GROUPS: list = [long_line_is_linear, archives_and_logs, local_path_false_positives, loaded_by_reach, log_ids_and_grouped_paths,
-                rust_tests_modelled]
+                rust_tests_modelled, required_limitations]
 
 
 def main(argv=None) -> int:

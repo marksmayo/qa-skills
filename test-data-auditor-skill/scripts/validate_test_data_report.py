@@ -27,8 +27,9 @@ DOWN = {'critical': 'serious', 'serious': 'moderate', 'moderate': 'minor', 'mino
 BANDS = [(9, 'P0'), (6, 'P1'), (3, 'P2'), (0, 'P3')]
 CONFIRMABLE = ('time_bomb', 'shared_mutable', 'locale_assumption')
 # a headline left as written by a template or a draft
-PLACEHOLDER_HEADLINE = re.compile(r'\bplaceholder\b|\bTODO\b|\bTBD\b|lorem ipsum|\bdraft headline\b|to be (?:replaced|written)'
-                                  r'|\bheadline here\b|^\s*$', re.I)
+# (the word "placeholder" alone is ordinary in this skill: a headline may say the data carries one)
+PLACEHOLDER_HEADLINE = re.compile(r'^\W*placeholder\b|\bplaceholder (?:headline|text)\b|[<\[{]\s*placeholder\s*[>\]}]|\bTODO\b|\bTBD\b'
+                                  r'|lorem ipsum|\bdraft headline\b|to be (?:replaced|written)|\bheadline here\b|^\s*$', re.I)
 GENERIC_LOCAL = {'admin', 'administrator', 'contact', 'demo', 'example', 'hello', 'info', 'noreply', 'no-reply', 'postmaster',
                  'sample', 'support', 'test', 'tester', 'testing', 'user', 'users', 'webmaster', 'no.reply', 'do-not-reply',
                  'donotreply', 'test.user', 'first.last', 'john.doe', 'jane.doe'}
@@ -562,6 +563,38 @@ def tests_found_errors(rep: dict, cand_doc: dict | None) -> list[str]:
     return errs
 
 
+NOT_SCANNED_DIR = re.compile(r'^(\S+/) holds \d+ data files that test code names, but the inventory does not cover it')
+ARCHIVE_UNREAD = re.compile(r'^zip archive partly read|^zip archive that could not be opened|archive: not opened')
+
+
+def limitation_errors(rep: dict, cand_doc: dict | None) -> list[str]:
+    """What the scan could not read must be in the limitations (SKILL.md): every language whose test code was read as
+    text only, schema drift not assessed when the repository's models are in a language it does not read, a data tree
+    tests name that was not inventoried, and an archive that was not opened or only partly read."""
+    if not cand_doc:
+        return []
+    lims = ' '.join(rep['limitations']).lower()
+    errs = []
+    for lang in sorted(((cand_doc.get('language_coverage') or {}).get('text_only') or {})):
+        if lang.lower() not in lims:
+            errs.append(f'limitations: {lang} test code was read as text only (language_coverage.text_only in the candidates); '
+                        f'a limitation must name {lang} and the code rules not run on it')
+    if any(n.startswith('schema drift:') for n in cand_doc.get('notes', [])) and 'drift' not in lims:
+        errs.append('limitations: schema_drift.py does not read the models of the dominant language (the schema drift note in '
+                    'the candidates); a limitation must say schema drift was not assessed for it')
+    for n in cand_doc.get('notes', []):
+        m = NOT_SCANNED_DIR.match(n)
+        if m and m.group(1).lower() not in lims and m.group(1).rstrip('/').lower() + ' ' not in lims + ' ':
+            errs.append(f'limitations: {m.group(1)} holds data files the tests name but nothing scanned them; a limitation must '
+                        f'name {m.group(1)}')
+    for path, st in sorted((cand_doc.get('inventory_status') or {}).items()):
+        if st.get('status') == 'not_assessed' and ARCHIVE_UNREAD.search(st.get('reason') or '') and path.lower() not in lims \
+                and path.rsplit('/', 1)[-1].lower() not in lims:
+            errs.append(f'limitations: {path} was not opened or only partly read ({st["reason"][:80]}...); a limitation must '
+                        'name the archive and what was not read')
+    return errs
+
+
 def runs_errors(rep: dict, runs: dict | None) -> list[str]:
     """A run_tests.py tool that ran left a runs file: the report names it and the validator reads it."""
     ran = [t['name'] for t in rep['tools'] if 'run_tests' in t['name'] and t['status'] == 'ran']
@@ -586,6 +619,7 @@ def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, e
                     'are no tests ("the repository has no tests"), so an empty audit is not read as clean test data')
     errs += tests_found_errors(rep, cand_doc)
     errs += runs_errors(rep, runs)
+    errs += limitation_errors(rep, cand_doc)
     ids =[f['id'] for f in fs]
     if len(set(ids)) != len(ids):
         errs.append('findings: duplicate ids')
