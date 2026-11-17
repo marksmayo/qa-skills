@@ -10,8 +10,13 @@ A file that a documented command (Markdown shell blocks, shell scripts, Makefile
 names, or a folder of it, or that a used data file names, is used_by_commands rather than unused; a script's own
 self-test that builds a path to it (or to its sample project) loads it as <script>::*.
 
-A directory outside the test areas holding 50+ data files that test code names, but not inventoried, is listed under
-unlisted_data_dirs (and warned about); --max-files-per-dir samples a big directory evenly and records the rest as
+A directory outside the test areas holding 10+ data files that test code names, but not inventoried, is listed under
+unlisted_data_dirs (and warned about); a data file anywhere that test code names by its repository path
+("catalog/features.json") is inventoried, its folder listed under named_by_path. Files a test reaches through a script it
+loads by path (spec_from_file_location, runpy, a sys.path folder: py_loads.py) count as loaded by that test; a glob
+reaches only the folder it runs on; a file name code only writes or probes (.write_text, .exists) is not a load. A zip
+archive is read in memory (archive_text.py): its members are listed as <archive>!<member>, text members scanned, the
+rest not_assessed with the reason; other archives are listed as not opened. --max-files-per-dir samples a big directory evenly and records the rest as
 not_assessed ("not sampled") under sampled_dirs.
 
 Finds fixture files (JSON, YAML, CSV, SQL, XML, SVG), factories, seed scripts, snapshots, HTTP
@@ -45,7 +50,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import archive_text, datafiles, detect_conventions, jsparse, repo_layout  # noqa: E402
+import archive_text, datafiles, detect_conventions, jsparse, py_loads, repo_layout  # noqa: E402
 
 SKIP_DIRS = detect_conventions.SKIP_DIRS | {'.git', '.turbo', '.cache', '.venv', 'venv', '__pycache__'}
 # text formats read line by line (no records): pages, tickets and notes, patches, settings and styles keep invented people
@@ -340,6 +345,25 @@ class PyTests:
             if fx:
                 self.fixtures[p] = fx
 
+    def path_reach(self) -> dict[str, set[str]]:
+        """{test file: the repository files it loads by path}: scripts loaded with spec_from_file_location, runpy or
+        an import from a folder the test (or a conftest.py above it) puts on sys.path, and what those scripts import
+        from their own folder (py_loads.loaded_files). Computed once, only for test files whose text names a loader."""
+        if '_path_reach' not in self.__dict__:
+            out: dict[str, set[str]] = {}
+            for tp in self.tests:
+                try:
+                    text = (self.root / tp).read_text(encoding='utf-8', errors='replace')
+                except OSError:
+                    continue
+                if not py_loads.may_load(text):
+                    continue
+                reach = set(py_loads.loaded_files(self.root, tp).get('reaches') or [])
+                if reach:
+                    out[tp] = reach
+            self._path_reach = out
+        return self._path_reach
+
     def test_id(self, path: str, fn: ast.FunctionDef) -> str:
         cache = self.__dict__.setdefault('_cache_ids', {})
         hit = cache.get(id(fn))
@@ -437,6 +461,61 @@ def strings_in(node: ast.AST) -> list[str]:
     return _node_strings(node)[1]
 
 
+# calls that write a path, and calls that only probe one: a file name used only to write (and to probe a path built on a
+# scratch or output folder) is the code's own output, never a load; a probe of a committed fixture is a use of it
+WRITE_ATTRS = {'write_text', 'write_bytes', 'touch', 'mkdir', 'unlink', 'rmdir'}
+PROBE_ATTRS = {'exists', 'is_file', 'is_dir'}
+OUTPUT_NAMES = {'tmp_path', 'tmpdir', 'tmp', 'tmp_dir', 'temp_dir', 'tempdir', 'tmpdirname', 'output', 'out', 'out_dir',
+                'output_dir', 'outdir', 'scratch', 'workdir', 'work_dir'}
+_WRITE_ONLY: dict[int, tuple[ast.AST, set[str]]] = {}
+
+
+def _write_mode(call: ast.Call) -> bool:
+    mode = call.args[1] if len(call.args) > 1 else next((k.value for k in call.keywords if k.arg == 'mode'), None)
+    return isinstance(mode, ast.Constant) and isinstance(mode.value, str) and bool(set(mode.value) & set('wax'))
+
+
+def write_only_names(module: ast.AST) -> set[str]:
+    """The string constants of a module that are used only to build paths it writes or probes for existence
+    (`path = out / "report.json"; path.write_text(...)`, `(tmp / "x.json").exists()`, `open(p, "w")`): naming such a
+    file is not loading one. Cached per module; empty unless the module writes."""
+    hit = _WRITE_ONLY.get(id(module))
+    if hit and hit[0] is module:
+        return hit[1]
+    out: set[str] = set()
+    calls = [n for n in ast.walk(module) if isinstance(n, ast.Call)]
+    def on_output(e) -> bool:
+        return any(isinstance(x, ast.Name) and x.id in OUTPUT_NAMES for x in ast.walk(e))
+    writes = [c for c in calls if (isinstance(c.func, ast.Attribute) and (c.func.attr in WRITE_ATTRS or (
+              c.func.attr in PROBE_ATTRS and on_output(c.func.value))))
+              or (isinstance(c.func, ast.Name) and c.func.id == 'open' and c.args and _write_mode(c))]
+    if writes:
+        targets = [c.func.value if isinstance(c.func, ast.Attribute) else c.args[0] for c in writes]
+        written_vars = {t.id for t in targets if isinstance(t, ast.Name)}
+        target_ids = {id(t) for t in targets}
+        # a variable counts as written only when every use of it is the receiver of a write or probe
+        for n in ast.walk(module):
+            if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id in written_vars and id(n) not in target_ids:
+                written_vars.discard(n.id)
+        exprs = [t for t in targets if not isinstance(t, ast.Name)]
+        for n in ast.walk(module):
+            if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id in written_vars for t in n.targets):
+                exprs.append(n.value)
+        written: dict[str, int] = {}
+        for e in exprs:
+            for c in ast.walk(e):
+                if isinstance(c, ast.Constant) and isinstance(c.value, str):
+                    written[c.value] = written.get(c.value, 0) + 1
+        if written:
+            total: dict[str, int] = {}
+            for c in ast.walk(module):
+                if isinstance(c, ast.Constant) and isinstance(c.value, str) and c.value in written:
+                    total[c.value] = total.get(c.value, 0) + 1
+            out = {v.replace('\\', '/') for v, k in written.items() if total.get(v) == k}
+    _WRITE_ONLY[id(module)] = (module, out)
+    return out
+
+
 _PARENT: dict[tuple[int, str], tuple[list[str], bool]] = {}
 _ROOT_OF: dict[str, str] = {}
 
@@ -486,6 +565,24 @@ class FileRef:
             hit = _PARENT[key] = (strs, any(self.parent in s.strip('/').split('/') for s in strs))
         return hit[1]
 
+    def glob_dir_named(self, strs: list[str]) -> bool:
+        """The code names this file's folder as a folder to glob: a string ending in it (`data/results`, "results"), or
+        a pattern in it (`results/*.json`). A folder above it (`data` in `data/results`) or beside a named file
+        (`data/features.json`) is not this file's folder."""
+        if not self.parent:
+            return False
+        key = (id(strs), '\0glob', self.parent)
+        hit = _PARENT.get(key)
+        if hit is None or hit[0] is not strs:
+            found = False
+            for s in strs:
+                segs = s.strip('/').split('/')
+                if segs[-1] == self.parent or (len(segs) > 1 and segs[-2] == self.parent and ('*' in segs[-1] or '?' in segs[-1])):
+                    found = True
+                    break
+            hit = _PARENT[key] = (strs, found)
+        return hit[1]
+
     def dir_named(self, strs: list[str]) -> bool:
         """The code names this file's directory (`seeds/families`, or Path(...) / "seeds" / "families") and none of the
         other files in it: a loader of the files there (DIR.glob(f"{name}.yaml"), os.listdir(DIR))."""
@@ -495,13 +592,15 @@ class FileRef:
         named = any(s.rstrip('/').endswith(pair) for s in strs) or (self.parent in strs and self.grand in strs)
         return named and not any(n in s for s in strs for n in self.siblings)
 
-    def decide(self, bare: bool, globbed: bool, dir_ref: bool, parent_in_module: bool, rel: str) -> bool:
+    def decide(self, bare: bool, globbed: bool, dir_ref: bool, parent_in_module: bool, rel: str,
+               glob_dir: bool | None = None) -> bool:
         if dir_ref:
             return True
         if not (bare or globbed):
             return False
         if globbed and not bare:
-            return parent_in_module
+            # a glob reaches the files of the folder it is run on: the module must name this file's own folder
+            return parent_in_module if glob_dir is None else glob_dir
         # a bare name: in the same root it must be the only file of that name (or the directory is named too); from an
         # enclosing root the code must name the directory as well, or it may only be naming a file it never reads
         return (self.unique or parent_in_module) if rel == 'same' else parent_in_module
@@ -518,9 +617,13 @@ class FileRef:
         if not rel:
             return False
         bare = self.name in blob and bool(self.name_rx.search(blob))
+        if bare and self.name in write_only_names(module):
+            bare = False                   # the code only writes or probes a file of this name (its own output)
         globbed = any(rx.match(self.name_case) for rx in globs)
         dir_ref = self.dir_named(strs) if self.parent and self.parent in blob else False
-        return self.decide(bare, globbed, dir_ref, self.parent_named(strings_in(module)), rel)
+        mod_strs = strings_in(module)
+        return self.decide(bare, globbed, dir_ref, self.parent_named(mod_strs), rel,
+                           self.glob_dir_named(mod_strs) if globbed and not bare else None)
 
     def named_in_text(self, view: tuple[str, list[str]], where: str) -> bool:
         """The same test for a JavaScript or TypeScript file, on its text (view: js_view()'s text and string literals)."""
@@ -533,7 +636,8 @@ class FileRef:
         bare = bool(self.name_rx.search(t) or re.search(r'''['"/]''' + re.escape(self.stem) + r'''['"]''', t))
         globbed = any(('*' in s or '?' in s) and s.rsplit('/', 1)[-1].strip('*?.')
                       and fnmatch.fnmatch(self.name, s.rsplit('/', 1)[-1]) for s in strs)
-        return self.decide(bare, globbed, self.dir_named(strs), self.parent_named(strs), rel)
+        return self.decide(bare, globbed, self.dir_named(strs), self.parent_named(strs), rel,
+                           self.glob_dir_named(strs) if globbed and not bare else None)
 
 
 def count_lines(p: Path) -> int:
@@ -584,7 +688,11 @@ def importers(py: PyTests, module_path: str) -> set[str]:
 def _importers(py: PyTests, module_path: str) -> set[str]:
     mod = PurePosixPath(module_path).with_suffix('').as_posix().replace('/', '.')
     out = set()
+    reach = py.path_reach()
     for tp, fns in py.tests.items():
+        if module_path in reach.get(tp, ()):
+            out |= {py.test_id(tp, fn) for fn in fns}      # loaded by file path, not by an import statement
+            continue
         for n in ast.walk(py.modules[tp]):
             names = [a.name for a in n.names] if isinstance(n, ast.Import) else [n.module or ''] if isinstance(n, ast.ImportFrom) else []
             if any(x and (x == mod or mod.endswith('.' + x) or x.endswith('.' + mod)) for x in names):
@@ -881,7 +989,7 @@ def fixture_data_dirs(root: Path, files: list[str], projects: list[dict]) -> lis
     return out
 
 
-UNLISTED_MIN_FILES = 50     # a directory outside the test areas with this many data files, named by test code, is reported
+UNLISTED_MIN_FILES = 10     # a directory outside the test areas with this many data files, named by test code, is reported
 
 
 def unlisted_data_dirs(root: Path, all_files: list[str], py: 'PyTests', js_tests: list[str]) -> list[dict]:
@@ -1015,6 +1123,22 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
         if not test_dirs_of(rel) and PurePosixPath(rel).name != 'conftest.py' and not py.tests.get(rel) \
                 and rel not in SELF_TEST_FILES:
             del kinds[rel]
+    # product data that test code names by its repository path (ROOT / "catalog/features.json"): read by the tests, so
+    # inventoried whatever folder it sits in; its folder is named so the rest of it is not taken as covered
+    named_by_path: dict[str, list[str]] = {}
+    blob = '\n'.join([s for tp, tree in py.modules.items() if in_test_area(tp) for s in strings_in(tree)]
+                     + [v[0] for v in (js_view(root, t) for t in js_tests) if v is not None])
+    if blob:
+        for rel in files:
+            pp = PurePosixPath(rel)
+            if rel in kinds or '/' not in rel or pp.suffix.lower() not in DATA_EXT or TOOLING.match(pp.name) \
+                    or DOC_NAME.match(pp.name) or rel not in blob:
+                continue
+            if not fixture_dirs and set(pp.parts[:-1]) & set(repo_layout.FIXTURE_PARENTS):
+                continue                   # --no-fixture-dirs: sample projects stay out, even those a test names
+            if re.search(r'(?<![\w.-])' + re.escape(rel) + r'(?![\w/-])', blob):
+                kinds[rel] = 'fixture'
+                named_by_path.setdefault(pp.parent.as_posix(), []).append(rel)
     # source code under a --data-dir tree: a data module is listed as a fixture; the rest is recorded, never dropped silently
     module_notes: dict[str, str] = {}
     code_under: dict[str, list[str]] = {}
@@ -1188,6 +1312,19 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
     unlisted = unlisted_data_dirs(root, all_files, py, js_tests)
     if unlisted:
         extra['unlisted_data_dirs'] = unlisted
+    if named_by_path:
+        per_dir: dict[str, int] = {}
+        for f in all_files:
+            pp = PurePosixPath(f)
+            if pp.parent.as_posix() in named_by_path and pp.suffix.lower() in DATA_EXT:
+                per_dir[pp.parent.as_posix()] = per_dir.get(pp.parent.as_posix(), 0) + 1
+        extra['named_by_path'] = [{'dir': d, 'files': sorted(fs), 'data_files_in_dir': per_dir.get(d, len(fs))}
+                                  for d, fs in sorted(named_by_path.items())]
+        for e in extra['named_by_path']:
+            rest = e['data_files_in_dir'] - len(e['files'])
+            warnings.append(f'{e["dir"]}/: {len(e["files"])} data file(s) there that tests read by repository path were '
+                            'inventoried (named_by_path)' + (f'; the other {rest} data file(s) in it were NOT: pass '
+                                                             f'--data-dir {e["dir"]} to read the folder whole' if rest > 0 else ''))
     if sampled:
         extra['sampled_dirs'] = sampled
     if fdirs:

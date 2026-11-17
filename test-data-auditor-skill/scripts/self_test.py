@@ -1186,7 +1186,73 @@ def local_path_false_positives() -> None:
     check(not any(c['line'] in (10, 14) for c in lp), 'scan: a reserved-domain URL path and a CI runner home are not local paths')
 
 
-GROUPS: list = [long_line_is_linear, archives_and_logs, local_path_false_positives]
+# a tooling repository: scripts/ that tests load by file path, catalogues in catalog/ that tests read by repository
+# path, a results tree a script globs, and an output file name a script writes
+TOOL_SCRIPTS = {
+    'scripts/build-page.py': ('from pathlib import Path\nROOT = Path(__file__).resolve().parents[1]\n\n\n'
+                              'def render(data):\n    template = (ROOT / "pages/page.template.html").read_text()\n'
+                              '    return template.replace("<!-- DATA -->", data)\n'),
+    'scripts/refresh.py': ('import json\nfrom pathlib import Path\nROOT = Path(__file__).resolve().parents[1]\n\n\n'
+                           'def collect(bundles=ROOT / "catalog/results"):\n'
+                           '    return [json.loads(p.read_text()) for p in sorted(bundles.glob("*.json"))]\n\n\n'
+                           'def features():\n    return json.loads((ROOT / "catalog/features.json").read_text())\n'),
+    'scripts/compare.py': ('import json\nfrom pathlib import Path\n\n\ndef save(output, payload):\n'
+                           '    path = output / "comparison.json"\n    if (output / "comparison.json").exists():\n'
+                           '        raise SystemExit("exists")\n    path.write_text(json.dumps(payload))\n'),
+    'tests/test_page.py': ('import importlib.util\nfrom pathlib import Path\nROOT = Path(__file__).resolve().parents[1]\n'
+                           'SPEC = importlib.util.spec_from_file_location("build_page", ROOT / "scripts/build-page.py")\n'
+                           'page = importlib.util.module_from_spec(SPEC)\nSPEC.loader.exec_module(page)\n\n\n'
+                           'def test_render():\n    assert "x" in page.render("x")\n'),
+    'tests/test_refresh.py': ('import sys\nfrom pathlib import Path\nROOT = Path(__file__).resolve().parents[1]\n'
+                              'sys.path.insert(0, str(ROOT / "scripts"))\nimport refresh\n\n\n'
+                              'def test_features():\n    assert refresh.features()\n\n\n'
+                              'def test_catalogue_by_path():\n'
+                              '    assert (ROOT / "catalog/events.json").read_text()\n'),
+    'tests/test_compare.py': ('import sys\nfrom pathlib import Path\nROOT = Path(__file__).resolve().parents[1]\n'
+                              'sys.path.insert(0, str(ROOT / "scripts"))\nimport compare\n\n\n'
+                              'def test_save(tmp_path):\n    compare.save(tmp_path, {})\n    assert (tmp_path / "comparison.json").exists()\n'),
+    'pages/page.template.html': '<html><body><!-- DATA --></body></html>\n',
+    'catalog/features.json': '{"features": ["a"]}\n',
+    'catalog/events.json': '{"events": ["b"]}\n',
+    'catalog/other-inventory.json': '{"other": 1}\n',
+    'catalog/results/r1.json': '{"run": 1}\n',
+    'results/old/comparison.json': '{"trials": []}\n',
+}
+
+
+def loaded_by_reach() -> None:
+    """Files tests reach through scripts they load by path count as loaded; a glob of one folder does not reach its
+    parent's files; a name a script only writes is not a load; and data files tests read by repository path are
+    inventoried even without --data-dir."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, TOOL_SCRIPTS)
+        invd = inv.build(root, None, {}, ['catalog', 'pages', 'results'])
+        by = {i['path']: i for i in invd['inventory']}
+        tpl = by.get('pages/page.template.html', {}).get('loaded_by', [])
+        check('tests/test_page.py::test_render' in tpl,
+              f'inventory: a template read by a script the test loads with spec_from_file_location is loaded by it (got {tpl})')
+        feats = by.get('catalog/features.json', {}).get('loaded_by', [])
+        check('tests/test_refresh.py::test_features' in feats,
+              f'inventory: a file read by a script imported from a sys.path folder is loaded by the importing tests (got {feats})')
+        other = by.get('catalog/other-inventory.json', {}).get('loaded_by', [])
+        check(other == [], f'inventory: a glob over catalog/results does not reach files directly under catalog/ (got {other})')
+        r1 = by.get('catalog/results/r1.json', {}).get('loaded_by', [])
+        check('tests/test_refresh.py::test_features' in r1, f'inventory: the globbed folder\'s own files are reached (got {r1})')
+        cmp_ = by.get('results/old/comparison.json', {}).get('loaded_by', [])
+        check(cmp_ == [], f'inventory: a file name a script and a test only write or probe is not a load (got {cmp_})')
+        invd = inv.build(root, None, {})
+        by = {i['path']: i for i in invd['inventory']}
+        ev = by.get('catalog/events.json', {})
+        check(ev.get('status') == 'scanned' and 'tests/test_refresh.py::test_catalogue_by_path' in ev.get('loaded_by', []),
+              f'inventory: a data file outside the test areas that a test names by its repository path is inventoried by '
+              f'default (got {ev})')
+        check(any('catalog' in w for w in invd.get('warnings', [])) or any(
+            u['dir'] == 'catalog' for u in invd.get('unlisted_data_dirs', [])),
+              'inventory: a data folder tests read by path but not inventoried whole is named in a warning')
+
+
+GROUPS: list = [long_line_is_linear, archives_and_logs, local_path_false_positives, loaded_by_reach]
 
 
 def main(argv=None) -> int:
