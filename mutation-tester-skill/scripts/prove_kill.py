@@ -42,6 +42,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import js_workspace  # noqa: E402
 import parse_results  # noqa: E402
 import run_tests  # noqa: E402

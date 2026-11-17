@@ -29,6 +29,7 @@ import argparse, json, os, re, shutil, subprocess, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import js_workspace  # noqa: E402
 import lang_census  # noqa: E402
 import repo_layout  # noqa: E402
@@ -251,6 +252,14 @@ def language_facts(repo: Path, tools: list[dict], exclude_fixtures: bool = True,
                                 f'{", ".join(d + "/" for d in dirs) or "tooling folders"} and no {lang} product code '
                                 f'(the product is {c.get("dominant")}). Mutating it tests helper scripts; say so in '
                                 'the report\'s limitations.')
+    # script languages no engine reads (PowerShell, shell: installers and packaging are shipped code) and tooling
+    # folders that CI runs, measures or tests like product code: said aloud, so the limitations can name them
+    for note in lc.get('notes') or []:
+        if any(f'{kind} script(s)' in note for kind in lc.get('scripts') or {}):
+            warnings.append(note)
+        elif 'counted as tooling' in note:
+            warnings.append(note + ' (here: normalize_results.py --product-path <folder> records the folder as the '
+                            'product, so its files are not reported as tooling)')
     return lc, tooling, warnings
 
 
@@ -266,7 +275,7 @@ def report_language_coverage(repo: Path, mutated_files, scope_paths, product_pat
     product_paths: folders the user declares are the product although their names read as tooling (a repository
     whose product is its scripts/); recorded as `declared_product`. Fixture projects are left out of the census."""
     product_paths = sorted({p.replace('\\', '/').strip('/') for p in product_paths or ()})
-    c = lang_census.census(repo, exclude_fixtures=True)
+    c = lang_census.census(repo, exclude_fixtures=True, product_dirs=product_paths or None)
     mutated = sorted({lang_census.LANG_BY_EXT.get(Path(f).suffix) for f in mutated_files} - {None})
     lc = lang_census.language_coverage(c, mutated, tool="this report's mutation engines", what='mutation test')
     tooling = sorted(f for f in scope_paths if lang_census.is_tooling_file(f) and not under(f, product_paths))         if c.get('total_product_lines') else []

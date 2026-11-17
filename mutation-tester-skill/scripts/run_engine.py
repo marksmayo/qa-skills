@@ -69,6 +69,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import js_workspace  # noqa: E402
 import run_tests  # noqa: E402
 
@@ -436,6 +437,13 @@ def do_cargo_mutants(args) -> int:
     repo, run_dir = args.repo.resolve(), args.run_dir.resolve()
     scope = json.loads(args.scope.read_text(encoding='utf-8'))
     cargo = [c.strip('"') for c in shlex.split(args.cargo, posix=os.name != 'nt')] if args.cargo else ['cargo']
+    # scoped lines under a cfg that is false here (another platform, a feature the defaults leave out) are not
+    # compiled, so nothing can mutate them on this machine: say so before anything else, engine installed or not
+    import rust_gates
+    gate_platform = rust_gates.cargo_project.SYS_PLATFORM.get(sys.platform, 'linux')
+    gates = rust_gates.scope_gates(repo, scope, gate_platform)
+    for w in rust_gates.warnings(gates, gate_platform):
+        print(f'WARNING: {w}', file=sys.stderr)
     if shutil.which(cargo[0]) or Path(cargo[0]).exists():
         code, out, _ = run([*cargo, 'mutants', '--version'], repo, timeout=60)
     else:
@@ -471,7 +479,9 @@ def do_cargo_mutants(args) -> int:
                          'command': ' '.join(['cargo mutants --no-shuffle --output <run-dir>', *shown_sel, *extra]),
                          'config_source': 'repo' if config else None, 'config': config},
               'status': 'ran', 'reason': '', 'code_hash': run_tests.code_hash(repo),
-              'started_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'notes': []}
+              'started_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'notes': [],
+              'gated': {'platform': gate_platform, 'items': gates}}
+    record['notes'] += [f'not assessed: {w}' for w in rust_gates.warnings(gates, gate_platform)]
     t0 = time.monotonic()
     code, log, timed_out = run(cmd, repo, timeout=args.minutes * 60)
     record['duration_s'] = round(time.monotonic() - t0, 1)

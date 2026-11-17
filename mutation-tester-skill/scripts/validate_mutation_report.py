@@ -11,13 +11,16 @@ mutant's original text and enclosing function, and computes each finding's proxi
 covering test calls the function directly). --write-summary fills in the computed fields: each
 ranked finding's kind factor, proximity, score and priority, and every summary count, score and
 score text (needs --repo). The headline stays yours, and any percentage in it must be one of the
-computed scores, shown with its counts.
+computed scores, shown with its counts. It takes two passes: the headline must name every P0
+finding, and the priorities are computed here, so run --write-summary with a draft headline, read
+the "computed priorities" line it prints, write the headline and run it again.
 """
 from __future__ import annotations
 import argparse, ast, hashlib, json, re, sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(HERE))
 import go_scan  # noqa: E402
 import run_tests  # noqa: E402
@@ -90,6 +93,13 @@ def schema_errors(value, schema: dict, root: dict, path: str = '$') -> list[str]
 
 
 # ---------------------------------------------------------------- computed fields
+def version_tuple(v) -> tuple:
+    try:
+        return tuple(int(x) for x in str(v).split('.'))
+    except ValueError:
+        return (0,)
+
+
 def priority(score: int) -> str:
     return next(p for floor, p in BANDS if score >= floor)
 
@@ -154,6 +164,18 @@ def unparsed_tests(f: dict, mutants: dict) -> list[str]:
     return sorted(t for t in tests if not parsed_language(t.partition('::')[0]))
 
 
+def callable_names(function: str) -> list[str]:
+    """The names a test can call to reach a function directly: its own, and for a function defined inside another
+    (`boards.<locals>.valid`, which no test can name) the enclosing function's: its tests are the nested one's
+    unit tests."""
+    parts = function.split('.')
+    names = [parts[-1]]
+    for i, part in enumerate(parts):
+        if part == '<locals>' and i and parts[i - 1] not in names:
+            names.append(parts[i - 1])
+    return [n for n in names if n != '<locals>']
+
+
 def proximity(f: dict, mutants: dict, repo: Path | None, cache: dict) -> int | None:
     """2 when a covering test calls the function directly, else 1. None when it cannot be known: no
     repository, or every covering test is in a language this validator does not parse (a guessed 1 would
@@ -162,9 +184,9 @@ def proximity(f: dict, mutants: dict, repo: Path | None, cache: dict) -> int | N
         return 1
     if repo is None:
         return None
-    name = f['function'].split('.')[-1]
+    names = callable_names(f['function'])
     tests = sorted({t for mid in f['mutant_ids'] if mid in mutants for t in mutants[mid]['covering_tests']})
-    if any(test_calls(repo, t, name, cache) for t in tests if parsed_language(t.partition('::')[0])):
+    if any(test_calls(repo, t, n, cache) for t in tests if parsed_language(t.partition('::')[0]) for n in names):
         return 2
     if tests and all(not parsed_language(t.partition('::')[0]) for t in tests):
         return None
@@ -231,15 +253,48 @@ def run_by(e: dict) -> str:
     return 'skill' if e['name'] in ('builtin', 'mutmut') or e.get('code_hash') else 'external'
 
 
+# Mutation engines by the names reports give them in tools[] (lower case). A tool named here with status not_run
+# or errored is an engine that was wanted and did not run.
+ENGINE_TOOLS = {'builtin', 'builtin_mutator', 'builtin_mutator.py', 'mutmut', 'cosmic-ray', 'cosmic ray', 'mutpy',
+                'stryker', 'strykerjs', 'stryker.net', 'stryker4s', 'pit', 'pitest', 'cargo-mutants', 'cargo mutants',
+                'go-mutesting', 'gremlins', 'muter', 'mutation_test', 'infection', 'mull', 'mutant'}
+
+
+ENGINE_ALIAS = {'strykerjs': 'stryker', 'stryker.net': 'stryker', 'stryker4s': 'stryker', 'pitest': 'pit',
+                'cargo mutants': 'cargo-mutants', 'cosmic ray': 'cosmic-ray', 'builtin_mutator': 'builtin',
+                'builtin_mutator.py': 'builtin'}
+
+
+def engines_not_run(d: dict) -> list[str]:
+    """Mutation engines listed in tools[] as not_run or errored that metadata.engines does not already count."""
+    counted = {e['name'].lower() for e in d['metadata']['engines']}
+    out = []
+    for t in d.get('tools') or []:
+        if t.get('status') not in ('not_run', 'errored'):
+            continue
+        for name in re.split(r',|\band\b|/', t.get('name') or ''):
+            n = re.sub(r'\s*\(.*?\)|\s+v?\d[\w.]*$', '', name.strip().lower())
+            n = ENGINE_ALIAS.get(n, n)
+            if n in ENGINE_TOOLS and n not in counted and n not in out:
+                out.append(n)
+    return out
+
+
 def completeness(d: dict) -> float:
     """Mean of: green baseline; per-test coverage; engines that ran (an external engine counts half: its
     results were converted, not run here); mutants run; and, when there are ranked findings, the share
-    of them whose suggestion a kill proof backs."""
+    of them whose suggestion a kill proof backs. From schema 1.5.0 an engine listed in tools[] as not_run or
+    errored counts among the engines that did not run, and a product whose main language has no mutant
+    (language_coverage.unmutated_dominant) adds an item of 0: such a report is never 1.0."""
     engines = d['metadata']['engines']
+    new = version_tuple(d.get('schema_version')) >= (1, 5, 0)
+    wanted = len(engines) + (len(engines_not_run(d)) if new else 0)
     items = [1.0 if d['baseline']['passed'] and len(d['baseline']['run_ids']) >= 2 else 0.0,
              1.0 if coverage_recorded(d) else 0.0]
-    items.append(sum((1.0 if run_by(e) == 'skill' else 0.5) for e in engines if e['status'] == 'ran') / len(engines)
-                 if engines else 0.0)
+    items.append(sum((1.0 if run_by(e) == 'skill' else 0.5) for e in engines if e['status'] == 'ran') / wanted
+                 if wanted else 0.0)
+    if new and (d['metadata'].get('language_coverage') or {}).get('unmutated_dominant'):
+        items.append(0.0)
     ran = [m for m in d['mutants'] if m['status'] not in ('no_coverage', 'compile_error')]
     items.append(sum(1 for m in ran if m['status'] != 'not_run') / len(ran) if ran else 0.0)
     ranked = [f for f in d['findings'] if f.get('triage') in RANKED]
@@ -307,14 +362,8 @@ def name_items(errs: list[str], d: dict) -> list[str]:
     return out
 
 
-def version_tuple(v) -> tuple:
-    try:
-        return tuple(int(x) for x in str(v).split('.'))
-    except ValueError:
-        return (0,)
-
-
 TOOLING_WORDS = re.compile(r'tooling|helper script|not the product', re.I)
+UNMUTATED_WORDS = re.compile(r'delet|remov|comment|no mutant|not mutated|cannot be mutated|nothing', re.I)
 
 
 def language_errors(d: dict, mutants_file: dict | None, repo: Path | None) -> list[str]:
@@ -428,7 +477,19 @@ def check(d: dict, mutants_file: dict | None, runs: dict | None, proofs: dict | 
             for path in stop.get('files') or []:
                 if path not in (e['tree_changed'] or []):
                     errs.append(f'engine {e["name"]}: stopped because {path} changed, but tree_changed does not list it')
-        elif e['tree_changed'] and e['status'] == 'ran':
+        for u in e.get('unmutated_changes') or []:
+            # a change the engine could not stand a mutant for (removed lines, comment-only edits): the scores say
+            # nothing about it, and the report must not read as if the change were covered
+            name = (u.get('function') or '').split('.')[-1]
+            named = [l for l in d['limitations'] if UNMUTATED_WORDS.search(l) and (
+                (name and re.search(rf'(?<![\w.]){re.escape(name)}(?![\w])', l)) or
+                (not name and (u['file'] in l or u['file'].rsplit('/', 1)[-1] in l)))]
+            if not named:
+                what = f'{name}() in {u["file"]}' if name else u['file']
+                errs.append(f'engine {e["name"]}: no mutant stands for the change to {what} ({u.get("reason") or "not mutated"}): '
+                            f'a limitation must say so, naming {name + "()" if name else u["file"]} (removed or '
+                            'comment-only lines cannot be mutated; a path scope on the function can)')
+        if e['tree_changed'] and e['status'] == 'ran' and not stop:
             warns.append(f'engine {e["name"]}: the tree changed during the run ({", ".join(e["tree_changed"][:3])}) and '
                          'the engine did not record which mutant changed it, so any result after the change may read '
                          'the changed tree (builtin_mutator.py 1.4.0 checks the tree after every mutant)')
@@ -596,7 +657,7 @@ def check(d: dict, mutants_file: dict | None, runs: dict | None, proofs: dict | 
                 errs.append(f'engine {e["name"]}: not in the normalised results')
                 continue
             for k in ('version', 'config_source', 'status', 'generated', 'in_scope', 'out_of_scope', 'tree_changed', 'counts',
-                      'code_hash', 'run_by', 'duplicates_merged'):
+                      'code_hash', 'run_by', 'duplicates_merged', 'unmutated_changes'):
                 if e.get(k) != o.get(k):
                     errs.append(f'engine {e["name"]}: {k} differs from the normalised results')
         if 'coverage' in mutants_file and (md['coverage'] or None) != (mutants_file['coverage'] or None):
@@ -710,12 +771,19 @@ def main(argv=None) -> int:
             return 1
         write_summary(d, args.repo.resolve())
         args.report.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+        by = {p: [f['id'] for f in d['findings'] if f.get('priority') == p] for p in ('P0', 'P1', 'P2', 'P3')}
+        print('computed priorities: ' + ('; '.join(f'{p}: {", ".join(ids)}' for p, ids in by.items() if ids) or
+                                         'no ranked finding') +
+              f'; evidence completeness {d["summary"]["evidence_completeness"]:.2f}')
     load = lambda p: json.loads(p.read_text(encoding='utf-8')) if p else None  # noqa: E731
     errs, warns = check(d, load(args.mutants), load(args.runs), load(args.proofs), args.repo.resolve() if args.repo else None)
     for w in warns:
         print(f'WARN: {w}')
     for e in errs:
         print(f'ERROR: {e}')
+    if args.write_summary and any('summary.headline' in e for e in errs):
+        print('NOTE: the summary was written; the headline is yours. Write it now (name each P0 finding above by id) '
+              'and run the validator again: two passes are expected, because the priorities are computed here.')
     print('INVALID' if errs else 'VALID')
     return 1 if errs else 0
 

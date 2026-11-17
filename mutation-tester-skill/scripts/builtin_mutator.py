@@ -73,10 +73,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import parse_results  # noqa: E402
 import run_tests  # noqa: E402
 
-VERSION = '1.4.0'
+VERSION = '1.5.0'
 
 PLUGIN = r'''
 import json, os, sys, threading
@@ -317,6 +318,108 @@ def string_contexts(tree: ast.AST) -> tuple[set[int], set[int], set[int]]:
     return compared, named, literal
 
 
+def key_reads(tree: ast.AST) -> set[int]:
+    """Ids of string constants that are the key of a subscript read (`row['event']`, not `out['rank'] = ...`).
+    Emptying one raises the same KeyError at every read of that key, so repeated reads in a function are grouped."""
+    return {id(n.slice) for n in ast.walk(tree)
+            if isinstance(n, ast.Subscript) and isinstance(n.ctx, ast.Load)
+            and isinstance(n.slice, ast.Constant) and isinstance(n.slice.value, str)}
+
+
+RE_FUNCS = {'compile', 'match', 'fullmatch', 'search', 'sub', 'subn', 'split', 'findall', 'finditer'}
+REGEX_NOTE = ('a regular expression: the engine only replaces the whole pattern; its alternatives, character classes, '
+              'quantifiers and flags are not mutated, so a kill here says the pattern is used, not that it is tested')
+
+
+def regex_strings(tree: ast.AST) -> set[int]:
+    """Ids of string constants given as the pattern to re.compile/search/sub/... (or the `regex` module)."""
+    out = set()
+    for n in ast.walk(tree):
+        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in RE_FUNCS
+                and isinstance(n.func.value, ast.Name) and n.func.value.id in ('re', 'regex') and n.args
+                and isinstance(n.args[0], ast.Constant) and isinstance(n.args[0].value, str)):
+            out.add(id(n.args[0]))
+    return out
+
+
+def function_spans(tree: ast.AST) -> list[tuple[int, int, str]]:
+    """(first line, last line, qualified name) of every function: `outer.<locals>.inner`, `Class.method`."""
+    out = []
+
+    def walk(node, prefix):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                out.append((child.lineno, child.end_lineno, prefix + child.name))
+                walk(child, prefix + child.name + '.<locals>.')
+            elif isinstance(child, ast.ClassDef):
+                walk(child, prefix + child.name + '.')
+            else:
+                walk(child, prefix)
+    walk(tree, '')
+    return out
+
+
+def innermost(spans: list[tuple[int, int, str]], line: int):
+    hold = [s for s in spans if s[0] <= line <= s[1]]
+    return min(hold, key=lambda s: s[1] - s[0]) if hold else None
+
+
+def unmutated_changes(repo: Path, scope: dict, mutants: list[dict]) -> list[dict]:
+    """What the change touched that no mutant stands for: a function that lost lines (the diff's deletions) with no
+    mutant on its changed lines, and a file whose changed lines hold nothing to mutate (comments, blank lines,
+    docstrings, imports). Removed code cannot be mutated; the function it was removed from can, with a path scope.
+    [{file, function, lines: [first, last] of the outermost enclosing function (or null), deleted_at, reason}]."""
+    out = []
+    by_file: dict[str, list[dict]] = {}
+    for m in mutants:
+        by_file.setdefault(m['file'], []).append(m)
+    for f in scope['files']:
+        if f.get('kind') != 'source' or not f['path'].endswith('.py') or f.get('status') == 'deleted':
+            continue
+        if not (f.get('deleted_at') or f.get('ranges')):
+            continue
+        try:
+            tree = ast.parse((repo / f['path']).read_text(encoding='utf-8'))
+        except (OSError, SyntaxError, ValueError):
+            continue
+        spans = function_spans(tree)
+        mine = by_file.get(f['path'], [])
+        seen: dict[str, dict] = {}
+        for d in f.get('deleted_at') or []:
+            # a deletion is recorded at the line that follows it now; the line before belongs to the same block
+            fn = innermost(spans, d) or innermost(spans, d - 1)
+            if fn is None or any(fn[0] <= m['line'] <= fn[1] for m in mine):
+                continue
+            outer = max((x for x in spans if x[0] <= fn[0] and fn[1] <= x[1]), key=lambda x: x[1] - x[0])
+            e = seen.setdefault(fn[2], {'file': f['path'], 'function': fn[2], 'lines': [outer[0], outer[1]],
+                                        'deleted_at': [], 'reason': 'lines were removed from it and none of its '
+                                        'changed lines can be mutated (removed code cannot be mutated)'})
+            e['deleted_at'].append(d)
+        out += list(seen.values())
+        changed = sorted({n for a, b in f.get('ranges') or [] for n in range(a, b + 1)})
+        if changed and not mine and not seen:
+            out.append({'file': f['path'], 'function': None, 'lines': None, 'deleted_at': list(f.get('deleted_at') or []),
+                        'reason': f'its {len(changed)} changed line(s) hold nothing the engine mutates (comments, blank '
+                                  'lines, docstrings, imports or annotations)'})
+    return out
+
+
+def unmutated_warnings(items: list[dict]) -> list[str]:
+    out = []
+    for u in items:
+        if u['function']:
+            a, b = u['lines']
+            out.append(f'{u["file"]}: {u["function"]}() lost lines (at {", ".join(map(str, u["deleted_at"]))}) and no '
+                       'mutant covers the change: removed code cannot be mutated. To test what is left of it, mutate '
+                       f'the function with a path scope: python scripts/path_scope.py --repo <repo> --path '
+                       f'{u["file"]}:{a}-{b} --out scope.json. Until then say in the limitations that nothing here '
+                       'speaks for this change.')
+        else:
+            out.append(f'{u["file"]}: {u["reason"]}; no mutant was made from this file. Say so in the limitations, or '
+                       f'mutate the functions around the change with path_scope.py --path {u["file"]}:<first>-<last>.')
+    return out
+
+
 def is_main_guard(node: ast.AST) -> bool:
     """`if __name__ == '__main__':` (either operand order)."""
     if not (isinstance(node, ast.If) and isinstance(node.test, ast.Compare) and len(node.test.ops) == 1):
@@ -407,7 +510,10 @@ def char_index(line_starts: list[int], text_lines: list[str], lineno: int, col_b
     return line_starts[lineno - 1] + col
 
 
-def make_mutants(repo: Path, scope: dict) -> tuple[list[dict], list[dict]]:
+def make_mutants(repo: Path, scope: dict, group_key_reads: bool = True) -> tuple[list[dict], list[dict]]:
+    """(mutants, files). With group_key_reads, the reads of one dict key in one function (`row['event']` three
+    times) are one mutant, on the first read: each would die on the same KeyError. The kept mutant lists the other
+    lines in `also_at`; writes (`out['rank'] = ...`), .get() reads and dict literal keys always keep their own."""
     mutants, files = [], []
     for f in scope['files']:
         if f['kind'] != 'source' or not f['path'].endswith('.py') or f['status'] == 'deleted':
@@ -423,6 +529,9 @@ def make_mutants(repo: Path, scope: dict) -> tuple[list[dict], list[dict]]:
         files.append({'path': f['path'], 'changed_lines': sorted(changed)})
         seen = set()
         literal = string_contexts(tree)[2]
+        reads = key_reads(tree) if group_key_reads else set()
+        regexes = regex_strings(tree)
+        spans = function_spans(tree) if reads else []
         for node, replacement, op in candidates(tree):
             if node.lineno not in changed:
                 continue
@@ -442,10 +551,34 @@ def make_mutants(repo: Path, scope: dict) -> tuple[list[dict], list[dict]]:
                  '_pos': (len(files), node.lineno, node.col_offset, node.end_lineno, node.end_col_offset, len(mutants))}
             if id(node) in literal:
                 m['note'] = LITERAL_NOTE
+            if id(node) in regexes:
+                m['note'] = REGEX_NOTE
+            if id(node) in reads and op == 'constant_string_data':
+                fn = innermost(spans, node.lineno)
+                if fn is not None:
+                    m['_read'] = (f['path'], fn[0], fn[1], node.value)
             mutants.append(m)
     # ids by position (scope file order, line, column, extent), so the console, builtin.json and the
     # normalised report show the same id for a mutant
     mutants.sort(key=lambda m: m.pop('_pos'))
+    first: dict[tuple, dict] = {}
+    kept = []
+    for m in mutants:
+        key = m.pop('_read', None)
+        if key is None or key not in first:
+            if key is not None:
+                first[key] = m
+            kept.append(m)
+            continue
+        first[key].setdefault('also_at', []).append(m['line'])
+    for key, m in first.items():
+        if m.get('also_at'):
+            m['also_at'] = sorted(set(m['also_at']))
+            note = (f'the key {key[3]!r} is also read at line{"s" if len(m["also_at"]) > 1 else ""} '
+                    f'{", ".join(map(str, m["also_at"]))} of this function; this one mutant stands for those reads '
+                    '(--all-key-reads mutates each)')
+            m['note'] = m['note'] + '; ' + note if m.get('note') else note
+    mutants = kept
     for i, m in enumerate(mutants, 1):
         m['id'] = f'B{i}'
     return mutants, files
@@ -834,7 +967,7 @@ def scope_languages(scope: dict) -> dict[str, list[str]]:
     return out
 
 
-def pick_language(scope: dict, wanted: str) -> str:
+def pick_language(scope: dict, wanted: str, repo: Path | None = None) -> str:
     """The language to mutate. A scope with nothing this engine can mutate stops loudly (exit 2), naming the
     files it leaves out and the tool for their language."""
     langs = scope_languages(scope)
@@ -851,6 +984,10 @@ def pick_language(scope: dict, wanted: str) -> str:
             raise SystemExit(2)
         return wanted
     if not supported:
+        if repo is not None:
+            for w in unmutated_warnings(unmutated_changes(repo, scope, [])):
+                if '() lost lines' in w:
+                    print(f'WARNING: {w}', file=sys.stderr)
         print('ERROR: no changed Python or Go source lines in scope, so the builtin engine has nothing to mutate'
               + ('' if others else ' (the scope has no changed source at all)')
               + '. Record the engine as not_run with this reason, or use the tool for the language (SKILL.md, Step 1).',
@@ -932,6 +1069,9 @@ def main(argv=None) -> int:
     ap.add_argument('--unittest-args', default='',
                     help='unittest discovery as for python -m unittest discover: "-s tests -p \'test*.py\' -t ."')
     ap.add_argument('--seed', type=int, default=1, help='sampling seed')
+    ap.add_argument('--all-key-reads', action='store_true',
+                    help="mutate every read of a dict key (row['k']); by default the reads of one key in one function "
+                         'are one mutant, since each dies on the same KeyError')
     ap.add_argument('--coverage-only', action='store_true')
     ap.add_argument('--restore', action='store_true', help='put backed-up originals back and exit')
     ap.add_argument('--language', choices=['auto', 'python', 'go'], default='auto',
@@ -951,7 +1091,7 @@ def main(argv=None) -> int:
                and (Path(f['path']).is_absolute() or not (repo / f['path']).resolve().is_relative_to(repo))]
     if outside:
         raise SystemExit(f'scope names file(s) outside --repo {repo}: {", ".join(outside[:5])}; refusing to mutate them')
-    language = pick_language(scope, args.language)
+    language = pick_language(scope, args.language, repo)
     if language == 'go':
         import go_mutator
         return go_mutator.main(args, scope)
@@ -973,8 +1113,12 @@ def main(argv=None) -> int:
     shutil.rmtree(pycache, ignore_errors=True)
     pycache.mkdir()
     env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONPYCACHEPREFIX': str(pycache)}
-    mutants, files = make_mutants(repo, scope)
+    mutants, files = make_mutants(repo, scope, group_key_reads=not args.all_key_reads)
+    grouped_reads = sum(len(m.get('also_at') or []) for m in mutants)
     scoped = [f['path'] for f in files]
+    unmutated = unmutated_changes(repo, scope, mutants)
+    for w in unmutated_warnings(unmutated):
+        print(f'WARNING: {w}', file=sys.stderr, flush=True)
     if not scoped:
         raise SystemExit('no changed Python source lines in scope')
     for t in args.tests:
@@ -1081,7 +1225,8 @@ def main(argv=None) -> int:
     body_s = max(0.0, plain_s - startup_s)
     per = {m['id']: startup_s + body_s * len(m['covering_tests']) / max(1, len(all_tests)) for m in order}
     est = sum(per.values())
-    print(f'plan: {len(order)} of {len(runnable)} runnable mutants ({len(mutants)} generated), est. '
+    print(f'plan: {len(order)} of {len(runnable)} runnable mutants ({len(mutants)} generated'
+          + (f'; {grouped_reads} repeated key read(s) grouped' if grouped_reads else '') + '), est. '
           f'{est / 60:.1f} min ({est / max(1, len(order)):.1f}s per mutant) of a {args.minutes:g} min budget; '
           f'start-up {startup_s:.1f}s, whole-suite run {plain_s:.1f}s, timeout {timeout:.0f}s per mutant', flush=True)
     estimate = {'startup_s': round(startup_s, 3), 'planned_s': round(est, 1),
@@ -1267,9 +1412,14 @@ def main(argv=None) -> int:
                     'changed': changed, 'checked': 'after every mutant',
                     **({'stopped': stop} if stop and stop['kind'] == 'tree_changed' else {})},
            'stopped': stop, 'interrupted': interrupted,
+           # what the change touched that no mutant stands for (deletions, comment-only changes): the report says so
+           'unmutated_changes': unmutated,
+           'grouped': {'key_reads': grouped_reads, 'note': 'reads of one dict key in one function are one mutant '
+                                                           '(also_at lists the other lines)'},
            'counts': counts, 'mutants': mutants}
     (run_dir / 'builtin.json').write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8')
-    print(f'{len(mutants)} mutants: ' + ', '.join(f'{v} {k}' for k, v in sorted(counts.items())) +
+    print(f'{len(mutants)} mutants: ' + (', '.join(f'{v} {k}' for k, v in sorted(counts.items())) if mutants else
+                                          'nothing on the scoped lines can be mutated (see the WARNING lines)') +
           f' -> {run_dir / "builtin.json"}')
     if interrupted:
         return 130

@@ -8,8 +8,9 @@ file, mutation-testing-elements reports and minimal mutation reports. Cases that
 toolchain are skipped (and say so) when `go` is not on PATH. Exit 0 when every case that ran passed.
 """
 from __future__ import annotations
-import argparse, json, os, shutil, subprocess, sys, tempfile, traceback
+import argparse, json, os, re, shutil, subprocess, sys, tempfile, traceback
 from pathlib import Path
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 
 HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
@@ -840,6 +841,50 @@ def case_prove_kill_unittest(tmp: Path) -> None:
     assert p['test_id'] == 'tests/test_levels.py::BoundaryTest::test_300_is_high', p['test_id']
 
 
+PAGE_PY = """def title(n):
+    if n >= 3:
+        return 'ok'
+    return 'low'
+
+
+def render(n):
+    return '<h1>\U0001F3C5 \u2603 ' + title(n) + '</h1>'
+"""
+PAGE_TEST = """import os
+import sys
+import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
+import page  # noqa: E402
+
+
+class PageTest(unittest.TestCase):
+    def test_render(self):
+        self.assertIn('ok', page.render(5))
+"""
+
+
+def case_unittest_runner_non_locale_failure(tmp: Path) -> None:
+    """A failing assertion whose message holds characters the locale encoding lacks (a medal emoji in rendered
+    HTML, on a cp1252 console) is still a kill: the unittest runner's streams never raise while printing it."""
+    repo = tmp / 'repo'
+    (repo / 'scripts').mkdir(parents=True)
+    (repo / 'tests').mkdir()
+    (repo / 'scripts' / 'page.py').write_text(PAGE_PY, encoding='utf-8')
+    (repo / 'tests' / 'test_page.py').write_text(PAGE_TEST, encoding='utf-8')
+    scope = write_json(tmp / 'scope.json', scope_for({'scripts/page.py': [[1, 4]]}))
+    env = {**os.environ, 'PYTHONUTF8': '0', 'PYTHONIOENCODING': ''}
+    res = subprocess.run([sys.executable, str(HERE / 'builtin_mutator.py'), '--repo', str(repo), '--scope', str(scope),
+                          '--run-dir', str(tmp / 'run'), '--minutes', '5', '--runner', 'unittest', '--unittest-args',
+                          '-s tests'], capture_output=True, text=True, encoding='utf-8', errors='replace', env=env)
+    assert res.returncode == 0, res.stdout[-800:] + res.stderr[-800:]
+    out = json.loads((tmp / 'run' / 'builtin.json').read_text(encoding='utf-8'))
+    bad = [(m['id'], m['operator'], m.get('note', '')[-200:]) for m in out['mutants'] if m['status'] == 'runtime_error']
+    assert not bad, f'runtime_error instead of a kill: {bad}'
+    neg = next(m for m in out['mutants'] if m['line'] == 2 and m['operator'] == 'negate_condition')
+    assert neg['status'] == 'killed' and neg['killed_by'] == 'tests/test_page.py::PageTest::test_render', neg
+
+
 REPORT_PY = '''import sys
 
 
@@ -1435,6 +1480,329 @@ def case_report_names_engine_stop(tmp: Path) -> None:
     assert 'STOPPED (tree_changed at B1' in shown.stdout, shown.stdout[-800:] + shown.stderr[-400:]
 
 
+# ---------------------------------------------------------------- second review round
+def case_builtin_deletion_only_scope(tmp: Path) -> None:
+    """A change that only removed lines from a function (or only added comments) gives no mutant: the engine says
+    so loudly, names the functions that lost lines and offers the path scope that mutates them, and records it."""
+    repo = ut_repo(tmp / 'repo')
+    scope = scope_for({'scripts/levels.py': [[5, 6]]})          # blank lines: nothing to mutate
+    scope['files'][0].update(deleted_at=[3], lines_deleted=2)
+    sp = write_json(tmp / 'scope.json', scope)
+    res = run('builtin_mutator.py', '--repo', repo, '--scope', sp, '--run-dir', tmp / 'run', '--minutes', '2',
+              '--runner', 'unittest', '--unittest-args', '-s tests')
+    warn = [l for l in res.stderr.splitlines() if l.startswith('WARNING')]
+    assert any('band' in l and 'scripts/levels.py:1-4' in l and 'path_scope.py' in l for l in warn), res.stderr[-900:]
+    assert res.returncode == 0, res.stdout[-600:] + res.stderr[-600:]
+    out = json.loads((tmp / 'run' / 'builtin.json').read_text(encoding='utf-8'))
+    assert out['mutants'] == [], out['mutants']
+    un = out.get('unmutated_changes') or []
+    assert [(u['file'], u['function'], u['lines']) for u in un] == [('scripts/levels.py', 'band', [1, 4])], un
+    assert 'nothing' in res.stdout.splitlines()[-1], res.stdout.splitlines()[-1]
+    # only deletions, no added line at all: the engine stops, but still names what lost lines
+    scope['files'][0]['ranges'] = []
+    sp = write_json(tmp / 'scope2.json', scope)
+    res = run('builtin_mutator.py', '--repo', repo, '--scope', sp, '--run-dir', tmp / 'run2', '--minutes', '2')
+    assert res.returncode == 2, res.returncode
+    assert 'band' in res.stderr and 'scripts/levels.py:1-4' in res.stderr, res.stderr[-900:]
+
+
+def case_report_names_unmutated_changes(tmp: Path) -> None:
+    """normalize_results.py carries the engine's unmutated changes into the report, and the validator requires a
+    limitation naming each function whose removed lines no mutant covers."""
+    import validate_mutation_report as v
+    repo, d, mfile = lc_report(tmp)
+    raw = json.loads((tmp / 'builtin.json').read_text(encoding='utf-8'))
+    raw['unmutated_changes'] = [{'file': 'scripts/levels.py', 'function': 'describe', 'lines': [7, 9],
+                                 'deleted_at': [8], 'reason': 'lines were removed and no changed line can be mutated'}]
+    write_json(tmp / 'builtin.json', raw)
+    res = run('normalize_results.py', '--scope', tmp / 'scope.json', '--repo', repo, '--builtin', tmp / 'builtin.json',
+              '--out', tmp / 'mutants.json')
+    assert 'describe' in res.stderr, res.stderr[-600:]
+    mfile = json.loads((tmp / 'mutants.json').read_text(encoding='utf-8'))
+    assert mfile['engines'][0].get('unmutated_changes'), mfile['engines'][0]
+    d['metadata']['engines'] = [dict(mfile['engines'][0])]
+    d['limitations'] = ['Rust, the product language, was not mutated.', 'scripts/levels.py is tooling (a helper script).']
+    v.write_summary(d, repo)
+    errs, _ = v.check(d, mfile, None, None, repo)
+    assert any('describe' in e and 'limitation' in e for e in errs), errs
+    d['limitations'].append('The change only removed lines from describe() in scripts/levels.py: removed code cannot '
+                            'be mutated, so nothing here speaks for it.')
+    errs, _ = v.check(d, mfile, None, None, repo)
+    assert not errs, errs
+
+
+def case_completeness_not_run_engine_and_product(tmp: Path) -> None:
+    """Evidence completeness is never 1.0 when the product's main language was not mutated, or when a mutation
+    engine listed in tools[] did not run; a report of an earlier schema version keeps its old value."""
+    import validate_mutation_report as v
+    repo, d, mfile = lc_report(tmp)
+    d['limitations'] = ['Rust was not mutated.', 'scripts/levels.py is tooling.']
+    d['metadata']['coverage'] = {'file': 'coverage.json', 'method': 'sys.settrace'}
+    d['findings'][0]['proof_ids'] = ['P1']
+    assert d['metadata']['language_coverage']['unmutated_dominant'] == 'Rust'
+    v.write_summary(d, repo)
+    with_lang = d['summary']['evidence_completeness']
+    assert with_lang < 1.0, f'unmutated product language, completeness {with_lang}'
+    d['tools'] = [{'name': 'cargo-mutants', 'version': None, 'status': 'not_run', 'reason': 'not installed'}]
+    v.write_summary(d, repo)
+    assert d['summary']['evidence_completeness'] <= with_lang
+    # the product language mutated, but a second engine in tools[] did not run
+    repo2, g = go_report_fixture(tmp / 'g')
+    g = fit_schema(g)
+    g['findings'][0]['proof_ids'] = ['P1']
+    v.write_summary(g, repo2)
+    assert g['summary']['evidence_completeness'] == 1.0, g['summary']['evidence_completeness']
+    g['tools'] = [{'name': 'go-mutesting', 'version': None, 'status': 'not_run', 'reason': 'not installed'},
+                  {'name': 'go test', 'version': '1.21', 'status': 'ran', 'reason': 'the runner'},
+                  {'name': 'StrykerJS, PIT', 'version': None, 'status': 'not_applicable', 'reason': 'no JavaScript'}]
+    v.write_summary(g, repo2)
+    assert g['summary']['evidence_completeness'] < 1.0, g['summary']['evidence_completeness']
+    errs, _ = v.check(g, None, None, None, repo2)
+    assert not [e for e in errs if 'completeness' in e], errs
+    g['summary']['evidence_completeness'] = 1.0
+    errs, _ = v.check(g, None, None, None, repo2)
+    assert any('evidence_completeness' in e for e in errs), errs
+    g['schema_version'] = '1.4.0'                     # an older report is judged by the rule it was written under
+    errs, _ = v.check(g, None, None, None, repo2)
+    assert not [e for e in errs if 'completeness' in e], errs
+
+
+def case_render_brief_keeps_limitations(tmp: Path) -> None:
+    """--brief still says what was not mutated: the limitations, the tools that did not run and the count of
+    timeouts and runtime errors."""
+    import validate_mutation_report as v
+    repo, d, _ = lc_report(tmp)
+    d['limitations'] = ['Rust, the product language, was not mutated.', 'scripts/levels.py is tooling, a helper script.']
+    d['tools'] = [{'name': 'cargo-mutants', 'version': None, 'status': 'not_run', 'reason': 'not installed here'}]
+    bad = dict(d['mutants'][0], id='B2', raw_id='B2', status='runtime_error', engine_status='runtime_error',
+               note='the runner crashed')
+    d['mutants'].append(bad)
+    v.write_summary(d, repo)
+    p = write_json(tmp / 'report.json', d)
+    res = run('render_report.py', p, '--color', 'never', '--brief')
+    assert res.returncode == 0, res.stderr
+    text = res.stdout
+    assert 'Rust, the product language, was not mutated.' in text and 'helper script' in text, text[-900:]
+    assert 'cargo-mutants' in text and 'not_run' in text and 'not installed here' in text, text[-900:]
+    assert re.search(r'1 runtime error', text) and 'B2' in text, text[-900:]
+    assert 'the runner crashed' not in text and '```' not in text, 'the brief stays brief'
+
+
+NEST_PY = '''def boards(rows):
+    def valid(row):
+        return row['score'] >= 3 and row['source'].startswith('https')
+    return [r for r in rows if valid(r)]
+'''
+NEST_TEST = '''from pkg.boards import boards
+
+
+def test_boards_keeps_high_scores():
+    assert boards([{'score': 5, 'source': 'https://example.test/a'}]) != []
+'''
+
+
+def case_proximity_nested_function(tmp: Path) -> None:
+    """A function defined inside another cannot be called by any test; its enclosing function's tests are its
+    direct tests, so proximity is 2 when a covering test calls the enclosing function."""
+    import validate_mutation_report as v
+    repo = tmp / 'repo'
+    (repo / 'pkg').mkdir(parents=True)
+    (repo / 'tests').mkdir()
+    (repo / 'pkg' / '__init__.py').write_text('', encoding='utf-8')
+    (repo / 'pkg' / 'boards.py').write_text(NEST_PY, encoding='utf-8')
+    (repo / 'tests' / 'test_boards.py').write_text(NEST_TEST, encoding='utf-8')
+    mutants = {'B1': {'covering_tests': ['tests/test_boards.py::test_boards_keeps_high_scores']}}
+    f = {'function': 'boards.<locals>.valid', 'mutant_ids': ['B1']}
+    assert v.proximity(f, mutants, repo, {}) == 2, v.proximity(f, mutants, repo, {})
+    f = {'function': 'Board.rank.<locals>.key', 'mutant_ids': ['B1']}
+    assert v.proximity(f, mutants, repo, {}) == 1, 'a test that calls neither stays indirect'
+
+
+def case_write_summary_prints_priorities(tmp: Path) -> None:
+    """The headline must name every P0 finding, and priorities are computed by --write-summary: with a draft
+    headline the validator prints the computed priorities, so the headline can be written in the next pass."""
+    repo, d = go_report_fixture(tmp)
+    d = fit_schema(d)
+    d['summary']['headline'] = 'draft'
+    p = write_json(tmp / 'report.json', d)
+    res = run('validate_mutation_report.py', p, '--repo', repo, '--write-summary')
+    assert res.returncode == 1, res.stdout
+    assert re.search(r'priorities.*P0: F1', res.stdout), res.stdout[-800:]
+    assert 'headline' in res.stdout and 'again' in res.stdout, res.stdout[-800:]
+
+
+KEYS_PY = '''def medal(row, out):
+    if row['event'] == 'sprint':
+        out['rank'] = row['place']
+    elif row['event'] == 'relay':
+        out['rank'] = row['place'] + 1
+    out['label'] = row.get('event', 'none') + ':' + row['event']
+    return out
+
+
+def other(row):
+    return row['event']
+'''
+
+
+def case_builtin_key_reads_grouped(tmp: Path) -> None:
+    """The same dict key read several times in one function is one mutant, not one per read (each dies on the same
+    KeyError); the kept mutant lists the other lines. Writes, .get reads and other functions keep their own."""
+    import builtin_mutator as bm
+    repo = tmp / 'repo'
+    (repo / 'app').mkdir(parents=True)
+    (repo / 'app' / 'medals.py').write_text(KEYS_PY, encoding='utf-8')
+    scope = scope_for({'app/medals.py': [[1, 11]]})
+    ms, _ = bm.make_mutants(repo, scope)
+    keys = [(m['line'], m['mutated'].strip()) for m in ms if m['operator'] == 'constant_string_data']
+    reads = [m for m in ms if m['operator'] == 'constant_string_data' and "row['']" in m['mutated']
+             and m['original'].count("row['event']") > m['mutated'].count("row['event']")]
+    assert [m['line'] for m in reads] == [2, 11], keys
+    assert reads[0].get('also_at') == [4, 6] and 'line' in reads[0].get('note', ''), reads[0]
+    assert sum(1 for m in ms if "out['']" in m['mutated']) == 3, 'every write keeps its mutant'
+    assert sum(1 for m in ms if "row.get(''" in m['mutated']) == 1, 'a .get read keeps its mutant'
+    every, _ = bm.make_mutants(repo, scope, group_key_reads=False)
+    assert len(every) == len(ms) + 3, (len(every), len(ms))
+    assert [m['id'] for m in ms] == [f'B{i}' for i in range(1, len(ms) + 1)]
+
+
+def case_builtin_regex_note(tmp: Path) -> None:
+    """A regular expression is one mutant (the whole pattern emptied): the mutant says its internals are not
+    mutated, so a kill is not read as the pattern being tested."""
+    import builtin_mutator as bm
+    repo = tmp / 'repo'
+    (repo / 'app').mkdir(parents=True)
+    (repo / 'app' / 'redact.py').write_text("import re\n\nUSER = re.compile(r'(?i)/home/[a-z]+|/users/[a-z]+')\n\n\n"
+                                            "def clean(text):\n    return USER.sub('<user>', text)\n", encoding='utf-8')
+    ms, _ = bm.make_mutants(repo, scope_for({'app/redact.py': [[1, 7]]}))
+    rx = [m for m in ms if m['line'] == 3]
+    assert len(rx) == 1 and 'regular expression' in rx[0].get('note', ''), rx
+    assert not any('regular expression' in m.get('note', '') for m in ms if m['line'] != 3)
+
+
+GATED_RS = '''pub fn tool_path(dir: &str) -> String {
+    let mut p = String::from(dir);
+    #[cfg(unix)]
+    {
+        if p.len() > 3 {
+            p.push_str("/bin");
+        }
+    }
+    #[cfg(windows)]
+    {
+        if p.len() > 3 {
+            p.push_str("\\\\bin");
+        }
+    }
+    p
+}
+
+#[cfg(feature = "tides")]
+pub fn tide(height_cm: u32) -> bool {
+    height_cm >= 300
+}
+
+pub fn plain(height_cm: u32) -> bool {
+    height_cm >= 100
+}
+'''
+
+
+def case_rust_cfg_gated_scope(tmp: Path) -> None:
+    """Rust lines under a cfg that is false on this platform, or behind a feature the defaults do not enable, are
+    not compiled here, so no engine can mutate them: they are listed (to be reported as not assessed), by the
+    helper and by run_engine.py cargo-mutants even when cargo-mutants is missing."""
+    import rust_gates
+    repo = tmp / 'repo'
+    (repo / 'src').mkdir(parents=True)
+    (repo / 'Cargo.toml').write_text('[package]\nname = "gauge"\nversion = "0.1.0"\nedition = "2021"\n\n'
+                                     '[features]\ndefault = []\ntides = []\n', encoding='utf-8')
+    (repo / 'src' / 'lib.rs').write_text(GATED_RS, encoding='utf-8')
+    scope = scope_for({'src/lib.rs': [[1, 25]]})
+    win = rust_gates.scope_gates(repo, scope, 'windows')
+    got = [(g['file'], g['lines'], g['cfg'], g['gate']) for g in win]
+    assert got == [('src/lib.rs', [3, 8], 'unix', 'platform'), ('src/lib.rs', [18, 21], 'feature = "tides"', 'feature')], got
+    assert win[0]['platforms'] == ['linux', 'macos'], win[0]
+    lin = rust_gates.scope_gates(repo, scope, 'linux')
+    assert [(g['lines'], g['gate']) for g in lin] == [([9, 14], 'platform'), ([18, 21], 'feature')], lin
+    narrow = rust_gates.scope_gates(repo, scope_for({'src/lib.rs': [[23, 25]]}), 'windows')
+    assert narrow == [], narrow
+    sp = write_json(tmp / 'scope.json', scope)
+    res = run('run_engine.py', 'cargo-mutants', '--repo', repo, '--scope', sp, '--run-dir', tmp / 'run',
+              '--cargo', 'no-such-cargo-here')
+    assert res.returncode == 2, res.stdout + res.stderr
+    warn = [l for l in res.stderr.splitlines() if l.startswith('WARNING')]
+    assert any('src/lib.rs:18-21' in l and 'tides' in l and 'not assessed' in l for l in warn), res.stderr[-900:]
+    assert any('cfg(' in l and ('unix' in l or 'windows' in l) for l in warn), res.stderr[-900:]
+    res = run('rust_gates.py', '--repo', repo, '--scope', sp, '--platform', 'windows')
+    assert res.returncode == 0 and json.loads(res.stdout)['gated'][0]['lines'] == [3, 8], res.stdout[-600:]
+
+
+BT_REPORT = 'import levels\n\n\ndef line(reading):\n    return "* " + levels.describe(reading)\n'
+BT_DIRECT = LEVELS_TEST
+BT_THROUGH = '''import os
+import sys
+import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
+import report  # noqa: E402
+
+
+class ReportTest(unittest.TestCase):
+    def test_line(self):
+        self.assertEqual(report.line({'station': 'pier', 'cm': 5}), '* pier:low')
+'''
+BT_BY_PATH = '''import importlib.util
+import unittest
+from pathlib import Path
+
+SPEC = importlib.util.spec_from_file_location('levels_mod', Path(__file__).resolve().parents[1] / 'scripts' / 'levels.py')
+levels_mod = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(levels_mod)
+
+
+class ByPathTest(unittest.TestCase):
+    def test_band(self):
+        self.assertEqual(levels_mod.band(1), 'low')
+'''
+BT_OTHER = 'import unittest\n\n\nclass OtherTest(unittest.TestCase):\n    def test_nothing(self):\n        self.assertTrue(True)\n'
+
+
+def case_baseline_tests_helper(tmp: Path) -> None:
+    """baseline_tests.py lists the test files that reach the scoped modules: importing them, through a module that
+    imports them, or loading them by file path; a test file that reaches none is left out."""
+    repo = rust_tooling_repo(tmp / 'repo', rust_fns=1)
+    (repo / 'scripts' / 'report.py').write_text(BT_REPORT, encoding='utf-8')
+    (repo / 'tests' / 'test_report.py').write_text(BT_THROUGH, encoding='utf-8')
+    (repo / 'tests' / 'test_by_path.py').write_text(BT_BY_PATH, encoding='utf-8')
+    (repo / 'tests' / 'test_other.py').write_text(BT_OTHER, encoding='utf-8')
+    sp = write_json(tmp / 'scope.json', scope_for({'scripts/levels.py': [[1, 9]]}))
+    res = run('baseline_tests.py', '--repo', repo, '--scope', sp, '--out', tmp / 'baseline.json')
+    assert res.returncode == 0, res.stdout[-600:] + res.stderr[-600:]
+    out = json.loads((tmp / 'baseline.json').read_text(encoding='utf-8'))
+    got = {t['path']: t['via'] for t in out['tests']}
+    assert set(got) == {'tests/test_levels.py', 'tests/test_report.py', 'tests/test_by_path.py'}, got
+    assert got['tests/test_levels.py'] == 'imports scripts/levels.py', got
+    assert got['tests/test_report.py'] == 'through scripts/report.py', got
+    assert 'path' in got['tests/test_by_path.py'], got
+    assert out['not_reaching'] == ['tests/test_other.py'], out['not_reaching']
+    assert out['tests_args'] == ['--tests', 'tests/test_by_path.py', '--tests', 'tests/test_levels.py',
+                                 '--tests', 'tests/test_report.py'], out['tests_args']
+    assert '--tests tests/test_levels.py' in res.stdout, res.stdout[-600:]
+
+
+def case_detect_tools_names_scripts(tmp: Path) -> None:
+    """Script languages no engine reads (a PowerShell installer) are named in a WARNING, not passed over."""
+    repo = rust_tooling_repo(tmp / 'repo')
+    (repo / 'packaging').mkdir()
+    (repo / 'packaging' / 'install.ps1').write_text('param([string]$Target)\n' + 'Write-Output "copy $Target"\n' * 12,
+                                                    encoding='utf-8')
+    res = run('detect_tools.py', repo, '--out', tmp / 'tools.json')
+    assert res.returncode == 0, res.stderr[-600:]
+    warn = [l for l in res.stderr.splitlines() if l.startswith('WARNING')]
+    assert any('PowerShell' in l and 'install.ps1' in l for l in warn), res.stderr[-900:]
+
+
 CASES = [case_builtin_go_engine, case_builtin_scope_outside_repo, case_builtin_unsupported_language, case_ranges_go_only, case_mte_engine_label,
          case_gremlins_operators, case_duplicate_mutants_merged, case_proximity_go, case_proximity_unparsed,
          case_completeness_external_engine, case_prove_kill_go, case_prove_kill_unsupported, case_prove_kill_cmd_shim_metacharacters,
@@ -1448,7 +1816,17 @@ CASES = [case_builtin_go_engine, case_builtin_scope_outside_repo, case_builtin_u
          case_builtin_tree_checked_per_mutant, case_builtin_restores_on_interrupt, case_builtin_interrupt_kills_test_run,
          case_builtin_main_guard,
          case_builtin_selftest_runner, case_detect_tools_leaves_out_fixtures, case_report_declared_product,
-         case_report_names_engine_stop]
+         case_report_names_engine_stop, case_unittest_runner_non_locale_failure,
+         case_builtin_deletion_only_scope,
+         case_report_names_unmutated_changes,
+         case_completeness_not_run_engine_and_product,
+         case_render_brief_keeps_limitations,
+         case_proximity_nested_function,
+         case_write_summary_prints_priorities,
+         case_builtin_key_reads_grouped,
+         case_builtin_regex_note,
+         case_rust_cfg_gated_scope,
+         case_baseline_tests_helper, case_detect_tools_names_scripts]
 
 
 def main(argv=None) -> int:

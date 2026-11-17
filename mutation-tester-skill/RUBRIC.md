@@ -68,7 +68,7 @@ How to tell them apart:
 |---|---|
 | Criticality (yours, with a reason) | 3: money, auth, permissions, data deletion, or a journey-mapper P0/P1 step (`critical_paths`). 2: ordinary logic. 1: formatting, logging, display text |
 | Kind (computed) | The highest over the finding's mutants, from `data/operators.json`: branch or boundary = 3 (comparison, negation, condition, logical, boolean constant, loop control, a string compared in a condition); value = 2 (arithmetic, number, returned value, `None`, arguments, removed call, removed `.upper()`/`.strip()`-style method call, an UPPER_CASE string constant, a string used as a key or a default: `d["k"]`, `.get("k", ["a"])`, a dict literal key, a parameter default such as `kinds=("sea", "river")`); other string literal = 1 |
-| Proximity (computed with `--repo`) | 2 when a covering test calls the mutated function directly (a unit test ran the line and still passed); 1 when only tests that reach it through other functions ran it, and always 1 for a module-level mutant. Python tests are read with `ast`; JS/TS tests are found by their describe chain and title (`ts_scan.py`) and their body searched for a call; Go tests (`<file>_test.go::TestName[/sub]`) by the top-level `func TestName` body, from Go tokens (`go_scan.py`). When every covering test is in another language (Rust, Java, ...), proximity is not computed and the validator says so, rather than guessing 1 |
+| Proximity (computed with `--repo`) | 2 when a covering test calls the mutated function directly (for a function defined inside another, `outer.<locals>.inner`, a test calling `outer` counts: no test can name `inner`) (a unit test ran the line and still passed); 1 when only tests that reach it through other functions ran it, and always 1 for a module-level mutant. Python tests are read with `ast`; JS/TS tests are found by their describe chain and title (`ts_scan.py`) and their body searched for a call; Go tests (`<file>_test.go::TestName[/sub]`) by the top-level `func TestName` body, from Go tokens (`go_scan.py`). When every covering test is in another language (Rust, Java, ...), proximity is not computed and the validator says so, rather than guessing 1 |
 
 | Priority | Score |
 |---|---|
@@ -94,8 +94,12 @@ engine's line coverage, or Stryker's perTest coverage when Stryker ran); the sha
 of requested engines that ran, where an engine converted from another tool's output with no run
 record (`run_by: "external"`) counts half; the share of runnable mutants that were run (not
 sampled out or cut by the budget); and, when there are ranked findings, the share of them whose
-suggestion a kill proof backs (`proof_ids`). A run where the skill's own engine or prover did not
-run is therefore never 1.0.
+suggestion a kill proof backs (`proof_ids`). From schema 1.5.0, a mutation engine listed in
+`tools[]` as `not_run` or `errored` (cargo-mutants not installed, mutmut unable to run on Windows)
+counts among the requested engines that did not run, and when no mutant is in the product's main
+language (`language_coverage.unmutated_dominant`) one more item of 0 is added. A run where the
+skill's own engine or prover did not run, or that left the product language unmutated, is
+therefore never 1.0.
 
 ## Honesty rules
 
@@ -112,6 +116,12 @@ run is therefore never 1.0.
   for the helper scripts, never for the product. A folder declared to be the product with
   `normalize_results.py --product-path` (`declared_product`) is not tooling; fixture projects
   under `examples/` and the like are left out of the census.
+- A change no mutant stands for (an engine's `unmutated_changes`: a function that only lost lines,
+  or a file whose changed lines are comments, blank lines, docstrings or imports) is named in a
+  limitation; "0 mutants" is never reported as "no survivors".
+- Scoped Rust lines that are not compiled on the platform the run used, or that need a feature
+  the defaults leave out (`rust_gates.py`), are listed as not assessed, never as survivors or
+  unviable mutants.
 - An engine that stopped early (`stopped`: a mutant's test run wrote outside the scoped files,
   the test command itself failed, or the run was interrupted) is named in a limitation, with the
   mutant that stopped it; mutants after the stop are `not_run`, never counted. The files such a
