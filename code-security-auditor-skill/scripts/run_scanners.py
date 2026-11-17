@@ -298,6 +298,27 @@ def tool_env() -> dict:
 def cargo_home() -> Path:
     return Path(os.environ.get('CARGO_HOME') or Path.home() / '.cargo')
 
+# --offline tools that would otherwise reach a registry (cargo-audit's yanked-crate check reads the crates.io index):
+# cargo's own offline switch and a proxy on a closed loopback port, so nothing leaves the machine even if a tool tries
+OFFLINE_ENV = {'CARGO_NET_OFFLINE': 'true', 'HTTP_PROXY': 'http://127.0.0.1:9', 'HTTPS_PROXY': 'http://127.0.0.1:9',
+               'http_proxy': 'http://127.0.0.1:9', 'https_proxy': 'http://127.0.0.1:9', 'ALL_PROXY': 'http://127.0.0.1:9',
+               'NO_PROXY': '', 'no_proxy': ''}
+OFFLINE_GUARD = 'network closed: CARGO_NET_OFFLINE=true and HTTP(S)_PROXY to a closed loopback port'
+
+def yanked_check(output: Path, stderr: str) -> str:
+    """Where an offline cargo-audit's yanked answers came from, for the tool row."""
+    try:
+        d = json.loads(output.read_text(encoding='utf-8'))
+        n = len(((d.get('warnings') or {}).get('yanked')) or [])
+    except (OSError, ValueError, AttributeError):
+        n = 0
+    if re.search(r'(?i)(yank|index)[^\n]*(error|fail|unable|could not)|(error|fail|unable|could not)[^\n]*(yank|index)', stderr or ''):
+        return ('yanked check: the crates.io index could not be read offline, so yanked crates were not assessed'
+                + (f' ({n} reported from what was cached)' if n else ''))
+    return (f'yanked check: {n} yanked crate(s) from the local crates.io index cache, which is only as current as the last '
+            'online cargo command' if n else 'yanked check: none reported from the local crates.io index cache (only as '
+            'current as the last online cargo command)')
+
 def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str], osv_local_db: Path | None = None,
          online_ci: bool = False, cargo_audit_db: Path | None = None, offline: bool = False) -> list[dict]:
     """One entry per tool: {name, area, network, applies (reason if not), exe, runs: [{cmd, cwd, output, stdout_to}]}.
@@ -309,10 +330,10 @@ def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str], osv_local
     src = sum(L.values()) > 0
     tools = []
     def add(name, area, exe, applies, runs, network=False, not_run=None, note=None, covers=None, version_args=None, version_rx=None,
-            db_path=None):
+            db_path=None, network_guard=None):
         tools.append({'name': name, 'area': area, 'exe': exe, 'applies': applies, 'runs': runs, 'network': network,
                       'not_run': not_run, 'note': note, 'covers': covers, 'version_args': version_args, 'version_rx': version_rx,
-                      'db_path': db_path})
+                      'db_path': db_path, 'network_guard': network_guard})
     cfg = [a for c in semgrep_configs for a in ('--config', c)]
     # data trees, --exclude-dir paths and the sample and fixture projects left out of the audit
     skip_data = [f"--exclude={s['dir']}" for s in (inv.get('skipped_data_dirs') or []) + (inv.get('fixtures_excluded') or [])]
@@ -374,13 +395,15 @@ def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str], osv_local
     ca_runs = [{'cmd': ['cargo-audit', 'audit', '--json', '--file', str(root / lock),
                         *(['--no-fetch', '--stale', '--db', str(db)] if local_db else [])],
                 'cwd': str(root), 'stdout_to': f"cargo-audit{'' if i == 0 else '-' + str(i)}.json",
-                'output': f"cargo-audit{'' if i == 0 else '-' + str(i)}.json", 'ok_codes': [0, 1]}
+                'output': f"cargo-audit{'' if i == 0 else '-' + str(i)}.json", 'ok_codes': [0, 1],
+                **({'env': OFFLINE_ENV} if local_db else {})}
                for i, lock in enumerate(inv.get('cargo_lock') or [])]
     add('cargo-audit', 'dependencies', 'cargo-audit', True if ca_runs else 'no Cargo.lock', ca_runs, network=not local_db,
         db_path=str(db) if local_db else None,
         covers=list(inv.get('cargo_lock') or []),
-        note=(f'offline: local RustSec database {db} (--no-fetch --stale; the yanked check reads the crates.io index and '
-              'can fail offline)' if local_db else 'fetches the RustSec advisory database; crate names and versions are not sent'))
+        network_guard=OFFLINE_GUARD if local_db else None,
+        note=(f'offline: local RustSec database {db} (--no-fetch --stale); its yanked-crate check can only read the local '
+              'crates.io index cache' if local_db else 'fetches the RustSec advisory database; crate names and versions are not sent'))
     deny_local = offline and (cargo_home() / 'advisory-dbs').is_dir()
     root_lock = [l for l in inv.get('cargo_lock') or [] if l == 'Cargo.lock']
     add('cargo-deny', 'dependencies', 'cargo-deny', True if inv.get('cargo_toml') and root_lock else 'no Cargo.toml and Cargo.lock at the root',
@@ -494,6 +517,8 @@ def run_tool(t: dict, out: Path, timeout: int, timeouts: dict | None = None) -> 
            'commands': [], 'outputs': [], 'reason': None, 'elapsed_s': None, 'results': None}
     if t.get('covers') is not None:
         rec['covers'] = t['covers']
+    if t.get('network_guard'):
+        rec['network_guard'] = t['network_guard']
     t0 = time.monotonic()
     if t.get('note'):
         rec['note'] = t['note']
@@ -518,6 +543,8 @@ def run_tool(t: dict, out: Path, timeout: int, timeouts: dict | None = None) -> 
                 errors.append(str(exc)); break
             if r.get('stdout_to'):
                 (out / r['stdout_to']).write_text(p.stdout, encoding='utf-8')
+            if t.get('network_guard') and t['name'] == 'cargo-audit':
+                rec['yanked_check'] = yanked_check(out / r['output'], p.stderr)
             if r.get('stderr_to'):
                 (out / r['stderr_to']).write_text(p.stderr, encoding='utf-8')
             elif p.stderr and re.search(r'(?m)^(error|warning):', p.stderr):  # e.g. cargo-audit's offline yanked check

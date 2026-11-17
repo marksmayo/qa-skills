@@ -34,6 +34,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import cvss4  # noqa: E402
 import run_poc  # noqa: E402
 import scan_secrets  # noqa: E402
@@ -260,7 +261,7 @@ def advisory_errors(d: dict) -> list[str]:
     adv = d.get('dependency_advisories')
     dep_ran = [t['name'] for t in d['tools'] if t['area'] == 'dependencies' and t['status'] == 'ran']
     if adv is None:
-        if d['schema_version'] in ('1.2', '1.3', '1.4', '1.5', '1.6'):
+        if d['schema_version'] in ('1.2', '1.3', '1.4', '1.5', '1.6', '1.7'):
             E('dependency_advisories: required from schema 1.2 (assessed, partial or not_assessed)')
     else:
         if adv['status'] in ('assessed', 'partial') and not dep_ran:
@@ -390,8 +391,32 @@ def home_path_errors(d: dict) -> list[str]:
     that gets shared; seed_report.py writes ~ instead."""
     import audit_scope  # noqa: E402
     return [f'{where} holds a home-directory path ({p}); replace the home directory with ~ or use a relative path'
-            for where, text in json_strings(d) for p in audit_scope.home_paths(text)[:1]
+            for where, text in json_strings(d) for p in [x for x in audit_scope.home_paths(text) if not x.endswith('<user>')][:1]
             if not where.startswith(MACHINE_PATH_FIELDS)]
+
+HOME_ACCOUNT = re.compile(r'(?i)((?:\b[A-Z]:)?[\\/]+(?:Users|home)[\\/]+)(?!<user>)[^\\/\s"\'<>]+')
+
+def user_masked(line: str) -> str:
+    """The line with the account folder of every home path written <user>: an observation about a committed home path
+    quotes the line that way, since the report itself may not carry the account name."""
+    return HOME_ACCOUNT.sub(r'\1<user>', line)
+
+def evidence_home_paths(e: dict) -> list[str]:
+    """A command PoC's recorded steps (argv, stdin, output excerpts) must not hold a home-directory path: run_poc.py
+    writes {workdir} for the work copy in every spelling (JSON-escaped, forward slashes), and anything else under a
+    home folder is the auditor's machine. The workdir field itself names the copy and is not checked."""
+    import audit_scope  # noqa: E402
+    out = []
+    for st in e.get('steps') or []:
+        for k in ('argv', 'stdin', 'stdout_excerpt', 'stderr_excerpt'):
+            v = st.get(k)
+            text = ' '.join(v) if isinstance(v, list) else (v or '')
+            found = audit_scope.home_paths(text.replace('\\\\', '\\'))
+            if found:
+                out.append(f"evidence step {st.get('name')!r} {k} holds a home-directory path ({found[0]}); rerun with "
+                           'run_poc.py, which writes {workdir} for the work copy, or replace it with ~')
+                break
+    return out
 
 # Fields that name where the agent worked on this machine (a scratch copy, files it wrote): a temporary folder under
 # the home directory is expected there, so they are not checked
@@ -440,6 +465,20 @@ def recon_errors(d: dict, recon: dict) -> list[str]:
             errors.append(f"recon.removed_entry_points: {r['id']} is still in recon.entry_points")
     return errors
 
+def language_errors(d: dict, candidates: dict) -> list[str]:
+    """The languages and script kinds the pattern scan did not analyse (carried into the candidates file by
+    merge_findings.py as language_coverage) must each be named in the limitations or coverage.not_reviewed: a
+    PowerShell or Lua file left unread is not assessed, never clean."""
+    cov = candidates.get('language_coverage') or {}
+    said = ' '.join(d.get('limitations') or []) + ' ' + ' '.join(
+        f"{n.get('area', '')} {n.get('reason', '')}" for n in (d.get('coverage') or {}).get('not_reviewed') or [])
+    out = []
+    for name in sorted(set(cov.get('unsupported') or {}) | set(cov.get('scripts') or {})):
+        if not re.search(rf'(?i)(?<![\w-]){re.escape(name)}(?![\w-])', said):
+            out.append(f'limitations: {name} files were not analysed by the pattern scan (language_coverage in the '
+                       'candidates file); name them as not assessed in limitations or coverage.not_reviewed')
+    return out
+
 def check(d: dict, base: Path, repo: Path | None, candidates: dict | None, recon: dict | None = None) -> tuple[list[str], list[str]]:
     schema = json.loads(SCHEMA.read_text(encoding='utf-8'))
     errors = schema_errors(d, schema, schema)
@@ -460,6 +499,10 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None, recon
         E('notice: must warn that the report contains exploit details')
     for dup in {x for x in fids if fids.count(x) > 1}:
         E(f'findings: duplicate id {dup}')
+    for e in eps.values():  # no accounts is only true of a program run by the user it acts for
+        if e['auth'] == 'local_user' and e['exposure'] != 'local':
+            E(f"recon.entry_points[{e['id']}]: auth local_user needs exposure local (a reachable {e['exposure']} entry "
+              'point has callers other than the user who runs it)')
 
     # tools
     for t in d['tools']:
@@ -672,6 +715,8 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None, recon
                             P('the command PoC ran inside the repository; run it in a copy outside it')
                         if not e.get('steps') or any('exit_code' not in st for st in e['steps']):
                             P('evidence has no command steps with exit codes')
+                        for msg in evidence_home_paths(e):
+                            P(msg)
                     else:
                         if ver.get('target') and e.get('target') and urllib.parse.urlsplit(e['target']).hostname != urllib.parse.urlsplit(ver['target']).hostname:
                             P(f"evidence target {e['target']} is not the verification target")
@@ -807,9 +852,9 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None, recon
             got = _line(repo, o['file'], o['line'])
             if got is None:
                 E(f"observations[{o['id']}]: {o['file']}:{o['line']} does not exist")
-            elif o.get('excerpt') and norm(o['excerpt']) not in norm(got[0]):
+            elif o.get('excerpt') and norm(o['excerpt']) not in norm(got[0]) and norm(o['excerpt']) not in norm(user_masked(got[0])):
                 E(f"observations[{o['id']}]: excerpt is not on {o['file']}:{o['line']} (line reads {got[0].strip()[:80]!r})")
-            elif not o.get('excerpt') and d['schema_version'] in ('1.2', '1.3', '1.4', '1.5', '1.6'):
+            elif not o.get('excerpt') and d['schema_version'] in ('1.2', '1.3', '1.4', '1.5', '1.6', '1.7'):
                 W(f"observations[{o['id']}]: no excerpt, so {o['file']}:{o['line']} can only be checked for existence")
         # recon entry points: the handler line must exist and, in Python, not sit inside a string or docstring
         for e in eps.values():
@@ -849,6 +894,7 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None, recon
         hist = next((t.get('history') for t in candidates.get('tools', []) if t.get('tool') == 'scan_secrets'), None)
         if hist in ('partial', 'errored') and not re.search(r'(?i)\bhistory\b', ' '.join(d['limitations'])):
             E(f'limitations: the git history secret scan was {hist}; say how much of the history was not scanned')
+        errors += language_errors(d, candidates)
 
     # secrets must never appear
     strings = list(json_strings(d))

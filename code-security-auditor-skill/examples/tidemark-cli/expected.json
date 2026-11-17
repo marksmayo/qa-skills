@@ -3,6 +3,12 @@
   "patterns": [
     [".github/workflows/ci.yml", 28, "GHA-PERSISTED-CREDENTIALS"],
     ["scripts/fetch_tables.py", 24, "PY-ARCHIVE-EXTRACT"],
+    ["src/bundled.rs", 7, "RUST-SEARCH-PATH-EXE-ANCESTORS"],
+    ["src/bundled.rs", 17, "RUST-SEARCH-PATH-EXE-ANCESTORS"],
+    ["src/gl.rs", 7, "RUST-DLL-SEARCH-ORDER"],
+    ["src/gl.rs", 11, "RUST-LIB-BARE-NAME"],
+    ["src/gl.rs", 14, "RUST-LIB-BARE-NAME"],
+    ["src/gl.rs", 24, "RUST-UNSAFE"],
     ["src/harmonics.rs", 7, "RUST-SEARCH-PATH-RELATIVE"],
     ["src/harmonics.rs", 20, "RUST-UNSAFE"],
     ["src/harmonics.rs", 41, "RUST-DLL-SEARCH-ORDER"],
@@ -13,7 +19,11 @@
     ["src/plotter.rs", 23, "RUST-CMD"],
     ["src/plotter.rs", 52, "RUST-SEARCH-PATH-RELATIVE"]
   ],
-  "grouped": {"src/harmonics.rs:20:RUST-UNSAFE": {"grouped_lines": [20, 28, 33, 41, 56], "confidence": "low"}},
+  "grouped": {"src/harmonics.rs:20:RUST-UNSAFE": {"grouped_lines": [20, 28, 33, 41, 56], "confidence": "low"},
+              "src/gl.rs:24:RUST-UNSAFE": {"grouped_lines": [24, 34, 39, 45], "confidence": "low"}},
+  "test_only_modules": [{"file": "src/plotter/plot_checks.rs", "declared_at": "src/plotter.rs:56"}],
+  "rust_outbound_files": [],
+  "artifact_lead_mentions": [".github/workflows/ci.yml", "publish-tables", "contents"],
   "entry_points": [
     {"kind": "cli", "framework": "clap", "method": "ROOT", "path": "tidemark", "handler": "src/main.rs:12"},
     {"kind": "cli", "framework": "clap", "method": "COMMAND", "path": "predict", "handler": "src/main.rs:28"},
@@ -31,7 +41,8 @@
     ["src/main.rs", "hours", []],
     ["src/main.rs", "out", []]
   ],
-  "lead_mentions": ["TIDEMARK_PLOTTER", "TIDEMARK_HARMONICS_LIB", "current_dir", "lib/libharmonics.so", "harmonics.dll", "TIDEMARK_STATION"],
+  "lead_mentions": ["TIDEMARK_PLOTTER", "TIDEMARK_HARMONICS_LIB", "current_dir", "lib/libharmonics.so", "harmonics.dll", "TIDEMARK_STATION",
+                    "opengl32.dll", "libchart.2.dylib", "src/bundled.rs:7 searches", "src/bundled.rs:17 searches"],
   "no_lead_mentions": ["TIDEMARK_PLOTTER loads a config file"],
   "seeded_exposure": {"src/main.rs:12": "local", "src/plotter.rs:9": "local"},
   "dependency_lockfiles": [["Cargo.lock", "crates.io", 6]]
