@@ -848,7 +848,7 @@ PAGE_PY = """def title(n):
 
 
 def render(n):
-    return '<h1>\U0001F3C5 \u2603 ' + title(n) + '</h1>'
+    return '<h1>\U0001F680 \u2603 ' + title(n) + '</h1>'
 """
 PAGE_TEST = """import os
 import sys
@@ -865,7 +865,7 @@ class PageTest(unittest.TestCase):
 
 
 def case_unittest_runner_non_locale_failure(tmp: Path) -> None:
-    """A failing assertion whose message holds characters the locale encoding lacks (a medal emoji in rendered
+    """A failing assertion whose message holds characters the locale encoding lacks (an emoji in rendered
     HTML, on a cp1252 console) is still a kill: the unittest runner's streams never raise while printing it."""
     repo = tmp / 'repo'
     (repo / 'scripts').mkdir(parents=True)
@@ -1631,7 +1631,7 @@ def case_write_summary_prints_priorities(tmp: Path) -> None:
     assert 'headline' in res.stdout and 'again' in res.stdout, res.stdout[-800:]
 
 
-KEYS_PY = '''def medal(row, out):
+KEYS_PY = '''def badge(row, out):
     if row['event'] == 'sprint':
         out['rank'] = row['place']
     elif row['event'] == 'relay':
@@ -1651,8 +1651,8 @@ def case_builtin_key_reads_grouped(tmp: Path) -> None:
     import builtin_mutator as bm
     repo = tmp / 'repo'
     (repo / 'app').mkdir(parents=True)
-    (repo / 'app' / 'medals.py').write_text(KEYS_PY, encoding='utf-8')
-    scope = scope_for({'app/medals.py': [[1, 11]]})
+    (repo / 'app' / 'badges.py').write_text(KEYS_PY, encoding='utf-8')
+    scope = scope_for({'app/badges.py': [[1, 11]]})
     ms, _ = bm.make_mutants(repo, scope)
     keys = [(m['line'], m['mutated'].strip()) for m in ms if m['operator'] == 'constant_string_data']
     reads = [m for m in ms if m['operator'] == 'constant_string_data' and "row['']" in m['mutated']
