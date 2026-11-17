@@ -859,7 +859,7 @@ def census(root: Path | str, extra_exclude: list[str] | None = None, include: li
                 continue
             keep.append(d)
         dns[:] = keep
-        for f in fns:
+        for f in sorted(fns):   # sorted: examples and notes must not depend on the filesystem's listing order
             frel = f'{rel}/{f}' if rel else f
             lang = LANG_BY_EXT.get(PurePosixPath(f).suffix)
             if lang:
@@ -1437,6 +1437,20 @@ def _line_checks(tree) -> list:
     checks.append(('language_coverage names UI markup as present but not analysed, without changing the status',
                    cov.get('status') == 'ok' and 'Slint' in notes and 'panel0.slint' in notes and 'not analysed' in notes
                    and (cov.get('ui_markup') or {}).get('Slint') == 4, cov))
+    real_walk = os.walk
+
+    def reversed_walk(top, *a, **kw):   # a filesystem (ext4) that lists files in no particular order
+        for dp, dns, fns in real_walk(top, *a, **kw):
+            fns.reverse()
+            yield dp, dns, fns
+    os.walk = reversed_walk
+    try:
+        rc = census(tree(ui))
+    finally:
+        os.walk = real_walk
+    checks.append(('the examples a note names do not depend on the order the filesystem lists files in',
+                   rc.get('ui_markup_examples') == c.get('ui_markup_examples'),
+                   (rc.get('ui_markup_examples'), c.get('ui_markup_examples'))))
     # installer and packaging scripts in a language no tool reads: counted apart and named, never invisible
     sc = dict(ws)
     sc.update({'packaging/Install-Runtime.ps1': 'Write-Host "installing"\n' * 60,
