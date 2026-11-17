@@ -51,6 +51,18 @@ UI markup for desktop and mobile toolkits (.slint Slint, .qml QML, .xaml XAML, .
 that it is present but not analysed (unless the caller names the kind among its supported languages); the status is
 unchanged.
 
+Script languages no skill parses (PowerShell .ps1/.psm1, shell .sh/.bash/.zsh, batch, and the rest of SCRIPT_BY_EXT)
+are counted under `scripts` ({kind: files}), `script_lines` (non-blank lines outside test and tooling folders),
+`script_total_lines` and `script_examples`: never a language of the census, never its dominant one, but
+language_coverage() always names them (`scripts` and a note each), because an installer or packaging script is
+shipped code. When their product lines outweigh every counted language's the status is 'unsupported_dominant'.
+
+A tooling-named folder may hold the product (a repository whose scripts/ are what it ships). The default is
+unchanged, but `tooling_dirs` lists each such folder with its lines and the `evidence` that it is product code (a
+test loads it, CI measures coverage on it or runs it, a manifest ships it); language_coverage() then says so
+(`tooling_as_product` and a note), and says when a supported language has no product line because all of it sits in
+tooling folders. `census(product_dirs=[...])` / `--product-dir DIR` counts such a folder as product code.
+
 Markup is counted apart, under `markup` (HTML, CSS, Templates; an .html file under templates/, views/, layouts/ or
 partials/ is a template). `server_rendered` names a Python web app that renders templates (Flask, Django, Jinja2,
 Starlette/FastAPI templating, Bottle, Pyramid ...: an import or a render call) with its template count and
