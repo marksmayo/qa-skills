@@ -211,7 +211,7 @@ def find_default_branch(api: str, repo: str, run: dict, h: dict, raw: Path, give
 def last_green_hint(run: dict) -> str | None:
     """What to say when a run has no last green run and the default branch was never searched."""
     hq = run.get('history_query') or {}
-    if run.get('last_green') or hq.get('default_branch') or hq.get('default_branch_source') in ('option', 'run', 'repository'):
+    if run.get('last_green') or hq.get('default_branch') or hq.get('default_branch_source') != 'unknown':
         return None
     return (f'no last green run of this workflow on the branch {run["run"].get("branch")}, and the default branch is not known, so its '
             'runs were not searched: fetch again with --default-branch NAME (the default branch\'s newest green run before this one '
@@ -465,8 +465,6 @@ def normalise_github(raw: Path, out: Path, repo: str | None) -> dict:
     api_repo = run.get('repository', {}).get('full_name')
     repo_doc = json.loads((raw / 'repository.json').read_text(encoding='utf-8')) if (raw / 'repository.json').exists() else {}
     default = hq.get('default_branch') or (run.get('repository') or {}).get('default_branch') or (repo_doc.get('default_branch') if isinstance(repo_doc, dict) else None)
-    if hq and 'default_branch_source' not in hq and not default:      # a recording made before the source was recorded
-        hq = {**hq, 'default_branch_source': 'unknown'}
     sib_doc = json.loads((raw / 'same_commit_runs.json').read_text(encoding='utf-8')) if (raw / 'same_commit_runs.json').exists() else None
     siblings = [{'id': r['id'], 'workflow': r.get('path') or r.get('name'), 'event': r.get('event'), 'conclusion': r.get('conclusion')}
                 for r in (sib_doc or {}).get('workflow_runs', []) if r['id'] != run['id'] and not same_wf(r)]
