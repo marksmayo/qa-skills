@@ -59,7 +59,15 @@ ARN = re.compile(r'\barn:aws:[a-z0-9-]+:[a-z0-9-]*:(\d{12}):')
 # a file or directory call whose first argument is a relative path literal: open("dir/x.json"), os.listdir("dir")
 CWD_PATH_CALL = re.compile(r'(?<![\w.])(?:open|Path|os\.listdir|listdir|os\.scandir|scandir|glob\.glob|glob\.iglob|os\.walk|'
                            r'os\.path\.(?:exists|isdir|isfile|getmtime|getsize))\(\s*r?["\']([A-Za-z_][\w.-]*(?:/[^"\']*)?)["\']')
-LOCAL_PATH = re.compile(r'(?:/Users/[A-Za-z][\w.-]+/|/home/[a-z][\w.-]+/|[A-Za-z]:\\\\?Users\\\\?[A-Za-z][\w.-]+)')
+LOCAL_PATH = re.compile(r'(?:[A-Za-z]:)?(?:/Users/([A-Za-z][\w.-]+)/|/home/([a-z][\w.-]+)/)|[A-Za-z]:\\\\?Users\\\\?([A-Za-z][\w.-]+)')
+# an account segment made of these words is a stand-in written for a test (a redaction test's input), not someone's
+# machine: dismissed by rule, never dropped
+PLACEHOLDER_ACCOUNT_WORDS = {'user', 'users', 'username', 'someone', 'somebody', 'me', 'you', 'name', 'person', 'account', 'private',
+                             'redacted', 'anonymous', 'anon', 'alice', 'bob', 'carol', 'dave', 'eve', 'jdoe', 'johndoe', 'janedoe',
+                             'john', 'jane', 'doe', 'dev', 'developer', 'example', 'test', 'tester', 'testing', 'fake', 'dummy',
+                             'placeholder', 'sample', 'demo', 'foo', 'bar', 'baz', 'other', 'another', 'some', 'my', 'your',
+                             'local', 'nobody', 'xxx', 'yyy', 'abc', 'x', 'y', 'u'}
+URL_BEFORE = re.compile(r'://[^\s/"\'<>]*$')       # a path that is a URL's path part, not a file system path
 UUID = re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b', re.I)
 SECRETS = {k: re.compile(v) for k, v in RULES['secret_patterns'].items()}
 ID_CALL = re.compile(r'^(get|find|fetch|load|lookup|read|retrieve)(_\w+)?$|_by_id$|^by_id$', re.I)
@@ -1084,10 +1092,26 @@ class Scanner:
                      'account id', details={})
         # a platform's fixed content or build root (/home/site/wwwroot on Azure App Service, a CI runner's home) is the
         # same on every machine of that platform, so it is not someone's machine
+        if '/home/' not in text and '/Users/' not in text and 'Users\\' not in text:
+            return
         reserved = tuple(RESERVED['paths_reserved']['prefixes'])
-        if any(not text[m.start():].startswith(reserved) for m in LOCAL_PATH.finditer(text)):
+        placeholder = None
+        for m in LOCAL_PATH.finditer(text):
+            if text[m.start():].replace('\\\\', '/').replace('\\', '/').startswith(reserved) \
+                    or URL_BEFORE.search(text[max(0, m.start() - 300):m.start()]):
+                continue                   # a platform root or a CI runner's home, or the path of a URL
+            account = next(g for g in m.groups() if g)
+            words = [w for w in re.split(r'[-_.\s]+', account.lower()) if w]
+            if words and all(w in PLACEHOLDER_ACCOUNT_WORDS for w in words):
+                placeholder = placeholder or account
+                continue
             self.add('environment_coupling', 'local_path', rel, line_no, 'an absolute path on someone\'s machine', None, 'path',
                      details={})
+            return
+        if placeholder:
+            self.add('environment_coupling', 'local_path', rel, line_no, 'an absolute path under a home folder', None, 'path',
+                     auto_dismiss='placeholder account: the account folder is a stand-in word (PLACEHOLDER_ACCOUNT_WORDS), '
+                                  'not someone\'s machine', details={})
 
     def cwd_relative(self, rel: str, text: str):
         """A test in a subdirectory that opens a top-level directory of the repository by a relative path

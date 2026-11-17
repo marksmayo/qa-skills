@@ -42,7 +42,9 @@
   "paths_reserved": {
     "$source": "Fixed roots of hosting and CI platforms: the same path on every machine of that platform, so not a person's machine",
     "prefixes": ["/home/site/wwwroot", "/home/site/", "/home/runner/", "/home/vsts/", "/home/circleci/", "/home/gitpod/",
-                 "/home/vscode/", "/home/node/", "/home/codespace/", "/home/jenkins/", "/home/appveyor/", "/home/travis/"]
+                 "/home/vscode/", "/home/node/", "/home/codespace/", "/home/jenkins/", "/home/appveyor/", "/home/travis/",
+                 "/Users/runner/", "C:/Users/runner/", "C:/Users/runneradmin/", "D:/Users/runner/", "C:/Users/VssAdministrator/",
+                 "C:/Users/circleci/", "C:/Users/ContainerAdministrator/", "C:/Users/appveyor/"]
   },
   "hosts_reserved": {
     "$source": "RFC 2606, RFC 6761, RFC 5737 (documentation addresses)",

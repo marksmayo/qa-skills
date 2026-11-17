@@ -1161,7 +1161,32 @@ def archives_and_logs() -> None:
               'validator: a candidate inside a zip member has its value protected (the report must not quote it)')
 
 
-GROUPS: list = [long_line_is_linear, archives_and_logs]
+def local_path_false_positives() -> None:
+    """Paths that are not someone's machine: a placeholder account fed to a redaction test, a reserved-domain URL whose
+    path starts /home/, and a CI runner's home (Windows and macOS runners too). A real-looking account still counts."""
+    res = scan({
+        'tests/test_redact.py': (
+            'from tool import redact\n\n\ndef test_redacts_accounts():\n'
+            "    raw = [r'C:\\Users\\private-account\\movie.mp4', '/home/private-account/movie.mp4', '/Users/some-user/a.mp4']\n"
+            '    assert all("account" not in redact(x) for x in raw)\n\n\n'
+            'def test_source_url():\n'
+            "    assert redact('https://example.org/home/contributor/media') == 'https://example.org/home/contributor/media'\n\n\n"
+            'def test_runner_home():\n'
+            "    env = {'LOCALAPPDATA': 'C:/Users/runner/AppData/Local', 'HOME': '/Users/runner/', 'X': r'C:\\Users\\runneradmin\\x'}\n"
+            '    assert env\n\n\n'
+            'def test_real_looking():\n'
+            "    assert redact('/home/tamsin.oakridge/clip.mp4')\n"),
+        'tool.py': 'def redact(s):\n    return s\n'})
+    lp = [c for c in res['candidates'] if c['rule'] == 'local_path']
+    live = {c['line'] for c in lp if not c['auto_dismiss']}
+    dismissed = {c['line'] for c in lp if c['auto_dismiss']}
+    check(live == {19}, f'scan: local_path stays only for a real-looking account (line 19); got live lines {sorted(live)}')
+    check(5 in dismissed, f'scan: a placeholder account (private-account, some-user) is dismissed by rule, not dropped '
+                          f'(got dismissed lines {sorted(dismissed)})')
+    check(not any(c['line'] in (10, 14) for c in lp), 'scan: a reserved-domain URL path and a CI runner home are not local paths')
+
+
+GROUPS: list = [long_line_is_linear, archives_and_logs, local_path_false_positives]
 
 
 def main(argv=None) -> int:
