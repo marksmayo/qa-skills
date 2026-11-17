@@ -1,6 +1,6 @@
 # Design: `code-security-auditor-skill`
 
-Status: Built (v1.9.0), see the "As built" sections at the end. Build order: 5.
+Status: Built (v1.10.0), see the "As built" sections at the end. Build order: 5.
 
 ## Mission
 
@@ -676,3 +676,47 @@ code, samples as the product and every copy as new code.
   app left out (and the "examples only" label with `--include-fixtures`).
 - **Not done:** `confirmed` still needs `run_poc.py` evidence, so a harmless manual check in a scratch copy can
   only be described in the limitations; the run_poc lint (F-8) was already fixed in v1.8.0.
+
+## As built: search paths, test-only modules, scripts and offline tools (v1.10.0)
+
+From a second review on a Rust workspace with Python tooling and PowerShell scripts:
+
+- **Search paths (CWE-427).** The rules matched only a literal inside the load call. `RUST-DLL-SEARCH-ORDER` now
+  also matches a bare `.dll` name anywhere in a file that loads libraries (a `vec!` of candidates passed to
+  `Library::new(name)`); `RUST-LIB-BARE-NAME` matches bare `.dylib`/`.so` names (macOS `dlopen` of a leaf name
+  also tries the working directory); `RUST-SEARCH-PATH-EXE-ANCESTORS` matches a search of the folders above the
+  program (`current_exe()` then `.ancestors()`, or a parent's parent). Names joined onto a directory are not
+  matched. Recon raises a review lead for each site. SKILL.md and the fix texts say that walking up from
+  `current_exe()` is a search path again. Catalogue 1.9.0.
+- **Test and bench code.** A file declared `#[cfg(test)] mod name;` (also `cfg(all(test, ...))`) and its
+  submodules are test code: the pattern scan drops the test-skipping rules' hits there (`test_only_modules`),
+  recon drops their outbound calls and `rust_entries.py` their launches and loads. `benches/` is skipped like
+  `tests/`. The declarations come from the declaring file's text, already read; no file is read twice.
+- **Recon.** `requests` is matched as an outbound call only outside Rust; Rust files match Rust HTTP clients and
+  socket connects. A GitHub Actions job whose token can write and that downloads artifacts is a review lead.
+- **False positives.** `PY-AUTH-REDIRECT` skips a request whose URL is a loopback literal or a name only ever
+  assigned one (worked out only on a match). `JS-EVAL` no longer covers `node:vm`, which is `JS-VM-RUN`. Casts
+  bounded by a match-arm guard, widened from a smaller type, or of a pointer compared as an address are not
+  truncation candidates. A documented `unsafe impl Send/Sync` in an FFI file, an `unsafe fn` wrapper that
+  loads or calls a library (with a `# Safety` section) and blocks that call it join the file's grouped candidate.
+- **Scripts.** `powershell` and `shell` packs (secrets on a command line, unpinned `Install-Module`/`winget`
+  installs, downloads run as code), and `PY-SECRET-ARGV`/`PY-INSTALL-UNPINNED` in the Python pack. The pattern
+  scan names script kinds a pack reads only partly (`script_packs`) and those it does not read (from the shared
+  census); `merge_findings.py` carries `language_coverage` into candidates, `seed_report.py` writes the notes as
+  limitations and the validator (`--candidates`) requires each unanalysed language and script kind to be named.
+- **Offline.** `run_scanners.py --offline` runs cargo-audit with `CARGO_NET_OFFLINE=true` and proxies on a
+  closed loopback port, and the row records `network_guard` and `yanked_check` (from the local index cache, or
+  not assessed). The seeded tool row carries both.
+- **Variant catalogues.** `scan_pitfalls.py --catalogue` takes a file with only `version` and `pitfalls`: packs
+  come from the built-in catalogue, and an undefined pack is refused with a hint instead of a KeyError.
+- **Evidence and report.** `run_poc.py` writes `{workdir}` for the work copy also when the program prints it
+  JSON-escaped or with forward slashes, and a missed marker that is present with escaped backslashes says so;
+  the validator rejects command evidence whose steps hold a home path. An observation may quote a committed
+  home path with the account written `<user>`. Schema 1.7 adds the `local_user` auth value (seeded for local CLI
+  and environment entry points; the validator requires exposure `local`). `seed_report.py --name` (default: the
+  origin URL's name) names the repository; the renderer prints a command-only verification as the local copy;
+  dismissal groups keep a bare file name such as a header. SKILL.md gives the triage `decision` values and every
+  `variant_rules` field.
+- **Not done:** repository visibility for workflow exposure (no field), and one scope figure across recon, the
+  pattern scan and the coverage block (they still count different things: recon source files without tests,
+  the scan per pack).

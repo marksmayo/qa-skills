@@ -169,9 +169,14 @@ subcommand per action and arguments bound to environment variables) that finds i
 under the working directory, loads a native library from a relative path and a Windows DLL by bare
 name, chooses both through environment variables, wraps FFI calls in `unsafe` blocks with `SAFETY:`
 comments, narrows clamped, float and unchecked integers, and has `#[cfg(test)]` modules, a read-only
-and a write-token CI job, a guarded and an unguarded archive extraction and a `Cargo.lock` with
-RustSec advisories. `self_test.py` checks the pattern hits (the CWE-427 search-path rules, one
-grouped low-confidence `unsafe` candidate, nothing in test modules or for bounded casts), the clap
+and a write-token CI job that downloads artifacts, a guarded and an unguarded archive extraction and a
+`Cargo.lock` with RustSec advisories. It also searches the folders above the program for a bundled
+tool (`src/bundled.rs`), names graphics libraries by bare name in a list that reaches
+`Library::new(name)` (`src/gl.rs`, with a documented `unsafe impl Send` and an `unsafe fn` wrapper),
+keeps a test-only module behind `#[cfg(all(test, feature = ...))] mod plot_checks;` and has a
+`benches/` harness. `self_test.py` checks the pattern hits (the CWE-427 search-path rules, grouped
+low-confidence `unsafe` candidates, nothing in test modules, test-only module files, benches or for
+bounded casts), the clap
 and `ENV` entry points (never on a `use` line), flags and leads, the cargo-audit and cargo-deny plans
 and readers, and the validator's tool-output and limitation checks.
 

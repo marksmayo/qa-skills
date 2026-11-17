@@ -456,6 +456,10 @@ def tidemark(root: Path) -> None:
                   scan_pitfalls.scan(root, scan_pitfalls.load_catalogue(), include_tests=True)['candidates']}
     check(('src/plotter.rs', 43, 'RUST-CMD') in with_tests and ('src/model.rs', 41, 'RUST-INT-TRUNCATION') in with_tests,
           '--include-tests keeps the #[cfg(test)] module hits')
+    check(('src/plotter/plot_checks.rs', 7, 'RUST-SYMLINK-TOCTOU') in with_tests and ('benches/predict.rs', 7, 'RUST-SYMLINK-TOCTOU') in with_tests,
+          '--include-tests keeps the hits in a file behind `#[cfg(test)] mod x;` and in benches/')
+    check(res.get('test_only_modules') == want['test_only_modules'],
+          f"files compiled only for tests are listed ({res.get('test_only_modules')})")
     print('recon on tidemark-cli')
     d = run_recon(root)
     eps = d['entry_points']
@@ -475,6 +479,11 @@ def tidemark(root: Path) -> None:
     check(not missing, f'env-chosen executables and libraries, the working-directory search and env-bound flags are review leads (missing {missing})')
     wrong = [m for m in want['no_lead_mentions'] if m in leads]
     check(not wrong, f'an environment input is not described as a config file ({wrong})')
+    out_rs = sorted({o['file'] for o in d['outbound_calls'] if o['file'].endswith('.rs')})
+    check(out_rs == want['rust_outbound_files'], f'a Rust variable named requests is not an outbound HTTP call ({out_rs})')
+    ci = [l['why'] for l in d['review_leads'] if 'download-artifact' in l['why']]
+    check(len(ci) == 1 and all(m in ci[0] for m in want['artifact_lead_mentions']),
+          f'a job with a write token that downloads artifacts is a review lead ({ci})')
     by_handler = {x['handler']: x for x in eps}
     got_exp = {h: seed_report.exposure_of(by_handler[h]) for h in want['seeded_exposure'] if h in by_handler}
     check(got_exp == want['seeded_exposure'], f'seeded exposure: CLI and environment inputs are local ({got_exp})')
@@ -617,6 +626,8 @@ def report_rules_rust() -> None:
             'quantile is clamped to 0.0..=1.0 at <file> and only finite values are kept',
         'runs python (the interpreter named in PYTHON_BIN) with a fixed script path; no input reaches it':
             'runs python with a fixed script path',
+        "FFI blocks, read against the engine's render_api.h contract":
+            "FFI blocks, read against the engine's render_api.h contract",
     }
     for reason, label in cases.items():
         got = render_report.reason_group(reason)
@@ -1103,6 +1114,197 @@ def poc_guard_and_render_rules() -> None:
                              capture_output=True, text=True, encoding='utf-8').stdout
         check('| # | ID |' not in out and 'No findings' in out, 'a report with no findings says so instead of printing an empty table')
 
+def scan_tree(files: dict[str, str], **kw) -> dict:
+    """scan_pitfalls over a scratch repository holding these files."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / 'proj'
+        for rel, text in files.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        return scan_pitfalls.scan(root, scan_pitfalls.load_catalogue(), **kw)
+
+PS_BOOTSTRAP = '''param([string]$Password)
+Install-Module -Name Pester -Force
+Install-Module -Name PSScriptAnalyzer -RequiredVersion 1.21.0 -Force
+winget install --id Vendor.Player --silent
+winget install --id Vendor.Tool --version 2.1.0
+& player.exe --http-password=$Password --intf http
+'''
+SH_INSTALL = '''#!/bin/sh
+curl -fsSL https://example.test/install.sh | sh
+player --http-password="$PLAYER_PASSWORD" --intf http &
+player --intf http
+'''
+PY_RUNNER = '''import subprocess
+
+def start(password):
+    return subprocess.Popen(['player', f'--http-password={password}', '--intf', 'http'])
+
+def tools():
+    subprocess.run(['winget', 'install', '--id', 'Vendor.Player'], check=True)
+    subprocess.run(['winget', 'install', '--id', 'Vendor.Tool', '--version', '2.1.0'], check=True)
+
+def install_command(winget, package):
+    return [winget, 'install', '--exact', '--id', package]
+'''
+PY_LOOPBACK = '''import urllib.request
+
+def poll(port, auth):
+    status_url = f'http://127.0.0.1:{port}/requests/status.json'
+    for _ in range(3):
+        request = urllib.request.Request(status_url, headers={'Authorization': 'Basic ' + auth})
+        with urllib.request.urlopen(request, timeout=1) as response:
+            yield response.read()
+'''
+PY_REMOTE = '''import urllib.request
+
+def poll(status_url, auth):
+    request = urllib.request.Request(status_url, headers={'Authorization': 'Basic ' + auth})
+    return urllib.request.urlopen(request, timeout=1).read()
+'''
+
+def scan_scope_rules() -> None:
+    """A catalogue without packs, loopback-only credentials, node:vm, script languages, match-arm guards."""
+    print('catalogue defaults, loopback credentials, node:vm, PowerShell and shell, cast guards')
+    ids = lambda res: sorted((c['file'], c['line'], c['pitfall_id']) for c in res['candidates'])  # noqa: E731
+    variant = {'version': 'variant', 'pitfalls': [{'id': 'VAR-TAKE', 'pack': 'rust', 'cwe': 'CWE-427', 'category': 'language_specific',
+                                                   'title': 'a variant', 'regex': r'\.take\s*\(\s*3\s*\)', 'fix': 'x'}]}
+    with tempfile.TemporaryDirectory() as tmp:
+        cat = Path(tmp) / 'variant.json'
+        cat.write_text(json.dumps(variant), encoding='utf-8')
+        p = subprocess.run([sys.executable, str(HERE / 'scan_pitfalls.py'), str(HERE.parent / 'examples' / 'tidemark-cli'),
+                            '--catalogue', str(cat)], capture_output=True, text=True, encoding='utf-8')
+        got = [(c['file'], c['line']) for c in json.loads(p.stdout)['candidates']] if p.returncode == 0 else p.stderr.strip().splitlines()[-1:]
+        check(p.returncode == 0 and got == [('src/bundled.rs', 9)],
+              f'a --catalogue file with only version and pitfalls takes its packs from the built-in catalogue ({got})')
+        cat.write_text(json.dumps({**variant, 'pitfalls': [{**variant['pitfalls'][0], 'pack': 'cobol'}]}), encoding='utf-8')
+        p = subprocess.run([sys.executable, str(HERE / 'scan_pitfalls.py'), str(HERE.parent / 'examples' / 'tidemark-cli'),
+                            '--catalogue', str(cat)], capture_output=True, text=True, encoding='utf-8')
+        check(p.returncode == 2 and 'cobol' in p.stderr and 'Traceback' not in p.stderr,
+              f'a pitfall naming a pack no catalogue defines is refused with a message (exit {p.returncode})')
+    got = ids(scan_tree({'tools/poll.py': PY_LOOPBACK, 'tools/remote.py': PY_REMOTE}))
+    check(got == [('tools/remote.py', 4, 'PY-AUTH-REDIRECT')],
+          f'an Authorization header sent to a constant loopback URL is not a redirect candidate; one sent to a caller URL is ({got})')
+    got = ids(scan_tree({'check.mjs': "import vm from 'node:vm';\nvm.runInNewContext(script, context);\nconst r = eval(input);\n"}))
+    check(got == [('check.mjs', 2, 'JS-VM-RUN'), ('check.mjs', 3, 'JS-EVAL')],
+          f'node:vm running a script is its own rule, not "eval, new Function or string timers" ({got})')
+    res = scan_tree({'app/main.py': PY_RUNNER, 'bootstrap.ps1': PS_BOOTSTRAP, 'install.sh': SH_INSTALL})
+    got = ids(res)
+    want = [('app/main.py', 4, 'PY-SECRET-ARGV'), ('app/main.py', 7, 'PY-INSTALL-UNPINNED'), ('app/main.py', 11, 'PY-INSTALL-UNPINNED'),
+            ('bootstrap.ps1', 2, 'PS-INSTALL-UNPINNED'), ('bootstrap.ps1', 4, 'PS-INSTALL-UNPINNED'), ('bootstrap.ps1', 6, 'PS-SECRET-ARGV'),
+            ('install.sh', 2, 'SH-PIPE-TO-SHELL'), ('install.sh', 3, 'SH-SECRET-ARGV')]
+    check(got == want, f'secrets on a command line and unpinned installs in Python, PowerShell and shell; pinned ones are not ({got})')
+    cov = res['language_coverage']
+    notes = ' '.join(cov.get('notes') or [])
+    check('PowerShell' in notes and 'Shell' in notes and (cov.get('script_packs') or {}).get('PowerShell'),
+          f"PowerShell and shell scripts are named as read by a small pack only, never as analysed ({cov.get('script_packs')})")
+    res = scan_tree({'app/main.py': PY_RUNNER, 'bootstrap.ps1': PS_BOOTSTRAP}, wanted={'python'})
+    notes = ' '.join(res['language_coverage'].get('notes') or [])
+    check('PowerShell' in notes and 'not analysed' in notes, 'without the powershell pack the scripts are declared not analysed')
+    import seed_report  # noqa: E402
+    with tempfile.TemporaryDirectory() as tmp:
+        pat = Path(tmp) / 'patterns.json'
+        pat.write_text(json.dumps(res), encoding='utf-8')
+        carried = merge_findings.coverage_of(pat) if hasattr(merge_findings, 'coverage_of') else None
+        seeded = seed_report.seed({'repository': 'x', 'entry_points': [], 'languages': {'Python': 1}},
+                                  {'tools': [], 'candidates': [], 'language_coverage': carried}, None, None)
+        check(any('PowerShell' in l for l in seeded['limitations']),
+              'merge_findings carries the language coverage notes and seed_report writes them as limitations')
+        rep = {'limitations': ['Lua was not analysed.']}
+        errs = validator.language_errors(rep, {'language_coverage': carried}) if hasattr(validator, 'language_errors') else []
+        check(any('PowerShell' in e for e in errs), f'a report that drops the unanalysed script language from its limitations is rejected ({errs})')
+        errs = validator.language_errors({'limitations': ['2 PowerShell scripts were not analysed.']}, {'language_coverage': carried}) \
+            if hasattr(validator, 'language_errors') else ['missing']
+        check(errs == [], f'naming the script language in a limitation satisfies the rule ({errs})')
+    arm = ('pub fn row(mode: u32, table: &[u8]) -> u8 {\n    match mode {\n        m if m <= 2 => {\n            let index = m as u8;\n'
+           '            table[index as usize]\n        }\n        _ => 0,\n    }\n}\n'
+           'pub fn tag(p: *const u8) -> bool {\n    let offset = p as usize; // sentinel compare\n    offset == usize::MAX\n}\n'
+           'pub fn wrap(len: u32) -> u16 {\n    len as u16\n}\n')
+    got = ids(scan_tree({'Cargo.toml': '[package]\nname = "x"\nversion = "0.1.0"\n', 'src/lib.rs': arm}))
+    check(got == [('src/lib.rs', 15, 'RUST-INT-TRUNCATION')],
+          f'a cast under a match-arm guard and a pointer-to-usize cast are not truncation candidates; an unchecked one is ({got})')
+
+def docs_and_evidence_rules() -> None:
+    """SKILL.md names what the schema requires; run_poc redacts escaped work-copy paths; small renderer and seed items."""
+    print('SKILL.md against the schema, run_poc path redaction, offline cargo-audit, renderer and seed details')
+    import run_poc  # noqa: E402
+    import run_scanners  # noqa: E402
+    import seed_report  # noqa: E402
+    schema = json.loads(validator.SCHEMA.read_text(encoding='utf-8'))
+    skill = (HERE.parent / 'SKILL.md').read_text(encoding='utf-8')
+    decisions = schema['properties']['triage']['items']['properties']['decision']['enum']
+    missing = [d for d in decisions if f'`decision: "{d}"`' not in skill and f'`"decision": "{d}"`' not in skill]
+    check(not missing, f'SKILL.md gives every triage decision value the schema accepts (missing {missing})')
+    vr = schema['properties']['variant_rules']['items']
+    missing = [k for k in sorted(set(vr['required']) | {'test_note'}) if f'`{k}`' not in skill]
+    check(not missing, f'SKILL.md names every variant_rules field the schema requires (missing {missing})')
+    at = skill.find('--catalogue <that file>')
+    check('ancestors' in skill and at > 0 and '`packs`' in skill[at - 900:at + 900],
+          'SKILL.md warns that searching upward from current_exe() is a search path too, and says what a variant catalogue needs')
+    red = getattr(run_poc, 'redact_workdir', None)
+    win = 'C:\\work\\copy one'
+    out = red('{"chosen": "C:\\\\work\\\\copy one\\\\poc\\\\tools\\\\x.exe"} and C:/work/copy one/poc', win) if red else win
+    check(win not in out and 'C:\\\\work' not in out and 'C:/work' not in out and '{workdir}' in out,
+          f'run_poc replaces the work copy path when the program prints it JSON-escaped or with forward slashes ({out})')
+    masked = validator.user_masked('- C:\\Users\\someone\\Videos\\a.mp4') if hasattr(validator, 'user_masked') else ''
+    check(masked == '- C:\\Users\\<user>\\Videos\\a.mp4' and not validator.home_path_errors({'x': masked})
+          and validator.home_path_errors({'x': 'C:\\Users\\someone\\x'}),
+          f'an observation may quote a committed home path with the account written <user>, and only that way ({masked!r})')
+    leak = {'steps': [{'name': 'run', 'argv': ['{workdir}/bin/x'], 'exit_code': 0,
+                       'stdout_excerpt': '{"chosen": "C:\\\\Users\\\\someone\\\\copy\\\\tools\\\\x.exe"}', 'stderr_excerpt': ''}]}
+    errs = validator.evidence_home_paths(leak) if hasattr(validator, 'evidence_home_paths') else []
+    check(len(errs) == 1 and validator.evidence_home_paths({'steps': [{**leak['steps'][0], 'stdout_excerpt': '{workdir}/x'}]}) == [],
+          f'the validator rejects command evidence whose output holds a home-directory path, JSON-escaped too ({errs})')
+    hint = run_poc.marker_hint('C:\\work\\planted.exe', '{"path": "C:\\\\work\\\\planted.exe"}') if hasattr(run_poc, 'marker_hint') else ''
+    check('escaped' in hint, f'a marker found only with escaped backslashes is said so in the proof ({hint!r})')
+    with tempfile.TemporaryDirectory() as tmp:
+        t = Path(tmp)
+        (t / 'Cargo.lock').write_text('version = 3\n', encoding='utf-8')
+        db = t / 'advisory-db'
+        db.mkdir()
+        inv = run_scanners.inventory(t)
+        ca = {x['name']: x for x in run_scanners.plan(t, t / 'out', inv, [], cargo_audit_db=db, offline=True)}['cargo-audit']
+        env = (ca['runs'][0].get('env') or {}) if ca.get('runs') else {}
+        check(env.get('CARGO_NET_OFFLINE') == 'true' and str(env.get('HTTPS_PROXY', '')).startswith('http://127.0.0.1:')
+              and ca.get('network_guard'), f'offline, cargo-audit runs with CARGO_NET_OFFLINE and a closed proxy ({sorted(env)})')
+        probe = t / 'fake_audit.py'
+        probe.write_text('import json, os\nprint(json.dumps({"database": {"advisory-count": 1}, "lockfile": {}, "settings": {}, '
+                         '"vulnerabilities": {"found": False, "count": 0, "list": []}, "warnings": {"yanked": [{"kind": "yanked", '
+                         '"package": {"name": "cfg-if", "version": "1.0.0"}, "advisory": None, "versions": None}]}, '
+                         '"proxy": os.environ.get("HTTPS_PROXY"), "offline": os.environ.get("CARGO_NET_OFFLINE")}))\n', encoding='utf-8')
+        (t / 'out').mkdir()
+        fake = {**ca, 'exe': sys.executable, 'runs': [{**ca['runs'][0], 'cmd': [sys.executable, str(probe)]}]} if ca.get('runs') else None
+        rec = run_scanners.run_tool(fake, t / 'out', 60) if fake else {}
+        seen = json.loads((t / 'out' / 'cargo-audit.json').read_text(encoding='utf-8')) if (t / 'out' / 'cargo-audit.json').exists() else {}
+        check(seen.get('offline') == 'true' and str(seen.get('proxy', '')).startswith('http://127.0.0.1:'),
+              f'the guard reaches the cargo-audit process ({seen.get("offline")}, {seen.get("proxy")})')
+        local = seed_report.entry_point({'id': 'EP-1', 'kind': 'cli', 'method': 'ROOT', 'path': 'x', 'handler': 'src/main.rs:3',
+                                         'auth': 'unknown', 'auth_evidence': 'local invocation: the caller supplies arguments'})
+        web = {**local, 'kind': 'http_route', 'exposure': 'internet', 'auth': 'local_user'}
+        ex2 = json.loads((HERE.parent / 'examples' / 'security_audit.example.json').read_text(encoding='utf-8'))
+        ex2['recon']['entry_points'].append({**web, 'id': 'EP-99'})
+        errs = [e for e in validator.check(ex2, HERE.parent / 'examples', None, None)[0] if 'local_user' in e]
+        check(local['auth'] == 'local_user' and errs, f"a local program is seeded auth local_user, and the validator refuses it on "
+                                                      f"an internet entry point ({local['auth']}, {errs})")
+        check(rec.get('network') is False and 'closed' in (rec.get('network_guard') or '') and 'yanked' in (rec.get('yanked_check') or ''),
+              f"the row says how the network was kept closed and where the yanked answers came from ({rec.get('yanked_check')})")
+        row = next((r for r in seed_report.tool_rows({'tools': [rec]}, {'tools': []}, {}) if r['name'] == 'cargo-audit'), {}) if rec else {}
+        check('closed' in (row.get('config') or ''), f"the seeded tool row carries the network guard ({row.get('config')})")
+        recon = {'repository': 'clone-7', 'entry_points': [], 'languages': {'Rust': 1}}
+        check(seed_report.seed(recon, {'tools': [], 'candidates': []}, None, None, name='tidemark')['target']['repository'] == 'tidemark'
+              if 'name' in seed_report.seed.__code__.co_varnames else False, 'seed_report --name sets the repository name (not the clone folder)')
+        check(getattr(seed_report, 'origin_name', lambda u: None)('git@example.test:harbour/tidemark.git') == 'tidemark'
+              and getattr(seed_report, 'origin_name', lambda u: None)('https://example.test/harbour/tidemark') == 'tidemark',
+              'the default name comes from the origin URL when there is one')
+        ex = json.loads((HERE.parent / 'examples' / 'security_audit.example.json').read_text(encoding='utf-8'))
+        ex['schema_version'] = '1.6'
+        ex['verification'].update(target=None, target_kind='local_copy', local_copy='~/scratch/copy')
+        (t / 'local.json').write_text(json.dumps(ex), encoding='utf-8')
+        out = subprocess.run([sys.executable, str(HERE / 'render_report.py'), str(t / 'local.json'), '--color', 'never'],
+                             capture_output=True, text=True, encoding='utf-8').stdout
+        line = next((l for l in out.splitlines() if l.startswith('Verification:')), '')
+        check('None' not in line and 'local copy' in line and '~/scratch/copy' in line, f'a command-only verification names the local copy ({line})')
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--fixture', type=Path, default=HERE.parent / 'examples' / 'kite-notes')
@@ -1144,6 +1346,11 @@ def main() -> int:
         report_scope_rules()
     except Exception as exc:  # noqa: BLE001 - a missing helper is a failure, not a crash of the whole self-test
         check(False, f'report scope rules: {type(exc).__name__}: {exc}')
+    for step in (scan_scope_rules, docs_and_evidence_rules):
+        try:
+            step()
+        except Exception as exc:  # noqa: BLE001 - a missing helper is a failure, not a crash of the whole self-test
+            check(False, f'{step.__name__}: {type(exc).__name__}: {exc}')
     node_and_ci_rules()
     poc_and_report_rules()
     python_rules()
