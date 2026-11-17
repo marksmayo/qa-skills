@@ -1252,7 +1252,31 @@ def loaded_by_reach() -> None:
               'inventory: a data folder tests read by path but not inventoried whole is named in a warning')
 
 
-GROUPS: list = [long_line_is_linear, archives_and_logs, local_path_false_positives, loaded_by_reach]
+def log_ids_and_grouped_paths() -> None:
+    """A player's debug log: bracketed object addresses and labelled ids that happen to be Luhn-valid digit runs are not
+    card numbers; a home path repeated on many lines of one file is one local_path candidate listing its lines; and an
+    evidence tree (--evidence-dir) is scanned but never called unused."""
+    addr = luhn_complete('400000000000000')            # a 16-digit run that passes Luhn
+    lines = ['[%s] main stream debug: looking for module "any": 12 candidates' % addr,
+             '[00000a1b2c3d4e5f] demux debug: |   + TrackUID: %s' % luhn_complete('411111111111111111'),
+             'opened /home/quillfern/media/a.mkv', 'opened /home/quillfern/media/b.mkv', 'opened /home/quillfern/media/c.mkv']
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, {'tests/test_x.py': 'def test_x():\n    assert True\n', 'runs/r1/stderr.log': '\n'.join(lines) + '\n',
+                     'runs/r1/summary.json': '{"ok": true}\n'})
+        invd = inv.build(root, None, {}, evidence_dirs=['runs'])
+        res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
+    cards = [c for c in res['candidates'] if c['rule'] == 'card']
+    check(cards == [], f'scan: a bracketed log address and a labelled TrackUID are not card numbers (got {[c["line"] for c in cards]})')
+    lp = [c for c in res['candidates'] if c['rule'] == 'local_path']
+    check(len(lp) == 1 and lp[0]['line'] == 3 and lp[0]['details'].get('lines') == [3, 4, 5],
+          f'scan: one local_path candidate per file, listing every line (got {[(c["line"], c["details"]) for c in lp]})')
+    check(not [c for c in res['candidates'] if c['rule'] == 'unused'] and any(
+        i['path'] == 'runs/r1/summary.json' for i in invd['inventory']),
+          'inventory: files under --evidence-dir are inventoried and scanned, never called unused')
+
+
+GROUPS: list = [long_line_is_linear, archives_and_logs, local_path_false_positives, loaded_by_reach, log_ids_and_grouped_paths]
 
 
 def main(argv=None) -> int:

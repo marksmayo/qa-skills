@@ -1082,7 +1082,8 @@ def sample_of(n: int, cap: int) -> set[int]:
 
 
 def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[str] | None = None,
-          max_files_per_dir: int = 0, progress: bool = False, fixture_dirs: bool = True) -> dict:
+          max_files_per_dir: int = 0, progress: bool = False, fixture_dirs: bool = True,
+          evidence_dirs: list[str] | None = None) -> dict:
     """max_files_per_dir: above this many data files in one directory, only an evenly spaced sample of that many is
     scanned; the rest stay listed as not_assessed ('not sampled'), and sampled_dirs records the directory. 0 = all.
     progress: print a line to stderr every few seconds, so a long run is never mistaken for a hung one.
@@ -1091,6 +1092,10 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
     import time
     DATA_DIRS.clear()
     DATA_DIRS.update(d.replace('\\', '/').strip('/') for d in data_dirs or [] if d.strip('/'))
+    # committed evidence trees (recorded runs, results, published reports): read like a --data-dir for personal data,
+    # secrets and hosts, but nothing in them is called unused: tests are not their readers
+    evidence = sorted({d.replace('\\', '/').strip('/') for d in evidence_dirs or [] if d.strip('/')})
+    DATA_DIRS.update(evidence)
     _VIEWS.clear()
     all_files = walk(root)
     set_product_dirs(root, all_files)
@@ -1270,9 +1275,13 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
             cmds = uses.commands_for(rel)
             if cmds:
                 entry['used_by_commands'] = cmds[:5] + ([f'... {len(cmds) - 5} more'] if len(cmds) > 5 else [])
+        if any(rel == e or rel.startswith(e + '/') for e in evidence):
+            entry['evidence_tree'] = True
         items.append(entry)
         for m in archive_entries:          # a member is loaded by whatever loads its archive
             m['loaded_by'] = entry['loaded_by']
+            if entry.get('evidence_tree'):
+                m['evidence_tree'] = True
             if entry.get('used_by_commands'):
                 m['used_by_commands'] = entry['used_by_commands']
             items.append(m)
@@ -1347,6 +1356,8 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
         warnings.insert(0, NO_TESTS)
     if warnings:
         extra['warnings'] = warnings
+    if evidence:
+        extra['evidence_dirs'] = evidence
     return {'repo': root.name, 'data_dirs': sorted(DATA_DIRS), 'product_dirs': dict(sorted(PRODUCT_DIRS.items())),
             **extra, 'inventory': items, 'tests': tests,
             'summary': {'sources': len(items), 'by_kind': {k: len([i for i in items if i['kind'] == k])
@@ -1354,7 +1365,8 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
                         'not_assessed': len([i for i in items if i['status'] == 'not_assessed']),
                         # with no tests, "no test loads it" says nothing about a file
                         'unused': [i['path'] for i in items if not i['loaded_by'] and i['kind'] != 'inline'
-                                   and not i.get('used_by_commands') and not i.get('archive')] if tests else [],
+                                   and not i.get('used_by_commands') and not i.get('archive')
+                                   and not i.get('evidence_tree')] if tests else [],
                         # read by a documented command or script only: used, but by commands, not tests
                         'used_by_commands': [i['path'] for i in items if not i['loaded_by'] and i['kind'] != 'inline'
                                              and i.get('used_by_commands') and not i.get('archive')]}}
@@ -1370,12 +1382,16 @@ def main(argv=None) -> int:
     ap.add_argument('--max-files-per-dir', type=int, default=0, metavar='N',
                     help='scan only an evenly spaced sample of N data files in any directory holding more (the rest are '
                          'listed as not_assessed, "not sampled"); 0, the default, scans every file')
+    ap.add_argument('--evidence-dir', action='append', default=[], metavar='DIR',
+                    help='a committed evidence tree (recorded runs, results, reports): inventoried and scanned for personal '
+                         'data, secrets and hosts like --data-dir, but never called unused (repeatable)')
     ap.add_argument('--no-fixture-dirs', action='store_true',
                     help='do not read fixture folders (examples/, samples/, ... with data files) as test data by default')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args(argv)
     markers = json.loads(args.markers.read_text(encoding='utf-8')) if args.markers else {}
     res = build(args.repo.resolve(), args.paths, markers, args.data_dir, args.max_files_per_dir, progress=True,
+                evidence_dirs=args.evidence_dir,
                 fixture_dirs=not args.no_fixture_dirs)
     for u in res.get('unlisted_data_dirs', []):
         print(f"WARNING: {u['dir']}/ holds {u['files']} data files ({u['bytes'] / 1e6:.1f} MB) that test code names "

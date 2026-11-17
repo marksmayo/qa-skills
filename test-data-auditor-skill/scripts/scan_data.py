@@ -273,12 +273,20 @@ def placeholder_digits(d: str) -> str | None:
     return None
 
 
+ID_LABEL_BEFORE = re.compile(r'(?i)(?:u?uid|guid|\bid|hash|serial|offset|addr(?:ess)?|\bpts|\bdts|nonce|seed|checksum|crc)'
+                             r'\s*[:=#]?\s*$')
+
+
 def not_card(text: str, start: int, end: int, field: str = '') -> bool:
     """True when the card-shaped digit run text[start:end] is a date, time, version or timestamp."""
     run = text[start:end]
     if DATE_TOKEN.search(run) or compact_datetime(run):
         return True
     before, after = text[max(0, start - 1):start], text[end:end + 2]
+    if before == '[' and after[:1] == ']':
+        return True  # a log line's bracketed object address or thread id ([0000...] module debug: ...)
+    if ID_LABEL_BEFORE.search(text[max(0, start - 24):start]) and not CARD_FIELD.search(field or ''):
+        return True  # a labelled id, hash or offset (TrackUID: ..., serial=..., pts ...)
     if before in ('.', ':', 'v', 'V') or re.match(r'[.:]\d|T\d', after):
         return True  # part of a version, a decimal, or a date followed by a time
     # a digit run that is part of a path or an identifier (runs/20261103-142530/, order_4111..., x4111...) is not a card
@@ -553,6 +561,7 @@ class Scanner:
         inv.DATA_DIRS.update(inventory.get('data_dirs', []))       # trees inventory.py was told hold test data
         self.cands: list[dict] = []
         self._keys: set[tuple] = set()
+        self._local_paths: dict[tuple, dict] = {}   # (file, dismissed?) -> its one local_path candidate
         self.by_path = {i['path']: i for i in inventory['inventory']}
         self.seed_loaders = {t for i in inventory['inventory'] if i['kind'] == 'seed' for t in i['loaded_by']}
         self.files = inv.walk(root)
@@ -1105,13 +1114,26 @@ class Scanner:
             if words and all(w in PLACEHOLDER_ACCOUNT_WORDS for w in words):
                 placeholder = placeholder or account
                 continue
-            self.add('environment_coupling', 'local_path', rel, line_no, 'an absolute path on someone\'s machine', None, 'path',
-                     details={})
+            self.local_path(rel, line_no, None)
             return
         if placeholder:
-            self.add('environment_coupling', 'local_path', rel, line_no, 'an absolute path under a home folder', None, 'path',
-                     auto_dismiss='placeholder account: the account folder is a stand-in word (PLACEHOLDER_ACCOUNT_WORDS), '
-                                  'not someone\'s machine', details={})
+            self.local_path(rel, line_no, 'placeholder account: the account folder is a stand-in word '
+                                          '(PLACEHOLDER_ACCOUNT_WORDS), not someone\'s machine')
+
+    def local_path(self, rel: str, line_no: int, dismiss: str | None):
+        """One local_path candidate per file (and per dismissal): a run log or a recorded copy repeats the same home
+        folder on hundreds of lines, which is one finding. The candidate cites the first line; details.lines lists
+        every line (the first 200) and details.count how many there are."""
+        c = self._local_paths.get((rel, bool(dismiss)))
+        if c is not None:
+            c['details']['count'] += 1
+            if len(c['details']['lines']) < 200:
+                c['details']['lines'].append(line_no)
+            return
+        self.add('environment_coupling', 'local_path', rel, line_no,
+                 'an absolute path under a home folder' if dismiss else 'an absolute path on someone\'s machine', None, 'path',
+                 auto_dismiss=dismiss, details={'lines': [line_no], 'count': 1})
+        self._local_paths[(rel, bool(dismiss))] = self.cands[-1]
 
     def cwd_relative(self, rel: str, text: str):
         """A test in a subdirectory that opens a top-level directory of the repository by a relative path
@@ -1521,7 +1543,7 @@ class Scanner:
                     self.add('snapshot_rot', 'large_snapshot', i['path'], 1, f'{i["lines"]} lines asserted wholesale', None, None,
                              details={'lines': i['lines']})
             elif i['kind'] in ('fixture', 'recording', 'seed') and not i['loaded_by'] and not MIGRATION_SEED.search(i['path']) \
-                    and not self.no_tests and not i.get('archive'):
+                    and not self.no_tests and not i.get('archive') and not i.get('evidence_tree'):
                 if i.get('used_by_commands'):
                     by_commands += 1       # read by a documented command or a script: used, though not by a test
                     continue
