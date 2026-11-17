@@ -85,6 +85,7 @@ from urllib.parse import urlparse
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from match_canaries import Matcher  # noqa: E402
 import next_app  # noqa: E402
 from domains import registrable  # noqa: E402
@@ -92,8 +93,10 @@ import lang_census  # noqa: E402
 import cargo_project  # noqa: E402
 import code_mask  # noqa: E402
 import repo_layout  # noqa: E402
+import archive_text  # noqa: E402
+import home_paths  # noqa: E402
 
-DATA = HERE.parent / 'data'
+DATA =HERE.parent / 'data'
 CATS = json.loads((DATA / 'categories.json').read_text(encoding='utf-8'))
 SINKS = json.loads((DATA / 'sinks.json').read_text(encoding='utf-8'))
 LANG = {'.py': 'py', '.js': 'js', '.mjs': 'js', '.cjs': 'js', '.jsx': 'js', '.ts': 'ts', '.tsx': 'ts', '.mts': 'ts', '.cts': 'ts',
@@ -167,7 +170,8 @@ HEADER_PASS = re.compile(r'\b(?:request|req)\.headers\.(?:items|raw|entries)\(\)
                          r'|\bheaders\s*[=:]\s*(?:request|req)\.headers\b(?!\s*\.\s*get)|\{\s*(?:\*\*|\.\.\.)\s*(?:request|req)\.headers\b'
                          r'|\bgetallheaders\(\)')
 SERVER_SEND_HINT = re.compile(r'\bfetch\(|\baxios\b|\brequests\.|\bhttpx\.|\burlopen\(|\bhttps?\.request\(|\bgot\(|\bundici\b|Net::HTTP|Faraday')
-WRAPPER_STOP = {'error', 'warn', 'info', 'debug', 'log', 'init', 'main', 'render', 'handler', 'default', 'track', 'send', 'report', 'run'}
+WRAPPER_STOP = {'error', 'warn', 'info', 'debug', 'log', 'init', 'main', 'render', 'handler', 'default', 'track', 'send', 'report', 'run',
+                'write', 'writelines', 'save', 'dump', 'dumps', 'open', 'close', 'flush', 'print'}
 MANIFESTS = {'requirements.txt', 'Podfile', 'build.gradle', 'build.gradle.kts', 'pubspec.yaml', 'Gemfile'}
 PLATFORM = {'AndroidManifest.xml', 'Info.plist', 'PrivacyInfo.xcprivacy'}
 GENERATED_NAME = re.compile(r'\.(min|bundle|chunk|prod|umd)\.(js|mjs|css)$|[.-][0-9a-f]{8,}\.(js|mjs)$|\.map$', re.I)
@@ -243,7 +247,9 @@ MACHINE_ENV_READ['ts'] = MACHINE_ENV_READ['js']
 ASSIGN_PY = re.compile(r'^[ \t]*([A-Za-z_]\w*)\s*(?::[^=\n]+)?=(?!=)\s*([^\n]+)', re.M)
 ASSIGN_JS = re.compile(r'\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]+)?=(?!=)\s*([^;\n]+)')
 # a call to the app's own paths ("/api/...", "./data.json") or to loopback: not an unresolved outbound host
-RELATIVE_URL = re.compile(r'''["'`](?:\.{0,2}/(?!/)|https?://(?:localhost|127\.0\.0\.1)\b)''')
+RELATIVE_URL = re.compile(r'''["'`](?:\.{0,2}/(?!/)|https?://(?:localhost|127\.0\.0\.1|\[::1\])(?![\w.-]))''')
+# `request` as a variable handed to a call (urlopen(request, timeout=1)), not the urllib.request module or a keyword
+BARE_REQUEST = re.compile(r'(?<![\w$.])request(?![\w$]|\s*[.(=])')
 # a line longer than this (minified or generated HTML and scripts) is read in windows around each match: the CSP,
 # consent-gate and consent-check tests look at WINDOW characters either side, never the whole line per mention
 LONG_LINE = 2000
@@ -260,19 +266,21 @@ NOT_RECIPIENT = re.compile(r'(^|\.)(localhost|example\.(com|org|net)|[\w-]+\.(te
 PERSON_OBJECT = (r'(?:user|users|customer|patient|member|person|people|profile|account|applicant|contact|client|visitor|employee|'
                  r'student|guest|signup|sign_up|registration|booking|appointment|subscriber|recipient|sender|owner|holder|'
                  r'request\.(?:form|json|args|values|data|POST|GET)|req\.(?:body|query|params)|form|form_data|formData)')
-# a home-directory path with an account name in it (C:\Users\<name>\, /Users/<name>/, /home/<name>/), written into a committed
-# file: anyone who reads the repository reads the account name. A path inside a URL (https://host/home/x/) is not one.
-HOME_PATH = re.compile(r'(?<![\w.:/\\%$-])(?:[A-Za-z]:(?:\\\\|\\|/)+Users(?:\\\\|\\|/)+|/Users/|/home/)'
-                       r'(?P<user>[^\\/\s"\'<>{}$%*`|:;,()\[\]]{1,64})(?=\\|/)')
-# accounts that name no person: CI and container defaults, documentation placeholders, Windows shared profiles
-GENERIC_ACCOUNTS = {'user', 'username', 'user1', 'runner', 'runneradmin', 'vsts', 'vssadministrator', 'vscode', 'travis', 'node', 'jenkins',
-                    'gitpod', 'codespace', 'codespaces', 'circleci', 'appveyor', 'ubuntu', 'ec2-user', 'admin', 'administrator', 'dev',
-                    'developer', 'app', 'site', 'test', 'tester', 'me', 'you', 'name', 'example', 'someone', 'somebody', 'public', 'default',
-                    'default user', 'all users', 'shared', 'guest', 'root', 'docker', 'build', 'builder', 'ci', 'pi', 'vagrant', 'nobody',
-                    'www-data', 'home', 'foo', 'bar', 'x', 'xxx', 'yourname', 'your-name', 'your_name', 'myname', 'my-name', 'pwuser'}
+# A home-directory path with an account name in it (C:\Users\<name>\, /Users/<name>/, /home/<name>/), written into a
+# committed file: anyone who reads the repository reads the account name. The pattern, the accounts that name no person
+# and the placeholder forms (the JSON-escaped \u003cuser\u003e too) are in home_paths.py, which the validator shares.
 # text and data files a tool or a run writes and the repository keeps: read for home-directory paths only
 ARTIFACT_EXT = ('.json', '.jsonl', '.ndjson', '.txt', '.md', '.csv', '.tsv', '.log', '.xml', '.yaml', '.yml', '.sarif', '.toml',
-                '.har', '.ini', '.cfg', '.out', '.lcov', '.html', '.htm', '.ipynb')
+                '.har', '.ini', '.cfg', '.out', '.err', '.lcov', '.html', '.htm', '.ipynb')
+# prose: a placeholder path there is documentation (/Users/<you>/src), not a path a redaction step cleaned
+PROSE_EXT = ('.md', '.txt', '.rst')
+# the name of a file a write lands in, as a literal on or just before the write (open(out / 'session.json', 'w'))
+FILE_LIT = re.compile(r'''["']([\w./-]*[\w-]\.(?:json|jsonl|ndjson|txt|log|csv|tsv|md|html?|ya?ml|xml|toml|sarif|out))["']''')
+# a call whose keyword arguments are the keys of the object it builds: dict(host=platform.node())
+KW_OBJECT = re.compile(r'\s*(?:collections\.)?(?:dict|OrderedDict|SimpleNamespace|types\.SimpleNamespace)\s*\(')
+# an assignment's right-hand side left open at the end of its line (a dict literal or a call spread over several lines)
+# is read to its closing bracket, up to this many characters
+OPEN_RHS = 4000
 # a constant holding the base URL of an API the code calls (GH_API = 'https://...'), in a file that sends
 URL_CONST = re.compile(r'''^[ \t]*(?:export\s+)?(?:const\s+|let\s+|var\s+)?(?P<name>[A-Za-z_$][\w$]*)\s*(?::[^=\n]+)?=\s*[fFrRbBuU]{0,2}'''
                        r'''(?P<url>["'`](?:https?:)?//[^"'`\s]+["'`])''', re.M)
@@ -311,36 +319,152 @@ def tracked_files(repo: Path) -> set[str] | None:
     return {x for x in r.stdout.decode('utf-8', 'replace').split('\0') if x}
 
 
-def home_path_hits(repo: Path, rels: list[str], tracked: set[str] | None, max_bytes: int) -> list[dict]:
-    """Home-directory paths holding an account name in text and data files ([{file, line, account, excerpt}]; the excerpt
-    has the account name replaced, and the account itself is only used to group, never written out). Only files git
-    tracks count when the repository is a git work tree."""
-    out = []
+def home_hits_in(text: str, rel: str, member: str | None = None) -> list[dict]:
+    """Home-directory paths naming an account in one text ([{file, line, account, excerpt}], with member for a file inside
+    an archive). The excerpt has every account replaced; the account itself is only used to group, never written out."""
+    out, T = [], None
+    for start, _, acct, placeholder in home_paths.accounts(text):
+        if placeholder:   # <you>, $USER, %USERNAME%, runner, redacted, the JSON-escaped <user>
+            continue
+        T = T or Text(text)
+        n = T.line_of(start)
+        line = T.line(n) if T.line_len(n) <= LONG_LINE else T.near(n, start, before=80, after=80)
+        h = {'file': rel, 'line': n, 'account': acct, 'excerpt': REDACT.redact(home_paths.scrub(line.strip()))[:160]}
+        if member is not None:
+            h['member'] = member
+        out.append(h)
+    return out
+
+
+def home_path_hits(repo: Path, rels: list[str], archives: list[tuple[str, str]], tracked: set[str] | None, max_bytes: int,
+                   skipped: list[dict]) -> tuple[list[dict], list[dict], dict]:
+    """Home-directory paths holding an account name in committed text and data files and in the text members of committed
+    zip archives (the shared archive_text.py: read in memory under its caps, nothing extracted). Returns the hits, one
+    entry per archive saying what was read, and the files whose home paths a redaction step already replaced. Everything
+    left unread is added to skipped with its reason: a binary file, the rest of a file over --max-bytes, an archive that
+    is not a zip or cannot be opened, a nested, encrypted or oversized member. Only files git tracks count when the
+    repository is a git work tree."""
+    hits, arch_out, redacted = [], [], {}
+    listed = {x['file']: x for x in skipped}
+
+    def note_redacted(text: str, where: str) -> None:
+        n = home_paths.redacted_count(text)
+        if n:
+            redacted[where] = redacted.get(where, 0) + n
+
     for rel in rels:
         if tracked is not None and rel not in tracked:
             continue
         p = repo / rel
-        try:
-            if max_bytes and p.stat().st_size > max_bytes:
-                continue
-            text = p.read_text(encoding='utf-8', errors='replace')
-        except OSError:
+        got = archive_text.read_text(p, max_bytes) if max_bytes else archive_text.read_text(p, 1 << 30)
+        if got is None:
+            if p.is_file():
+                skipped.append({'file': rel, 'bytes': p.stat().st_size, 'reason': 'binary content: not read for home-directory paths'})
             continue
-        if 'Users' not in text and '/home/' not in text:
+        if got['truncated']:
+            why = f'only its first {max_bytes:,} bytes were read for home-directory paths'
+            if rel in listed:
+                listed[rel]['reason'] += f'; {why}'
+            else:
+                skipped.append({'file': rel, 'bytes': p.stat().st_size, 'reason': f'larger than --max-bytes {max_bytes:,}: {why}'})
+        hits += home_hits_in(got['text'], rel)
+        if not rel.lower().endswith(PROSE_EXT):
+            note_redacted(got['text'], rel)
+    for rel, fmt in archives:
+        if tracked is not None and rel not in tracked:
             continue
-        T = None
-        for m in HOME_PATH.finditer(text):
-            acct = m.group('user')
-            low = acct.lower()
-            if low in GENERIC_ACCOUNTS or low.startswith(('your', 'my-', 'my_')) or '...' in acct or not re.search(r'[a-z]', low) \
-                    or (acct.isupper() and len(acct) > 1):   # placeholders: <you>, $USER, %USERNAME%, USERNAME
+        p = repo / rel
+        size = p.stat().st_size if p.is_file() else None
+        entry = {'file': rel, 'format': fmt, 'members': None, 'read': 0, 'not_read': 0, 'bytes_read': 0, 'complete': False}
+        arch_out.append(entry)
+        if p.suffix.lower() not in archive_text.OPENED:
+            skipped.append({'file': rel, 'bytes': size, 'reason': f'{fmt} archive: not read (only .zip archives are opened), so what it '
+                                                                  'holds is not assessed'})
+            continue
+        got = archive_text.read_archive(p)
+        entry.update(members=got['member_count'], read=len(got['read']), not_read=len(got['skipped']), bytes_read=got['bytes_read'],
+                     complete=bool(got['complete']))
+        if got.get('error'):
+            got["error"] = entry["error"] = home_paths.scrub(str(got["error"]))
+            skipped.append({'file': rel, 'bytes': size, 'reason': f'the archive could not be opened ({got["error"]}): not assessed'})
+            continue
+        by_name = []
+        for x in got['skipped']:
+            if x['reason'].startswith('binary'):   # images and executables: one line for the archive, not one each
+                by_name.append(x['name'])
+            else:
+                skipped.append({'file': f'{rel}!{home_paths.scrub(x["name"])}', 'bytes': None, 'reason': 'archive member not read: ' + x['reason']})
+        if by_name:
+            skipped.append({'file': f'{rel}!*', 'bytes': None, 'reason': f'{len(by_name)} binary archive member(s) not read: '
+                            + ', '.join(home_paths.scrub(n) for n in by_name[:5]) + (' ...' if len(by_name) > 5 else '')})
+        for mem in got['read']:
+            name = home_paths.scrub(mem['name'])
+            if mem.get('truncated'):
+                skipped.append({'file': f'{rel}!{name}', 'bytes': None, 'reason': f'archive member cut at {mem["bytes"]:,} bytes: the rest was not read'})
+            hits += home_hits_in(mem['text'], rel, name)
+            if not mem['name'].lower().endswith(PROSE_EXT):
+                note_redacted(mem['text'], rel)
+    return hits, arch_out, redacted
+
+
+def place(h: dict) -> str:
+    """file:line, or archive!member:line for a place inside an archive."""
+    return f'{h["file"]}!{h["member"]}:{h["line"]}' if h.get('member') else f'{h["file"]}:{h["line"]}'
+
+
+def repo_label(repo: Path) -> str:
+    """How the output names the repository: the path as given when it is relative, else relative to the working directory,
+    else its folder name. Never an absolute path: that would write the auditor's own home directory (and account name)
+    into the evidence."""
+    if not repo.is_absolute() and '..' not in repo.parts and repo.parts:
+        return repo.as_posix()
+    full = repo.resolve()
+    try:
+        rel = full.relative_to(Path.cwd().resolve()).as_posix()
+        return rel if rel != '.' else full.name
+    except ValueError:
+        return full.name
+
+
+def balanced_rhs(text: str, start: int, first_line: str) -> str:
+    """An assignment's right-hand side: its line, or, when that line leaves a bracket open (a dict literal or a call
+    spread over several lines), everything up to the closing bracket (at most OPEN_RHS characters)."""
+    opens = first_line.count('(') + first_line.count('[') + first_line.count('{')
+    if opens <= first_line.count(')') + first_line.count(']') + first_line.count('}'):
+        return first_line
+    depth, stop = 0, min(len(text), start + OPEN_RHS)
+    for j in range(start, stop):
+        c = text[j]
+        if c in '([{':
+            depth += 1
+        elif c in ')]}':
+            depth -= 1
+            if depth <= 0:
+                return text[start:j + 1]
+    return text[start:stop]
+
+
+def write_targets(text: str, T, line: int, end_line: int | None) -> list[str]:
+    """The file names a write lands in, as far as the code spells them: a file-name literal in the call itself, else on
+    the nearest of the six lines before it (with open(out / 'session.json', 'w') as fh), else in the assignment of a
+    variable the call names (out_path = results / 'run.json'). A heuristic; [] when the name is built elsewhere."""
+    last = min(end_line or line, len(T.starts))
+    here = text[T.starts[line - 1]:T._end(last)]
+    found = FILE_LIT.findall(here)
+    for n in range(line - 1, max(0, line - 7), -1):
+        if found:
+            break
+        if T.line_len(n) <= LONG_LINE:
+            found = FILE_LIT.findall(T.line(n))
+    if not found:
+        for v in dict.fromkeys(re.findall(r'[A-Za-z_$][\w$]*', code_view(here))):
+            if v in NOT_VARS or len(v) < 3:
                 continue
-            T = T or Text(text)
-            n = T.line_of(m.start())
-            line = T.line(n) if T.line_len(n) <= LONG_LINE else T.near(n, m.start(), before=80, after=80)
-            excerpt = re.sub(re.escape(acct), '<account>', line.strip(), flags=re.I)
-            out.append({'file': rel, 'line': n, 'account': low, 'excerpt': REDACT.redact(excerpt)[:160]})
-    return out
+            am = re.search(r'(?m)^[ \t]*(?:const\s+|let\s+|var\s+)?' + re.escape(v) + r'\s*(?::[^=\n]+)?=[^=\n][^\n]*', text)
+            if am and FILE_LIT.search(am.group(0)):
+                found = FILE_LIT.findall(am.group(0))
+                break
+    return list(dict.fromkeys(found))[:4]
 
 
 def generic_in_context(f: str, view: str, raw: str, same_file: bool, other_named: bool) -> bool:
@@ -577,9 +701,10 @@ def unnamed_field(cls: str | None, ph: str | None) -> str | None:
 
 
 def redact_strings(v, key: str = ''):
-    """v with REDACT applied to every string value except file paths."""
+    """v with REDACT applied to every string value except file paths, and the account of any home-directory path replaced
+    (a code line holding a literal home path would otherwise carry the account name into the evidence)."""
     if isinstance(v, str):
-        return v if key in ('file', 'dir') else REDACT.redact(v)
+        return v if key in ('file', 'dir') else home_paths.scrub(REDACT.redact(v))
     if isinstance(v, list):
         return [redact_strings(x, key) for x in v]
     if isinstance(v, dict):
@@ -831,7 +956,9 @@ def find_wrappers(rel: str, lang: str, text: str, T, sink_rx) -> list[dict]:
     """App functions whose body calls a logging, analytics, identify or error-tracker sink (logSecurityEvent,
     trackEvent, a logger.warn wrapper): calls to them are sinks too, one level deep."""
     out = []
-    kinds = ('log', 'analytics', 'identify', 'error_tracker')
+    # file_write: a small helper that writes one of its parameters to a file (write_json(path, payload)); a call to it
+    # is a file write, so a host name handed to it is linked to the file it lands in
+    kinds = ('log', 'analytics', 'identify', 'error_tracker', 'file_write')
     if lang == 'py':
         defs = []
         lines = text.splitlines()
@@ -931,10 +1058,14 @@ def machine_ids(rel: str, lang: str, text: str, T, env_reads: list | None = None
         for m in assign.finditer(text):
             if masked_kind(spans or [], m.start(1)):
                 continue   # an assignment inside a fixture string or a docstring
-            v, view = m.group(1), code_view(m.group(2))
+            # a dict literal or a call left open at the end of the line is read to its closing bracket:
+            # record = {\n 'host': platform.node(),\n}
+            rhs = balanced_rhs(text, m.start(2), m.group(2))
+            v, view = m.group(1), code_view(rhs)
             # a keyword argument handing the value to a call (subprocess.run(cmd, env=env).returncode) does not make the
-            # call's result stand for it
-            view = re.sub(r'(?<![=!<>\w])([A-Za-z_]\w*)\s*=(?!=)\s*[A-Za-z_][\w.]*', ' ', view)
+            # call's result stand for it; the keyword arguments of dict(...) are the keys of the object it builds
+            if not KW_OBJECT.match(rhs):
+                view = re.sub(r'(?<![=!<>\w])([A-Za-z_]\w*)\s*=(?!=)\s*[A-Za-z_][\w.]*', ' ', view)
             got = set().union(*(fs for k, fs in names.items() if k != v and names_field(view, k)))
             if got:
                 names.setdefault(v, set()).update(got)
@@ -1022,6 +1153,9 @@ def build_coverage(repo: Path, cen: dict, build_dirs: list[dict]) -> dict:
     c['excluded'], c['excluded_source_files'] = excluded, sum(e['source_files'] for e in excluded)
     cov = lang_census.language_coverage(c, ANALYSED, tool='scan_privacy.py', what='privacy scan')
     cov['needs_limitation'] = [cov['dominant_unsupported_language']] if cov['status'] == 'unsupported_dominant' else []
+    # script languages the census counts apart (PowerShell, shell, batch): installers and wrappers that download and write
+    # files, none of which this scan reads, so the report names each kind
+    cov['needs_limitation_scripts'] = sorted(cov.get('scripts') or {})
     big = [x for x in build_dirs if x['decision'] == 'skipped' and x['source_files'] > cov.get('supported_files', 0)]
     cov['needs_limitation_dirs'] = [x['dir'] for x in big]
     if big:
@@ -1150,12 +1284,17 @@ def main() -> int:
     used_hosts: set[str] = set()  # hosts named outside a CSP string anywhere in the scanned code
     walked: set[str] = set()
     artifact_rels: list[str] = []   # text and data files: read for home-directory paths written into them
+    archive_rels: list[tuple[str, str]] = []   # committed archives (path, format): zip members are read the same way
+    rust_reads = {'env_reads': [], 'process_launches': [], 'library_loads': []}
+    rust_files = 0
     next_model, next_by_file = read_next(repo)
     for p in files(repo, pruned, SKIP | set(a.exclude), test_names, kept_dirs, build_dirs, include, set(a.exclude), fixture_set):
         rel = p.relative_to(repo).as_posix()
         walked.add(rel)
         if p.suffix.lower() in ARTIFACT_EXT:
             artifact_rels.append(rel)
+        elif archive_text.is_archive_name(p.name):
+            archive_rels.append((rel, archive_text.is_archive_name(p.name)))
         lang = LANG.get(p.suffix.lower())
         if not (lang or p.name in MANIFESTS or p.name in PLATFORM or p.name == 'package.json'):
             continue
@@ -1201,9 +1340,19 @@ def main() -> int:
         T = Text(text)
         if lang == 'rs':
             # Rust is not analysed for sends, logs or storage (language_coverage says so); only what identifies the machine
-            # or the account is read (hostname, whoami, home_dir, env vars such as COMPUTERNAME and USERNAME)
-            env = (cargo_project.scan_file(p, rel).get('env') or []) if 'env' in text else []
+            # or the account is read (hostname, whoami, home_dir, env vars such as COMPUTERNAME and USERNAME), and what the
+            # shared Cargo reader lists for the review: every environment read, process launch and library load ("rust")
+            rust_files += 1
+            sc = cargo_project.scan_file(p, rel) if ('env' in text or 'Command' in text or 'Library' in text or 'dlopen' in text) else {}
+            env = sc.get('env') or []
             collection += machine_ids(rel, 'rs', text, T, env)[0]
+            for x in env:
+                rust_reads['env_reads'].append({'file': rel, 'line': x['line'], 'name': x.get('name'),
+                                                **({} if x.get('name') else {'expr': str(x.get('expr') or '')[:120]})})
+            rust_reads['process_launches'] += [{'file': rel, 'line': x['line'], 'program': str(x.get('program_expr') or '')[:120]}
+                                               for x in sc.get('process') or []]
+            rust_reads['library_loads'] += [{'file': rel, 'line': x['line'], 'call': x.get('call'), 'path': str(x.get('path_expr') or '')[:120]}
+                                            for x in sc.get('libload') or []]
             continue
         generated = bool(GENERATED_NAME.search(p.name))
         if not generated and lang in ('js', 'ts') and size > 20000:  # a bundle: few, very long lines
@@ -1639,6 +1788,14 @@ def main() -> int:
     all_scopes = sorted({x for s in sinks for x in (s.get('_auth') or {}).get('scopes', [])} |
                         {x for t in texts.values() if 'scope' in t for x in scope_words(t) if x in ('openid', 'profile', 'email', 'offline_access')})
     candidates = []
+    tracked = tracked_files(repo)
+    by_base: dict = {}   # file name -> repository files of that name (the files git tracks, else every file walked)
+
+    def named_alike(name: str) -> list[str]:
+        if not by_base:
+            for r_ in sorted(tracked if tracked is not None else walked):
+                by_base.setdefault(r_.rsplit('/', 1)[-1], []).append(r_)
+        return by_base.get(name.rsplit('/', 1)[-1], [])[:5]
 
     def cand(**kw):
         kw['id'] = f'S{len(candidates) + 1:03d}'
@@ -1760,9 +1917,18 @@ def main() -> int:
                 extra['machine_identifiers'] = sorted(machine)
                 if s['kind'] == 'file_write':
                     extra['subtype'] = 'identifier_written'
+                    # which file the write lands in, as far as the code spells it, and the repository files of that name
+                    T_ = texts_meta[s['file']][1]
+                    to = write_targets(texts[s['file']], T_, s['line'], s.get('end_line'))
+                    alike = sorted({r_ for t_ in to for r_ in named_alike(t_)})[:5]
+                    extra['facts'] = {'written_to': to, 'files_named_alike': alike,
+                                      'committed': None if tracked is None or not alike else True}
                 extra['note'] = ('the host name or OS account name of the machine running the code' + (
                     ' is written to a file: if that file is committed or published (results, scoreboards, logs kept in the '
                     'repository), everyone who reads the repository sees it; check which output files are committed'
+                    + ((f' (the write names {", ".join(extra["facts"]["written_to"])}'
+                        + (f'; the repository holds {", ".join(extra["facts"]["files_named_alike"])}' if extra['facts']['files_named_alike'] else '')
+                        + ')') if extra['facts']['written_to'] else '')
                     if s['kind'] == 'file_write' else ' is named here; trace where the line ends up'))
             if from_object:
                 extra['read_from_object'] = sorted(set(from_object))
@@ -1896,9 +2062,13 @@ def main() -> int:
             continue
         text = texts[s['file']]
         hosts = [m.group(1) for m in URL_LIT.finditer(s['_raw'])]
+        local = bool(RELATIVE_URL.search(s['_raw']))   # the app's own path or loopback, on the call or in a variable it names
         # a variable on the call (req, url, base) assigned in the same file, followed two steps: req = Request(url) and
         # url = f'{BASE}/runs', BASE = 'https://...'
+        # (a bare `request` is a variable when the file assigns it; in urllib.request.urlopen it is the module)
         todo, looked = [(v, 0) for v in set(re.findall(r'[A-Za-z_$][\w$]*', s['_view'])) - NOT_VARS], set()
+        if BARE_REQUEST.search(s['_view']):
+            todo.append(('request', 0))
         while todo:
             v, depth = todo.pop()
             if v in looked:
@@ -1906,12 +2076,16 @@ def main() -> int:
             looked.add(v)
             am = re.search(r'(?m)^[ \t]*(?:export\s+)?(?:const|let|var)?\s*' + re.escape(v) + r'\s*(?::[^=\n]+)?=[^=\n][^\n]*', text)
             if am:
-                found = [m.group(1) for m in URL_LIT.finditer(am.group(0))]
+                seg = am.group(0)
+                if seg.rstrip().endswith(('(', '[', '{', ',')):   # the value starts on the next line
+                    seg = text[am.start():am.start() + 600]
+                local = local or bool(RELATIVE_URL.search(seg))
+                found = [m.group(1) for m in URL_LIT.finditer(seg)]
                 hosts += found
                 if not found and depth < 2:
-                    rhs = code_view(am.group(0).split('=', 1)[1])
+                    rhs = code_view(seg.split('=', 1)[1])
                     todo += [(w, depth + 1) for w in set(re.findall(r'[A-Za-z_$][\w$]*', rhs)) - NOT_VARS]
-        if not hosts and s.get('side') == 'server' and not RELATIVE_URL.search(s['_raw']):
+        if not hosts and s.get('side') == 'server' and not local:
             # server or tool code calling out to a host the code does not spell out (read from a file, a setting or an
             # argument): a recipient nobody can name from the scan, listed so the review traces it
             outbound_unresolved.append({'file': s['file'], 'line': s['line'], 'via': s['sink'], 'excerpt': s['excerpt']})
@@ -1956,23 +2130,30 @@ def main() -> int:
                       'a browser capture never sees this, so point the upstream at a loopback sink to observe it')
     # a home-directory path with an account name, written into a committed text or data file (a report, a run log, an
     # example output): one candidate per account, the other places under also_at; the account name is never written out
-    tracked = tracked_files(repo)
-    homes = home_path_hits(repo, artifact_rels, tracked, a.max_bytes)
+    homes, archives, redacted = home_path_hits(repo, artifact_rels, archive_rels, tracked, a.max_bytes, skipped)
     by_acct: dict = {}
     for h in homes:
         by_acct.setdefault(h['account'], []).append(h)
-    for i, (_, hs) in enumerate(sorted(by_acct.items(), key=lambda kv: (kv[1][0]['file'], kv[1][0]['line']))):
+    for i, (_, hs) in enumerate(sorted(by_acct.items(), key=lambda kv: (kv[1][0]['file'], kv[1][0].get('member') or '', kv[1][0]['line']))):
         h = hs[0]
+        places = list(dict.fromkeys(place(x) for x in hs))    # each place once, however often the line names the account
+        in_archive = sorted({x['file'] for x in hs if x.get('member')})
         c = cand(type='identifier_in_artifact', subtype='home_path_in_artifact', file=h['file'], line=h['line'], excerpt=h['excerpt'],
                  fields=['home_path'], categories=['identity'], confidence='pattern',
-                 facts={'account': f'account {i + 1}', 'occurrences': len(hs), 'files': len({x['file'] for x in hs}),
-                        'committed': None if tracked is None else True},
+                 facts={'account': f'account {i + 1}', 'occurrences': len(hs), 'places': len(places),
+                        'files': len({(x['file'], x.get('member')) for x in hs}), 'committed': None if tracked is None else True},
                  note='a home-directory path naming an OS account is written into a file the repository keeps (a report, a run log, '
                       'an example output): everyone who reads the repository reads the account name, which is often the person\'s '
                       'name. Rewrite the paths relative to the repository (or a placeholder) and regenerate the file'
+                      + (f'; {", ".join(in_archive)} is an archive, so the copies inside it must be rebuilt too' if in_archive else '')
+                      + '. Earlier commits keep the old versions: cleaning the tree does not clean the history'
                       + ('' if tracked is not None else '; the scan could not ask git whether the file is committed'))
-        if len(hs) > 1:
-            c['also_at'] = [f'{x["file"]}:{x["line"]}' for x in hs[1:21]]
+        if h.get('member'):
+            c['member'] = h['member']
+        if in_archive:
+            c['facts']['archives'] = in_archive
+        if len(places) > 1:
+            c['also_at'] = places[1:21]
     for r in rum_inits:
         if r['replay'] and r['privacy_level'] in (None, 'allow'):
             how = 'set to allow' if r['privacy_level'] else 'not set, so the SDK version\'s default applies'
@@ -2041,20 +2222,30 @@ def main() -> int:
     for c in collection:
         by_cat[c.get('category') or 'none'] = by_cat.get(c.get('category') or 'none', 0) + 1
     by_cat = dict(sorted(by_cat.items()))
-    out = {'repo': repo.as_posix(), 'files_scanned': n_files, 'seconds': round(time.time() - t0, 1), 'skipped': skipped,
+    out = {'repo': repo_label(repo), 'files_scanned': n_files, 'seconds': round(time.time() - t0, 1), 'skipped': skipped,
            'collection': collection, 'collection_by_category': by_cat, 'sinks': sinks, 'sdks': sdks, 'permissions': permissions,
            'test_named_dirs_scanned': [{'dir': d + '/', 'reason': 'holds a package manifest (a product package)' if any(
                (repo / d / m).is_file() for m in PACKAGE_MANIFESTS) else 'named after a test tool but holds no test files'} for d in kept_dirs],
            'wrappers': sorted(wrappers.values(), key=lambda w: (w['file'] or '', w['line'] or 0, w['name'])), 'candidates': candidates,
            'outbound_hosts': outbound_hosts, 'outbound_unresolved': outbound_unresolved, 'build_output_dirs': build_dirs, 'language_coverage': coverage,
            'fixtures': fixtures, 'fixtures_excluded': [f for f in fixtures if f['dir'] in fixture_set],
-           'home_paths': [{k: h[k] for k in ('file', 'line')} for h in homes], 'git_tracked': tracked is not None,
+           'home_paths': [dict(t) for t in dict.fromkeys(tuple((k, h[k]) for k in ('file', 'member', 'line') if k in h) for h in homes)],
+           'archives': archives,
+           # home paths a redaction step already replaced with a placeholder: the tree is clean there, earlier commits may not be
+           'redacted_home_paths': {'count': sum(redacted.values()), 'files': sorted(redacted)[:20]},
+           'history': {'scanned': False, 'note': 'the scan reads the current tree only: an identifier removed from a file (or replaced by a '
+                       'placeholder) may remain in earlier commits; search them with git log -S for the values the code writes'},
+           'git_tracked': tracked is not None,
+           **({'rust': dict(rust_reads, note='read with the shared cargo_project.py: what the Rust code reads from the environment, the '
+                            'programs it launches and the libraries it loads. Sends, logs and file writes in Rust are not scanned')}
+              if rust_files else {}),
            'copies_folded': copies_folded,
            'host_mentions': sorted(mentions, key=lambda m: (m['host'], m['file'], m['line'])), 'csp': csp_out}
     # the validator rejects any email, phone or card-like value in the evidence: redact every remaining string
     # (labels, placeholders, notes) the same way, whatever pattern put it there; paths are left alone
-    for k in ('collection', 'sinks', 'sdks', 'permissions', 'wrappers', 'candidates', 'host_mentions', 'outbound_unresolved'):
-        out[k] = redact_strings(out[k])
+    for k in ('collection', 'sinks', 'sdks', 'permissions', 'wrappers', 'candidates', 'host_mentions', 'outbound_unresolved', 'rust'):
+        if k in out:
+            out[k] = redact_strings(out[k])
     a.out.parent.mkdir(parents=True, exist_ok=True)
     if coverage.get('warning'):
         print(f'WARNING: {coverage["warning"]}', file=sys.stderr)
@@ -2073,6 +2264,21 @@ def main() -> int:
     if skipped:
         print(f'  skipped {len(skipped)} file(s) (listed under "skipped"): ' + ', '.join(f'{x["file"]} ({x["reason"].split(" (")[0]})' for x in skipped[:5])
               + (' ...' if len(skipped) > 5 else ''))
+    for x in archives:
+        print(f'  archive {x["file"]} ({x["format"]}): ' + (
+            f'not opened ({x.get("error") or "only .zip archives are read"}): not assessed' if x['members'] is None or x.get('error') else
+            f'{x["read"]} of {x["members"]} member(s) read for home-directory paths'
+            + ('' if x['complete'] else f', {x["not_read"]} not read (listed under "skipped")')))
+    if redacted:
+        print(f'  {sum(redacted.values())} home path(s) in {len(redacted)} file(s) already carry a placeholder: earlier commits may still '
+              'hold the account name (git history is not scanned)')
+    if rust_files:
+        print(f'  Rust: {len(rust_reads["env_reads"])} environment read(s), {len(rust_reads["process_launches"])} process launch(es), '
+              f'{len(rust_reads["library_loads"])} library load(s) listed under "rust" (sends, logs and file writes in Rust are not scanned)')
+    if coverage.get('scripts'):
+        ex = (cen.get('script_examples') or {})
+        print('  scripts not read by the scan (what they download, send or write was not scanned): '
+              + '; '.join(f'{k} {n} file(s)' + (f' ({", ".join(ex.get(k, [])[:2])})' if ex.get(k) else '') for k, n in coverage['scripts'].items()))
     if fixture_set:
         print(f'  left out {len(fixture_set)} sample or fixture project(s) (--include-fixtures scans them): '
               + ', '.join(sorted(fixture_set)[:6]) + (' ...' if len(fixture_set) > 6 else ''))

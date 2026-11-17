@@ -3,15 +3,17 @@
 
     python render_report.py impact_report.json [--color auto|always|never] [--brief]
 
---brief prints the headline, the commands (more than 20 test files shown as a count), the first 20
-selected files, the blind spots and the recall line, without each
-test's reasons or the evidence sources.
+--brief prints the headline, the commands (more than 20 test files shown as a count) with the
+tests they do not run, the first 20 selected files, the blind spots, the recall line and the
+limitations, without each test's reasons, the evidence sources or the changed files.
 """
 from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
+from build_command import not_run_lines  # noqa: E402
 
 RESET = "\033[0m"; BOLD = "\033[1m"; DIM = "\033[2m"
 RED = "\033[31m"; GREEN = "\033[32m"; YELLOW = "\033[33m"; MAGENTA = "\033[35m"; CYAN = "\033[36m"
@@ -23,6 +25,8 @@ KIND_LABEL = {'global_config': 'global config', 'shared_fixture': 'shared fixtur
 SCOPE_LABEL = {'full_suite': 'full suite', 'language': 'every test of its language', 'package': 'whole package', 'fixture_reach': "fixture's reach",
                'package_and_contract': 'package + contract tests', 'importers': 'former importers',
                'e2e_and_visual': 'e2e and visual tests', 'fixture_host': 'tests of the tool that owns the sample',
+               'unresolved_importers': 'tests whose unresolved imports name it',
+               'no_existing_test': 'no test (a new CI file changes no existing test)',
                'labelled': 'labelled only (not widened)'}
 
 
@@ -103,9 +107,12 @@ def main() -> int:
             out.append(f'    # {cmd["note"]}')
     for pkg, why in d['command'].get('no_runner_reasons', {}).items():
         out.append(f'    # {pkg}: no command, {why}')
-    for g in d['command'].get('feature_gated', []):
-        out.append(P(f'    # {len(g["tests"])} selected test(s) of {g["crate"]} only run with --features {g["feature"]}; '
-                     'the commands above do not run them', YELLOW))
+    for line in not_run_lines(d['command']):
+        out.append(P(f'    # {line}', YELLOW))
+    if not d['command'].get('not_run_by_default'):       # a report made before not_run_by_default
+        for g in d['command'].get('feature_gated', []):
+            out.append(P(f'    # {len(g["tests"])} selected test(s) of {g["crate"]} only run with --features {g["feature"]}; '
+                         'the commands above do not run them', YELLOW))
     out.append('')
 
     out.append(P(f'## Selected ({len(d["selected"])})', BOLD))
@@ -156,6 +163,10 @@ def main() -> int:
         outside = v['failures_outside_selection']
         out.append(f'- Verify run: {len(v["failures_inside_selection"])} failing file(s) inside the selection, '
                    + (P(f'{len(outside)} outside: {", ".join(outside)}', RED) if outside else '0 outside') + '.')
+        for k in v.get('known_failures') or []:
+            what = {'flaky': 'flaky', 'baseline': 'failing at the base already'}.get(k.get('kind'), k.get('kind'))
+            out.append(f'- Known failure, not counted as a miss: `{k.get("id")}` ({what}; runs '
+                       f'{", ".join(k.get("run_ids") or [])}). {k.get("note", "")}')
         if v.get('note'):
             out.append(P(f'    {v["note"]}', DIM))
     out.append('')
@@ -166,7 +177,7 @@ def main() -> int:
         out.append(f'- {o}')
     if d.get('ci_snippet'):
         out.append(f'- CI snippet ({d["ci_snippet"]["format"]}) for you to add: `{d["ci_snippet"]["path"]}`')
-    if not args.brief and d.get('limitations'):
+    if d.get('limitations'):
         out.append('')
         out.append(P('## Limitations', BOLD))
         out += [f'- {x}' for x in d['limitations']]

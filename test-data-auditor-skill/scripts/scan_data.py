@@ -28,6 +28,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import datafiles, detect_conventions, inventory as inv, jsparse, repo_layout, schema_drift  # noqa: E402
 
 RULES = json.loads((HERE.parent / 'data' / 'rules.json').read_text(encoding='utf-8'))
@@ -59,7 +60,15 @@ ARN = re.compile(r'\barn:aws:[a-z0-9-]+:[a-z0-9-]*:(\d{12}):')
 # a file or directory call whose first argument is a relative path literal: open("dir/x.json"), os.listdir("dir")
 CWD_PATH_CALL = re.compile(r'(?<![\w.])(?:open|Path|os\.listdir|listdir|os\.scandir|scandir|glob\.glob|glob\.iglob|os\.walk|'
                            r'os\.path\.(?:exists|isdir|isfile|getmtime|getsize))\(\s*r?["\']([A-Za-z_][\w.-]*(?:/[^"\']*)?)["\']')
-LOCAL_PATH = re.compile(r'(?:/Users/[A-Za-z][\w.-]+/|/home/[a-z][\w.-]+/|[A-Za-z]:\\\\?Users\\\\?[A-Za-z][\w.-]+)')
+LOCAL_PATH = re.compile(r'(?:[A-Za-z]:)?(?:/Users/([A-Za-z][\w.-]+)/|/home/([a-z][\w.-]+)/)|[A-Za-z]:\\\\?Users\\\\?([A-Za-z][\w.-]+)')
+# an account segment made of these words is a stand-in written for a test (a redaction test's input), not someone's
+# machine: dismissed by rule, never dropped
+PLACEHOLDER_ACCOUNT_WORDS = {'user', 'users', 'username', 'someone', 'somebody', 'me', 'you', 'name', 'person', 'account', 'private',
+                             'redacted', 'anonymous', 'anon', 'alice', 'bob', 'carol', 'dave', 'eve', 'jdoe', 'johndoe', 'janedoe',
+                             'john', 'jane', 'doe', 'dev', 'developer', 'example', 'test', 'tester', 'testing', 'fake', 'dummy',
+                             'placeholder', 'sample', 'demo', 'foo', 'bar', 'baz', 'other', 'another', 'some', 'my', 'your',
+                             'local', 'nobody', 'xxx', 'yyy', 'abc', 'x', 'y', 'u'}
+URL_BEFORE = re.compile(r'://[^\s/"\'<>]*$')       # a path that is a URL's path part, not a file system path
 UUID = re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b', re.I)
 SECRETS = {k: re.compile(v) for k, v in RULES['secret_patterns'].items()}
 ID_CALL = re.compile(r'^(get|find|fetch|load|lookup|read|retrieve)(_\w+)?$|_by_id$|^by_id$', re.I)
@@ -90,6 +99,9 @@ JS_FROZEN = re.compile(r'useFakeTimers|setSystemTime|MockDate|mockdate|timekeepe
                        r'jest\.useFakeTimers|sinon\.useFakeTimers|mockDate\(|freezeTime|tk\.freeze')
 ATTR_BEFORE = re.compile(r'([A-Za-z_:][\w:.-]*)\s*=\s*$')        # an XML/SVG/HTML attribute name before its value
 MARKUP_EXT = ('.svg', '.xml', '.html', '.htm', '.xhtml')
+KEY_WINDOW = 200            # characters read before a quoted string for its key or attribute name
+SLOW_SOURCE_S = 5           # progress names a source that took longer than this, and a big one before it is read
+BIG_SOURCE_BYTES = 256_000
 # near-duplicate sketches: DUP_BINS MinHash values per file in bands of DUP_ROWS; a bucket over DUP_BUCKET_MAX files
 # pairs neighbours only; pairs whose sketch estimate is below the threshold minus DUP_EST_SLACK are not confirmed
 DUP_BINS, DUP_ROWS, DUP_BUCKET_MAX, DUP_EST_SLACK = 64, 4, 60, 0.25
@@ -262,12 +274,20 @@ def placeholder_digits(d: str) -> str | None:
     return None
 
 
+ID_LABEL_BEFORE = re.compile(r'(?i)(?:u?uid|guid|\bid|hash|serial|offset|addr(?:ess)?|\bpts|\bdts|nonce|seed|checksum|crc)'
+                             r'\s*[:=#]?\s*$')
+
+
 def not_card(text: str, start: int, end: int, field: str = '') -> bool:
     """True when the card-shaped digit run text[start:end] is a date, time, version or timestamp."""
     run = text[start:end]
     if DATE_TOKEN.search(run) or compact_datetime(run):
         return True
     before, after = text[max(0, start - 1):start], text[end:end + 2]
+    if before == '[' and after[:1] == ']':
+        return True  # a log line's bracketed object address or thread id ([0000...] module debug: ...)
+    if ID_LABEL_BEFORE.search(text[max(0, start - 24):start]) and not CARD_FIELD.search(field or ''):
+        return True  # a labelled id, hash or offset (TrackUID: ..., serial=..., pts ...)
     if before in ('.', ':', 'v', 'V') or re.match(r'[.:]\d|T\d', after):
         return True  # part of a version, a decimal, or a date followed by a time
     # a digit run that is part of a path or an identifier (runs/20261103-142530/, order_4111..., x4111...) is not a card
@@ -542,6 +562,7 @@ class Scanner:
         inv.DATA_DIRS.update(inventory.get('data_dirs', []))       # trees inventory.py was told hold test data
         self.cands: list[dict] = []
         self._keys: set[tuple] = set()
+        self._local_paths: dict[tuple, dict] = {}   # (file, dismissed?) -> its one local_path candidate
         self.by_path = {i['path']: i for i in inventory['inventory']}
         self.seed_loaders = {t for i in inventory['inventory'] if i['kind'] == 'seed' for t in i['loaded_by']}
         self.files = inv.walk(root)
@@ -860,7 +881,7 @@ class Scanner:
             if item['kind'] != 'seed' or item['status'] != 'scanned':
                 continue
             try:
-                for r in datafiles.load_records(self.root / item['path'], item['path']):
+                for r in datafiles.records_at(self.root, item['path']):
                     v = r['fields'].get('id', {}).get('value')
                     if isinstance(v, int):
                         out[v] = f'{item["path"]}:{r["line"]}'
@@ -1081,10 +1102,39 @@ class Scanner:
                      'account id', details={})
         # a platform's fixed content or build root (/home/site/wwwroot on Azure App Service, a CI runner's home) is the
         # same on every machine of that platform, so it is not someone's machine
+        if '/home/' not in text and '/Users/' not in text and 'Users\\' not in text:
+            return
         reserved = tuple(RESERVED['paths_reserved']['prefixes'])
-        if any(not text[m.start():].startswith(reserved) for m in LOCAL_PATH.finditer(text)):
-            self.add('environment_coupling', 'local_path', rel, line_no, 'an absolute path on someone\'s machine', None, 'path',
-                     details={})
+        placeholder = None
+        for m in LOCAL_PATH.finditer(text):
+            if text[m.start():].replace('\\\\', '/').replace('\\', '/').startswith(reserved) \
+                    or URL_BEFORE.search(text[max(0, m.start() - 300):m.start()]):
+                continue                   # a platform root or a CI runner's home, or the path of a URL
+            account = next(g for g in m.groups() if g)
+            words = [w for w in re.split(r'[-_.\s]+', account.lower()) if w]
+            if words and all(w in PLACEHOLDER_ACCOUNT_WORDS for w in words):
+                placeholder = placeholder or account
+                continue
+            self.local_path(rel, line_no, None)
+            return
+        if placeholder:
+            self.local_path(rel, line_no, 'placeholder account: the account folder is a stand-in word '
+                                          '(PLACEHOLDER_ACCOUNT_WORDS), not someone\'s machine')
+
+    def local_path(self, rel: str, line_no: int, dismiss: str | None):
+        """One local_path candidate per file (and per dismissal): a run log or a recorded copy repeats the same home
+        folder on hundreds of lines, which is one finding. The candidate cites the first line; details.lines lists
+        every line (the first 200) and details.count how many there are."""
+        c = self._local_paths.get((rel, bool(dismiss)))
+        if c is not None:
+            c['details']['count'] += 1
+            if len(c['details']['lines']) < 200:
+                c['details']['lines'].append(line_no)
+            return
+        self.add('environment_coupling', 'local_path', rel, line_no,
+                 'an absolute path under a home folder' if dismiss else 'an absolute path on someone\'s machine', None, 'path',
+                 auto_dismiss=dismiss, details={'lines': [line_no], 'count': 1})
+        self._local_paths[(rel, bool(dismiss))] = self.cands[-1]
 
     def cwd_relative(self, rel: str, text: str):
         """A test in a subdirectory that opens a top-level directory of the repository by a relative path
@@ -1494,7 +1544,7 @@ class Scanner:
                     self.add('snapshot_rot', 'large_snapshot', i['path'], 1, f'{i["lines"]} lines asserted wholesale', None, None,
                              details={'lines': i['lines']})
             elif i['kind'] in ('fixture', 'recording', 'seed') and not i['loaded_by'] and not MIGRATION_SEED.search(i['path']) \
-                    and not self.no_tests:
+                    and not self.no_tests and not i.get('archive') and not i.get('evidence_tree'):
                 if i.get('used_by_commands'):
                     by_commands += 1       # read by a documented command or a script: used, though not by a test
                     continue
@@ -1504,7 +1554,8 @@ class Scanner:
             self.notes.append(f'{by_commands} data file(s) are used by commands, not tests: no test loads them, but a documented '
                               'command (a README, the repository guide, a commands.sh, a Makefile or CI step) or a folder it '
                               'names reads them (used_by_commands in the inventory); they are not called unused')
-        data = [i for i in items if i['kind'] in ('fixture', 'recording', 'seed') and i.get('lines', 0) >= RULES['duplicate_min_lines']]
+        data = [i for i in items if i['kind'] in ('fixture', 'recording', 'seed') and i.get('lines', 0) >= RULES['duplicate_min_lines']
+                and not i.get('archive')]      # members of one archive are not compared pair by pair
         # a directory with more files of one format than duplicate_max_files is a templated tree, near-duplicate by design:
         # its files are checked for exact copies only, and the notes say so
         cap = RULES.get('duplicate_max_files', 200)
@@ -1637,6 +1688,52 @@ class Scanner:
                               f'(duplicate_max_pairs); the {cap} most similar were compared and {skipped} were not, so '
                               'near copies among them are not ruled out')
 
+    def scan_lines(self, rel: str, text: str, records: list[dict], item: dict, is_js: bool):
+        """The line rules every scanned source gets: secrets, hosts and paths on each line, and personal data in the
+        strings (and, in prose formats, the running text) of lines no record covers."""
+        structured = {(r_line) for r in records for r_line in [v['line'] for v in r['fields'].values()]}
+        prose = item.get('format') in PROSE_FORMATS
+        is_markup = rel.lower().endswith(MARKUP_EXT)
+        only = {n for a, b in item['test_lines'] for n in range(a, b + 1)} if item.get('test_lines') else None
+        for n, line in enumerate(text.split('\n'), 1):
+            if only is not None and n not in only:
+                continue                   # product code beside the #[cfg(test)] module of a Rust source file
+            self.secrets(rel, n, line)
+            self.environment(rel, n, line)
+            if n not in structured:
+                for m in re.finditer(r'"([^"\n]{3,200})"|\'([^\'\n]{3,200})\'', line):
+                    # the key or attribute name sits right before the string: read a short window, never the whole
+                    # line so far (a page with its data on one 300k-character line has thousands of strings on it)
+                    before = line[max(0, m.start() - KEY_WINDOW):m.start()]
+                    key = JS_KEY_BEFORE.search(before) if is_js else ATTR_BEFORE.search(before) if is_markup else None
+                    self.personal_value(rel, n, key.group(1) if key else None, m.group(1) or m.group(2), loose=bool(key))
+                if prose:
+                    # pages, tickets, notes and patches carry people in their running text, not only in quotes
+                    bare = re.sub(r'"[^"\n]{3,200}"|\'[^\'\n]{3,200}\'', lambda q: ' ' * len(q.group(0)), line)
+                    if bare.strip():
+                        self.personal_value(rel, n, None, bare)
+
+    def scan_member(self, item: dict, comparisons: dict):
+        """A text member of a zip archive (<archive>!<member>): the same record and line rules as a loose data file,
+        on the text read in memory. Its candidates cite the member path and the line in the member."""
+        rel = item['path']
+        try:
+            text = datafiles.member_text(self.root, rel)
+        except datafiles.NotAssessed as exc:
+            item['status'], item['reason'] = 'not_assessed', str(exc)
+            return
+        records: list[dict] = []
+        if len(text) <= RULES['large_file_mb'] * 1_000_000:
+            try:
+                records = datafiles.records_from_text(text, item.get('format') or 'text', rel, rel.lower().endswith('.tsv'))
+            except datafiles.NotAssessed as exc:
+                item['status'], item['reason'] = 'not_assessed', str(exc)
+        for r in records:
+            self.personal_record(r, rel)
+            self.time_bombs(r, rel, comparisons)
+        self.tabular_extract(rel, records)
+        self.scan_lines(rel, text, records, item, False)
+
     def run(self) -> dict:
         comparisons = self.now_comparisons()
         self.js_now_comparisons(comparisons)
@@ -1644,13 +1741,27 @@ class Scanner:
         py = inv.PyTests(self.root, self.files)
         import time
         t_start = t_last = time.monotonic()
+        t_item, slow = t_start, None
         for n_item, item in enumerate(self.inv['inventory'], 1):
-            if self.progress and time.monotonic() - t_last >= 5:
-                t_last = time.monotonic()
-                print(f'scan: {n_item}/{len(self.inv["inventory"])} sources ({t_last - t_start:.0f} s)', file=sys.stderr, flush=True)
+            if self.progress:
+                # a long run is never mistaken for a hung one, and a slow file is named: the last source when it took
+                # seconds, and a big one before it is read
+                now = time.monotonic()
+                if slow and now - t_item >= SLOW_SOURCE_S:
+                    print(f'scan: {slow} took {now - t_item:.0f} s', file=sys.stderr, flush=True)
+                t_item, slow = now, item['path']
+                if now - t_last >= 5 or (item.get('bytes') or 0) >= BIG_SOURCE_BYTES:
+                    t_last = now
+                    print(f'scan: {n_item}/{len(self.inv["inventory"])} sources ({now - t_start:.0f} s), reading {item["path"]}'
+                          f' ({(item.get("bytes") or 0) / 1000:.0f} kB)', file=sys.stderr, flush=True)
             if item['status'] != 'scanned':
                 continue
             rel = item['path']
+            if item.get('archive'):
+                self.scan_member(item, comparisons)        # a text member of a zip, read in memory
+                continue
+            if 'archive_members' in item:
+                continue                                   # the archive itself: its members are the sources
             p = self.root / rel
             size_mb = p.stat().st_size / 1_000_000
             if size_mb > RULES['large_file_mb']:
@@ -1678,21 +1789,7 @@ class Scanner:
             except datafiles.NotAssessed as exc:
                 item['status'], item['reason'] = 'not_assessed', str(exc)
                 continue
-            structured = {(r_line) for r in records for r_line in [v['line'] for v in r['fields'].values()]}
-            prose = item.get('format') in PROSE_FORMATS
-            for n, line in enumerate(text.split('\n'), 1):
-                self.secrets(rel, n, line)
-                self.environment(rel, n, line)
-                if n not in structured:
-                    for m in re.finditer(r'"([^"\n]{3,200})"|\'([^\'\n]{3,200})\'', line):
-                        key = JS_KEY_BEFORE.search(line[:m.start()]) if jsparse.is_js(rel) else \
-                            ATTR_BEFORE.search(line[:m.start()]) if rel.lower().endswith(MARKUP_EXT) else None
-                        self.personal_value(rel, n, key.group(1) if key else None, m.group(1) or m.group(2), loose=bool(key))
-                    if prose:
-                        # pages, tickets, notes and patches carry people in their running text, not only in quotes
-                        bare = re.sub(r'"[^"\n]{3,200}"|\'[^\'\n]{3,200}\'', lambda q: ' ' * len(q.group(0)), line)
-                        if bare.strip():
-                            self.personal_value(rel, n, None, bare)
+            self.scan_lines(rel, text, records, item, jsparse.is_js(rel))
             if jsparse.is_js(rel) and size_mb <= RULES['large_file_mb']:
                 covered = {c['line'] for c in self.cands[n_before:] if c['category'] == 'time_bomb'}
                 self.js_test_rules(rel, item, comparisons, seeds, covered)

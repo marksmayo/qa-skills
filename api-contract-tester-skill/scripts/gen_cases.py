@@ -30,6 +30,7 @@ import argparse, copy, datetime as dt, json, random, re, string, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import jsonschema_lite as jl  # noqa: E402
 from send_cases import MSYS_MANGLED, safe_id  # noqa: E402
 

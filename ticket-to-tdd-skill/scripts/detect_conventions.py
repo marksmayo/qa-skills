@@ -68,6 +68,7 @@ SKIP_DIRS = {'.git', 'node_modules', 'vendor', 'dist', 'build', 'out', 'target',
 # Folders named like build output are decided by evidence (lang_census.BuildEvidence: gitignored, a build config or
 # minified bundles -> build output; served by the app or git-tracked and hand-written -> source), never by name alone.
 BUILD_NAMES = {'dist', 'build', 'out', 'obj'}
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 try:   # shipped next to this script in every skill that carries detect_conventions.py
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import lang_census as _lc   # noqa: E402
@@ -610,6 +611,70 @@ WS_FILTER = re.compile(r'(?:--filter|-F|--workspace|--scope)(?:=|\s+)[\'"]?([^\s
                        r'\byarn\s+workspace\s+[\'"]?([^\s\'"]+)|\bnpm\s+(?:\S+\s+)*?-w\s+[\'"]?([^\s\'"]+)')
 
 
+CARGO_PKG = re.compile(r'(?:^|\s)(?:-p|--package)(?:\s+|=)[\'"]?([A-Za-z0-9_.-]+)')
+
+
+def cargo_packages(command: str) -> list[str]:
+    """The crates a cargo command is limited to with -p/--package (before any `--`); [] for another tool, for
+    --workspace and for an unscoped command."""
+    if not re.search(r'\bcargo\b', command):
+        return []
+    return CARGO_PKG.findall(command.split(' -- ')[0])
+
+
+TESTCASE_BASES = {'TestCase', 'IsolatedAsyncioTestCase', 'AsyncTestCase', 'TransactionTestCase', 'SimpleTestCase',
+                  'LiveServerTestCase', 'AioHTTPTestCase', 'APITestCase'}
+
+
+def unittest_classes(text: str) -> list[dict]:
+    """The unittest.TestCase subclasses a Python test file defines: [{name, line, bases, tests, async_tests}], in
+    file order. A class counts when a base is TestCase or another *TestCase (unittest's own, IsolatedAsyncioTestCase,
+    a framework's such as django.test.TestCase), under an import alias too (`from unittest import TestCase as TC`),
+    or a class of the same file that counts. `tests` are its own `test*` methods (inherited ones are the base's).
+    unittest runs these whatever pytest's python_classes says, and pytest collects them too; a plain `class TestX:`
+    is pytest's alone and is not listed. [] when the file does not parse."""
+    if 'TestCase' not in text:
+        return []
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return []
+    alias = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            for a in node.names:
+                if a.asname and (a.name in TESTCASE_BASES or a.name.endswith('TestCase')):
+                    alias[a.asname] = a.name
+    classes = [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+    classes.sort(key=lambda n: n.lineno)
+
+    def base_name(b):
+        return b.attr if isinstance(b, ast.Attribute) else b.id if isinstance(b, ast.Name) else None
+    known: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for c in classes:
+            if c.name in known:
+                continue
+            for b in c.bases:
+                n = alias.get(base_name(b), base_name(b))
+                if n and (n in TESTCASE_BASES or n.endswith('TestCase') or n in known):
+                    known.add(c.name)
+                    changed = True
+                    break
+    out = []
+    for c in classes:
+        if c.name not in known:
+            continue
+        fns = [n for n in c.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name.startswith('test')]
+        out.append({'name': c.name, 'line': c.lineno,
+                    'bases': [ast.unparse(b) for b in c.bases],
+                    'tests': [n.name for n in fns],
+                    'async_tests': [n.name for n in fns if isinstance(n, ast.AsyncFunctionDef)]})
+    return out
+
+
 def workspace_filters(command: str) -> list[str]:
     """The workspace packages a command is limited to (pnpm/turbo --filter, -F, npm --workspace/-w, yarn workspace,
     lerna --scope), as written."""
@@ -790,6 +855,25 @@ class Detector:
                         commands.append(cmd)
         return ci_files, commands
 
+    @staticmethod
+    def _step_name(lines: list[str], at: int, indent: int) -> str | None:
+        """The name/displayName of the step whose list item starts at lines[at] (indent: of its dash)."""
+        first = re.match(r'^\s*-\s*(?:name|displayName)\s*:\s*(.+)$', lines[at])
+        if first:
+            return first.group(1).strip().strip('\'"')
+        for line in lines[at + 1:at + 200]:
+            st = line.strip()
+            if not st or st.startswith('#'):
+                continue
+            ind = len(line) - len(line.lstrip())
+            if ind <= indent:
+                return None
+            if ind == indent + 2:
+                m = re.match(r'^(?:name|displayName)\s*:\s*(.+)$', st)
+                if m:
+                    return m.group(1).strip().strip('\'"')
+        return None
+
     def ci_gates(self, ci_files: list[str]) -> list[dict]:
         """Test and coverage gates in CI: every command line that runs cargo test, cargo nextest, cargo llvm-cov,
         cargo tarpaulin, pytest, python -m unittest, coverage run -m unittest|pytest, coverage report --fail-under or
@@ -799,9 +883,17 @@ class Detector:
         for f in ci_files:
             lines = read(self.root / f).splitlines()
             job, jobs_indent, step = None, None, None
+            steps_ind = None      # the indent of the items of the current `steps:` list (-1: not seen yet)
             for i, line in enumerate(lines, 1):
                 ind = len(line) - len(line.lstrip())
                 st = line.strip()
+                if re.match(r'^-?\s*steps\s*:\s*$', st):
+                    steps_ind, step = -1, None
+                    continue
+                if st.startswith('- ') and steps_ind == -1:
+                    steps_ind = ind
+                if steps_ind is not None and steps_ind >= 0 and st and not st.startswith('#') and ind < steps_ind:
+                    steps_ind = None      # the list ended
                 if re.match(r'^jobs\s*:\s*$', st):
                     jobs_indent, job = ind, None
                     continue
@@ -812,10 +904,20 @@ class Detector:
                 if m:
                     job, step = m.group(1).strip('\'"'), None
                 m = re.match(r'^-?\s*(?:name|displayName)\s*:\s*(.+)$', st)
-                if m and (st.startswith('-') or step is None or ind > (jobs_indent or 0) + 2):
+                if steps_ind is not None and steps_ind >= 0:
+                    # inside a steps list: a step is one list item, named by the name/displayName key of that item
+                    # (wherever it stands in the item), never by a key of a nested block (`with: name:`) and never
+                    # by the step before it
+                    if st.startswith('- ') and ind == steps_ind:
+                        step = self._step_name(lines, i - 1, ind)
+                    if m and (ind == steps_ind if st.startswith('-') else ind == steps_ind + 2):
+                        continue
+                    if m and not st.startswith('-'):
+                        m = None
+                elif m and (st.startswith('-') or step is None or ind > (jobs_indent or 0) + 2):
                     step = m.group(1).strip().strip('\'"')
                     continue
-                if st.startswith('- ') and not re.match(r'^-\s*(run|script|bash|pwsh|powershell)\s*:', st):
+                elif st.startswith('- ') and not re.match(r'^-\s*(run|script|bash|pwsh|powershell)\s*:', st):
                     step = None
                 cmd = re.sub(r'^\s*(-\s*)?(run|script|command|sh|bash|pwsh|powershell)\s*:\s*[|>]?[-+]?\s*', '', line).strip()
                 if len(cmd) > 1 and cmd[0] == cmd[-1] and cmd[0] in '\'"':
@@ -883,6 +985,13 @@ class Detector:
                     name = None
                 if isinstance(name, str):
                     pkg_names[r] = name
+        crate_names = {}
+        for r in roots:
+            man = self.root / r / 'Cargo.toml'
+            if r != '.' and man.is_file():
+                m = re.search(r'^\[package\][^\[]*?^\s*name\s*=\s*"([^"]+)"', read(man, 20_000), re.M | re.S)
+                if m:
+                    crate_names[r] = m.group(1)
         ci_files, ci_cmds = self.ci()
         ci_gates = self.ci_gates(ci_files)
         repo_langs: dict[str, dict] = {}
@@ -1101,7 +1210,7 @@ class Detector:
             test_dirs = sorted({self._test_dir(f) for f in in_dirs})[:15]
             fw_names = {n for cat in a['frameworks'].values() for n in cat}
             cmds = [c for c in ci_cmds if self._ci_applies(c, r, fw_names, [x for x in roots if x != '.'],
-                                                           pkg_names.get(r))] + a['run_commands']
+                                                           pkg_names.get(r), crate_names.get(r))] + a['run_commands']
             sel = a['selectors']
             stable = {k: v for k, v in sel.items() if k in ('data-testid', 'role', 'label', 'accessibility-id', 'text')}
             prefer = ['role', 'label', 'data-testid', 'accessibility-id', 'text']
@@ -1216,11 +1325,18 @@ class Detector:
         return lines[start:end]
 
     @staticmethod
-    def _ci_applies(cmd: dict, root: str, frameworks: set[str], roots: list[str], pkg_name: str | None = None) -> bool:
+    def _ci_applies(cmd: dict, root: str, frameworks: set[str], roots: list[str], pkg_name: str | None = None,
+                    crate_name: str | None = None) -> bool:
         """A CI command belongs to an area if it runs there, filters to its workspace package (pnpm/turbo --filter,
-        npm --workspace, yarn workspace, lerna --scope), names it, or (unscoped) uses its framework."""
+        npm --workspace, yarn workspace, lerna --scope; cargo -p/--package, by the area's crate name), names it, or
+        (unscoped) uses its framework."""
         if root == '.':
             return True
+        crates = cargo_packages(cmd['command'])
+        if crates:      # cargo test -p <crate>: that crate's area and no other
+            return crate_name in crates
+        if crate_name and re.search(r'\bcargo\b.*\s--(?:workspace|all)(?:\s|$)', cmd['command']):
+            return True     # cargo ... --workspace runs every member crate
         wd = cmd.get('working_directory')
         if wd:
             return wd == root or wd.startswith(root + '/')
@@ -1366,6 +1482,19 @@ jobs:
           uv pip install pytest-xdist
           pipx run pytest-check-links docs
           echo "pytest is not used here"
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build the desk tool
+        run: cargo build -p tides-cli
+      - run: cargo test -p tides-cli --features desktop
+        name: Desktop tests
+      - script: cargo test --package=tides-core --lib
+        displayName: Core unit tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: report
+      - run: cargo test --workspace --locked
 """
 
 
@@ -1379,6 +1508,9 @@ def _rust_unittest_checks() -> list:
              'crates/tides-core/src/lib.rs': rs + '#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() {}\n}\n',
              'crates/tides-core/src/table.rs': rs,
              'crates/tides-core/tests/levels.rs': '#[test]\nfn levels() {}\n',
+             'crates/tides-cli/Cargo.toml': '[package]\nname = "tides-cli"\n',
+             'crates/tides-cli/src/main.rs': 'fn main() {}\n' + rs,
+             'crates/tides-cli/tests/cli.rs': '#[test]\nfn runs() {}\n',
              '.github/workflows/ci.yml': CI_RUST_UNITTEST}
     for i in range(6):
         files[f'scripts/report{i}.py'] = 'def build():\n    return 1\n'
@@ -1398,8 +1530,26 @@ def _rust_unittest_checks() -> list:
     areas = {a['root']: a for a in res['areas']}
     gates = res.get('ci_gates') or []
     by = {g.get('runner'): g for g in gates}
+    cmds_of = lambda r: [c['command'] for c in areas.get(r, {}).get('run_commands', [])]  # noqa: E731
+    uc = globals().get('unittest_classes')
+    sample = ('import unittest\nfrom unittest import IsolatedAsyncioTestCase, TestCase as TC\n\n\n'
+              'class Base(unittest.TestCase):\n    def helper(self):\n        pass\n\n\n'
+              'class ReportTests(Base):\n    def test_totals(self):\n        pass\n\n'
+              '    async def test_async(self):\n        pass\n\n\n'
+              'class Aliased(TC):\n    def test_alias(self):\n        pass\n\n\n'
+              'class Later(IsolatedAsyncioTestCase):\n    async def test_wait(self):\n        pass\n\n\n'
+              'class TestPlain:\n    def test_pytest_style(self):\n        pass\n\n\n'
+              'class Django(django.test.TestCase):\n    def test_view(self):\n        pass\n')
+    got = uc(sample) if uc else None
+    unit = [(c['name'], c['tests'], c['line']) for c in got or []]
     cov = by.get('cargo-llvm-cov', {})
     checks = [
+        ('unittest_classes(text): the TestCase subclasses of a test file with their test methods (direct, through a '
+         'base class of the file, an import alias, IsolatedAsyncioTestCase, a framework\'s TestCase), never a plain '
+         'pytest class',
+         unit == [('Base', [], 5), ('ReportTests', ['test_totals', 'test_async'], 10), ('Aliased', ['test_alias'], 18),
+                  ('Later', ['test_wait'], 23), ('Django', ['test_view'], 33)]
+         and uc('def test_x():\n    pass\n') == [] and uc('class Broken(unittest.TestCase:\n') == [], unit),
         ('ci_gates: cargo llvm-cov with its --fail-under thresholds, the workflow file, line, job and step',
          cov.get('file') == '.github/workflows/ci.yml' and cov.get('line') == 9 and cov.get('job') == 'rust'
          and cov.get('step') == 'Coverage gate' and cov.get('fail_under') == {'lines': 90.0, 'functions': 85.0}, gates),
@@ -1418,6 +1568,22 @@ def _rust_unittest_checks() -> list:
          (areas.get('.', {}).get('python_runner') or {}).get('runner') == 'unittest'
          and 'coverage run -m unittest discover -s tests' in (areas.get('.', {}).get('python_runner') or {}).get('command', ''),
          areas.get('.', {}).get('python_runner')),
+        ('ci_gates: an unnamed `- run:` step has no step name (never the step before it, never a `with: name:`), '
+         'and a name written after `run:` or `script:` in the same step is that step\'s',
+         {(g['command'], g.get('step')) for g in gates if g.get('job') == 'desktop'} == {
+             ('cargo test -p tides-cli --features desktop', 'Desktop tests'),
+             ('cargo test --package=tides-core --lib', 'Core unit tests'),
+             ('cargo test --workspace --locked', None)}
+         and by.get('unittest', {}).get('step') is None,
+         [(g['command'], g.get('step')) for g in gates if g.get('job') == 'desktop'] + [by.get('unittest', {}).get('step')]),
+        ('a cargo command with -p/--package belongs to that crate\'s area only (and to the root)',
+         'cargo test -p tides-cli --features desktop' in cmds_of('crates/tides-cli')
+         and 'cargo test -p tides-cli --features desktop' not in cmds_of('crates/tides-core')
+         and 'cargo test --package=tides-core --lib' in cmds_of('crates/tides-core')
+         and 'cargo test --package=tides-core --lib' not in cmds_of('crates/tides-cli')
+         and 'cargo test --workspace --locked' in cmds_of('crates/tides-core')
+         and 'cargo test -p tides-cli --features desktop' in cmds_of('.'),
+         {r: cmds_of(r) for r in areas}),
         ('per-area languages carry lines, Rust included',
          (areas.get('crates/tides-core', {}).get('language_lines') or {}).get('rust', 0) >= 180,
          areas.get('crates/tides-core', {}).get('language_lines')),

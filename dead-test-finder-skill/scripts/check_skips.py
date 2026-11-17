@@ -31,6 +31,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import scan_tests  # noqa: E402
 
 RULES = scan_tests.RULES
@@ -117,6 +118,9 @@ def main(argv=None) -> int:
         print(f'{c["id"]} {c["test_ids"][0]}: {verdict} - {why}')
     args.out.write_text(json.dumps({'today': today.isoformat(), 'skip_age_days': args.skip_age_days, 'skips': rows}, indent=2) + '\n',
                         encoding='utf-8')
+    by = {v: sum(1 for r in rows if r['verdict'] == v) for v in sorted({r['verdict'] for r in rows})}
+    print(f'{len(rows)} skip candidate(s)' + (': ' + ', '.join(f'{n} {v}' for v, n in by.items()) if rows else
+                                               ', nothing to check') + f' -> {args.out}')
     return 0
 
 

@@ -97,7 +97,7 @@ AU: the APPs), listed for the regions in scope:
 | `missing_usage_description` | A mobile permission without a purpose string |
 | `first_party_beacon` | A first-party write fired without a form submission (telemetry, experiment exposure, autosave), usually before any choice |
 | `policy_mismatch` | The privacy policy promises what the code doesn't do (a consent message before analytics, a vendor list that leaves one out); `policy` holds the promise (`file`, `line`, `excerpt` of an in-repo policy page, or `url` and `excerpt`) and the finding needs the code side too (a candidate, a code basis or a code path) |
-| `identifier_in_artifact` | A host name, OS account name or home path the code writes into files committed to the repository or published (results, scoreboards, logs, generated docs); `artifacts` lists each file and line (re-read with `--repo`, the value never quoted), flow `committed` |
+| `identifier_in_artifact` | A host name, OS account name or home path the code writes into files committed to the repository or published (results, scoreboards, logs, generated docs); `artifacts` lists each file and line (`member` and its line inside a committed zip; each re-read with `--repo` and required to hold the identifier, the value never quoted), flow `committed`; a limitation says git history was not searched |
 | `telemetry` | A call home from software on the user's machine (a command-line tool's usage events, a crash report, an update check carrying an identifier), usually on by default with an environment variable or setting as the opt-out |
 
 A domain is a tracker in the list sense only when EasyPrivacy blocks the whole registrable domain

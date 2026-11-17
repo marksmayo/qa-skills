@@ -19,6 +19,7 @@ from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import sarif  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
@@ -58,7 +59,8 @@ def reason_group(reason: str) -> str:
     references become <file> (a path with a source or config extension, or anything with a :line), so 0.0..=1.0 and
     crypto/rand stay as written; a parenthetical aside is dropped whole, and code such as #[cfg(test)] is kept."""
     text = re.sub(r'`[^`]*`\s*', '', reason)  # a quoted code fragment (`rt.Get("output")`) is not the reason
-    text = FILE_REF.sub('<file>', text)
+    # a bare file name with no folder and no line (a library's header, render_gl.h) names a thing, not a place: kept
+    text = FILE_REF.sub(lambda m: m.group(0) if not re.search(r'[/\\:]', m.group(0)) else '<file>', text)
     text = re.sub(r'^(?:<file>[\s,:;-]*)+', '', text)
     text = re.sub(r'(?i)^(?:here|there|this|it|that|which)\s+(?:is|uses|calls|reads|has)\s+', '', text)
     for _ in range(3):  # " (an aside)", nested ones too; #[cfg(test)] has no space before its bracket
@@ -117,7 +119,14 @@ def main() -> int:
       '   Confidence: ' + '  '.join(P(f"{k} {v}", CONF_STYLE[k]) for k, v in cnt['by_confidence'].items()))
     w(f"Candidates triaged: {cnt['candidates']} ({cnt['dismissed']} dismissed)  |  reachable vulnerable dependencies: "
       f"{cnt['dependencies_reachable']} of {len(d['dependencies'])}  |  observations: {cnt['observations']}")
-    vt = f"{ver['target_kind']} {ver['target']}" if ver['permitted'] else 'not permitted'
+    if not ver['permitted']:
+        vt = 'not permitted'
+    elif ver['target_kind'] == 'local_copy':
+        vt = f"command PoCs in a local copy ({ver.get('local_copy') or 'location not recorded'})"
+    elif not ver.get('target'):
+        vt = f"{ver['target_kind']} (no target)"
+    else:
+        vt = f"{ver['target_kind']} {ver['target']}"
     w(f"Verification: {vt}")
     w('')
     w(P('## Tools', BOLD))

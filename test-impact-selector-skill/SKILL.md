@@ -1,7 +1,7 @@
 ---
 name: test-impact-selector
 description: Given a change (a branch, a commit range or a diff), pick which tests to run, give every selected test its reasons and evidence (coverage of a changed line, an import chain, a journey link, naming, co-failure history), and list every change that no evidence can bound as a blind spot that widens the selection (strict by default). Outputs ready-to-run commands per package and framework, an optional CI snippet for the user to add, and, when past runs are available, measured recall with a Wilson interval from replaying history. Never calls unselected tests "safe to skip".
-version: 1.7.0
+version: 1.8.0
 ---
 
 # Test impact selector
@@ -98,8 +98,21 @@ Python test files that put a folder on `sys.path` and then import a module by it
 `os.path.join(os.path.dirname(__file__), "..", "scripts")`, also in a `conftest.py` above them)
 reach that folder's module (`via: import (sys.path)`). When the folder can't be worked out
 statically (an environment variable, `PYTHONPATH`), the import of a module that exists in the
-repository is recorded under `unresolved` with its candidate files, and an unmapped blind spot on
-that module names the importers. It is never silently dropped.
+repository is recorded under `unresolved` with its candidate files. A change to such a candidate
+is a `dynamic_reference` blind spot with scope `unresolved_importers`: the tests among the
+importers and the tests that reach them are run, unless import evidence already links each of
+them. It is never silently dropped.
+
+A script imports its siblings by bare name (`from rainfall import total` in `scripts/report.py`):
+Python puts a script's own folder first on `sys.path`, so the import resolves there
+(`via: import (script folder)`), and a change to `rainfall.py` selects the tests of every script
+that imports it, with the chain. Tests that load a script by its file path
+(`importlib.util.spec_from_file_location`, `SourceFileLoader`, `runpy.run_path`, with a literal
+path or one built from `__file__`, also through a helper called with a literal name; the shared
+`py_loads.py`) reach it (`via: spec_from_file_location`). A load whose path can't be worked out
+(from the environment, a loop over names) is a dynamic site: a changed script nothing else links
+is a `dynamic_reference` blind spot that names it. Naming matches `test_install_gauge.py` to a
+hyphenated `install-gauge.py`.
 
 A directory named `e2e`, `test`, `tests` or `spec` is test code unless it is a product package
 (it holds a manifest and ships code: a `src/` directory, a `package.json` with
@@ -132,7 +145,9 @@ shared-fixture blind spot.
   script and on every file or folder it names, so a change to a sample it validates selects it.
 
 Languages without a parser (Java, Kotlin, C#, Swift, Dart and others) are listed as
-`no_parser`. Their files rely on the other evidence sources, and on blind spots. `graph.json`
+`no_parser`, and so are the changed files in a language nothing here reads at all: script
+languages (PowerShell, shell, batch), UI markup (Slint, QML, XAML) and Lua, C and the like
+(`lang_census.py`'s names). Their files rely on the other evidence sources, and on blind spots. `graph.json`
 carries `language_coverage` (vendored and embedded third-party trees left out), and the console
 warns when the repository's dominant language has no parser. When a changed file is in such a
 language, `selection.json` carries `language_coverage` with `warning` set and the languages in
@@ -173,8 +188,9 @@ script) and their `#[test]` functions. No cargo or build is needed.
   binary for and which may run it (`CARGO_BIN_EXE_<name>`, assert_cmd). A build script reaches
   what its crate's library and binaries reach. Each test file of a reached target is import-graph
   evidence (`via: cargo <kind> target <crate>/<target>`).
-- A bench file is kind `bench`: `cargo test` does not build or run benches, so it selects nothing
-  and the notes say to check it with `cargo bench -p <crate> --no-run`.
+- A bench file is kind `bench` (also with `--cargo-metadata`): `cargo test` does not build or
+  run benches, so it selects nothing and the notes say to check it with
+  `cargo bench -p <crate> --no-run`.
 - The workspace `Cargo.toml`, `Cargo.lock`, `rust-toolchain(.toml)` and `.cargo/config(.toml)`
   are `global_config` widened to every Rust test (scope `language`), not to the Python or
   JavaScript tests beside them. A crate's own `Cargo.toml` widens to its crate. A Python or
@@ -193,7 +209,24 @@ script) and their `#[test]` functions. No cargo or build is needed.
   `command.feature_gated`. The commands do not run them, so say so and give the `--features`
   command the CI uses for them.
 - `--cargo-metadata <file>` (the output of `cargo metadata --format-version 1 --no-deps`, if the
-  user can run it) takes the targets and features from cargo itself.
+  user can run it) takes the targets and features from cargo itself. Its absolute paths may come
+  from another checkout or a scratch copy: they map through the metadata's `workspace_root` (else
+  each package's manifest folder). It never makes the reading worse: a crate whose metadata targets
+  are not files of this tree (another project's or an older commit's output, a generated target) is
+  read from its manifest instead, and a note says how many crates came from cargo and which did not,
+  and why. Metadata naming none of the repository's crates is ignored, and the note says so.
+- **Tests the command does not run.** `cargo_project.py` decides for each test whether a plain
+  `cargo test` runs it (`runs_by_default`, with the gates in `why`): a binary or test target with
+  `required-features` the defaults do not enable (cargo skips the whole target), `#[ignore]`, a
+  feature cfg, a platform cfg (`unix`, `windows`, `target_os`) or a cfg this reader cannot decide.
+  Selected tests with such a gate are listed in `command.not_run_by_default` (crate, gates,
+  detail, tests, files, `platforms`, and `run_with` when a flag runs them: `--features x`,
+  `-- --ignored`), never counted as run. A test no platform runs by default is left out of the
+  `--exact` names (cargo would run nothing and pass); a command's `tests` counts only the files it
+  runs a test of, `not_run` the selected tests it never runs and `platform_dependent` those it runs
+  on some platforms only (a Windows run passes without running a `#[cfg(unix)]` test). Name each
+  gate in a limitation (the validator checks: the feature, the ignore, the platforms). A selected
+  Rust file carries its libtest ids in `test_ids`.
 - There is no cargo coverage ingestion: `coverage_map.py` reads coverage.py JSON (or the mutation
   tester's `coverage.json`), not cargo-llvm-cov or grcov output, so Rust coverage stays `not_run`.
 - Doc tests are not selected by file; `cargo test --doc -p <crate>` runs them.
@@ -337,15 +370,23 @@ had only one weak reason are listed under `considered_not_selected`.
 
 | Kind | When | `strict` action |
 |---|---|---|
-| `global_config` | A lockfile, CI or repo-level build file; a package's own manifest or test config | Full suite; the package for a package's own file; every Rust test (scope `language`) for the workspace's Cargo files |
+| `global_config` | A lockfile, CI or repo-level build file; a package's own manifest or test config | Full suite; the package for a package's own file; every Rust test (scope `language`) for the workspace's Cargo files; no test (scope `no_existing_test`) for a newly added CI file, which adds jobs and cannot change how an existing test runs |
 | `shared_fixture` | `conftest.py`; a helper or setup file | Every test under the conftest's directory; a helper's importers, or the package if nothing imports it (it's loaded by runner config) |
-| `dynamic_reference` | The file contains a computed import, is a target of one (by literal prefix), or has no static importer in a package with an unbounded one | The package |
+| `dynamic_reference` | The file contains a computed import, is a target of one (by literal prefix), or has no static importer in a package with an unbounded one (a load by a path that can't be worked out included); or it is the candidate of an import the graph could not resolve | The package; for an unresolved import (scope `unresolved_importers`), the importing tests and the tests that reach the importers |
 | `data_or_schema` | A migration, schema, or data file in a directory (also in a single-package repo; only a data file at the repository root is `global_config`) | The package's tests plus any contract tests |
 | `unmapped_source` | No test is selected for the file by its own evidence | The package's tests of the file's language (never Rust tests for a Python file, or the reverse); the full suite when the language has no parser and the package has no test that could be found. The note says "No tests found" (hand it to ticket-to-tdd or journey-to-tests) only when nothing links the file and its scope holds no test |
 | `deleted_or_renamed` | A removed or renamed module | Tests that imported it in the base tree |
 | `non_code` | A style, template, translation or image | E2E and visual tests that reach it; otherwise every e2e and visual test in the package; otherwise the tests that reach it through the views and templates that render or link it; otherwise the package |
 | `huge_change` | More than 30% of source files changed | The full suite: selection would save little |
 | `fixture_project` | A file in an excluded fixture project (its lockfile too: it is fixture-local, never `global_config`) | `fixture_host`: the tests under the folder that owns the sample (`tool/` for `tool/examples/app/`) and every test that names or imports it |
+
+A data file, a script in an unread language (PowerShell, shell) or UI markup in the root package
+widens by evidence, not to everything: Rust and Go tests read such a file only through a path
+written in their source, so they stay in only when a file of that language names the file or its
+folder. Otherwise they are left out and the blind spot lists them under `left_out` (family, count,
+reason) and says so in its note, with the test files that name the file (`tests/test_x.py:14`).
+Tests of interpreted languages stay. A helper under a crate's `tests/fixtures` is never described
+as loaded by a JavaScript runner's `setupFiles`.
 
 A repository root with no manifest (a tool repository of folders with scripts) is not one package:
 for a file in a top-level folder that holds tests, "the package" is that folder's tests, the
@@ -432,12 +473,24 @@ With the change applied in a scratch copy, run the selection and the full suite 
 ```bash
 python scripts/run_tests.py --preset pytest --cwd <copy>/api --tests <selected> --label "verify-selected api" --out <run>/verify/runs.json
 python scripts/run_tests.py --preset pytest --cwd <copy>/api --label "verify-full api" --out <run>/verify/runs.json
+python scripts/run_tests.py --preset unittest --cwd <copy> --runner-args "-s tests" --label "verify-full ." --out <run>/verify/runs.json
+python scripts/run_tests.py --preset cargo --cwd <copy> --runner-args "-p <crate>" --label "verify-selected ." --out <run>/verify/runs.json
 ```
 
-The label's last word is the package. List every test file that failed in a full run:
-- in `failures_inside_selection` if it was selected;
+The label's last word is the package (`.` for the repository root; a last word that is no
+package's root is read as the root). The cargo and unittest presets need `--runner-args`: the
+crate (`-p <crate>`, or `--workspace`) and the start folder (`-s tests`; the preset runs discover itself). List every test file that failed
+in a full run:
+- in `failures_inside_selection` if it was selected. A libtest unit test may be recorded under its
+  crate's root file (`src/lib.rs`) when the run was parsed without the Cargo model: it counts as
+  inside when its id is one of a selected file's `test_ids`;
 - otherwise in `failures_outside_selection`. Each of these is a miss, and is also named in
-  `limitations`.
+  `limitations`;
+- unless the runs show it is a known failure, listed in `verify.known_failures`
+  (`{id, kind, run_ids, note}`): `flaky` when the named runs of the same code (same `code_hash`)
+  hold a pass and a failure of that test (re-run it alone and in a second full run), `baseline`
+  when it fails in a `verify-base ...` run of the tree before the change. A known failure is not a
+  miss, but it is still named in `limitations`; the validator re-reads the runs.
 
 ## Step 8: Report, validate, render
 
@@ -457,6 +510,8 @@ python scripts/validate_impact_report.py <run>/impact_report.json --selection <r
     --replay <run>/replay.json [--runs <run>/verify/runs.json] --recompute --write-summary
 python scripts/render_report.py <run>/impact_report.json [--brief]
 ```
+
+`--brief` keeps the limitations, the tests the commands do not run and the known failures.
 
 The two flags:
 - `--write-summary` computes the summary: counts, evidence completeness, recall status and text.
@@ -482,10 +537,10 @@ Show the user:
 | `selected[]` | Test file, package, level, strength, reasons, journey priority, past failures, the blind spots that widened to it, order |
 | `blind_spots[]` | Kind, action, required scope, widened_to, would_widen_to, note, your comment |
 | `excluded` | Fixture projects and folders left out of the tests, with the reason (when any) |
-| `command` | Commands per package and framework (`command_from` when it is the CI's own line, `test_ids` for cargo), split count, `no_runner` and reasons, `feature_gated` Rust tests |
+| `command` | Commands per package and framework (`command_from` when it is the CI's own line, `test_ids` for cargo), split count, `no_runner` and reasons, `feature_gated` Rust tests, `not_run_by_default` Rust tests (required-features, ignore, platform, feature) |
 | `language_coverage` | Parsed and unparsed languages, changed files in unparsed ones, and the warning to name in limitations |
 | `replay` | Counts, recall, interval, mean share selected, misses with why and fix, flaky failures |
-| `verify` | Run ids, failures inside and outside the selection |
+| `verify` | Run ids, failures inside and outside the selection, known failures (flaky or failing at the base) with the runs that show it |
 | `recommendations`, `ci_snippet` | When the full suite runs; other advice; where the snippet is |
 | `summary` | Headline, computed counts, evidence completeness, recall status and text, sources not run |
 | `limitations[]`, `files_written[]` | What the selection can't show; files written (never CI configuration) |

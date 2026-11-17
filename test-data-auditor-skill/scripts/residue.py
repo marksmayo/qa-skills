@@ -8,7 +8,8 @@
 Tests that write uploads, exports, caches or databases into the repository share that state
 across runs and machines, and a file under a served directory (public/, static/) can reach
 users. `snapshot` records every file's size and SHA-256; `diff` lists what was added, changed
-or removed, grouped by directory. The walk prunes dependency, build and VCS directories before
+or removed, grouped by directory, and the directories a run created (dirs_added, empty ones included: a test
+suite that keeps scratch folders inside the repository leaves the parents behind). The walk prunes dependency, build and VCS directories before
 descending (node_modules, .git, .next, dist, build, coverage, virtualenvs and caches).
 
 Tests also write outside the tree: caches, downloads and settings under the home directory or a
@@ -29,10 +30,17 @@ PRUNE = {'node_modules', '.git', '.next', '.nuxt', 'dist', 'build', 'out', 'cove
 SERVED = ('public', 'static', 'wwwroot', 'www', 'htdocs', 'uploads')
 
 
+DIR = 'dir'          # a directory's entry: '<path>/': [0, 'dir'] ('./' for the root itself)
+
+
 def snapshot(root: Path, prune: set[str] = PRUNE) -> dict[str, list]:
-    out = {}
+    """{path: [size, hash prefix]} for every file, and {'<dir>/': [0, 'dir']} for every directory (so a run that
+    leaves empty scratch folders behind shows in the diff)."""
+    out = {'./': [0, DIR]}
     for dp, dns, fns in os.walk(root):
         dns[:] = sorted(d for d in dns if d not in prune and not d.endswith('.egg-info'))
+        for d in dns:
+            out[(Path(dp) / d).relative_to(root).as_posix() + '/'] = [0, DIR]
         for f in fns:
             p = Path(dp) / f
             try:
@@ -52,7 +60,7 @@ def snapshot_all(root: Path, also: dict[str, Path] | None = None) -> dict[str, l
     is pruned in an --also directory: a cache a test fills there (.cache, node_modules) is the residue."""
     out = snapshot(root)
     for label, d in sorted((also or {}).items()):
-        out.update({f'{label}:{k}': v for k, v in snapshot(d, {'.git'}).items()})
+        out.update({f'{label}:{k}': v for k, v in snapshot(d, {'.git'}).items() if k != './'})
     return out
 
 
@@ -69,19 +77,27 @@ def parse_also(items: list[str]) -> dict[str, Path]:
 
 
 def diff(before: dict, after: dict) -> dict:
+    # directories are compared only when both snapshots recorded them (a snapshot from an older version did not)
+    with_dirs = './' in before and './' in after
+    dirs_b = {p for p in before if p.endswith('/')}
+    dirs_a = {p for p in after if p.endswith('/')}
+    before = {p: v for p, v in before.items() if not p.endswith('/')}
+    after = {p: v for p, v in after.items() if not p.endswith('/')}
     added = sorted(set(after) - set(before))
     removed = sorted(set(before) - set(after))
     changed = sorted(p for p in set(before) & set(after) if before[p][1] != after[p][1])
+    dirs_added = sorted(p.rstrip('/') for p in dirs_a - dirs_b) if with_dirs else None
     groups: dict[str, int] = {}
     for p in added + changed:
         d = PurePosixPath(p).parent.as_posix()
         groups[d] = groups.get(d, 0) + 1
     served = sorted(p for p in added + changed if ':' not in p.split('/')[0] and set(PurePosixPath(p).parts[:-1]) & set(SERVED))
     outside = sorted({p.split(':', 1)[0] for p in added + changed if ':' in p.split('/')[0]})
-    return {'added': added, 'changed': changed, 'removed': removed,
+    return {'added': added, 'changed': changed, 'removed': removed, 'dirs_added': dirs_added,
             'by_directory': dict(sorted(groups.items(), key=lambda kv: (-kv[1], kv[0]))), 'in_served_directories': served,
             'outside_tree': outside,
-            'summary': {'added': len(added), 'changed': len(changed), 'removed': len(removed), 'served': len(served)}}
+            'summary': {'added': len(added), 'changed': len(changed), 'removed': len(removed), 'served': len(served),
+                        'dirs_added': len(dirs_added) if dirs_added is not None else None}}
 
 
 def main(argv=None) -> int:
@@ -113,7 +129,11 @@ def main(argv=None) -> int:
     res = diff(doc['files'], snapshot_all(args.root, also))
     args.out.write_text(json.dumps(res, indent=2) + '\n', encoding='utf-8')
     s = res['summary']
-    print(f'{s["added"]} added, {s["changed"]} changed, {s["removed"]} removed ({s["served"]} in served directories) -> {args.out}')
+    print(f'{s["added"]} added, {s["changed"]} changed, {s["removed"]} removed ({s["served"]} in served directories)'
+          + (f', {s["dirs_added"]} director{"y" if s["dirs_added"] == 1 else "ies"} created' if s['dirs_added'] else '')
+          + f' -> {args.out}')
+    for p in (res['dirs_added'] or [])[:10]:
+        print(f'  created {p}/')
     for k, n in list(res['by_directory'].items())[:10]:
         print(f'  {k}/: {n}')
     return 0

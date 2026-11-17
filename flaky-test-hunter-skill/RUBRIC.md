@@ -12,8 +12,10 @@ fails; skipped results are left out.
 |---|---|
 | `flaky` | At least one pass and one fail |
 | `consistently_failing` | Failed in every run: a real failure, reported separately |
+| `platform_dependent` | Passed every run on one platform, failed every run on another (runs record `platform`) |
+| `cannot_run_alone` | Schema 1.4.0: every run that selected only this test, or only its file, errored (nothing was collected) and it never failed in the runs that did run it. An order or import dependence, listed in `cannot_run_alone[]` with its errored runs, error and what it needs **(checked)** |
 | `not_observed_flaky` | Passed in every run. Report the count and the upper bound: 0/20 is 0–16.1% |
-| `not_run` | No runs on this code |
+| `not_run` | No runs on this code. Schema 1.4.0: a test a plain run leaves out (`smells.json` `suites[].not_run_by_default`: `#[ignore]`, a feature, platform or required-features gate) and no counted run reached has a row with `not_run_reason` **(checked, with `--smells`)** |
 
 The summary counts `--isolate` runs (one test each) as `single_test_runs` within `total_runs`
 (schema 1.3.0), so a run total that mixes suite runs and single-test runs says so **(checked)**.
@@ -72,6 +74,13 @@ experiment or count.
 
 An `unknown` cause is always `suspected`.
 
+**Probe artefacts (schema 1.4.0, checked).** A test whose every failure came in a run where the
+skill moved the clock (`TDA_CLOCK_SHIFT`, `TDA_CLOCK_DATE`, `FAKETIME`) and that passed in a run
+without it is marked `probe_only: "clock"`. Its flake is at most `indicated` (the on/off pair shows
+the probe makes it fail, not why) and capped at P3, unless `probe_confirmation` names 2 or more
+failing control runs: the same shift with file times left real (`TDA_CLOCK_FILES=0`, recorded
+with `--record-env TDA_CLOCK_FILES`, or `NO_FAKE_STAT` with libfaketime).
+
 ## Ranking (checked)
 
 `score = rate factor × gate × masking`
@@ -92,6 +101,7 @@ Floors and caps:
 
 - a `product_race` is at least P1;
 - a `suspected` cause is at most P2;
+- a failure only under the clock shift, with no `probe_confirmation`, is at most P3 (above);
 - a history-only flake (seen in CI, never reproduced here) is at most P2. It needs
   `history_evidence` (CI runs that passed and failed, each with a reference and an excerpt) and
   `metadata.history` used; its rate factor comes from the local runs (usually 1, since it never
@@ -130,7 +140,9 @@ Examples:
 repository's tests whose suite ran. Not applicable variations (no e2e tests, so no latency
 variation) are left out. The share comes from `metadata.suites` (one entry per language with tests,
 from `scan_pitfalls.py`'s `suites`): tests in suites that ran ÷ all suites' tests, or suites that
-ran ÷ suites when a count is unknown, and 1 when the report lists no suites. A suite that ran with
+ran ÷ suites when a count is unknown, and 1 when the report lists no suites. From schema 1.4.0 a
+suite that ran counts the distinct tests its runs recorded, at most its static count, so tests a
+plain run leaves out (`#[ignore]`, feature and platform gates) lower the share. A suite that ran with
 no static count (`tests: null`, as for script self-tests, whose checks are printed rather than
 declared) counts the distinct test ids its presets' runs recorded **(checked)**. Sample and fixture
 projects the scan left out are not the repository's tests and are not suites. A Rust and Python
@@ -140,7 +152,11 @@ found tests in must be listed when there are two or more, a suite marked `ran` n
 with test results from one of its `presets`, and one marked `not_run` must have none **(checked)**. A variation that used a tool must have
 that tool recorded as ran **(checked)**. A `clock` variation that ran must name runs that moved
 the clock (`TDA_CLOCK_SHIFT`, `TDA_CLOCK_DATE` or `FAKETIME` in the run's environment)
-**(checked)**; record clock runs under `clock`, never `tz`.
+**(checked)**; record clock runs under `clock`, never `tz`. A `suite_load` variation that ran must
+name runs that record process-creation load (`QA_SPAWN_LOAD`, from `scripts/spawn_load.py` with
+`--record-env QA_SPAWN_LOAD`) or that ran more than one test **(checked)**. A counted cargo run
+whose notes say it reused a test binary built from another checkout (a target directory shared
+between copies) needs a limitation naming it **(checked)**.
 
 A smell links to a flake on the same test, whichever parametrised case the flake names: same
 file, and the smell's test name equal to the flake's name or its trailing part (a Vitest/Jest
@@ -158,7 +174,8 @@ deterministic". Say "not observed flaky in N runs (upper bound X%)".
 ## Reviewer checklist
 
 - [ ] Every run recorded by `run_tests.py`, on one code hash.
-- [ ] Consistently failing tests separated from flakes.
+- [ ] Consistently failing tests separated from flakes; tests that cannot run alone listed apart.
+- [ ] Failures only under the skill's own clock shift ranked as probe artefacts, or confirmed by control runs.
 - [ ] Each flake: cause, confidence, the off/on experiment or why there isn't one, a fix to test code.
 - [ ] Every static smell accounted for; smells whose tests never ran are `not_run`.
 - [ ] Every language with tests listed in `metadata.suites`, run or not run with the reason.

@@ -59,12 +59,13 @@ followed. Blocked first-party writes are listed separately (blocked_first_party_
 blocked vendor.
 """
 from __future__ import annotations
-import argparse, json, re, sys
+import argparse, json, os, re, sys
 from pathlib import Path
 from urllib.parse import urlparse
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from domains import FirstParty, registrable  # noqa: E402,F401  (registrable is imported by other scripts from here)
 
 CATS = json.loads((HERE.parent / 'data' / 'categories.json').read_text(encoding='utf-8'))
@@ -90,7 +91,27 @@ CSP_DIRECTIVE = re.compile(r'"(?:effective-directive|effectiveDirective|violated
 DECLARED_TEXT = ('.html', '.htm', '.md', '.mdx', '.txt', '.tsx', '.jsx', '.ts', '.js', '.vue', '.svelte', '.astro', '.j2', '.jinja', '.njk')
 
 
-def load_declared(path: Path | None, extra_names=()) -> dict:
+def recorded(p: Path | None, out: Path) -> str | None:
+    """How an input is recorded in the candidates file: as given when relative, else relative to the working directory,
+    else relative to the candidates file's folder (validate_privacy_audit.py --recompute looks in both). Never an
+    absolute path: that would write the auditor's own home directory, and the account name in it, into the evidence."""
+    if p is None:
+        return None
+    p = Path(p)
+    if not p.is_absolute():
+        return p.as_posix()
+    full = p.resolve()
+    try:
+        return full.relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        pass
+    try:
+        return Path(os.path.relpath(full, Path(out).resolve().parent)).as_posix()
+    except ValueError:   # another drive
+        return full.name
+
+
+def load_declared(path: Path | None, extra_names=(), label: str | None = None) -> dict:
     """The declared processors: a JSON file ({"source", "processors": [{"vendor", "domains"?}]}), or a policy page kept in
     the repository (HTML, Markdown, MDX or a page component), whose processors are the vendors its text names: a vendor
     name or alias from data/vendors.json (or extra_names, the domain list's vendors), as a whole word, three letters at
@@ -120,7 +141,8 @@ def load_declared(path: Path | None, extra_names=()) -> dict:
                 hosts.setdefault(h, i)
     procs = sorted(found.values(), key=lambda p: (p['line'], p['vendor']))
     procs += [{'vendor': h, 'domains': [h], 'line': n, 'from_page': True} for h, n in sorted(hosts.items(), key=lambda kv: kv[1])]
-    return {'source': f'{path.as_posix()} (policy page: the processors are the vendors and hosts its text names)', 'page': path.as_posix(),
+    label = label or path.as_posix()
+    return {'source': f'{label} (policy page: the processors are the vendors and hosts its text names)', 'page': label,
             'processors': procs}
 
 
@@ -206,11 +228,12 @@ def static_only(a, static: dict, lists: dict, regions: set) -> dict:
     no_banner = no_banner_cfg(json.loads(a.flows.read_text(encoding='utf-8')) if a.flows else None)
     matrix = ([{'state': 'no_banner', 'status': 'not_run', 'reason': reason}]
               + [{'state': s, 'status': 'not_applicable', 'reason': NO_BANNER_REASON} for s in CONSENT_STATES]) if no_banner else         [{'state': s, 'status': 'not_run', 'reason': reason} for s in CONSENT_STATES]
-    return {**({'consent_banner': False} if no_banner else {}),'run_status': 'not_run', 'run_status_reason': reason, 'capture': None, 'static': a.static.as_posix(),
-            'inputs': {'flows': a.flows.as_posix() if a.flows else None, 'lists': a.lists.as_posix() if a.lists else None,
-                       'declared': a.declared.as_posix() if a.declared else None, 'regions': a.regions},
+    return {**({'consent_banner': False} if no_banner else {}),'run_status': 'not_run', 'run_status_reason': reason, 'capture': None,
+            'static': recorded(a.static, a.out),
+            'inputs': {'flows': recorded(a.flows, a.out), 'lists': recorded(a.lists, a.out),
+                       'declared': recorded(a.declared, a.out), 'regions': a.regions},
             'lists': lists.get('source'),
-            'declared': load_declared(a.declared, lists_vendor_names(lists)).get('source') if a.declared else None, 'regions': sorted(regions), 'first_party': [], 'third_party_mode': None,
+            'declared': load_declared(a.declared, lists_vendor_names(lists), recorded(a.declared, a.out)).get('source') if a.declared else None, 'regions': sorted(regions), 'first_party': [], 'third_party_mode': None,
             'blocked_domains': [], 'blocked_first_party_writes': [], 'csp_attempts': [], 'recipients': [],
             'consent_matrix': matrix, 'candidates': static['candidates']}
 
@@ -237,7 +260,7 @@ def main() -> int:
         ap.error('--capture needs --flows and --lists')
     cap = json.loads(a.capture.read_text(encoding='utf-8'))
     flows = json.loads(a.flows.read_text(encoding='utf-8'))
-    declared = load_declared(a.declared, lists_vendor_names(lists))
+    declared = load_declared(a.declared, lists_vendor_names(lists), recorded(a.declared, a.out))
     declared_by_name = {norm(p['vendor']): p['vendor'] for p in declared['processors']}
     declared_by_domain = {registrable(d): p['vendor'] for p in declared['processors'] for d in p.get('domains', [])}
     known = {**VENDORS, **lists.get('vendors', {})}
@@ -586,8 +609,8 @@ def main() -> int:
     blocked_domains = sorted({dom_of(r['host']) for st_name in tested for r in states[st_name]['requests']
                               if r.get('blocked') and dom_of(r['host']) not in first})
     out = {**({'consent_banner': False} if no_banner else {}), 'run_status': 'partial' if problems else 'complete', 'run_status_reason': '; '.join(problems) if problems else None,
-           'capture': a.capture.as_posix(), 'static': a.static.as_posix() if a.static else None,
-           'inputs': {'flows': a.flows.as_posix(), 'lists': a.lists.as_posix(), 'declared': a.declared.as_posix() if a.declared else None,
+           'capture': recorded(a.capture, a.out), 'static': recorded(a.static, a.out),
+           'inputs': {'flows': recorded(a.flows, a.out), 'lists': recorded(a.lists, a.out), 'declared': recorded(a.declared, a.out),
                       'regions': a.regions}, 'lists': lists.get('source'),
            'declared': declared.get('source'), 'regions': sorted(regions), 'first_party': sorted(first),
            'third_party_mode': cap.get('third_party'), 'blocked_domains': blocked_domains,  # mode null: captured before it was recorded

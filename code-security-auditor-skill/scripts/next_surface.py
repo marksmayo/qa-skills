@@ -32,6 +32,8 @@ Everything is read from source: headers a CDN, the hosting platform or a reverse
 from __future__ import annotations
 import re
 
+import sys
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import nextjs_auth
 
 CATCH_ALL = re.compile(r'^/(?::\w+\*|:\w+\(\.\*\)|\(\.\*\)|\*|:\w+\+?)$')

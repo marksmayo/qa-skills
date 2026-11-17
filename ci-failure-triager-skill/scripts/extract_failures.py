@@ -33,6 +33,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from parse_results import (LT_ASSERT, LT_DOC, LT_PANIC_AT, LT_RUNNING, NT_LINE, libtest_target, nextest_target,  # noqa: E402
                            parse_junit, parse_libtest, parse_nextest_output)
 
@@ -71,7 +72,10 @@ CHECKOUT = re.compile(r'^(?:/home/runner/work|/Users/runner/work|[A-Za-z]:/a|/__
 ANNOT = re.compile(r'::(?:error|warning)\s+file=([^,:]+),line=(\d+)')
 # Rust locations: a compiler or clippy finding (`  --> src/x.rs:12:5`), a panic (`panicked at src/x.rs:12:5`, older
 # `panicked at 'msg', src/x.rs:12:5`) and a rustfmt diff (`Diff in /path/src/x.rs:12:` or `... at line 12:`)
-RUST_FRAME = re.compile(r"(?:-->\s+|panicked at (?:'.*?',\s+)?|^Diff in\s+)([^\s:'\"]+\.rs)(?::| at line )(\d+)", re.M)
+# On a Windows runner rustfmt prints the extended-length form of an absolute path (`Diff in \\?\D:\a\repo\repo\src\x.rs:12:`):
+# the `\\?\` prefix and the drive letter's colon belong to the path.
+RUST_FRAME = re.compile(r"(?:-->\s+|panicked at (?:'.*?',\s+)?|^Diff in\s+)((?:\\\\\?\\)?(?:[A-Za-z]:)?[^\s:'\"]+\.rs)(?::| at line )(\d+)", re.M)
+EXTENDED = re.compile(r'^//\?/(?:UNC/)?')     # that prefix (and its UNC form) once backslashes are slashes
 
 
 def frames(text: str) -> list[dict]:
@@ -83,7 +87,7 @@ def frames(text: str) -> list[dict]:
     found += [(m.start(), m.group(1), m.group(2)) for m in ANNOT.finditer(text or '')]
     found += [(m.start(), m.group(1), m.group(2)) for m in RUST_FRAME.finditer(text or '')]
     for _, f, n in sorted(found, key=lambda x: x[0]):
-        f = f.replace('\\', '/')
+        f = EXTENDED.sub('', f.replace('\\', '/'))
         if '/node_modules/' in f or f.startswith(('node:', 'internal/')) or TOOLCHAIN_FRAME.search(f):
             continue
         f, n_sub = CHECKOUT.subn('', f)
@@ -386,7 +390,8 @@ def go_tests(lines: list[str], lo: int, hi: int) -> list[dict]:
 
 LT_HEADER = re.compile(r'^---- (.+?) std(out|err) ----$')
 LT_BLOCK_END = re.compile(r'^(---- .+ std(out|err) ----|failures:|test result: )')
-LT_THREAD = re.compile(r"^thread '[^']*' panicked at ([^\s:]+\.rs:\d+:\d+):?\s*(.*)$")
+# `thread 'name' panicked at src/x.rs:12:5:`; newer toolchains print the thread id after the name: `thread 'name' (2976) panicked at ...`
+LT_THREAD = re.compile(r"^thread '([^']*)'(?: \(\d+\))? panicked at ([^\s:]+\.rs:\d+:\d+):?\s*(.*)$")
 
 
 def _panic_message(body: list[str]) -> str | None:
@@ -394,8 +399,8 @@ def _panic_message(body: list[str]) -> str | None:
     for k, t in enumerate(body):
         m = LT_THREAD.match(t.strip())
         if m:
-            rest = m.group(2).strip() or next((x.strip() for x in body[k + 1:] if x.strip()), '')
-            return f'panicked at {m.group(1)}: {rest}'.rstrip(': ')
+            rest = m.group(3).strip() or next((x.strip() for x in body[k + 1:] if x.strip()), '')
+            return f'panicked at {m.group(2).replace(chr(92), "/")}: {rest}'.rstrip(': ')
     return None
 
 
@@ -459,12 +464,107 @@ def cargo_tests(lines: list[str], lo: int, hi: int) -> list[dict]:
         n = at.get(key) or at.get(key + ('line',))
         if not n:
             continue
+        # no `---- name stdout ----` block: with --nocapture the panic is printed while the tests run, before the
+        # `test name ... FAILED` line. libtest names a test's thread after the test, so that panic is the test's.
+        loose = _loose_panic(txt, lo, n, c['name']) if key not in at else None
+        if loose:
+            body = [txt[x] for x in range(loose[0], loose[1] + 1)]
+            where = LT_PANIC_AT.search(body[0].replace('\\', '/'))
+            out.append({'test_id': c['id'], 'test_file': where.group(1) if where else c.get('file'), 'line': loose[0], 'end': loose[1],
+                        'message': _panic_message(body) or txt[n].strip(),
+                        'failure_type': 'assertion' if LT_ASSERT.search('\n'.join(body)) else 'error', 'frames': frames('\n'.join(body))})
+            continue
         end = next((x - 1 for x in range(n + 1, hi + 1) if LT_BLOCK_END.match(txt[x]) or LT_RUNNING.match(txt[x])), hi) if key in at else n
         body = [txt[x] for x in range(n + 1, end + 1)]
         out.append({'test_id': c['id'], 'test_file': c.get('file'), 'line': n, 'end': end,
                     'message': _panic_message(body) or (c.get('message_excerpt') or '').split('\n')[0] or txt[n].strip(),
                     'failure_type': c.get('failure_type') or 'error', 'frames': frames('\n'.join(body))})
     return out
+
+
+def _loose_panic(txt: dict[int, str], lo: int, failed_at: int, name: str) -> tuple[int, int] | None:
+    """(first, last) line of the panic a test's own thread printed above its `test <name> ... FAILED` line, within the
+    same test binary's output: the nearest `thread '<name>' ... panicked at` line, up to the next blank line, test
+    result line or other thread's panic (12 lines at most)."""
+    for n in range(failed_at - 1, lo - 1, -1):
+        t = txt[n]
+        if LT_RUNNING.match(t) or LT_DOC.match(t):
+            return None
+        m = LT_THREAD.match(t.strip())
+        if m and m.group(1) == name:
+            end = n
+            for x in range(n + 1, min(failed_at - 1, n + 11) + 1):
+                if not txt[x].strip() or txt[x].startswith(('test ', "thread '")):
+                    break
+                end = x
+            return n, end
+    return None
+
+
+# --- one defect on several jobs, and the checks a failure kept from running ---------------------------------
+
+def _portable(text: str) -> str:
+    """A message with the runner's checkout prefix and path style taken out, so the same failure reads the same on
+    every operating system of a matrix."""
+    t = (text or '').replace('\\', '/').replace('//?/', '')
+    return re.sub(r'(?:/home/runner/work|/Users/runner/work|[A-Za-z]:/a|/__w|/home/vsts/work)/[^/\s]+/[^/\s]+/', '', t)
+
+
+def defect_key(f: dict) -> tuple | None:
+    """What makes two failures on different jobs the same defect: the same test (or the same failed step with the same
+    kind of failure) at the same file and line, or, with no location, the same message. A failure with no log lines
+    (a job that never started, a log that could not be read) is never grouped: nothing shows it is the same."""
+    if f.get('log_status') not in (None, 'fetched') or f.get('failure_type') == 'job' or not (f.get('log_excerpt') or {}).get('lines'):
+        return None
+    where = (f['frames'][0]['file'], f['frames'][0]['line']) if f.get('frames') else _portable(f.get('message') or '')
+    return (f['kind'], f['test_id'] if f['kind'] == 'test' else f.get('step'), f.get('failure_type'), where)
+
+
+def failure_groups(failures: list[dict]) -> list[dict]:
+    """Failures that are one defect seen on several jobs (the legs of a matrix): [{id, failures, jobs, basis}]. Sets
+    `group` on each member; every member keeps its own job, log lines and signals. One draft covers a group."""
+    by: dict[tuple, list[dict]] = {}
+    for f in failures:
+        f.pop('group', None)
+        k = defect_key(f)
+        if k:
+            by.setdefault(k, []).append(f)
+    out = []
+    for k, fs in by.items():
+        jobs = list(dict.fromkeys(f['job_id'] for f in fs))
+        if len(jobs) < 2:
+            continue
+        gid = f'G{len(out) + 1:02d}'
+        for f in fs:
+            f['group'] = gid
+        where = f'{k[3][0]}:{k[3][1]}' if isinstance(k[3], tuple) else 'the same message'
+        out.append({'id': gid, 'failures': [f['id'] for f in fs], 'jobs': list(dict.fromkeys(f['job'] for f in fs)),
+                    'basis': f'the same {k[2] or "step"} failure of {k[1] or "the job"} at {where} on {len(jobs)} jobs'})
+    return out
+
+
+NOT_A_CHECK = re.compile(r'(?i)^(post |complete job$|set up job$)|upload-artifact|actions/cache')
+
+
+def checks_not_run(run: dict, attempt: int = 1) -> dict:
+    """What a failure kept from running: {steps: [{job, after_step, steps}], jobs: [...]}. A job stops at its first
+    failed step, so every later step the CI records as skipped (the linter, the coverage gate, the build) gave no
+    result on this commit; so did every job the CI skipped. Post and closing steps, artifact uploads and caches are
+    left out. The run cannot say whether a skipped step or job would have run anyway (its own `if:`), so they are
+    listed as not run, never as failed."""
+    att = next(a for a in run['attempts'] if a['n'] == attempt)
+    steps = []
+    for j in att['jobs']:
+        if j['conclusion'] in ('success', 'skipped', None):
+            continue
+        first = next((k for k, s in enumerate(j['steps']) if s['conclusion'] == 'failure'), None)
+        if first is None:
+            continue
+        later = [s['name'] for s in j['steps'][first + 1:] if s['conclusion'] == 'skipped' and not NOT_A_CHECK.search(s['name'] or '')]
+        if later:
+            steps.append({'job': j['name'], 'after_step': j['steps'][first]['name'], 'steps': later})
+    failed = any(j['conclusion'] not in ('success', 'skipped', None) for j in att['jobs'])
+    return {'steps': steps, 'jobs': [j['name'] for j in att['jobs'] if j['conclusion'] == 'skipped'] if failed else []}
 
 
 def log_tests(lines: list[str], lo: int, hi: int) -> list[dict]:
@@ -602,6 +702,7 @@ def extract(run_dir: Path, run: dict, attempt: int) -> list[dict]:
             others = [g['id'] for g in out if g['job_id'] != f['job_id'] and not g.get('consequence_of')]
             if others:
                 f['consequence_of'] = others
+    failure_groups(out)     # one defect on several jobs: each member gets its `group`
     return out
 
 
@@ -730,6 +831,86 @@ RUST_LOGS = {
         'Coverage is below the failure threshold 70.00% < 80.00%', 'Error: "Coverage is below the failure threshold 70.00% < 80.00%"',
         '##[error]Process completed with exit code 1.']),
 }
+
+
+WIN = '\\\\?\\D:\\a\\tides\\tides'     # rustfmt on a Windows runner prints the extended-length form of the checkout path
+MAC = '/Users/runner/work/tides/tides'
+_FMT = [' use std::fmt;', '-use crate::units::{Metres,Feet};', '+use crate::units::{Feet, Metres};', ' ', '##[error]Process completed with exit code 1.']
+RUST_MATRIX_LOGS = {
+    # one formatting defect on three legs of an OS matrix: the same file and line, printed three ways
+    'checks (ubuntu-latest)': ('cargo fmt --all -- --check', 'Format', [f'Diff in {RS}/crates/tides-core/src/tables.rs:12:'] + _FMT),
+    'checks (windows-latest)': ('cargo fmt --all -- --check', 'Format', [f'Diff in {WIN}\\crates\\tides-core\\src\\tables.rs:12:'] + _FMT),
+    'checks (macos-latest)': ('cargo fmt --all -- --check', 'Format', [f'Diff in {MAC}/crates/tides-core/src/tables.rs:12:'] + _FMT),
+    # rustc on Windows: a relative path with backslashes
+    'build (windows-latest)': ('cargo test --workspace', 'Unit tests', [
+        'error[E0425]: cannot find value `max_height` in this scope', '  --> crates\\tides-core\\src\\tables.rs:52:17', '   |',
+        '52 |     let cap = max_height * 2.0;', 'error: could not compile `tides-core` (lib test) due to 1 previous error',
+        '##[error]Process completed with exit code 101.']),
+    # current Rust prints the thread id after the thread's name
+    'thread-id': ('cargo test --workspace --no-fail-fast', 'Unit tests', [
+        '     Running unittests src/lib.rs (target/debug/deps/tides_core-1a2b3c4d5e6f7a8b)', '', 'running 2 tests',
+        'test tables::tests::parses_header ... ok', 'test tables::tests::rounds_half_metre ... FAILED', '', 'failures:', '',
+        '---- tables::tests::rounds_half_metre stdout ----', '',
+        "thread 'tables::tests::rounds_half_metre' (2976) panicked at crates/tides-core/src/tables.rs:88:9:", 'assertion `left == right` failed',
+        '  left: 1.4', ' right: 1.5', 'note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace', '', '',
+        'failures:', '    tables::tests::rounds_half_metre', '',
+        'test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s', '',
+        'error: test failed, to rerun pass `-p tides-core --lib`', '##[error]Process completed with exit code 101.']),
+    # --nocapture: the panic is printed while the tests run, long before `test ... FAILED`, and there is no stdout block
+    'nocapture': ('cargo test -p tides-cli --test probe -- --ignored --nocapture', 'Probe tests', [
+        '     Running tests/probe.rs (target/debug/deps/probe-0a1b2c3d4e5f6a7b)', '', 'running 2 tests', 'feed: connecting to the sample feed',
+        "thread 'waits_for_feed' (4102) panicked at crates/tides-cli/tests/probe.rs:33:13:", 'feed probe gave no reading in 5s',
+        'note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace'] + [f'feed: tick {i}' for i in range(1, 31)] + [
+        'test prints_today ... ok', 'test waits_for_feed ... FAILED', '', 'failures:', '', 'failures:', '    waits_for_feed', '',
+        'test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.02s', '',
+        'error: test failed, to rerun pass `-p tides-cli --test probe`', '##[error]Process completed with exit code 101.']),
+}
+
+
+def rust_matrix_self_test(d: Path, check) -> None:
+    """Windows paths, thread ids, --nocapture panics, one defect on several matrix legs, and the checks a failed step skipped."""
+    rjobs = []
+    for i, (name, (script, step, body)) in enumerate(RUST_MATRIX_LOGS.items(), 80):
+        (d / 'logs' / f'{i}.txt').write_text(_gh_log([(script, [script], body)]), encoding='utf-8')
+        later = [{'number': 3, 'name': 'cargo clippy --workspace -- -D warnings', 'conclusion': 'skipped'},
+                 {'number': 4, 'name': 'Coverage gate', 'conclusion': 'skipped'}, {'number': 5, 'name': 'Post Run actions/cache@v4', 'conclusion': 'skipped'},
+                 {'number': 6, 'name': 'Complete job', 'conclusion': 'success'}] if name.startswith('checks') else []
+        rjobs.append({'id': i, 'name': name, 'conclusion': 'failure', 'junit': [], 'log': f'logs/{i}.txt', 'log_status': 'fetched',
+                      'steps': [{'number': 1, 'name': 'Set up job', 'conclusion': 'success'}, {'number': 2, 'name': step, 'conclusion': 'failure'}] + later})
+    rjobs.append({'id': 99, 'name': 'release build', 'conclusion': 'skipped', 'junit': [], 'log': None, 'steps': []})
+    run = {'run': {'id': 4}, 'attempts': [{'n': 1, 'jobs': rjobs}]}
+    fs = extract(d, run, 1)
+    grouped_by_extract = [f.get('group') for f in fs]
+    by: dict[str, list] = {}
+    for f in fs:
+        by.setdefault(f['job'], []).append(f)
+    want = [{'file': 'crates/tides-core/src/tables.rs', 'line': 12}]
+    for leg in ('ubuntu', 'windows', 'macos'):
+        fx = by[f'checks ({leg}-latest)'][0]
+        check(fx['frames'] == want and fx['failure_type'] == 'format', f'rustfmt on {leg}: the file of the diff, checkout prefix dropped: {fx["frames"]}')
+    check(by['build (windows-latest)'][0]['frames'][:1] == [{'file': 'crates/tides-core/src/tables.rs', 'line': 52}],
+          f'rustc on Windows: {by["build (windows-latest)"][0]["frames"]}')
+    t = by['thread-id'][0]
+    check(t['message'] == 'panicked at crates/tides-core/src/tables.rs:88:9: assertion `left == right` failed' and t['failure_type'] == 'assertion',
+          f'a panic line with a thread id: the message is the panic and its cause, got {t["message"]!r} ({t["failure_type"]})')
+    n = by['nocapture']
+    check(len(n) == 1 and n[0]['test_id'] == 'probe::waits_for_feed' and n[0]['test_file'] == 'crates/tides-cli/tests/probe.rs'
+          and n[0]['frames'][:1] == [{'file': 'crates/tides-cli/tests/probe.rs', 'line': 33}]
+          and n[0]['message'] == 'panicked at crates/tides-cli/tests/probe.rs:33:13: feed probe gave no reading in 5s'
+          and n[0]['log_excerpt']['lines'][0]['text'].startswith("thread 'waits_for_feed'"),
+          f'--nocapture: the panic printed while the tests ran is tied to its test by the thread name: '
+          f'{[(f["test_id"], f["test_file"], f["frames"], f["message"], f["log_excerpt"]["lines"][:1]) for f in n]}')
+    # one defect on three legs is one group; the legs keep their own evidence
+    gs = failure_groups(fs)
+    legs = [by[f'checks ({leg}-latest)'][0] for leg in ('ubuntu', 'windows', 'macos')]
+    check(grouped_by_extract == [f.get('group') for f in fs] and any(grouped_by_extract), f'extract() itself sets the groups: {grouped_by_extract}')
+    check(len(gs) == 1 and gs[0]['failures'] == [f['id'] for f in legs] and len({f.get('group') for f in legs}) == 1 and legs[0].get('group') == gs[0]['id']
+          and all('group' not in f for f in fs if f not in legs) and len({f['log_excerpt']['path'] for f in legs}) == 3,
+          f'one formatting defect on three matrix legs should be one failure group: {gs}, {[(f["id"], f.get("group")) for f in fs]}')
+    nr = checks_not_run(run, 1)
+    check([(x['job'], x['after_step'], x['steps']) for x in nr['steps']][:1] == [('checks (ubuntu-latest)', 'Format', ['cargo clippy --workspace -- -D warnings', 'Coverage gate'])]
+          and len(nr['steps']) == 3 and nr['jobs'] == ['release build'],
+          f'the checks a failed step skipped (not post or closing steps) and the skipped jobs should be listed: {nr}')
 
 
 def rust_self_test(d: Path, check) -> None:
@@ -892,12 +1073,14 @@ def self_test() -> int:
         check([c['test_id'] for c in cn] == ['test/quote.test.mjs > rounds a half fare'] and cn[0]['failure_type'] == 'assertion', f'node:test {cn}')
         go_self_test(d, check)
         rust_self_test(d, check)
+        rust_matrix_self_test(d, check)
     if fails:
         print('extract_failures self-test: FAILED'); [print('  -', f) for f in fails]
         return 1
     print('extract_failures self-test: ok (step groups by title or error order, echoed script skipped, ANSI stripped, '
           'Vitest/Jest/node:test console failures, go test plain and -json with timeouts, build failures and races, '
-          'golangci-lint and gofmt steps, cargo test and nextest per test, Rust compile, clippy, rustfmt and coverage-gate steps, '
+          'golangci-lint and gofmt steps, cargo test and nextest per test, Rust compile, clippy, rustfmt and coverage-gate steps, Windows extended paths, panic thread ids, '
+          '--nocapture panics tied to their test, one defect on several matrix legs grouped, checks a failed step skipped, '
           'project frames over Go toolchain frames, aggregate gate, failed log fetch)')
     return 0
 
@@ -917,12 +1100,25 @@ def main() -> int:
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     run = json.loads((a.run / 'run.json').read_text(encoding='utf-8'))
     fs = extract(a.run, run, a.attempt)
-    a.out.write_text(json.dumps({'run_id': run['run']['id'], 'attempt': a.attempt, 'failures': fs}, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
+    groups, not_run = failure_groups(fs), checks_not_run(run, a.attempt)
+    doc = {'run_id': run['run']['id'], 'attempt': a.attempt, 'failures': fs}
+    if groups:
+        doc['groups'] = groups
+    if not_run['steps'] or not_run['jobs']:
+        doc['checks_not_run'] = not_run
+    a.out.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
     print(f'{len(fs)} failure(s) in attempt {a.attempt} -> {a.out}')
     for f in fs:
-        print(f'  {f["id"]} {f["job"]:14} {f["kind"]:5} {f["test_id"] or f["step"]}: {f["message"][:90]}')
+        print(f'  {f["id"]} {f["job"]:14} {f["kind"]:5} {f["test_id"] or f["step"]}: {f["message"][:90]}' + (f' [{f["group"]}]' if f.get('group') else ''))
         if f.get('log_status') not in ('fetched', None):
             print(f'      WARNING: no log for this job ({f["log_status"]}); its failure cannot be read from the log')
+    for g in groups:
+        print(f'  {g["id"]}: {", ".join(g["failures"])} are one defect ({g["basis"]}): one draft covers the group')
+    for x in not_run['steps']:
+        print(f'WARNING: in job {x["job"]}, {len(x["steps"])} step(s) after the failed step "{x["after_step"]}" never ran and gave no result '
+              f'on this commit: {"; ".join(x["steps"])}. The triage must say so', file=sys.stderr)
+    if not_run['jobs']:
+        print(f'WARNING: {len(not_run["jobs"])} job(s) were skipped and gave no result: {"; ".join(not_run["jobs"])}. The triage must say so', file=sys.stderr)
     return 0
 
 

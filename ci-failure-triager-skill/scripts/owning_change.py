@@ -143,7 +143,9 @@ def main() -> int:
     if not green:
         if not a.max_commits:
             searched = (run.get('history_query') or {}).get('default_branch')
+            unknown = (run.get('history_query') or {}).get('default_branch_source') == 'unknown'
             basis = ('no last green run of this workflow on the branch' + (f' or on the default branch {searched}' if searched else '')
+                     + (' (the default branch is not known, so its runs were not searched: fetch_run.py --default-branch NAME)' if unknown else '')
                      + ', so there is no range of changes to search; '
                      'owning_change.py --max-commits N searches the N commits up to the failing one (a weaker basis)')
             return write({'range': {'from': None, 'to': head, 'spec': None}, 'commits': None, 'problem': basis,

@@ -1,6 +1,6 @@
 # Design: `privacy-flow-auditor-skill`
 
-Status: Built (v1.10.0), see the "As built" sections. Build order: 23.
+Status: Built (v1.11.0), see the "As built" sections. Build order: 23.
 
 ## Mission
 
@@ -662,3 +662,47 @@ and missed the one real identifier.
   cdn.jsdelivr.net after. With `--include-fixtures` 11 candidates.
 - **Examples.** Re-validated unchanged; `run/static.json` regenerated (new keys, `language_coverage.dominant`
   from the shared census), same candidates.
+
+### Archives, placeholders and the history (v1.11.0)
+
+Run on a Rust workspace with Python tooling scripts and a committed benchmark archive, the scan raised two
+`home_path_in_artifact` candidates: one true, and one false on the one file the target had already cleaned.
+The most widespread exposure (the account name in most members of a committed zip of run results) was never
+seen, and nothing said the archive was left unread.
+
+- **Archives and logs.** Committed `.zip` archives are opened with the shared `archive_text.py` (in memory,
+  capped, nothing extracted) and their text members read for home paths; `.log`, `.out` and `.err` files too.
+  A candidate inside an archive cites `file` (the archive), `member` and the member's `line`; `also_at` writes
+  `archive!member:line`. `archives` lists each archive with members read. Everything unread is under
+  `skipped` with its reason (binary file, rest of a file over `--max-bytes`, non-zip or corrupt archive,
+  nested, encrypted or oversized member). Schema 1.7.0 adds `member` (and `key`) to `artifacts`.
+- **Placeholders.** The home-path rule moved to `scripts/home_paths.py` (shared by the scan and the
+  validator, with its own `--self-test`). The separator group used to eat the backslash of a JSON escape, so
+  `C:\Users\\u003cuser\u003e\...` read as an account named `u003cuser`; an account preceded by an odd
+  number of backslashes and starting with an escaped placeholder opener is a placeholder now, as are
+  redaction tokens (`redacted`, `[REDACTED]`). `file:///` URLs are read. Paths already redacted are counted
+  under `redacted_home_paths`. `also_at` lists each place once and never the candidate's own line.
+- **Identifier writes.** An assignment whose right-hand side leaves a bracket open is read to its closing
+  bracket (multi-line dict literals), `dict(host=...)` keyword arguments count as keys, and a small helper that
+  writes a parameter to a file (`write_json(path, payload)`) is a `file_write` wrapper. Candidates name the
+  file the write lands in (`facts.written_to`) and repository files of that name (`files_named_alike`).
+- **Rust.** `rust.env_reads`, `rust.process_launches` and `rust.library_loads` from the shared
+  `cargo_project.py`, with a summary line; sends and logs in Rust are still not scanned.
+- **Outbound.** A call whose URL, followed through the same two variable steps, is loopback (or a bare
+  `request` variable built from one) is no longer `outbound_unresolved`.
+- **Scripts.** PowerShell, shell and other script kinds from the census are in `language_coverage.scripts`
+  and `needs_limitation_scripts`; the validator needs a limitation naming each.
+- **Auditor's environment.** `static.json` records the repository as given (relative) or by folder name, and
+  `merge_candidates.py` records inputs relative to the working directory (else to the candidates file), never
+  absolute. The validator rejects any home-directory path naming an account in the report or the evidence,
+  without repeating the account.
+- **Validator.** Each `artifacts` line is re-read and must hold an identifier (a home path, the cited `key`, or
+  a host, user or machine field); an archive must be cited by member, re-read from the archive. Dismissal and
+  inventory reasons must be a sentence; a `home_path_in_artifact` dismissal while the account is still on the
+  line must say why the name is no person's. Identifiers in committed files need a limitation saying git
+  history was not searched (SKILL.md now asks for it). Plural disclaimer subjects take "are or aren't"
+  (`disclaimer_plural_subjects`). `schema_version` must be one the schema lists.
+- **Renderer.** `--brief` lists each finding's title and location, and the limitations.
+- **Examples.** Both at schema 1.7.0; `run/static.json` regenerated (new keys only), same candidates.
+- **Not changed:** git history is still not searched by the scan (named, not read); host names in committed
+  data are found only through review or a cited `key`; tar, 7z and other archives are listed as not read.

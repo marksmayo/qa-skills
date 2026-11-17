@@ -83,6 +83,7 @@ from urllib.parse import urljoin
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from browser_harness import Harness, check_authorised, is_loopback, NotAuthorised, now, retry_decision  # noqa: E402
 import browser_harness  # noqa: E402
 import compare_engines as ce  # noqa: E402

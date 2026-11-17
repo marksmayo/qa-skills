@@ -51,3 +51,6 @@ pub fn legend_renderer() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("tools/legend.exe"))
 }
+
+#[cfg(all(test, feature = "plot-checks"))]
+mod plot_checks;

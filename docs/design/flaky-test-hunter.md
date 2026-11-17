@@ -501,3 +501,53 @@ Agreed with the user before the build.
     suspect-only repeats beside the normal rate, and the schema values that cost validation rounds
     (`schema_version` 1.3.0, `skill` as an object, `tools[].status`, a required `quarantine`); the
     validator's self-test checks SKILL.md names them.
+- **Found on a Rust workspace with Python tooling scripts (v1.8.0, report schema 1.4.0)** (a cargo
+  workspace with integration tests that launch the crate's binary, and unittest suites that load
+  scripts by file path):
+  - **Tests that cannot run alone get a status.** Five tests whose file could be collected only
+    after another test file had put `scripts/` on `sys.path` errored in every isolated run, were
+    left out of every count as errored runs, and came out "not observed flaky". The validator now
+    computes `cannot_run_alone` (every run that selected only the test or its file errored, no
+    failure where it ran), requires a `cannot_run_alone[]` entry with the errored runs, the error and
+    what the tests need, and counts them apart in the summary; 1.3.0 reports get a warning naming
+    them. SKILL.md says reverse and shuffled orders cannot show import-time coupling.
+    `scan_pitfalls.py` raises `script-sibling-not-on-path` (read with the shared `py_loads.py`, only
+    for files that load a script by path): a script loaded by path whose folder neither the test
+    file, a `conftest.py` above it nor pytest's `pythonpath` puts on `sys.path`, while the script
+    imports a sibling when it is loaded (an import inside a function is not a lead).
+  - **Bisection of class-based tests.** `bisect_polluter.py` turned `tests.test_x.Class::test` into
+    `tests/test_x.py::test`, compared ids at the first `::`, and took a run started with `--tests
+    tests` as an order of one directory. Ids now keep their classes in both directions, a run started
+    from a path is expanded to the order its cases were recorded in, `--env` is passed to every
+    step, and `--self-test` bisects a real `unittest.TestCase` suite.
+  - **Probe artefacts.** A failure only under the clock shift (4/4 under -1d, from a file time the
+    test set to 1 s) outranked the real flake. `tests[].probe_only` marks such a test; its flake is
+    at most `indicated` and capped at P3 unless `probe_confirmation` names failing control runs with
+    file times left real. The renderer words it as a probe artefact, and SKILL.md now says what the
+    shared `clock_shift.py` does to stat times (it moves them, with a 1980 floor).
+  - **Suite-only flakes.** A real flake that failed only in whole-suite runs (a fixed `--duration`
+    window counted from spawn, a freshly built child starting late) was not reproduced alone or under
+    `--cpu-load`. `scripts/spawn_load.py` runs a command while workers keep starting processes and
+    writing files (variation `suite_load`, recorded through `QA_SPAWN_LOAD`); SKILL.md adds running
+    the test beside its file or target and reading what a failed run leaves behind. The scan raises
+    `fixed-window-child-process` (Python and Rust) for a fixed duration flag handed to a child whose
+    success the test asserts, and `scratch-dir-leak-rust` now fires when the only removal is a
+    statement on the success path (a `Drop` guard or `TempDir` still silences it).
+  - **Tests a plain run leaves out.** The Rust suite in `smells.json` lists `not_run_by_default`
+    from the shared `cargo_project.py` (`runs_by_default`, `why`); with `--smells`,
+    `--write-summary` writes a `not_run` row with `not_run_reason` for each one no counted run
+    reached, and from 1.4.0 a suite that ran counts the tests its runs recorded, so evidence
+    completeness falls when gates stay closed.
+  - **Smaller.** A cargo run whose notes say it reused another checkout's test binary needs a
+    limitation; `--brief` keeps the flakes' experiments, what was not run and every limitation
+    (`render_report.py --self-test`); SKILL.md no longer says `run_tests.py` does not write
+    `platform`, documents the three cargo id shapes, `time: null` for cargo cases, quoting one
+    `--env` word per variable (`PYTEST_ADDOPTS`), and planning an `--isolate` pass by its per-test
+    overhead. `data/pitfalls.json` is 1.9.0.
+  - **On the review clone**, the scan went from 2 smells (both sample-count assertions) to 9: the
+    import-order lead on the file that could not run alone, the fixed window on the real flake's
+    test and three neighbours, two success-path scratch leaks; Rust lists 10 tests a plain `cargo
+    test` leaves out (9 of them unrun on Windows). Upgraded to 1.4.0, the review's own report is
+    refused until the five tests are `cannot_run_alone` and the clock-only failure is no longer
+    `confirmed`; then the real flake ranks P2 above the probe artefact (P3, was P1-equivalent score 8
+    above it), 9 `not_run` rows appear and evidence completeness goes from 0.80 to 0.75.

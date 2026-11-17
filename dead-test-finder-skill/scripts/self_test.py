@@ -25,6 +25,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import collect_check, scan_tests  # noqa: E402
 
 FILES = {
@@ -583,6 +584,309 @@ def report_checks(tmp: Path, failures: list[str]) -> None:
           'an evidence file is counter-evidence for the dismissal', failures)
 
 
+# A tool repository whose tests are unittest.TestCase classes run by `python -m unittest discover` in CI (no pytest
+# anywhere): class names that pytest's python_classes would not match, a module-level test function and a plain
+# class unittest never runs, a sub-folder that is no package, a test that checks only that its mock was not called,
+# scripts found through `.parents[1]` on sys.path and loaded by file path (a hyphenated name).
+UNIT_CI = ('name: ci\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n'
+           '      - uses: actions/checkout@v4\n      - run: {cmd}\n')
+UNIT_FILES = {
+    'README.md': '# rate tools\n',
+    '.github/workflows/ci.yml': UNIT_CI.format(cmd='python -m unittest discover -s tests'),
+    'scripts/tally.py': '"""Totals."""\n\n\ndef total(rows):\n    return sum(rows)\n',
+    'scripts/fetch-rates.py': (
+        '"""Fetch the rate archive, or take one already on disk."""\nimport argparse, shutil, urllib.request\n\n'
+        'URL = "https://rates.example.com/rates.zip"\n\n\ndef main(argv=None):\n    ap = argparse.ArgumentParser()\n'
+        '    ap.add_argument("--offline")\n    ap.add_argument("dest")\n    args = ap.parse_args(argv)\n'
+        '    if args.offline:\n        shutil.copyfile(args.offline, args.dest)\n    else:\n'
+        '        urllib.request.urlretrieve(URL, args.dest)\n    return 0\n'),
+    'tests/test_tally.py': (
+        'import sys, unittest\nfrom pathlib import Path\n\n'
+        'sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))\nimport tally  # noqa: E402\n\n\n'
+        'class TallySuite(unittest.TestCase):\n    def sample(self):\n        return tally.total([1, 2])\n\n'
+        '    def test_total(self):\n        self.assertEqual(tally.total([2, 3]), 5)\n\n'
+        '    def test_through_helper(self):\n        self.assertEqual(self.sample(), 3)\n\n\n'
+        'class Plain:\n    def test_plain(self):\n        assert tally.total([]) == 0\n\n\n'
+        'def test_orphan():\n    assert tally.total([4]) == 4\n'),
+    'tests/test_rates.py': (
+        'import importlib.util, tempfile, unittest\nfrom pathlib import Path\nfrom unittest.mock import patch\n\n'
+        'ROOT = Path(__file__).resolve().parents[1]\n'
+        'SPEC = importlib.util.spec_from_file_location("fetch_rates", ROOT / "scripts" / "fetch-rates.py")\n'
+        'rates = importlib.util.module_from_spec(SPEC)\nSPEC.loader.exec_module(rates)\n\n\n'
+        'class RatesCli(unittest.TestCase):\n    def test_offline_archive_is_not_downloaded(self):\n'
+        '        with tempfile.TemporaryDirectory() as tmp:\n            src = Path(tmp, "a.zip")\n'
+        '            src.write_bytes(b"x")\n'
+        '            with patch.object(rates.urllib.request, "urlretrieve") as download:\n'
+        '                rates.main(["--offline", str(src), str(Path(tmp, "b.zip"))])\n'
+        '            download.assert_not_called()\n\n'
+        '    def test_online_downloads(self):\n'
+        '        with patch.object(rates.urllib.request, "urlretrieve") as download:\n'
+        '            rates.main(["out.zip"])\n        download.assert_called_once()\n\n'
+        '    def test_offline_copies(self):\n        with tempfile.TemporaryDirectory() as tmp:\n'
+        '            src, dest = Path(tmp, "a.zip"), Path(tmp, "b.zip")\n            src.write_bytes(b"x")\n'
+        '            self.assertEqual(rates.main(["--offline", str(src), str(dest)]), 0)\n'
+        '            self.assertEqual(dest.read_bytes(), b"x")\n'),
+    'tests/test_cwd.py': (
+        'import os, sys, unittest\n\nsys.path.insert(0, os.path.join(os.getcwd(), "scripts"))\n'
+        'import tally  # noqa: E402\n\n\nclass CwdSuite(unittest.TestCase):\n    def test_cwd(self):\n'
+        '        self.assertEqual(tally.total([1]), 1)\n'),
+    'tests/sub/test_deep.py': ('import unittest\n\n\nclass Deep(unittest.TestCase):\n    def test_deep(self):\n'
+                               '        self.assertEqual(len("ab"), 2)\n'),
+}
+
+
+def unittest_repo_checks(tmp: Path, failures: list[str]) -> None:
+    """unittest suites: TestCase classes are tests whatever they are called, the runner comes from CI, what unittest
+    never runs is a candidate, mock-only checks are candidates, and neutralisation resolves the scripts and runs
+    with unittest."""
+    import neutralise  # noqa: E402
+    root = tmp / 'unit'
+    for rel, text in UNIT_FILES.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(text, encoding='utf-8')
+    res = scan_tests.scan(root)
+    defs = {d['id']: d for d in res['definitions']}
+    cands = res['candidates']
+    rules = {(c['rule'], c['test_ids'][0].split('::', 1)[1]) for c in cands}
+    tt, tr = 'tests/test_tally.py', 'tests/test_rates.py'
+    check(not any(c['rule'] == 'class_pattern' for c in cands),
+          f'a unittest.TestCase class is never a class_pattern candidate (got '
+          f'{sorted(c["test_ids"][0] for c in cands if c["rule"] == "class_pattern")})', failures)
+    run = (res.get('python_runners') or {}).get('.') or {}
+    check(run.get('runner') == 'unittest' and run.get('start') == 'tests' and 'ci.yml' in ' '.join(run.get('evidence', []))
+          and (defs.get(f'{tt}::TallySuite::test_total') or {}).get('runner') == 'unittest',
+          f'the runner is the one CI runs, recorded per definition (got {run}, '
+          f'{(defs.get(tt + "::TallySuite::test_total") or {}).get("runner")})', failures)
+    never = {n for r, n in rules if r in ('not_a_testcase', 'not_a_package')}
+    check(never == {'test_orphan', 'Plain::test_plain', 'Deep::test_deep'}
+          and all(c['category'] == 'never_runs' for c in cands if c['rule'] in ('not_a_testcase', 'not_a_package')),
+          f'under unittest a module-level test function, a plain class and a folder that is no package never run '
+          f'(got {sorted(never)})', failures)
+    check(('only_negative_mock_checks', 'RatesCli::test_offline_archive_is_not_downloaded') in rules
+          and ('only_mock_call_checks', 'RatesCli::test_online_downloads') in rules
+          and not any(n == 'RatesCli::test_offline_copies' for _, n in rules)
+          and all(c['category'] == 'mock_only' for c in cands if c['rule'].startswith('only_')),
+          f'a test whose only checks are on its mock is a mock_only candidate (got {sorted(rules)})', failures)
+    off = defs.get(f'{tr}::RatesCli::test_offline_archive_is_not_downloaded') or {}
+    check('scripts/fetch-rates.py:main' in off.get('calls', []),
+          f'a script loaded with spec_from_file_location gives file-form targets (got {off.get("calls")})', failures)
+    check('tally.total' in (defs.get(f'{tt}::TallySuite::test_through_helper') or {}).get('calls', []),
+          'a helper method that calls the product is followed for targets', failures)
+
+    # the same tests under pytest (CI runs pytest): TestCase classes are collected whatever python_classes says, and
+    # a module-level test function runs
+    proot = tmp / 'unit-pytest'
+    for rel, text in {**UNIT_FILES, 'pytest.ini': '[pytest]\n',
+                      '.github/workflows/ci.yml': UNIT_CI.format(cmd='python -m pytest')}.items():
+        (proot / rel).parent.mkdir(parents=True, exist_ok=True)
+        (proot / rel).write_text(text, encoding='utf-8')
+    pres = scan_tests.scan(proot)
+    prules = {(c['rule'], c['test_ids'][0].split('::', 1)[1]) for c in pres['candidates'] if c['category'] == 'never_runs'}
+    check(prules == {('class_pattern', 'Plain::test_plain')}
+          and all(d.get('runner') == 'pytest' for d in pres['definitions']),
+          f'under pytest only the plain class outside python_classes never runs (got {sorted(prules)})', failures)
+
+    # collect_check lists a unittest suite with unittest's own loader
+    cand = tmp / 'unit-candidates.json'
+    cand.write_text(json.dumps(res), encoding='utf-8')
+    code = quiet(collect_check.main, [str(root), '--candidates', str(cand), '--run-dir', str(tmp / 'unit-col')])
+    col = json.loads((tmp / 'unit-col' / 'collection.json').read_text(encoding='utf-8')) if code == 0 else {}
+    pk = next((p for p in col.get('packages', []) if p['framework'] == 'unittest'), {})
+    check(code == 0 and pk.get('status') == 'ran' and 'unittest' in (pk.get('command') or '')
+          and set(col.get('not_collected', [])) == {f'{tt}::test_orphan', f'{tt}::Plain::test_plain',
+                                                    'tests/sub/test_deep.py::Deep::test_deep'}
+          and col.get('collected') == 6,
+          f'a unittest suite is listed with the unittest loader (exit {code}, {pk.get("status")}, collected '
+          f'{col.get("collected")}, not collected {col.get("not_collected")}, {pk.get("note")})', failures)
+
+    # neutralise: the suite's own runner (unittest), scripts found through .parents[1] and by file path
+    run_dir = tmp / 'unit-run'
+    ids = [f'{tt}::TallySuite::test_total', f'{tr}::RatesCli::test_offline_archive_is_not_downloaded',
+           f'{tr}::RatesCli::test_offline_copies', 'tests/test_cwd.py::CwdSuite::test_cwd']
+    code = quiet(neutralise.main, ['--repo', str(root), '--candidates', str(cand), '--run-dir', str(run_dir)]
+                 + [x for i in ids for x in ('--test', i)])
+    got = {r['test_id']: r for r in json.loads((run_dir / 'neutralisations.json').read_text(encoding='utf-8'))['results']} \
+        if (run_dir / 'neutralisations.json').is_file() else {}
+    total = got.get(ids[0]) or {}
+    check(code == 0 and total.get('runner') == 'unittest' and total.get('outcome') == 'failed_neutralised'
+          and [t.get('file') for t in total.get('targets', [])] == ['scripts/tally.py'],
+          f'a sys.path folder written with .parents[1] is resolved and the test runs with unittest (exit {code}, '
+          f'{total.get("runner")}, {total.get("outcome")}, {[t.get("note") or t.get("file") for t in total.get("targets", [])]}, '
+          f'{total.get("error_reason")})', failures)
+    off_r, cop = got.get(ids[1]) or {}, got.get(ids[2]) or {}
+    check(off_r.get('outcome') == 'passed_neutralised' and cop.get('outcome') == 'failed_neutralised'
+          and [t.get('file') for t in off_r.get('targets', [])] == ['scripts/fetch-rates.py'],
+          f'a script loaded by file path is neutralised: the mock-only test passes, the real one fails (got '
+          f'{off_r.get("outcome")}, {cop.get("outcome")}, {[t.get("note") for t in off_r.get("targets", [])]})', failures)
+    cwd_r = got.get(ids[3]) or {}
+    check(cwd_r.get('outcome') == 'not_run' and 'sys.path' in (cwd_r.get('not_run_reason') or '')
+          and 'line 3' in (cwd_r.get('not_run_reason') or ''),
+          f'a target behind a sys.path entry that cannot be worked out is not_run with that reason (got '
+          f'{cwd_r.get("outcome")}, {cwd_r.get("not_run_reason")})', failures)
+    import validate_dead_test_report as v  # noqa: E402
+    runs = json.loads((run_dir / 'runs.json').read_text(encoding='utf-8')) if (run_dir / 'runs.json').is_file() else \
+        {'runs': [], 'cases': []}
+    verr = [e for r in got.values() for e in v.neutralisation_errors(r, runs, {x['id'] for x in runs['runs']}, None)]
+    check(got and not verr, f'the validator reads unittest neutralisation runs (got {verr[:2]})', failures)
+
+
+# A Cargo crate: Rust tests are listed and scanned statically (never listed by a runner, never neutralised).
+RUST_FILES = {
+    'Cargo.toml': '[package]\nname = "gauge"\nversion = "0.1.0"\nedition = "2021"\n\n[features]\nextra = []\n',
+    '.github/workflows/ci.yml': UNIT_CI.format(cmd='cargo test --workspace'),
+    'src/lib.rs': (
+        'pub fn level(x: i32) -> i32 {\n    x * 2\n}\n\npub fn label(x: i32) -> String {\n    format!("level {}", level(x))\n}\n\n'
+        'pub fn clamp(x: i32) -> i32 {\n    x.max(0).min(100)\n}\n\npub fn scale(x: i32, by: i32) -> i32 {\n    x * by\n}\n\n'
+        '#[cfg(test)]\nmod tests {\n    use super::*;\n\n'
+        '    #[test]\n    fn doubles() {\n        assert_eq!(level(2), 4);\n    }\n\n'
+        '    #[test]\n    fn smoke() {\n        let _ = label(1);\n    }\n\n'
+        '    #[test]\n    #[ignore]\n    fn slow() {\n        assert_eq!(level(3), 6);\n    }\n\n'
+        '    #[test]\n    fn gated_body() {\n        #[cfg(target_os = "plan9")]\n        {\n'
+        '            assert_eq!(clamp(101), 100);\n        }\n    }\n\n'
+        '    #[cfg(feature = "extra")]\n    #[test]\n    fn extra() {\n        assert_eq!(scale(2, 3), 6);\n    }\n\n'
+        '    #[test]\n    fn through_helper() {\n        expect_level(4, 8);\n    }\n\n'
+        '    fn expect_level(x: i32, want: i32) {\n        assert_eq!(level(x), want);\n    }\n}\n'),
+    'src/main.rs': 'fn main() {\n    println!("{}", gauge::label(1));\n}\n',
+}
+
+
+def rust_checks(tmp: Path, failures: list[str]) -> None:
+    """Rust: #[test] functions are definitions scanned statically; what no CI command runs is a candidate; nothing is
+    listed by cargo or neutralised, and the output says so."""
+    root = tmp / 'rust'
+    for rel, text in RUST_FILES.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(text, encoding='utf-8')
+    out_file = tmp / 'rust.json'
+    code = quiet(scan_tests.main, [str(root), '--out', str(out_file)])
+    res = json.loads(out_file.read_text(encoding='utf-8')) if out_file.is_file() else {}
+    defs = {d['id']: d for d in res.get('definitions', [])}
+    names = {d['name'] for d in defs.values() if d.get('lang') == 'rust'}
+    check(code == 0 and names == {'doubles', 'smoke', 'slow', 'gated_body', 'extra', 'through_helper'}
+          and all(d.get('framework') == 'cargo-test' and d.get('cargo_id') for d in defs.values()),
+          f'Rust #[test] functions are definitions, read with cargo_project (exit {code}, got {sorted(names)})', failures)
+    got = {(c['category'], c['rule'], c['test_ids'][0].rsplit('::', 1)[-1]) for c in res.get('candidates', [])}
+    want = {('no_assertion', 'no_assertion', 'smoke'), ('never_runs', 'ignored_never_run', 'slow'),
+            ('unreached_assertion', 'cfg_body', 'gated_body'), ('never_runs', 'feature_never_enabled', 'extra')}
+    check(got == want, f'the Rust rules find exactly the planted problems (missing {sorted(want - got)}, extra '
+          f'{sorted(got - want)})', failures)
+    so = res.get('static_only') or []
+    check(len(so) == 1 and so[0].get('language') == 'Rust' and so[0].get('tests') == 6
+          and 'neutralis' in (res.get('summary', {}).get('static_only_warning') or '')
+          and 'language_coverage' not in res,
+          f'Rust tests are recorded as scanned statically only, loudly (got {so}, '
+          f'{res.get("summary", {}).get("static_only_warning")})', failures)
+    # CI that runs the ignored tests and enables the feature: neither is a never-runs candidate
+    (root / '.github/workflows/ci.yml').write_text(
+        UNIT_CI.format(cmd='cargo test --workspace --all-features -- --include-ignored'), encoding='utf-8')
+    res2 = scan_tests.scan(root)
+    check(not [c for c in res2['candidates'] if c['category'] == 'never_runs'],
+          f'an ignored or feature-gated test that a CI command runs is no candidate (got '
+          f'{[c["rule"] for c in res2["candidates"] if c["category"] == "never_runs"]})', failures)
+    cand = tmp / 'rust-candidates.json'
+    cand.write_text(json.dumps(res), encoding='utf-8')
+    code = quiet(collect_check.main, [str(root), '--candidates', str(cand), '--run-dir', str(tmp / 'rust-col')])
+    col = json.loads((tmp / 'rust-col' / 'collection.json').read_text(encoding='utf-8')) if code == 0 else {}
+    check(code == 0 and len(col.get('not_assessed', [])) == 6 and not col.get('not_collected'),
+          f'Rust tests have no list command here: not assessed, never not collected (exit {code}, '
+          f'{col.get("not_collected")})', failures)
+    import neutralise  # noqa: E402
+    smoke = next((i for i in defs if i.endswith('::smoke')), 'none')
+    code = quiet(neutralise.main, ['--repo', str(root), '--candidates', str(cand), '--run-dir', str(tmp / 'rust-run'),
+                                   '--test', smoke])
+    nfile = tmp / 'rust-run' / 'neutralisations.json'
+    nres = json.loads(nfile.read_text(encoding='utf-8'))['results'][0] if nfile.is_file() else {}
+    check(code == 0 and nres.get('outcome') == 'not_run' and 'Rust' in (nres.get('not_run_reason') or ''),
+          f'a Rust test is not neutralised, with the reason (exit {code}, {nres.get("outcome")}, '
+          f'{nres.get("not_run_reason")})', failures)
+
+
+def honesty_checks(tmp: Path, failures: list[str]) -> None:
+    """The validator needs the scan's language warnings in the limitations and lowers evidence completeness for
+    what was not read or cannot be run; the renderer keeps limitations in --brief, groups dismissals and never
+    crashes on a schema-valid report."""
+    import copy
+    import render_report  # noqa: E402
+    import validate_dead_test_report as v  # noqa: E402
+    ex = HERE.parent / 'examples'
+    rep = json.loads((ex / 'dead_test_report.example.json').read_text(encoding='utf-8'))
+    ev = v.load_evidence(rep, ex)
+
+    def errors(ev2: dict, limitations: list[str]) -> list[str]:
+        r = copy.deepcopy(rep)
+        r['limitations'] = r['limitations'] + limitations
+        v.fill(r)
+        r['summary'] = {'headline': r['summary']['headline'], **v.summary(r, ev2)}
+        return v.check(r, ev2, None, ex)
+    warned = copy.deepcopy(ev)
+    warned['candidates']['language_coverage'] = {
+        'status': 'unsupported_dominant', 'dominant_unsupported_language': 'Kotlin', 'decided_by': 'lines',
+        'supported_lines': 100, 'unsupported_lines': 300, 'warning': 'This repository is predominantly Kotlin.'}
+    warned['candidates']['summary']['language_warning'] = 'This repository is predominantly Kotlin.'
+    e1 = errors(warned, [])
+    check(any('Kotlin' in e and 'limitations' in e for e in e1),
+          f'a scan that warned about the main language needs a limitation naming it (got {e1[:3]})', failures)
+    e2 = errors(warned, ['Kotlin, the main language of the repository, was not analysed: its tests are not assessed.'])
+    check(not e2, f'the limitation naming the unread language satisfies the validator (got {e2[:3]})', failures)
+    base_c = v.completeness(rep, ev)
+    check(abs(v.completeness(rep, warned) - round(base_c * 0.25, 4)) < 1e-9,
+          f'evidence completeness is multiplied by the share of code in languages the scan read (got '
+          f'{v.completeness(rep, warned)} from {base_c})', failures)
+    static = copy.deepcopy(ev)
+    extra = [{'id': f'src/lib.rs::tests::t{i}', 'file': 'src/lib.rs', 'line': i + 1, 'name': f't{i}', 'lang': 'rust',
+              'package': '.', 'framework': 'cargo-test', 'runner': 'cargo', 'calls': []} for i in range(5)]
+    static['candidates']['definitions'] = static['candidates']['definitions'] + extra
+    static['candidates']['static_only'] = [{'language': 'Rust', 'tests': 5, 'reason': 'not listed or neutralised'}]
+    static['collection'] = {**static['collection'], 'defined': static['collection']['defined'] + 5,
+                            'not_assessed': static['collection']['not_assessed'] + [d['id'] for d in extra]}
+    n = len(ev['candidates']['definitions'])
+    check(abs(v.completeness(rep, static) - round(base_c * n / (n + 5), 4)) < 1e-9,
+          f'evidence completeness is multiplied by the share of tests the skill can list and run (got '
+          f'{v.completeness(rep, static)}, want {round(base_c * n / (n + 5), 4)})', failures)
+    r3 = copy.deepcopy(rep)
+    r3['tests'] = r3['tests'] + [{'id': d['id'], 'file': d['file'], 'line': d['line'], 'status': 'not_assessed',
+                                  'reason': 'Rust tests are scanned statically only'} for d in extra]
+    r3['collection'] = {k: static['collection'][k] for k in ('defined', 'collected', 'not_collected', 'not_assessed')}
+    v.fill(r3)
+    r3['summary'] = {'headline': r3['summary']['headline'], **v.summary(r3, static)}
+    e3 = v.check(r3, static, None, ex)
+    check(any('Rust' in e and 'limitations' in e for e in e3) and len(e3) == 1,
+          f'statically scanned tests need a limitation saying they were not neutralised (got {e3[:3]})', failures)
+    r3['limitations'].append('The 5 Rust tests were scanned statically only: none was listed or neutralised.')
+    e4 = v.check(r3, static, None, ex)
+    check(not e4, f'the static-only limitation satisfies the validator (got {e4[:3]})', failures)
+
+    # schema: neutralisation targets are typed, so a list of names is refused before the renderer sees it
+    bad = copy.deepcopy(rep)
+    f_neut = next(f for f in bad['findings'] if f['evidence'].get('neutralisation'))
+    f_neut['evidence']['neutralisation']['targets'] = ['ledger.tax.gst']
+    schema = json.loads(v.SCHEMA.read_text(encoding='utf-8'))
+    check(any('targets' in e for e in v.schema_errors(bad, schema, schema)),
+          'the schema types evidence.neutralisation.targets (a list of names is invalid)', failures)
+    check(not v.schema_errors(rep, schema, schema), 'the example still conforms to the schema', failures)
+    # renderer
+    try:
+        line = render_report.evidence_line({'neutralisation': {'outcome': 'passed_neutralised', 'targets': [
+            {'target': 'scripts/fetch-rates.py:main', 'variants': [{'variant': 'return', 'test_status': 'passed'}]},
+            'tally.total']}})
+    except (TypeError, KeyError) as exc:
+        line = f'crashed: {exc!r}'
+    check('fetch-rates.py:main: return -> passed' in line and 'total' in line,
+          f'file-form targets render with their file, and a bare name does not crash (got {line!r})', failures)
+    many = copy.deepcopy(rep)
+    many['dismissed'] = [{'candidate_id': f'C{i}', 'reason': 'The class is a unittest.TestCase, which pytest collects.',
+                          'scanner_error': True} for i in range(100, 140)] + \
+        [{'candidate_id': 'C7', 'reason': 'A conditional skip with a stated reason.'}]
+    render = getattr(render_report, 'render', None)
+    brief = render(many, brief=True, color=False) if render else ''
+    full = render(many, brief=False, color=False) if render else ''
+    check('## Limitations' in brief and many['limitations'][0] in brief, '--brief keeps the limitations', failures)
+    dis = brief.split('## Dismissed', 1)[-1].split('## ', 1)[0]
+    check(bool(brief) and len(dis.strip().splitlines()) <= 4 and '40' in dis and 'C100' in dis,
+          f'--brief summarises dismissals that share a reason (got {len(dis.strip().splitlines())} lines)', failures)
+    check('C139' in full, 'the full report still names every dismissed candidate', failures)
+
+
 PYTEST_FILES = {
     'pytest.ini': '[pytest]\naddopts = -v\ntestpaths = tests\n',
     'tests/test_fares.py': ('import pytest\n\n\n@pytest.mark.parametrize("n", [1, 2])\ndef test_fare(n):\n    assert n\n\n\n'
@@ -845,6 +1149,9 @@ def main() -> int:
         go_checks(tmp, failures)
         tool_repo_checks(tmp, failures)
         report_checks(tmp, failures)
+        unittest_repo_checks(tmp, failures)
+        rust_checks(tmp, failures)
+        honesty_checks(tmp, failures)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     if failures:

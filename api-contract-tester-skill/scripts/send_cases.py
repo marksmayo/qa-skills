@@ -59,6 +59,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import jsonschema_lite as jl  # noqa: E402
 
 SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS'}

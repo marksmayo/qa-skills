@@ -21,6 +21,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import icu_lite  # noqa: E402
 
 CODE_EXT = {'web': ('.js', '.mjs', '.ts', '.tsx', '.jsx', '.vue', '.svelte', '.html', '.htm'),

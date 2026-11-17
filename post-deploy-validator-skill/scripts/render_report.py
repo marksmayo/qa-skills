@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 COL = {'no_go': '31;1', 'not_established': '33;1', 'go': '32;1', 'fail': '31', 'pass': '32', 'blocked': '33', 'error': '33', 'skipped': '2',

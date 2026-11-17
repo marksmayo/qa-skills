@@ -65,6 +65,32 @@ def literals(text: str, expr: str, depth: int = 0) -> list[str]:
     return found
 
 
+def test_only_module(rel: str, text_of, depth: int = 0) -> bool:
+    """True when the Rust file rel is a module declared `#[cfg(test)] mod name;` by its parent (name.rs or name/mod.rs
+    under the parent's folder), or a submodule of one. Worked out only for files that have a launch, load or read."""
+    parts = rel.split('/')
+    if depth > 8 or len(parts) < 2:
+        return False
+    if parts[-1] == 'mod.rs':
+        name, folder = parts[-2], '/'.join(parts[:-2])
+    else:
+        name, folder = parts[-1][:-3], '/'.join(parts[:-1])
+    if name in ('lib', 'main') or not folder:
+        return False
+    up, _, last = folder.rpartition('/')
+    parents = [f'{folder}/lib.rs', f'{folder}/main.rs', f'{up + "/" if up else ""}{last}.rs', f'{folder}/mod.rs']
+    for parent in parents:
+        if parent == rel:
+            continue
+        text = text_of(parent)
+        if not text or not re.search(rf'\bmod\s+{re.escape(name)}\s*[;{{]', text):
+            continue
+        if any(n == name for n, _ in scan_pitfalls.rust_test_scope(text)[1]):
+            return True
+        return test_only_module(parent, text_of, depth + 1)
+    return False
+
+
 def _main_line(path: Path) -> int | None:
     try:
         for i, line in enumerate(path.read_text(encoding='utf-8', errors='replace').splitlines(), 1):
@@ -120,9 +146,9 @@ def read(root: Path, manifests: list[str] | None = None) -> dict:
                 if ln:
                     entries.append({'kind': 'cli', 'framework': 'rust', 'method': 'ROOT', 'path': t['name'], 'handler': f'{f}:{ln}',
                                     'function': 'main', 'auth': 'unknown', 'auth_evidence': LOCAL})
-            def shipped(x: dict) -> bool:  # not in tests/, benches/, examples/ or a #[cfg(test)] item
+            def shipped(x: dict) -> bool:  # not in tests/, benches/, examples/, a #[cfg(test)] item or test-only module file
                 f = pre + x['file']
-                if TEST_DIR.search('/' + x['file']):
+                if TEST_DIR.search('/' + x['file']) or test_only_module(f, text_of):
                     return False
                 if f not in test_lines:
                     test_lines[f] = scan_pitfalls.rust_test_lines(text_of(f))

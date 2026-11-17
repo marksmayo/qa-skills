@@ -125,6 +125,20 @@ The mean of three shares:
   errored), or that had nothing to neutralise;
 - the ticket keys whose ticket was read.
 
+multiplied by two more:
+- the share of defined tests the skill can list and run: tests of a language scanned statically
+  only (`static_only` in candidates.json: Rust) are left out of the first two shares and counted
+  here instead;
+- the share of product code in languages the scan read: 1 unless scan_tests.py warned that an
+  unread language dominates (`language_coverage.status: unsupported_dominant`), then supported /
+  (supported + unsupported) lines (files when the census decided by files).
+
+## Coverage limitations (checked)
+
+- When the scan warned that an unread language dominates, a limitation names that language.
+- When a language's tests were scanned statically only, a limitation names it and says they were
+  not listed or neutralised (or scanned statically).
+
 ## Honesty rules
 
 - **Tree hash:** the working tree is unchanged across the runs (`tree_hash_before` equals

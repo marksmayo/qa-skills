@@ -48,6 +48,7 @@ from urllib.parse import urlparse
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import attribute as at  # noqa: E402
 import compare as cmp  # noqa: E402
 import schema_check  # noqa: E402

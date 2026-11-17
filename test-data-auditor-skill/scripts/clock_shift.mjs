@@ -66,7 +66,22 @@ export function install(offset) {
 // family (fs.stat/lstat/fstat, their Sync forms, fs.promises and FileHandle.stat) report atime, mtime, ctime and
 // birthtime moved by the same offset, and the utimes family (utimes, futimes, lutimes) moves times the tests set
 // back by it, so a round trip is exact. TDA_CLOCK_FILES=0 leaves file times alone.
+// Two limits, the same as clock_shift.py: a time before 1980 is a value a test set (utimes(f, 0, 0) to mean
+// "ancient"), not a time any clock wrote, so it is reported and stored as it is; and a moved time is never
+// reported or stored below 1980, so no shift produces a time before the epoch.
 const FILE_MARK = Symbol.for('qa-skills.clock_shift.files');
+const FILE_TIME_FLOOR_MS = 315532800000;   // 1980-01-01T00:00:00Z
+
+function movedMs(ms, offset) {
+  if (typeof ms === 'bigint') {
+    const floor = BigInt(FILE_TIME_FLOOR_MS);
+    if (ms < floor) return ms;
+    const out = ms + BigInt(Math.trunc(offset));
+    return out < floor ? floor : out;
+  }
+  if (ms < FILE_TIME_FLOOR_MS) return ms;
+  return Math.max(ms + offset, FILE_TIME_FLOOR_MS);
+}
 
 function shiftStats(st, offset) {
   if (!st || typeof st !== 'object' || typeof st.mtimeMs === 'undefined') return st;
@@ -74,10 +89,11 @@ function shiftStats(st, offset) {
   for (const k of ['atime', 'mtime', 'ctime', 'birthtime']) {
     const ms = st[k + 'Ms'];
     if (ms === undefined) continue;
-    const moved = big ? ms + BigInt(Math.trunc(offset)) : ms + offset;
+    const moved = movedMs(ms, offset);
+    if (moved === ms) continue;
     Object.defineProperty(st, k + 'Ms', { value: moved, writable: true, enumerable: true, configurable: true });
     if (big && st[k + 'Ns'] !== undefined) {
-      Object.defineProperty(st, k + 'Ns', { value: st[k + 'Ns'] + BigInt(Math.trunc(offset)) * 1000000n,
+      Object.defineProperty(st, k + 'Ns', { value: st[k + 'Ns'] + (moved - ms) * 1000000n,
         writable: true, enumerable: true, configurable: true });
     }
     Object.defineProperty(st, k, { value: new Date(Number(moved)), writable: true, enumerable: true, configurable: true });
@@ -85,11 +101,16 @@ function shiftStats(st, offset) {
   return st;
 }
 
+function unshiftMs(ms, offset) {
+  if (ms < FILE_TIME_FLOOR_MS) return ms;                               // a sentinel: stored as given
+  return Math.max(ms - offset, FILE_TIME_FLOOR_MS);
+}
+
 function unshiftTime(t, offset) {
-  if (t instanceof Date) return new Date(t.getTime() - offset);
-  if (typeof t === 'number') return t - offset / 1000;                  // utimes takes seconds
-  if (typeof t === 'bigint') return t - BigInt(Math.trunc(offset / 1000));
-  if (typeof t === 'string' && /^\d+(\.\d+)?$/.test(t)) return String(Number(t) - offset / 1000);
+  if (t instanceof Date) return new Date(unshiftMs(t.getTime(), offset));
+  if (typeof t === 'number') return unshiftMs(t * 1000, offset) / 1000;  // utimes takes seconds
+  if (typeof t === 'bigint') return BigInt(Math.trunc(unshiftMs(Number(t) * 1000, offset) / 1000));
+  if (typeof t === 'string' && /^\d+(\.\d+)?$/.test(t)) return String(unshiftMs(Number(t) * 1000, offset) / 1000);
   return t;
 }
 
@@ -215,6 +236,18 @@ async function selfTest() {
   r = runEsm({ TDA_CLOCK_SHIFT: '+400d', TDA_CLOCK_FILES: '0' });
   try { res = JSON.parse(r.stdout); } catch { res = {}; }
   check('TDA_CLOCK_FILES=0 leaves file times real', Array.isArray(res.ages) && res.ages[0] > 399 * day, r.stdout.trim() + r.stderr);
+  const sentCode = `import fs from 'node:fs';
+    fs.writeFileSync(${JSON.stringify(ff)}, 'x'); fs.utimesSync(${JSON.stringify(ff)}, 1, 1);
+    const st = fs.statSync(${JSON.stringify(ff)});
+    const big = fs.statSync(${JSON.stringify(ff)}, { bigint: true });
+    console.log(JSON.stringify({ ms: st.mtimeMs, year: st.mtime.getUTCFullYear(), ns: String(big.mtimeNs) }));`;
+  for (const shift of ['-1d', '+400d']) {
+    r = spawnSync(process.execPath, [`--import=${self}`, '--input-type=module', '-e', sentCode],
+      { env: { ...process.env, TDA_CLOCK_SHIFT: shift, TDA_CLOCK_DATE: '', TDA_CLOCK_ANNOUNCED: '1' }, encoding: 'utf8' });
+    try { res = JSON.parse(r.stdout); } catch { res = {}; }
+    check(`${shift}: a file time the test set before 1980 (utimes(f, 1, 1)) reads back as set, never negative`,
+      res.ms === 1000 && res.year === 1970 && res.ns === '1000000000', r.stdout.trim() + r.stderr);
+  }
   rmSync(fdir, { recursive: true, force: true });
 
   let failed = 0;

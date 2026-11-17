@@ -19,6 +19,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import signature  # noqa: E402
 
 HARMFUL = re.compile(r'\b(clear|delete|remove|erase|wipe|purge|drop|reset)\b[^.]{0,30}\b(all|every|everything|data|tasks?|accounts?|'

@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse, json, os, re, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
 COL = {'P0': '31;1', 'P1': '31', 'P2': '33', 'P3': '36', 'dim': '2', 'bold': '1', 'green': '32'}

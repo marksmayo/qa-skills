@@ -4,11 +4,14 @@
     python render_report.py mutation_report.json [--color auto|always|never] [--brief]
 
 --brief prints the headline, the scores and the ranked findings without the code, the
-unranked triage or the mutant list.
+unranked triage or the mutant list. It still says what the scores do not cover: how many mutants
+timed out, errored or were not run (with their ids), every engine or tool that did not run or
+stopped early, and the limitations in full.
 """
 from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)
 
@@ -120,7 +123,39 @@ def main() -> int:
             if g['suggestion']:
                 print(f'  Suggest: {g["suggestion"]}' + (f' Proved: {", ".join(g["proof_ids"])}.' if g['proof_ids'] else ''))
         print()
+    odd = [m for m in d['mutants'] if m['status'] in ('timeout', 'runtime_error', 'compile_error', 'not_run')]
     if args.brief:
+        # the brief leaves detail out, never the things that bound what the scores mean
+        if odd:
+            by: dict[str, list[str]] = {}
+            for m in odd:
+                by.setdefault(m['status'], []).append(m['id'])
+            label = {'timeout': 'timed out', 'runtime_error': 'runtime error', 'compile_error': 'did not compile',
+                     'not_run': 'not run'}
+            print(P('## Not counted as kills', BOLD))
+            for st in ('timeout', 'runtime_error', 'compile_error', 'not_run'):
+                ids = by.get(st)
+                if ids:
+                    what = label[st] + ('s' if st == 'runtime_error' and len(ids) != 1 else '')
+                    print(P(f'- {len(ids)} {what}: ', STATUS_STYLE[st]) + ', '.join(ids[:12]) +
+                          (f' (+{len(ids) - 12} more)' if len(ids) > 12 else ''))
+            print()
+        quiet = [e for e in md['engines'] if e['status'] != 'ran' or e.get('stopped')]
+        tools = [t for t in d['tools'] if t['status'] in ('not_run', 'errored')]
+        if quiet or tools:
+            print(P('## Did not run', BOLD))
+            for e in quiet:
+                stop = e.get('stopped')
+                print(P(f'- {e["name"]}: ' + (f'stopped early ({stop["kind"]}' + (f' at {stop["mutant"]}' if stop.get('mutant') else '') + ')'
+                                              if stop and e['status'] == 'ran' else e['status']), RED) +
+                      (f' ({e["reason"]})' if e['reason'] else ''))
+            for t in tools:
+                print(P(f'- {t["name"]}: {t["status"]}', TOOL_STYLE[t['status']]) + f' ({t["reason"]})')
+            print()
+        if d['limitations']:
+            print(P('## Limitations', BOLD))
+            for l in d['limitations']:
+                print(f'- {l}')
         return 0
     others = [f for f in d['findings'] if not f['priority']]
     if others:
@@ -128,7 +163,6 @@ def main() -> int:
         for f in others:
             print(f'- {f["id"]} {TRIAGE_LABEL[f["triage"]]} ({", ".join(f["mutant_ids"])}), {where(f)}: {f["reason"]}')
         print()
-    odd = [m for m in d['mutants'] if m['status'] in ('timeout', 'runtime_error', 'compile_error', 'not_run')]
     if odd:
         print(P('## Timeouts, errors and mutants not run (never counted as kills)', BOLD))
         for m in odd:

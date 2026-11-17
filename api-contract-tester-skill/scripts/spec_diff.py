@@ -31,6 +31,7 @@ import argparse, json, re, shutil, subprocess, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import jsonschema_lite as jl  # noqa: E402
 
 FRAMEWORK_DEFAULT_VERSIONS = {'0.1.0', '1.0.0', '1.0', '0.0.1', 'v1', '1'}   # FastAPI, generators and templates

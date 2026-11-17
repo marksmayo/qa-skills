@@ -56,6 +56,8 @@ python scripts/run_tests.py --preset pytest --cwd <repo> --out runs.json --tests
     --env PYTHONPATH=<plugins/, relative to the repo> "PYTEST_ADDOPTS=-p clock_shift" TDA_CLOCK_SHIFT=-1d
 python scripts/bisect_polluter.py --runs runs.json --from-run O-1 --victim <case id> --cwd <repo> --out bisect.json
 python scripts/bisect_polluter.py --runs runs.json --from-run R-1 --victim <case id> --cwd <repo> --relation enabler --out bisect-enabler.json
+python scripts/spawn_load.py --procs 4 -- python scripts/run_tests.py --preset pytest --cwd <repo> --out runs.json \
+    --tests <id> --repeat 8 --label suite_load --record-env QA_SPAWN_LOAD
 python scripts/validate_flaky_report.py flaky_report.json --runs runs.json --smells smells.json --bisect bisect.json --repo <repo> --write-summary
 python scripts/render_report.py flaky_report.json [--brief]
 ```
@@ -91,8 +93,21 @@ helper assertions on elapsed time (`check(took < 2.0, ...)`). `python scripts/va
 scripts/scan_pitfalls.py --self-test` check these rules on synthetic fixtures.
 
 The worst rate that ranks a flake comes from a label with at least 3 runs, or from all runs
-pooled, so one failure in a single run cannot rank like 3 failures in 3. `render_report.py --brief`
-lists only the flaky and consistently failing tests.
+pooled, so one failure in a single run cannot rank like 3 failures in 3. A failure seen only under
+the skill's own clock shift is a probe artefact (capped at P3) until control runs with file times
+left real still fail. `render_report.py --brief` keeps the flakes' experiments, the tests that need
+attention, what was not run and the limitations, and leaves out fixes, smells and tools.
+
+A test that errors in every run of its own and passes in the suite (a file that can be imported
+only after another file put a folder on `sys.path`) is `cannot_run_alone`, listed apart (schema
+1.4.0), and `scan_pitfalls.py` points at it (`script-sibling-not-on-path`). `bisect_polluter.py`
+bisects `unittest.TestCase` and pytest class ids, starts from a run that was given a directory, and
+passes `--env` to every step. For a flake seen only in whole-suite runs, `scripts/spawn_load.py`
+reproduces suite load (process creation and file writes, not only CPU), and the scan flags a fixed
+`--duration` window around a child process (`fixed-window-child-process`). Rust tests a plain
+`cargo test` leaves out (`#[ignore]`, feature, platform and required-features gates) are `not_run`
+rows and lower evidence completeness, and a cargo run that reused another checkout's test binaries
+must be named in limitations.
 
 A run that crashed, timed out or hit a pytest collection or usage error is recorded as `errored` and
 never counted. In a monorepo, run `run_tests.py` with each package's own Python, keep one `code_hash`
@@ -122,6 +137,7 @@ journey therefore tops out at 8 (P2) by design, even at 3/3.
 | `tests` | Every test's runs, passes, fails, normal and worst rates with intervals, and status |
 | `flakes` | Cause, confidence, the experiment, a passing and a failing run, polluter, fix and ranking |
 | `consistently_failing` | Tests that failed every run |
+| `cannot_run_alone` | Tests that error in every run of their own and pass in the suite, with the error and what they need |
 | `static_smells` | Every smell the scanner found and what it led to |
 | `variations`, `tools` | What ran and what didn't, with reasons |
 | `summary` | Counts, causes, priorities, total runs (single-test runs apart) and evidence completeness |
@@ -154,9 +170,11 @@ python scripts/render_report.py examples/flaky_report.example.json --brief
 - `plugins/clock_shift.py`: a pytest plugin that moves the clock for the `clock` variation (the same file as test-data-auditor's; safe with pandas and numpy; `--self-test`)
 - `plugins/clock_shift.mjs`: the same for Node (Vitest, Jest), loaded with `NODE_OPTIONS=--import=<file URL>` (shared); it also moves `fs.stat` times
 - `plugins/net_guard.py` and `plugins/net_guard.cjs`: network guards for pytest and Node runs that refuse and log every non-loopback connection, naming the calling file and line (shared)
-- `scripts/bisect_polluter.py`: finds the test that pollutes an order-dependent victim, or (`--relation enabler`) the one it depends on
+- `scripts/bisect_polluter.py`: finds the test that pollutes an order-dependent victim, or (`--relation enabler`) the one it depends on (`--self-test`)
+- `scripts/spawn_load.py`: runs a command while workers keep starting processes and writing files, for the `suite_load` variation (`--self-test`)
+- `scripts/py_loads.py`: what a Python test loads by path (shared), for `script-sibling-not-on-path`
 - `scripts/validate_flaky_report.py`: recomputes counts from the runs and checks the honesty rules
-- `scripts/render_report.py`: coloured terminal/Markdown report
+- `scripts/render_report.py`: coloured terminal/Markdown report (`--self-test` checks what `--brief` keeps)
 - `examples/`: sample package, real runs and report
 
 ## Design principles

@@ -27,6 +27,7 @@ to 12.1 and Samsung Internet 4.
 from __future__ import annotations
 import argparse, json, re, sys
 from pathlib import Path
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
