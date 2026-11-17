@@ -26,6 +26,10 @@ NORMAL_LABELS = ('baseline', 'repeat')
 NOT_WORST = ('bisect',)
 GATE = {'required': 3, 'ci': 2, 'local': 1}
 CLOCK_ENV = ('TDA_CLOCK_SHIFT', 'TDA_CLOCK_DATE', 'FAKETIME')
+ALONE = 'cannot_run_alone'
+SPAWN_LOAD_ENV = 'QA_SPAWN_LOAD'      # recorded by runs made under scripts/spawn_load.py (--record-env)
+FOREIGN_BINARY = 'built from another checkout'      # run_tests.cargo_foreign_binaries' note
+FOREIGN_LIMITATION = re.compile(r'another (?:checkout|copy)|shared target|target[- ]dir|CARGO_TARGET_DIR', re.I)
 MIN_LABEL_RUNS = 3      # a label needs this many runs to set the worst rate on its own
 POOLED = 'pooled'       # the worst-rate candidate made of every non-bisect run
 REPEAT_SUFFIX = re.compile(r'#\d+$')  # parse_results' suffix for a repeated name; a '#' inside a title stays
@@ -123,7 +127,43 @@ def platform_of(run: dict) -> str | None:
     return run.get('platform') or (run.get('variation') or {}).get('platform')
 
 
-def test_stats(tid: str, obs: list, file: str | None, plat: dict | None = None) -> dict:
+def single_selection(run: dict) -> str | None:
+    """The one test id or test file a run was asked for (an --isolate run, or a file run on its own)."""
+    sel = run.get('tests_selected') or []
+    return sel[0].replace('\\', '/') if len(sel) == 1 and isinstance(sel[0], str) else None
+
+
+def selects(sel: str, tid: str, file: str | None) -> bool:
+    """A single selection names this test (its id, in either form) or the file that defines it."""
+    if '::' in sel:
+        return sel == tid or same_test(tid, sel)
+    f = (file or '').replace('\\', '/')
+    return bool(f) and (f == sel or f.endswith('/' + sel) or sel.endswith('/' + f))
+
+
+def alone_info(runs_data: dict, code_hash: str, obs: dict, files: dict) -> dict[str, dict]:
+    """test id -> {attempts, errored, error, run_ids} for tests with an errored run of their own: a run on this code
+    that selected only the test (or only its file) and errored, so nothing was collected. `attempts` adds the
+    counted runs that selected only the test or its file."""
+    same = [r for r in runs_data['runs'] if r.get('code_hash') == code_hash]
+    bad = [(r, single_selection(r)) for r in same if r.get('errored')]
+    bad = [(r, s) for r, s in bad if s]
+    if not bad:
+        return {}
+    ok_single = {r['id']: single_selection(r) for r in same if not r.get('errored') and single_selection(r)}
+    out = {}
+    for tid in obs:
+        mine = [r for r, s in bad if selects(s, tid, files.get(tid))]
+        if not mine:
+            continue
+        ran = sum(1 for rid, _, _ in obs[tid] if rid in ok_single and selects(ok_single[rid], tid, files.get(tid)))
+        out[tid] = {'attempts': len(mine) + ran, 'errored': len(mine), 'error': mine[0].get('error') or 'errored',
+                    'run_ids': [r['id'] for r in mine]}
+    return out
+
+
+def test_stats(tid: str, obs: list, file: str | None, plat: dict | None = None, alone: dict | None = None,
+               clock_runs: set | None = None) -> dict:
     passes = sum(o == 'pass' for _, _, o in obs)
     fails = len(obs) - passes
     by = defaultdict(lambda: [0, 0])
@@ -159,6 +199,14 @@ def test_stats(tid: str, obs: list, file: str | None, plat: dict | None = None) 
         extra['by_platform'] = [{'platform': p, 'runs': n, 'fails': k} for p, (n, k) in per.items()]
         if status == 'flaky' and not any(0 < k < n for n, k in per.values()):
             status = 'platform_dependent'
+    if alone:
+        # errored (nothing collected) in runs of its own: every such run when it never ran alone
+        extra['alone'] = {k: alone[k] for k in ('attempts', 'errored', 'error')}
+        if status == 'not_observed_flaky' and alone['errored'] == alone['attempts']:
+            status = ALONE
+    if clock_runs is not None and status == 'flaky' and all(rid in clock_runs for rid, _, o in obs if o == 'fail') \
+            and any(rid not in clock_runs for rid, _, o in obs if o == 'pass'):
+        extra['probe_only'] = 'clock'     # failed only where the skill moved the clock
     return {'id': tid, 'file': file, 'runs': len(obs), 'passes': passes, 'fails': fails,
             'normal': rate(len(normal), sum(o == 'fail' for o in normal)), 'worst': worst,
             'by_label': [{'label': l, 'runs': n, 'fails': k} for l, (n, k) in sorted(by.items())], 'status': status,
@@ -190,6 +238,10 @@ def score_flake(f: dict, t: dict | None, meta: dict) -> dict:
     if f.get('history_only') and order.index(pr) < 2:
         pr = 'P2'
         notes.append('capped at P2: seen in CI history only, never reproduced here')
+    if t and t.get('probe_only') and not f.get('probe_confirmation') and order.index(pr) < 3:
+        pr = 'P3'
+        notes.append(f"capped at P3: it failed only under the {t['probe_only']} shift this skill applied and never "
+                     'without it, a probe artefact until control runs (file times left real) still fail')
     where = ''
     if t and t['worst']['label']:
         w = t['worst']
@@ -202,8 +254,32 @@ def score_flake(f: dict, t: dict | None, meta: dict) -> dict:
 def compute(d: dict, runs_data: dict) -> tuple[list[dict], dict]:
     obs, files, runs = outcomes(runs_data, d['metadata']['code_hash'])
     plat = {rid: platform_of(r) for rid, r in runs.items()}
-    tests = [test_stats(tid, obs[tid], files.get(tid), plat) for tid in sorted(obs)]
+    new = version_at_least(d, (1, 4, 0))
+    alone = alone_info(runs_data, d['metadata']['code_hash'], obs, files) if new else {}
+    clock = {rid for rid, r in runs.items() if moves_clock(r)} if new else None
+    tests = [test_stats(tid, obs[tid], files.get(tid), plat, alone.get(tid), clock) for tid in sorted(obs)]
     return tests, runs
+
+
+def static_not_run(d: dict, smells: dict | None, ran: set) -> list[dict]:
+    """Rows for tests the scan knows a plain run leaves out (smells.json suites[].not_run_by_default: #[ignore],
+    a feature or platform gate, required-features) that have no counted run: status not_run, with the gate."""
+    if not smells or not version_at_least(d, (1, 4, 0)):
+        return []
+    rows = []
+    for s in smells.get('suites') or []:
+        for x in s.get('not_run_by_default') or []:
+            if x['id'] in ran or any(r['id'] == x['id'] for r in rows):
+                continue
+            why = ': '.join(v for v in (x.get('gate'), x.get('detail')) if v) or 'not run by default'
+            rows.append({'id': x['id'], 'file': x.get('file'), 'runs': 0, 'passes': 0, 'fails': 0, 'normal': rate(0, 0),
+                         'worst': {'label': None, 'runs': 0, 'fails': 0, 'wilson_low': 0.0}, 'by_label': [],
+                         'status': 'not_run', 'not_run_reason': why})
+    return rows
+
+
+def is_static_row(t: dict) -> bool:
+    return t['status'] == 'not_run' and not t['runs']
 
 
 def summary_numbers(d: dict, runs_data: dict, runs: dict) -> dict:
@@ -215,13 +291,14 @@ def summary_numbers(d: dict, runs_data: dict, runs: dict) -> dict:
         by_pr[f['priority']] += 1
     ran = sum(v['status'] == 'ran' for v in d['variations'])
     planned = sum(v['status'] in ('ran', 'not_run') for v in d['variations'])
-    completeness = round(ran / planned * suite_share(d['metadata'].get('suites'), observed_counts(runs_data, runs)),
-                         2) if planned else 0.0
+    completeness = round(ran / planned * suite_share(d['metadata'].get('suites'), observed_counts(runs_data, runs),
+                                                     version_at_least(d, (1, 4, 0))), 2) if planned else 0.0
     single = sum(bool((r.get('variation') or {}).get('isolate')) for r in runs.values())
     return {'tests_run': sum(t['status'] != 'not_run' for t in tests), 'flaky': count('flaky'),
             'consistently_failing': count('consistently_failing'), 'not_observed_flaky': count('not_observed_flaky'),
             'not_run': count('not_run'),
             **({'platform_dependent': count('platform_dependent')} if count('platform_dependent') else {}),
+            **({ALONE: count(ALONE)} if count(ALONE) else {}),
             'by_cause': dict(sorted(by_cause.items())), 'by_priority': by_pr,
             'total_runs': len(runs),
             **({'single_test_runs': single} if single and version_at_least(d, (1, 3, 0)) else {}),
@@ -248,11 +325,13 @@ def observed_counts(runs_data: dict | None, runs: dict | None) -> dict[str, int]
     return {k: len(v) for k, v in ids.items()}
 
 
-def suite_share(suites: list | None, observed: dict[str, int] | None = None) -> float:
+def suite_share(suites: list | None, observed: dict[str, int] | None = None, count_ran: bool = False) -> float:
     """The share of the repository's tests that had per-test runs: tests of suites that ran over all suites' tests
     (static counts), or suites that ran over all suites when a count is unknown. A suite that ran with no static
     count (script self-tests print their checks, they don't declare them) counts the distinct tests its presets'
-    runs recorded. 1.0 when the report lists no suites (one language, as before schema 1.3.0)."""
+    runs recorded. 1.0 when the report lists no suites (one language, as before schema 1.3.0). count_ran (schema
+    1.4.0): a suite that ran counts the distinct tests its runs recorded, at most its static count, so tests a plain
+    run leaves out (#[ignore], feature and platform gates, a sample of a large suite) lower the share."""
     if not suites:
         return 1.0
     observed = observed or {}
@@ -263,7 +342,10 @@ def suite_share(suites: list | None, observed: dict[str, int] | None = None) -> 
             n = sum(observed.get(p, 0) for p in s.get('presets') or []) or None
         counts.append(n)
     if all(isinstance(n, int) for n in counts) and sum(counts):
-        return sum(n for s, n in zip(suites, counts) if s['status'] == 'ran') / sum(counts)
+        def seen(s, n):
+            got = sum(observed.get(p, 0) for p in s.get('presets') or [])
+            return min(n, got) if count_ran and got else n
+        return sum(seen(s, n) for s, n in zip(suites, counts) if s['status'] == 'ran') / sum(counts)
     return sum(s['status'] == 'ran' for s in suites) / len(suites)
 
 
@@ -303,8 +385,9 @@ def suite_errors(d: dict, runs_data: dict | None, runs: dict | None, smells: dic
     return errs, warns
 
 
-def write_summary(d: dict, runs_data: dict) -> None:
+def write_summary(d: dict, runs_data: dict, smells: dict | None = None) -> None:
     tests, runs = compute(d, runs_data)
+    tests = sorted(tests + static_not_run(d, smells, {t['id'] for t in tests}), key=lambda t: t['id'])
     d['tests'] = tests
     by_id = {t['id']: t for t in tests}
     for f in d['flakes']:
@@ -342,6 +425,88 @@ def history_errors(f: dict, t: dict | None, meta: dict) -> list[str]:
         errs.append(f'{at}: a polluter needs a local bisection; a history-only flake cannot name one')
     if t and t['status'] == 'flaky':
         errs.append(f'{at}: the local runs show it flaky, so it is not history_only (drop the flag and cite the runs)')
+    return errs
+
+
+def clock_control(run: dict) -> bool:
+    """A clock run that left file times real: TDA_CLOCK_FILES=0 (clock_shift.py / .mjs), or NO_FAKE_STAT with
+    libfaketime. The value of TDA_CLOCK_FILES is recorded only with run_tests.py --record-env TDA_CLOCK_FILES."""
+    env = (run.get('variation') or {}).get('env') or {}
+    return moves_clock(run) and (env.get('TDA_CLOCK_FILES') == '0' or bool(env.get('NO_FAKE_STAT')))
+
+
+def probe_errors(f: dict, t: dict, res: dict, runs: dict) -> list[str]:
+    """A flake whose every failure came under the clock shift the skill applied (tests[].probe_only) is a probe
+    artefact until control runs show otherwise: the same shift with file times left real, failing at least twice.
+    Without them its cause cannot be `confirmed` (the on/off experiment shows the probe makes it fail, not what in
+    the test does) and score_flake caps it at P3."""
+    at = f"{f['id']} ({f['test_id']})"
+    errs = []
+    conf = f.get('probe_confirmation')
+    if conf and not t.get('probe_only'):
+        errs.append(f'{at}: probe_confirmation is for a flake that failed only under a probe; this one '
+                    'failed without it too (drop the field)')
+    elif conf:
+        bad = [rid for rid in conf['run_ids'] if res.get(rid) != 'fail' or rid not in runs or not clock_control(runs[rid])]
+        if bad or len(conf['run_ids']) < 2:
+            redacted = [rid for rid in bad if rid in runs and (runs[rid].get('variation') or {}).get('env', {})
+                        .get('TDA_CLOCK_FILES') == '<redacted>']
+            errs.append(f'{at}: probe_confirmation needs 2 or more failing control runs of this test (the clock moved '
+                        'with file times left real: TDA_CLOCK_FILES=0, or NO_FAKE_STAT with libfaketime)'
+                        + (f"; not such runs: {', '.join(bad[:4])}" if bad else '')
+                        + ('; record the value with --record-env TDA_CLOCK_FILES' if redacted else ''))
+    elif t.get('probe_only') and f['cause_confidence'] == 'confirmed':
+        errs.append(f"{at}: it failed only under the {t['probe_only']} shift this skill applied, so the on/off "
+                    'experiment confirms the probe, not a cause in the test: a probe artefact is at most indicated '
+                    'until probe_confirmation names control runs that still fail')
+    return errs
+
+
+def alone_errors(d: dict, runs_data: dict, rc: dict, new: bool) -> list[str]:
+    """cannot_run_alone[] against the runs: every test with that status is in exactly one entry, every listed test
+    has the status, alone_run_ids are errored runs on this code that selected only one of the entry's tests (or its
+    file), and needs_run_ids are counted runs in which a listed test passed."""
+    errs = []
+    entries = d.get('cannot_run_alone') or []
+    if entries and not new:
+        return ['cannot_run_alone needs schema_version 1.4.0']
+    listed: dict[str, int] = defaultdict(int)
+    same = {r['id']: r for r in runs_data['runs'] if r.get('code_hash') == d['metadata']['code_hash']}
+    passed = defaultdict(set)
+    for c in runs_data['cases']:
+        if c['status'] == 'passed':
+            passed[c['run_id']].add(REPEAT_SUFFIX.sub('', c['id']))
+    for i, e in enumerate(entries):
+        at = f"cannot_run_alone[{i}] ({e.get('file') or e['test_ids'][0]})"
+        for tid in e['test_ids']:
+            listed[tid] += 1
+            st = rc.get(tid, {}).get('status')
+            if st != ALONE:
+                errs.append(f"{at}: {tid} is listed as cannot_run_alone but the runs say {st or 'not run'} (it needs "
+                            'an errored run of its own and no failure in the runs that did run it)')
+        for rid in e['alone_run_ids']:
+            r = same.get(rid)
+            sel = single_selection(r) if r else None
+            if not r or not r.get('errored') or not sel or not any(
+                    selects(sel, tid, rc.get(tid, {}).get('file')) for tid in e['test_ids']):
+                errs.append(f'{at}: alone_run_ids names {rid}, which is not an errored run of one of these tests (or '
+                            'their file) alone')
+        if e.get('needs') and not e.get('needs_run_ids'):
+            errs.append(f"{at}: names what the tests need ({e['needs']}) but no needs_run_ids: the runs that put it "
+                        'first and passed')
+        for rid in e.get('needs_run_ids') or []:
+            r = same.get(rid)
+            if not r or r.get('errored') or not (passed[rid] & set(e['test_ids'])):
+                errs.append(f'{at}: needs_run_ids names {rid}, in which none of these tests passed')
+    for tid, trow in rc.items():
+        if trow['status'] == ALONE and not listed.get(tid):
+            a = trow.get('alone') or {}
+            errs.append(f"{tid} errored in every run of its own ({a.get('errored')} of {a.get('attempts')}: "
+                        f"{a.get('error')}) and passed in the suite: list it in cannot_run_alone with the error and "
+                        'what it depends on (an order or import dependence, not a flake and not unobserved)')
+    for tid, n in listed.items():
+        if n > 1:
+            errs.append(f'{tid}: in more than one cannot_run_alone entry')
     return errs
 
 
@@ -588,9 +753,26 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
     if runs_data is not None:
         recomputed, runs = compute(d, runs_data)
         rc = {t['id']: t for t in recomputed}
-        if rc != tests:
-            diff_ids = sorted(k for k in set(rc) | set(tests) if rc.get(k) != tests.get(k))
+        new = version_at_least(d, (1, 4, 0))
+        # schema 1.4.0: rows for tests known statically that no counted run reached (status not_run, 0 runs)
+        static_rows = {k: t for k, t in tests.items() if new and is_static_row(t) and k not in rc}
+        from_runs = {k: t for k, t in tests.items() if k not in static_rows}
+        if rc != from_runs:
+            diff_ids = sorted(k for k in set(rc) | set(from_runs) if rc.get(k) != from_runs.get(k))
             errs.append(f'tests[] differs from the runs for: {", ".join(diff_ids[:6])} (run --write-summary)')
+        for x in static_not_run(d, smells, set(rc)):
+            if x['id'] not in static_rows:
+                errs.append(f"{x['id']} never ran ({x['not_run_reason']}) but has no not_run row in tests[]: a plain "
+                            'run leaves it out, so it is not run, not unobserved (run --write-summary with --smells)')
+        for k, trow in static_rows.items():
+            if not trow.get('not_run_reason'):
+                errs.append(f'{k}: a not_run row needs not_run_reason (why no run reached it)')
+        errs += alone_errors(d, runs_data, rc, new)
+        foreign = [r['id'] for r in runs.values() if any(FOREIGN_BINARY in n for n in r.get('notes') or [])]
+        if foreign and not any(FOREIGN_LIMITATION.search(l) for l in d['limitations']):
+            errs.append(f"{len(foreign)} counted run(s) ({', '.join(foreign[:4])}) ran test binaries built from another "
+                        'checkout (a target directory shared between copies of the repository: see the run notes): '
+                        'name it in limitations, because code_hash does not describe what those runs ran')
         other = [r['id'] for r in runs_data['runs'] if r.get('code_hash') != meta['code_hash']]
         if other:
             warns.append(f'{len(other)} run(s) have a different code_hash and were left out: {", ".join(other[:5])}')
@@ -598,6 +780,14 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
         if errored:
             warns.append(f'{len(errored)} errored run(s) did not run the tests and were left out of every count: '
                          + ', '.join(f"{r['id']} ({r.get('error') or 'errored'})" for r in errored[:4]))
+            if not new:
+                obs0, files0, _ = outcomes(runs_data, meta['code_hash'])
+                only = sorted(k for k, a in alone_info(runs_data, meta['code_hash'], obs0, files0).items()
+                              if a['errored'] == a['attempts'] and rc.get(k, {}).get('status') == 'not_observed_flaky')
+                if only:
+                    warns.append(f"{len(only)} test(s) errored in every run alone and passed in the suite "
+                                 f"({', '.join(only[:4])}): an order or import dependence the counts above leave out; "
+                                 'schema 1.4.0 reports them as cannot_run_alone')
         labels = {r.get('label') for r in runs.values()}
         all_labels = {r.get('label') for r in runs_data['runs'] if r.get('code_hash') == meta['code_hash']}
         for v in d['variations']:
@@ -611,6 +801,14 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
                     (r.get('totals') or {}).get('tests', 1) for r in runs.values() if r.get('label') in v['labels']):
                 errs.append(f"variation {v['kind']} ran, but none of its runs ({', '.join(v['labels'])}) ran a test; "
                             'record it as not_run with the reason')
+            if v['kind'] == 'suite_load' and v['status'] == 'ran' and not any(
+                    (r.get('variation') or {}).get('env', {}).get(SPAWN_LOAD_ENV)
+                    or (r.get('totals') or {}).get('tests', 0) > 1
+                    for r in runs.values() if r.get('label') in v['labels']):
+                errs.append(f"variation suite_load ran, but none of its runs ({', '.join(v['labels'])}) records "
+                            f"process-creation load ({SPAWN_LOAD_ENV} in the run's variation.env: run under "
+                            'scripts/spawn_load.py with --record-env) or ran the test beside others (more than one '
+                            'test in the run)')
             if v['kind'] == 'clock' and v['status'] == 'ran' and not any(
                     moves_clock(r) for r in runs.values() if r.get('label') in v['labels']):
                 errs.append(f"variation clock ran, but none of its runs ({', '.join(v['labels'])}) records a clock change "
@@ -650,6 +848,7 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
                 continue
             res = {rid: o for rid, _, o in obs[f['test_id']]}
             lab = {rid: l for rid, l, _ in obs[f['test_id']]}
+            errs += probe_errors(f, t, res, runs)
             for rid in f['evidence_runs']['passing']:
                 if res.get(rid) != 'pass':
                     errs.append(f'{at}: evidence run {rid} is not a pass of this test')
@@ -794,14 +993,21 @@ PLACEHOLDER =re.compile(r'\b(?:placeholder|todo|tbd|tbc|fixme|lorem ipsum|xxx)\b
 UPPER_BOUND = re.compile(r'upper (?:bound|limit|end)[^0-9%.]{0,40}?(\d+(?:\.\d+)?)\s*%', re.I)
 
 
+def split_test_id(tid: str) -> tuple[str, str]:
+    """(dotted module and classes, test name) of a runs.json case id (tests.test_x.Scale::test_y) or a pytest node
+    id (tests/test_x.py::Scale::test_y[case]); a '::' inside a parameter id stays in the name."""
+    head, br, tail = tid.partition('[')
+    parts = head.split('::')
+    mod = re.sub(r'\.py$', '', parts[0]).replace('/', '.').replace('\\', '.')
+    return '.'.join([mod] + parts[1:-1]) if len(parts) > 1 else '', parts[-1] + br + tail
+
+
 def same_test(a: str, b: str) -> bool:
-    """tests.test_x::name (a runs.json case id) and tests/test_x.py::name (a pytest node id) name one test."""
-    ma, _, na = a.partition('::')
-    mb, _, nb = b.partition('::')
+    """tests.test_x.Scale::name (a runs.json case id) and tests/test_x.py::Scale::name (a pytest node id) name one
+    test, classes included, even when one is relative to pytest's rootdir and the other to --cwd."""
+    (x, na), (y, nb) = split_test_id(a), split_test_id(b)
     if na != nb:
         return False
-    norm = lambda m: re.sub(r'\.py$', '', m).replace('/', '.').replace('\\', '.')  # noqa: E731
-    x, y = norm(ma), norm(mb)
     return x == y or x.endswith('.' + y) or y.endswith('.' + x)
 
 
@@ -848,17 +1054,20 @@ def self_test() -> int:
     import copy
     fails: list[str] = []
 
-    def run(name: str, mutate, want_valid: bool, want_text: str = '', smells: dict | None = None, after=None) -> None:
+    def run(name: str, mutate, want_valid: bool, want_text: str = '', smells: dict | None = None, after=None,
+            want_warn: str = '') -> None:
         rep, runs = _self_fixture()
         mutate(rep, runs)
-        write_summary(rep, runs)
+        write_summary(rep, runs, smells)
         if after:
             after(rep)
-        errs, _ = check(rep, runs, smells, None)
+        errs, warns = check(rep, runs, smells, None)
         ok = (not errs) if want_valid else any(want_text in e for e in errs)
         if not ok:
             fails.append(f'{name}: expected {"VALID" if want_valid else "an error naming " + repr(want_text)}, got '
                          + ('; '.join(errs[:3]) or 'VALID'))
+        elif want_warn and not any(want_warn in w for w in warns):
+            fails.append(f'{name}: expected a warning naming {want_warn!r}, got {warns}')
 
     run('baseline fixture', lambda r, x: None, True)
 
@@ -1076,6 +1285,181 @@ def self_test() -> int:
         return after
     run('isolate runs are counted apart in the summary', isolated, True, after=single_runs_are(2))
 
+    # --- schema 1.4.0 ---------------------------------------------------------------------------------------
+    def status_is(tid, want):
+        def after(rep):
+            got = next((t['status'] for t in rep['tests'] if t['id'] == tid), None)
+            if got != want:
+                fails.append(f'status of {tid}: {got}, want {want}')
+        return after
+
+    # A test that errors (cannot be collected) in every run alone and passes in the suite: a status of its own.
+    PY_ID = 'tests.test_report.ReportTest::test_rows'
+
+    def alone(version='1.4.0', entry=True, by_file=False, alone_pass=False):
+        def mutate(rep, runs):
+            rep['schema_version'] = version
+            for i in (1, 2, 3):
+                runs['cases'].append({'run_id': f'R-{i}', 'id': PY_ID, 'file': 'tests/test_report.py', 'status': 'passed'})
+            sel = 'tests/test_report.py' if by_file else 'tests/test_report.py::ReportTest::test_rows'
+            for i in (1, 2):
+                runs['runs'].append({'id': f'I-{i}', 'label': 'isolate', 'code_hash': SELF_HASH, 'duration_s': 1.0,
+                                     'totals': {'tests': 1}, 'variation': {'env': {}, 'isolate': not by_file},
+                                     'platform': 'linux', 'tests_selected': [sel], 'errored': not alone_pass,
+                                     'error': None if alone_pass else 'pytest exit 4: collection error (a test module '
+                                     "could not be imported: ModuleNotFoundError: No module named 'publication')"})
+                if alone_pass:
+                    runs['cases'].append({'run_id': f'I-{i}', 'id': PY_ID, 'file': 'tests/test_report.py',
+                                          'status': 'passed'})
+            rep['variations'].append({'kind': 'isolate', 'status': 'not_run' if not alone_pass else 'ran',
+                                      'labels': ['isolate'] if alone_pass else [],
+                                      'reason': 'Each test alone; the runs of tests/test_report.py errored.'})
+            if entry:
+                rep['cannot_run_alone'] = [{
+                    'test_ids': [PY_ID], 'file': 'tests/test_report.py', 'alone_run_ids': ['I-1', 'I-2'],
+                    'error_excerpt': "ModuleNotFoundError: No module named 'publication'", 'cause': 'import_order',
+                    'needs': None, 'needs_run_ids': [],
+                    'note': 'The file loads a script whose sibling import resolves only after another test file '
+                            'has put scripts/ on sys.path.'}]
+        return mutate
+    run('a test that errors alone and passes in the suite is cannot_run_alone', alone(), True,
+        after=status_is(PY_ID, 'cannot_run_alone'))
+    run('cannot_run_alone is counted in the summary', alone(), True,
+        after=lambda rep: rep['summary'].get('cannot_run_alone') == 1 and rep['summary']['not_observed_flaky'] == 1
+        or fails.append(f"cannot_run_alone summary: {rep['summary']}"))
+    run('a file that errors when run alone makes its tests cannot_run_alone', alone(by_file=True), True,
+        after=status_is(PY_ID, 'cannot_run_alone'))
+    run('a cannot_run_alone test needs its entry', alone(entry=False), False, 'cannot_run_alone')
+    run('a test that ran alone is not cannot_run_alone', alone(alone_pass=True), False, 'the runs say')
+    run('before schema 1.4.0 the same runs only warn', alone(version='1.3.0', entry=False), True,
+        after=status_is(PY_ID, 'not_observed_flaky'), want_warn='errored in every run alone')
+
+    def alone_bad_run(rep, runs):
+        alone()(rep, runs)
+        rep['cannot_run_alone'][0]['alone_run_ids'] = ['R-1']
+    run('cannot_run_alone evidence must be errored runs of the test alone', alone_bad_run, False, 'alone_run_ids')
+
+    # A failure only under the clock shift the skill applied: a probe artefact unless a control run confirms it.
+    def probe(confirmation=False, confidence='indicated', version='1.4.0', control_fails=True):
+        def mutate(rep, runs):
+            rep['schema_version'] = version
+            rep['metadata']['gate']['level'] = 'required'
+            env = {'TDA_CLOCK_SHIFT': '-1d'}
+            ids = []
+            for i in (1, 2, 3):
+                ids.append(f'C-{i}')
+                runs['runs'].append({'id': f'C-{i}', 'label': 'clock_minus_1d', 'code_hash': SELF_HASH, 'duration_s': 2.0,
+                                     'totals': {'tests': 1}, 'variation': {'env': dict(env)}, 'platform': 'linux'})
+                runs['cases'].append({'run_id': f'C-{i}', 'id': f'{SELF_MOD}::TestTax', 'file': None, 'status': 'failed'})
+            for i in (1, 2):
+                runs['runs'].append({'id': f'CF-{i}', 'label': 'clock_files_real', 'code_hash': SELF_HASH,
+                                     'duration_s': 2.0, 'totals': {'tests': 1}, 'platform': 'linux',
+                                     'variation': {'env': {**env, 'TDA_CLOCK_FILES': '0'}}})
+                runs['cases'].append({'run_id': f'CF-{i}', 'id': f'{SELF_MOD}::TestTax', 'file': None,
+                                      'status': 'failed' if control_fails else 'passed'})
+            rep['variations'].append({'kind': 'clock', 'status': 'ran', 'labels': ['clock_minus_1d', 'clock_files_real'],
+                                      'reason': 'clock_shift.py -1d, and again with file times left real.'})
+            f = {**copy.deepcopy(rep['flakes'][0]), 'id': 'FL-2', 'test_id': f'{SELF_MOD}::TestTax',
+                 'cause': 'time_and_locale', 'cause_confidence': confidence,
+                 'experiment': {'run_ids': ['R-1', 'R-2', 'R-3'] + ids, 'what_changed': 'Moved the clock back a day.',
+                                'result': 'Failed 3/3 under the shift, 0/3 without it.'},
+                 'evidence_runs': {'passing': ['R-1'], 'failing': ['C-1']}}
+            if confirmation:
+                f['probe_confirmation'] = {'run_ids': ['CF-1', 'CF-2'],
+                                           'note': 'Still fails with file times left real: the date the code reads.'}
+            rep['flakes'].append(f)
+        return mutate
+
+    def flake_priority(fid, want, note=''):
+        def after(rep):
+            f = next(f for f in rep['flakes'] if f['id'] == fid)
+            if f['priority'] != want or note not in f['priority_note']:
+                fails.append(f"priority of {fid}: {f['priority']} ({f['priority_note']}), want {want} naming {note!r}")
+        return after
+    run('a failure only under the clock shift is ranked as a probe artefact', probe(), True,
+        after=flake_priority('FL-2', 'P3', 'probe'))
+    run('a probe-only failure is marked on its test row', probe(), True,
+        after=lambda rep: next(t for t in rep['tests'] if t['id'].endswith('TestTax')).get('probe_only') == 'clock'
+        or fails.append('probe_only missing on the test row'))
+    run('a probe-only failure cannot be a confirmed cause without a control', probe(confidence='confirmed'), False,
+        'probe')
+    run('a probe-only failure confirmed by control runs ranks by the rubric', probe(confirmation=True), True,
+        after=flake_priority('FL-2', 'P1'))
+    run('a probe confirmation needs failing control runs', probe(confirmation=True, control_fails=False), False,
+        'probe_confirmation')
+    run('before schema 1.4.0 a clock-only failure ranks as before', probe(version='1.3.0'), True,
+        after=flake_priority('FL-2', 'P1'))
+
+    # A cargo run whose test binaries another checkout built must be named in limitations.
+    FOREIGN = ('cargo reused a test binary built from another checkout: test target cli of quay reads '
+               'CARGO_MANIFEST_DIR at compile time (tests/cli.rs:7) but its binary does not hold this checkout\'s '
+               'manifest folder.')
+
+    def foreign(limit):
+        def mutate(rep, runs):
+            rep['schema_version'] = '1.4.0'
+            runs['runs'][0]['notes'] = [FOREIGN]
+            if limit:
+                rep['limitations'].append('R-1 ran test binaries that another checkout built in a shared target '
+                                          'directory; its results describe that copy.')
+        return mutate
+    run('a run that reused another checkout\'s test binary needs a limitation', foreign(False), False,
+        'another checkout')
+    run('a limitation naming the shared target directory satisfies it', foreign(True), True)
+
+    # Rust tests a plain cargo test leaves out are not_run rows and lower evidence completeness.
+    gated_inv = {'smells': [], 'suites': [{'language': 'rust', 'tests': 4, 'not_run_by_default': [
+        {'id': 'quay::tests::slow', 'file': 'src/lib.rs', 'line': 16, 'gate': 'ignored', 'detail': '#[ignore]'},
+        {'id': 'quay::tests::needs_desktop', 'file': 'src/lib.rs', 'line': 21, 'gate': 'feature',
+         'detail': 'needs --features desktop'}]}]}
+
+    def gated(version='1.4.0'):
+        def mutate(rep, runs):
+            rep['schema_version'] = version
+            for r in runs['runs']:
+                r['preset'] = 'cargo'
+            rep['metadata']['suites'] = [{'language': 'rust', 'tests': 4, 'presets': ['cargo'], 'status': 'ran',
+                                          'reason': 'cargo test --workspace'}]
+        return mutate
+    run('tests cargo leaves out by default are not_run rows', gated(), True, smells=gated_inv,
+        after=lambda rep: (sorted(t['id'] for t in rep['tests'] if t['status'] == 'not_run')
+                           == ['quay::tests::needs_desktop', 'quay::tests::slow'] and rep['summary']['not_run'] == 2)
+        or fails.append(f"not_run rows: {[t['id'] for t in rep['tests'] if t['status'] == 'not_run']}"))
+    run('completeness counts the tests that ran, not the suite\'s static count', gated(), True, smells=gated_inv,
+        after=completeness_is(0.5))
+
+    def drop_not_run(rep):
+        rep['tests'] = [t for t in rep['tests'] if t['status'] != 'not_run']
+        rep['summary']['not_run'] = 0
+    run('a report without rows for the tests that never ran is an error', gated(), False, 'never ran',
+        smells=gated_inv, after=drop_not_run)
+    run('before schema 1.4.0 a ran suite counts whole', gated('1.3.0'), True, smells=gated_inv,
+        after=completeness_is(1.0))
+
+    # Suite load: a variation of its own, whose runs record the load or run the test beside others.
+    def suite_load(recorded):
+        def mutate(rep, runs):
+            rep['schema_version'] = '1.4.0'
+            for i in (1, 2, 3):
+                env = {'QA_SPAWN_LOAD': '4'} if recorded else {}
+                runs['runs'].append({'id': f'L-{i}', 'label': 'suite_load', 'code_hash': SELF_HASH, 'duration_s': 2.0,
+                                     'totals': {'tests': 1}, 'variation': {'env': env}, 'platform': 'linux'})
+                runs['cases'].append({'run_id': f'L-{i}', 'id': f'{SELF_MOD}::TestTax', 'file': None, 'status': 'passed'})
+            rep['variations'].append({'kind': 'suite_load', 'status': 'ran', 'labels': ['suite_load'],
+                                      'reason': 'spawn_load.py with 4 workers.'})
+        return mutate
+    run('a suite_load variation with recorded process-creation load is valid', suite_load(True), True)
+    run('a suite_load variation needs runs that record the load or run more than one test', suite_load(False), False,
+        'suite_load')
+
+    for a, b, want in (('tests.test_x.Scale::test_y', 'tests/test_x.py::Scale::test_y', True),
+                       ('tests.test_x::test_y', 'tests/test_x.py::test_y', True),
+                       ('src.pkg.tests.test_x.Scale::test_y', 'pkg_dir/src/pkg/tests/test_x.py::Scale::test_y', True),
+                       ('tests.test_x.Scale::test_y', 'tests/test_x.py::Other::test_y', False),
+                       ('tests.test_x.Scale::test_y', 'tests/test_x.py::test_y', False)):
+        if same_test(a, b) != want:
+            fails.append(f'same_test({a!r}, {b!r}) is {not want}, want {want}')
+
     # SKILL.md spells out the schema values that otherwise cost validation rounds: the newest schema_version, every
     # tools[].status and variations[].status value, that `skill` is an object and that `quarantine` is required.
     skill_md = (Path(__file__).resolve().parent.parent / 'SKILL.md').read_text(encoding='utf-8')
@@ -1103,7 +1487,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('report', type=Path)
     ap.add_argument('--runs', type=Path)
-    ap.add_argument('--smells', type=Path)
+    ap.add_argument('--smells', type=Path, help='scan_pitfalls.py output: every smell accounted for, every suite '
+                    'listed, and (schema 1.4.0) a not_run row for each test a plain run leaves out')
     ap.add_argument('--bisect', type=Path, nargs='+', help='one or more bisect_polluter.py outputs')
     ap.add_argument('--repo', type=Path, help='check every proposed fix applies to these files')
     ap.add_argument('--write-summary', action='store_true')
@@ -1114,12 +1499,12 @@ def main(argv=None) -> int:
         print(f'INVALID: cannot read report: {exc}')
         return 1
     runs_data = json.loads(args.runs.read_text(encoding='utf-8')) if args.runs else None
-    if args.write_summary:
-        if runs_data is None:
-            print('ERROR: --write-summary needs --runs')
-            return 1
-        write_summary(d, runs_data)
+    if args.write_summary and runs_data is None:
+        print('ERROR: --write-summary needs --runs')
+        return 1
     smells = json.loads(args.smells.read_text(encoding='utf-8')) if args.smells else None
+    if args.write_summary:
+        write_summary(d, runs_data, smells)
     bisect = [json.loads(p.read_text(encoding='utf-8')) for p in args.bisect] if args.bisect else None
     errs, warns = check(d, runs_data, smells, bisect, args.repo)
     if args.write_summary:
