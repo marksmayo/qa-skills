@@ -1101,7 +1101,67 @@ def long_line_is_linear() -> None:
           'scan: the address after the long line is still found, on its own line')
 
 
-GROUPS: list = [long_line_is_linear]
+def archive_mailbox() -> str:
+    # invented, assembled at run time
+    return 'wren.ottley' + '@' + 'fernmail' + '.co'
+
+
+def archives_and_logs() -> None:
+    """A zip of run logs committed beside the tests, and a loose .log: both are read (the zip in memory), every member
+    is listed, candidates cite <archive>!<member> and the line in the member, and an unread member says why."""
+    import io, zipfile
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, {'tests/test_runs.py': ('from pathlib import Path\n\n\ndef test_runs():\n'
+                                            '    assert (Path(__file__).parent / "fixtures" / "runs.zip").exists()\n'),
+                     'tests/fixtures/player.log': 'started\nwrote /home/quillfern/media/clip.mp4\n'})
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+            z.writestr('logs/run1.log', 'start\ncontact ' + archive_mailbox() + '\nend\n')
+            z.writestr('logs/run2.json', '{"cmd": "/Users/quillfern/bin/player"}\n')
+            z.writestr('inner/older.tar', b'\x00' * 64)
+            z.writestr('shots/frame.png', b'\x89PNG\r\n\x1a\n' + b'\x00' * 32)
+        (root / 'tests/fixtures/runs.zip').write_bytes(buf.getvalue())
+        invd = inv.build(root, None, {})
+        by = {i['path']: i for i in invd['inventory']}
+        z = by.get('tests/fixtures/runs.zip', {})
+        m1, m2 = by.get('tests/fixtures/runs.zip!logs/run1.log', {}), by.get('tests/fixtures/runs.zip!inner/older.tar', {})
+        check(m1.get('status') == 'scanned' and m1.get('lines') == 3 and 'tests/test_runs.py::test_runs' in m1.get('loaded_by', []),
+              f'inventory: a text member of a committed zip is listed as <archive>!<member>, scanned, loaded by the archive\'s '
+              f'tests (got {m1})')
+        check(m2.get('status') == 'not_assessed' and 'nested archive' in (m2.get('reason') or ''),
+              f'inventory: a nested archive inside a zip is listed not_assessed with the reason (got {m2.get("reason")})')
+        check(z.get('status') == 'not_assessed' and 'partly read' in (z.get('reason') or '')
+              and (z.get('archive_members') or {}).get('members') == 4,
+              f'inventory: a zip with a member it could not read is not_assessed, partly read, with its member count (got {z})')
+        check(any('runs.zip' in w for w in invd.get('warnings', [])), 'inventory: a partly read archive is a WARNING')
+        check(by.get('tests/fixtures/player.log', {}).get('status') == 'scanned', 'inventory: a .log file is read as text')
+        check('tests/fixtures/runs.zip!logs/run1.log' not in invd['summary']['unused'], 'inventory: archive members are never "unused"')
+        res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
+        cs = {(c['rule'], c['file'], c['line']) for c in res['candidates']}
+        check(('email', 'tests/fixtures/runs.zip!logs/run1.log', 2) in cs,
+              f'scan: an address inside a zip member is a candidate citing the archive, the member and the line (got {sorted(cs)})')
+        check(('local_path', 'tests/fixtures/runs.zip!logs/run2.json', 1) in cs and ('local_path', 'tests/fixtures/player.log', 2) in cs,
+              'scan: home-folder paths in a zip member and in a loose .log are found')
+        # the validator re-reads a member: a basis line in it, and the values on it are protected
+        f = {'id': 'F1', 'category': 'personal_data', 'source': 'agent', 'candidates': [], 'confidence': 'static',
+             'location': {'file': 'tests/fixtures/runs.zip!logs/run1.log', 'line': 2},
+             'basis': [{'file': 'tests/fixtures/runs.zip!logs/run1.log', 'line': 2, 'excerpt': 'contact'}]}
+        errs = vtd.basis_errors(f, root, None)
+        check(errs == [], f'validator: a basis line inside a zip member is re-read (got {errs})')
+        per = vtd.protected_values({}, root, {'findings': [f], 'dismissed': []})
+        check(archive_mailbox() in per.get('F1', set()), 'validator: the values on a basis line inside a zip member are protected')
+        ev_only = dict(f, basis=[{'evidence': 'zip_members.json'}])
+        check(any('evidence file alone' in e for e in vtd.basis_errors(ev_only, root, None)),
+              'validator: a review personal_data finding with only an evidence basis is rejected (nothing would be protected)')
+        cands = {c['id']: c for c in res['candidates']}
+        cid = next((c['id'] for c in res['candidates'] if c['rule'] == 'email' and '!' in c['file']), None)
+        prot = vtd.protected_values(cands, root, {'findings': [], 'dismissed': []})
+        check(cid is not None and archive_mailbox() in prot.get(cid, set()),
+              'validator: a candidate inside a zip member has its value protected (the report must not quote it)')
+
+
+GROUPS: list = [long_line_is_linear, archives_and_logs]
 
 
 def main(argv=None) -> int:

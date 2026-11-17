@@ -45,12 +45,14 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import datafiles, detect_conventions, jsparse, repo_layout  # noqa: E402
+import archive_text, datafiles, detect_conventions, jsparse, repo_layout  # noqa: E402
 
 SKIP_DIRS = detect_conventions.SKIP_DIRS | {'.git', '.turbo', '.cache', '.venv', 'venv', '__pycache__'}
 # text formats read line by line (no records): pages, tickets and notes, patches, settings and styles keep invented people
 # in their prose as often as JSON does
-TEXT_DATA_EXT = {'.html', '.htm', '.md', '.markdown', '.diff', '.patch', '.toml', '.css'}
+TEXT_DATA_EXT = {'.html', '.htm', '.md', '.markdown', '.diff', '.patch', '.toml', '.css',
+                 # run logs and captured output: where machine paths, account names and host names end up
+                 '.log', '.out', '.err', '.stderr', '.stdout', '.trace'}
 DATA_EXT = {'.json', '.yaml', '.yml', '.csv', '.tsv', '.sql', '.xml', '.har', '.snap', '.ambr', '.txt', '.ndjson', '.jsonl',
             '.svg'} | TEXT_DATA_EXT
 # documentation beside test data (a fixture tree's README) is not test data
@@ -60,6 +62,7 @@ MEDIA_EXT = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.bmp', '.ico', 
              '.woff2', '.eot', '.mp3', '.mp4', '.wav', '.ogg', '.webm', '.mov', '.m4a', '.flac'}
 BINARY_EXT = {'.db', '.sqlite', '.sqlite3', '.dump', '.bak', '.gz', '.zip', '.tar', '.tgz', '.7z', '.enc', '.gpg', '.age',
               '.pgp', '.bin', '.parquet', '.avro', '.xlsx', '.xls', '.pdf'}
+BINARY_EXT |= set(archive_text.ARCHIVE_EXT)     # every archive format is listed; a .zip is opened in memory
 TEST_DIRS = {'tests', 'test', '__tests__', 'spec', 'e2e', 'fixtures', 'testdata', 'test_data', 'test-data', 'testData', 'TestData',
              'test-fixtures', 'test_fixtures', 'sample-data', 'sample_data', 'sampledata', 'sampleData', 'androidTest', 'testFixtures'}
 # extra trees named with --data-dir (repo-relative), treated as test data areas; scan_data.py reads them back from the inventory
@@ -832,7 +835,7 @@ def named_by_used_data(root: Path, items: list[dict], rounds: int = 3) -> None:
     for _ in range(rounds):
         pending: dict[str, list[dict]] = {}
         for i in items:
-            if i['kind'] != 'inline' and not i['loaded_by'] and not i.get('used_by_commands'):
+            if i['kind'] != 'inline' and not i['loaded_by'] and not i.get('used_by_commands') and not i.get('archive'):
                 p = PurePosixPath(i['path'])
                 pending.setdefault(f'{p.parent.name}/{p.name}', []).append(i)
         if not pending:
@@ -912,6 +915,56 @@ def unlisted_data_dirs(root: Path, all_files: list[str], py: 'PyTests', js_tests
                     pass
             out.append({'dir': d, 'files': len(fs), 'bytes': size, 'named_in': sorted(named)[:20],
                         'hint': f'pass --data-dir {d} to inventory and scan it (add --max-files-per-dir N to sample it)'})
+    return out
+
+
+def archive_members(p: Path, rel: str, entry: dict) -> list[dict]:
+    """Fill the inventory entry of an archive and return one entry per member of a zip (path <archive>!<member>):
+    a text member read in memory is `scanned` with its line count, every other member is `not_assessed` with the
+    reason (binary, nested archive, encrypted, a limit). The archive itself is `scanned` only when every member that
+    could hold text was read whole; an archive in another format (tar, gzip, 7z ...) is not opened and says so."""
+    fmt = archive_text.is_archive_name(rel)
+    entry['format'] = fmt
+    if PurePosixPath(rel).suffix.lower() not in archive_text.OPENED:
+        entry.update(status='not_assessed', reason=f'{fmt} archive: not opened (only .zip archives are read), so its '
+                                                   'contents were not scanned')
+        return []
+    res = datafiles.archive_read(p)
+    if res['error']:
+        entry.update(status='not_assessed', reason=f'zip archive that could not be opened ({res["error"]}): not scanned')
+        entry['archive_members'] = {'members': 0, 'read': 0, 'not_read': 0, 'complete': False}
+        return []
+    listing = archive_text.list_archive(p)
+    skipped = {s['name']: s['reason'] for s in res['skipped']}
+    out = []
+    for m in listing['members']:
+        name = m['name']
+        if m['kind'] == 'dir':
+            continue
+        e = {'path': f'{rel}{datafiles.MEMBER_SEP}{name}', 'kind': entry['kind'],
+             'format': datafiles.fmt_of(Path(name)) if name in res['by_name'] else (PurePosixPath(name).suffix.lower()[1:] or 'unknown'),
+             'bytes': m['size'], 'loaded_by': [], 'status': 'scanned', 'reason': None, 'archive': rel, 'member': name}
+        if name in res['by_name']:
+            text = res['by_name'][name]
+            e['lines'] = text.count('\n') + (0 if text.endswith('\n') or not text else 1)
+            cut = next((r for r in res['read'] if r['name'] == name and r['truncated']), None)
+            if cut:
+                e['note'] = f'only the first {cut["bytes"]} bytes were read (member size limit): the rest is not assessed'
+        else:
+            e.update(status='not_assessed', reason='archive member not read: ' + skipped.get(
+                name, 'past the member or byte limit of one archive'))
+        out.append(e)
+    n_read = len(res['by_name'])
+    entry['archive_members'] = {'members': len(out) + max(0, listing['member_count'] - len(listing['members'])),
+                                'read': n_read, 'not_read': len(out) - n_read, 'complete': bool(res['complete'])}
+    if not res['complete']:
+        why = [f'{s["name"]} ({s["reason"]})' for s in res['skipped'] if 'binary' not in s['reason']]
+        cut = [r['name'] + ' (cut at the member size limit)' for r in res['read'] if r['truncated']]
+        entry.update(status='not_assessed', reason=f'zip archive partly read: {n_read} member(s) read as text, not read: '
+                                                   + '; '.join((why + cut)[:5]) + (' ...' if len(why + cut) > 5 else ''))
+    else:
+        entry['note'] = (f'zip archive read in memory: {n_read} text member(s) scanned as {rel}!<member>'
+                         + (f', {len(out) - n_read} binary member(s) not read' if len(out) > n_read else ''))
     return out
 
 
@@ -995,6 +1048,7 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
                     skipped[rel] = why
             sampled[d] = {'files': len(fs), 'scanned': max_files_per_dir, 'how': 'evenly spaced in path order'}
     items = []
+    archives: list[dict] = []
     t_start = t_last = time.monotonic()
     for n_done, rel in enumerate(kinds, 1):
         k = kinds[rel]
@@ -1006,6 +1060,7 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
         size = p.stat().st_size
         entry = {'path': rel, 'kind': k, 'format': datafiles.fmt_of(p) if ext not in ('.snap', '.ambr', '.har') else ext[1:],
                  'bytes': size, 'loaded_by': [], 'status': 'scanned', 'reason': None}
+        archive_entries: list[dict] = []
         if rel in skipped:
             entry.update(status='not_assessed', reason=skipped[rel])
         elif ext in ('.xlsx', '.xlsm'):
@@ -1022,6 +1077,10 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
                 entry['note'] = f'{entry["format"].upper()} text with an .xls extension (sniffed), scanned as text'
             except UnicodeDecodeError:
                 entry.update(status='not_assessed', reason=f'{entry["format"].upper()} with an .xls extension, not UTF-8 text')
+        elif archive_text.is_archive_name(rel):
+            # a zip is opened in memory (never extracted): its text members are listed and scanned as <archive>!<member>;
+            # any other archive is named as not opened, never passed over as "binary"
+            archive_entries = archive_members(p, rel, entry)
         elif ext in BINARY_EXT:
             entry.update(status='not_assessed', reason='binary, compressed or encrypted file', format=ext[1:])
         elif ext in MEDIA_EXT:
@@ -1088,6 +1147,13 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
             if cmds:
                 entry['used_by_commands'] = cmds[:5] + ([f'... {len(cmds) - 5} more'] if len(cmds) > 5 else [])
         items.append(entry)
+        for m in archive_entries:          # a member is loaded by whatever loads its archive
+            m['loaded_by'] = entry['loaded_by']
+            if entry.get('used_by_commands'):
+                m['used_by_commands'] = entry['used_by_commands']
+            items.append(m)
+        if entry['status'] == 'not_assessed' and archive_text.is_archive_name(rel) and rel not in skipped:
+            archives.append(entry)
     named_by_used_data(root, items)
     tests = sorted({py.test_id(p, fn) for p, fn in py.all_tests()} | {f'{t}::*' for t in js_tests}
                    | {f'{t}::*' for t in SELF_TEST_FILES})
@@ -1135,6 +1201,9 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
     if SELF_TEST_FILES:
         extra['self_tests'] = sorted(SELF_TEST_FILES)
     extra['commands_read'] = uses.commands
+    for a in archives:
+        warnings.append(f'{a["path"]}: {a["reason"]}. What the archive holds beyond the members listed as read was NOT '
+                        'scanned; name it in the limitations')
     if not tests:
         # loud, like language_coverage: an empty inventory is not a clean one
         extra['no_tests'] = True
@@ -1148,10 +1217,10 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
                         'not_assessed': len([i for i in items if i['status'] == 'not_assessed']),
                         # with no tests, "no test loads it" says nothing about a file
                         'unused': [i['path'] for i in items if not i['loaded_by'] and i['kind'] != 'inline'
-                                   and not i.get('used_by_commands')] if tests else [],
+                                   and not i.get('used_by_commands') and not i.get('archive')] if tests else [],
                         # read by a documented command or script only: used, but by commands, not tests
                         'used_by_commands': [i['path'] for i in items if not i['loaded_by'] and i['kind'] != 'inline'
-                                             and i.get('used_by_commands')]}}
+                                             and i.get('used_by_commands') and not i.get('archive')]}}
 
 
 def main(argv=None) -> int:

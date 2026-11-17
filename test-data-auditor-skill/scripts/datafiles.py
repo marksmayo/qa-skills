@@ -460,6 +460,11 @@ def load_records(path: Path, source: str) -> list[dict]:
         text = path.read_text(encoding='utf-8')
     except UnicodeDecodeError:
         raise NotAssessed('binary or not UTF-8 text')
+    return records_from_text(text, f, source, path.suffix.lower() == '.tsv')
+
+
+def records_from_text(text: str, f: str, source: str, tsv: bool = False) -> list[dict]:
+    """The records of text in format f (fmt_of's name); [] for a format read as text lines only."""
     if f == 'html':
         return html_records(text, source)
     if f == 'json':
@@ -467,12 +472,71 @@ def load_records(path: Path, source: str) -> list[dict]:
     if f == 'yaml':
         return yaml_records(text, source)
     if f == 'csv':
-        return csv_records(text, source, '\t' if path.suffix.lower() == '.tsv' else ',')
+        return csv_records(text, source, '\t' if tsv else ',')
     if f == 'sql':
         return sql_records(text, source)
     if f == 'python':
         return python_records(text, source)
     return []
+
+
+# ---------------------------------------------------------------- members of zip archives
+# A text member of a committed zip archive is named <archive>!<member> (results/run.zip!logs/player.log) wherever a
+# path is given: the inventory, the candidates, a finding's location and basis. Nothing is extracted to disk; the
+# archive is read in memory through archive_text.py, under its caps, one archive at a time.
+MEMBER_SEP = '!'
+_ARCHIVE: dict = {}
+
+
+def split_member(rel: str) -> tuple[str, str] | None:
+    """('results/run.zip', 'logs/player.log') for 'results/run.zip!logs/player.log', None for an ordinary path."""
+    i = rel.lower().find('.zip' + MEMBER_SEP)
+    return (rel[:i + 4], rel[i + 5:]) if i > 0 and len(rel) > i + 5 else None
+
+
+def archive_read(path: Path) -> dict:
+    """archive_text.read_archive(path) with `by_name` ({member: text}), kept for the last archive asked for (the
+    members of one archive are read one after another)."""
+    try:
+        st = path.stat()
+        key = (str(path), st.st_size, st.st_mtime_ns)
+    except OSError:
+        key = (str(path), None, None)
+    if _ARCHIVE.get('key') != key:
+        sys.dont_write_bytecode = True
+        if str(Path(__file__).resolve().parent) not in sys.path:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import archive_text
+        res = archive_text.read_archive(path)
+        res['by_name'] = {m['name']: m['text'] for m in res['read']}
+        _ARCHIVE.clear()
+        _ARCHIVE.update(key=key, res=res)
+    return _ARCHIVE['res']
+
+
+def member_text(root: Path, rel: str) -> str:
+    """The text of an archive member named <archive>!<member>; NotAssessed when the member was not read."""
+    archive, member = split_member(rel)
+    res = archive_read(root / archive)
+    if member not in res['by_name']:
+        why = next((s['reason'] for s in res['skipped'] if s['name'] in (member, '*')), 'not a text member of the archive')
+        raise NotAssessed(f'archive member not read: {why}')
+    return res['by_name'][member]
+
+
+def text_at(root: Path, rel: str) -> str:
+    """text_of for a repository path, or for a member of a zip archive (<archive>!<member>)."""
+    if MEMBER_SEP in rel and split_member(rel):
+        return member_text(root, rel)
+    return text_of(root / rel)
+
+
+def records_at(root: Path, rel: str) -> list[dict]:
+    """load_records for a repository path, or for a member of a zip archive (<archive>!<member>)."""
+    if MEMBER_SEP in rel and split_member(rel):
+        name = Path(split_member(rel)[1])
+        return records_from_text(member_text(root, rel), fmt_of(name), rel, name.suffix.lower() == '.tsv')
+    return load_records(root / rel, rel)
 
 
 def load_structure(path: Path):
@@ -485,11 +549,17 @@ def load_structure(path: Path):
 
 if __name__ == '__main__':
     p = Path(sys.argv[1])
+    arg = sys.argv[1].replace('\\', '/')
     if '--text' in sys.argv[2:]:
-        sys.stdout.write(text_of(p))       # the text form findings count lines in (an .xlsx workbook as CSV per sheet)
+        # the text form findings count lines in: an .xlsx workbook as CSV per sheet, and for <archive.zip>!<member>
+        # the member's text (the archive is read in memory, nothing is extracted)
+        try:
+            sys.stdout.write(text_at(Path('.'), arg) if split_member(arg) else text_of(p))
+        except NotAssessed as exc:
+            print('not assessed:', exc)
         sys.exit(0)
     try:
-        for r in load_records(p, p.as_posix()):
+        for r in (records_at(Path('.'), arg) if split_member(arg) else load_records(p, p.as_posix())):
             print(r['line'], r['hint'], {k: (v['line'], type(v['value']).__name__) for k, v in r['fields'].items()})
     except NotAssessed as exc:
         print('not assessed:', exc)

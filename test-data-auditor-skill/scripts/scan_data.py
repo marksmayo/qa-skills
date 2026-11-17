@@ -863,7 +863,7 @@ class Scanner:
             if item['kind'] != 'seed' or item['status'] != 'scanned':
                 continue
             try:
-                for r in datafiles.load_records(self.root / item['path'], item['path']):
+                for r in datafiles.records_at(self.root, item['path']):
                     v = r['fields'].get('id', {}).get('value')
                     if isinstance(v, int):
                         out[v] = f'{item["path"]}:{r["line"]}'
@@ -1497,7 +1497,7 @@ class Scanner:
                     self.add('snapshot_rot', 'large_snapshot', i['path'], 1, f'{i["lines"]} lines asserted wholesale', None, None,
                              details={'lines': i['lines']})
             elif i['kind'] in ('fixture', 'recording', 'seed') and not i['loaded_by'] and not MIGRATION_SEED.search(i['path']) \
-                    and not self.no_tests:
+                    and not self.no_tests and not i.get('archive'):
                 if i.get('used_by_commands'):
                     by_commands += 1       # read by a documented command or a script: used, though not by a test
                     continue
@@ -1507,7 +1507,8 @@ class Scanner:
             self.notes.append(f'{by_commands} data file(s) are used by commands, not tests: no test loads them, but a documented '
                               'command (a README, the repository guide, a commands.sh, a Makefile or CI step) or a folder it '
                               'names reads them (used_by_commands in the inventory); they are not called unused')
-        data = [i for i in items if i['kind'] in ('fixture', 'recording', 'seed') and i.get('lines', 0) >= RULES['duplicate_min_lines']]
+        data = [i for i in items if i['kind'] in ('fixture', 'recording', 'seed') and i.get('lines', 0) >= RULES['duplicate_min_lines']
+                and not i.get('archive')]      # members of one archive are not compared pair by pair
         # a directory with more files of one format than duplicate_max_files is a templated tree, near-duplicate by design:
         # its files are checked for exact copies only, and the notes say so
         cap = RULES.get('duplicate_max_files', 200)
@@ -1640,6 +1641,49 @@ class Scanner:
                               f'(duplicate_max_pairs); the {cap} most similar were compared and {skipped} were not, so '
                               'near copies among them are not ruled out')
 
+    def scan_lines(self, rel: str, text: str, records: list[dict], item: dict, is_js: bool):
+        """The line rules every scanned source gets: secrets, hosts and paths on each line, and personal data in the
+        strings (and, in prose formats, the running text) of lines no record covers."""
+        structured = {(r_line) for r in records for r_line in [v['line'] for v in r['fields'].values()]}
+        prose = item.get('format') in PROSE_FORMATS
+        is_markup = rel.lower().endswith(MARKUP_EXT)
+        for n, line in enumerate(text.split('\n'), 1):
+            self.secrets(rel, n, line)
+            self.environment(rel, n, line)
+            if n not in structured:
+                for m in re.finditer(r'"([^"\n]{3,200})"|\'([^\'\n]{3,200})\'', line):
+                    # the key or attribute name sits right before the string: read a short window, never the whole
+                    # line so far (a page with its data on one 300k-character line has thousands of strings on it)
+                    before = line[max(0, m.start() - KEY_WINDOW):m.start()]
+                    key = JS_KEY_BEFORE.search(before) if is_js else ATTR_BEFORE.search(before) if is_markup else None
+                    self.personal_value(rel, n, key.group(1) if key else None, m.group(1) or m.group(2), loose=bool(key))
+                if prose:
+                    # pages, tickets, notes and patches carry people in their running text, not only in quotes
+                    bare = re.sub(r'"[^"\n]{3,200}"|\'[^\'\n]{3,200}\'', lambda q: ' ' * len(q.group(0)), line)
+                    if bare.strip():
+                        self.personal_value(rel, n, None, bare)
+
+    def scan_member(self, item: dict, comparisons: dict):
+        """A text member of a zip archive (<archive>!<member>): the same record and line rules as a loose data file,
+        on the text read in memory. Its candidates cite the member path and the line in the member."""
+        rel = item['path']
+        try:
+            text = datafiles.member_text(self.root, rel)
+        except datafiles.NotAssessed as exc:
+            item['status'], item['reason'] = 'not_assessed', str(exc)
+            return
+        records: list[dict] = []
+        if len(text) <= RULES['large_file_mb'] * 1_000_000:
+            try:
+                records = datafiles.records_from_text(text, item.get('format') or 'text', rel, rel.lower().endswith('.tsv'))
+            except datafiles.NotAssessed as exc:
+                item['status'], item['reason'] = 'not_assessed', str(exc)
+        for r in records:
+            self.personal_record(r, rel)
+            self.time_bombs(r, rel, comparisons)
+        self.tabular_extract(rel, records)
+        self.scan_lines(rel, text, records, item, False)
+
     def run(self) -> dict:
         comparisons = self.now_comparisons()
         self.js_now_comparisons(comparisons)
@@ -1663,6 +1707,11 @@ class Scanner:
             if item['status'] != 'scanned':
                 continue
             rel = item['path']
+            if item.get('archive'):
+                self.scan_member(item, comparisons)        # a text member of a zip, read in memory
+                continue
+            if 'archive_members' in item:
+                continue                                   # the archive itself: its members are the sources
             p = self.root / rel
             size_mb = p.stat().st_size / 1_000_000
             if size_mb > RULES['large_file_mb']:
@@ -1690,24 +1739,7 @@ class Scanner:
             except datafiles.NotAssessed as exc:
                 item['status'], item['reason'] = 'not_assessed', str(exc)
                 continue
-            structured = {(r_line) for r in records for r_line in [v['line'] for v in r['fields'].values()]}
-            prose = item.get('format') in PROSE_FORMATS
-            is_js, is_markup = jsparse.is_js(rel), rel.lower().endswith(MARKUP_EXT)
-            for n, line in enumerate(text.split('\n'), 1):
-                self.secrets(rel, n, line)
-                self.environment(rel, n, line)
-                if n not in structured:
-                    for m in re.finditer(r'"([^"\n]{3,200})"|\'([^\'\n]{3,200})\'', line):
-                        # the key or attribute name sits right before the string: read a short window, never the whole
-                        # line so far (a page with its data on one 300k-character line has thousands of strings on it)
-                        before = line[max(0, m.start() - KEY_WINDOW):m.start()]
-                        key = JS_KEY_BEFORE.search(before) if is_js else ATTR_BEFORE.search(before) if is_markup else None
-                        self.personal_value(rel, n, key.group(1) if key else None, m.group(1) or m.group(2), loose=bool(key))
-                    if prose:
-                        # pages, tickets, notes and patches carry people in their running text, not only in quotes
-                        bare = re.sub(r'"[^"\n]{3,200}"|\'[^\'\n]{3,200}\'', lambda q: ' ' * len(q.group(0)), line)
-                        if bare.strip():
-                            self.personal_value(rel, n, None, bare)
+            self.scan_lines(rel, text, records, item, jsparse.is_js(rel))
             if jsparse.is_js(rel) and size_mb <= RULES['large_file_mb']:
                 covered = {c['line'] for c in self.cands[n_before:] if c['category'] == 'time_bomb'}
                 self.js_test_rules(rel, item, comparisons, seeds, covered)

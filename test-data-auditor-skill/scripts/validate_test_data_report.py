@@ -205,27 +205,27 @@ def spans_on(line: str) -> set[str]:
     return out
 
 
-def extract_values(c: dict, p: Path) -> set[str]:
+def extract_values(c: dict, repo: Path) -> set[str]:
     """The values of a flagged extract column that could identify someone: names of two or more words, or long ones."""
     vals = set()
     try:
-        for r in datafiles.load_records(p, c['file']):
+        for r in datafiles.records_at(repo, c['file']):
             v = r['fields'].get(c['field'], {}).get('value')
             if isinstance(v, str) and (len(v.strip()) >= 8 or (' ' in v.strip() and len(v.strip()) >= 6)):
                 vals.add(v.strip())
             if len(vals) >= 5000:
                 break
-    except datafiles.NotAssessed:
+    except (OSError, datafiles.NotAssessed):
         pass
     return vals
 
 
 def flagged_values(c: dict, repo: Path) -> set[str]:
-    p = repo / c['file']
     if c['rule'] == 'customer_extract':
-        return extract_values(c, p)
+        return extract_values(c, repo)
     try:
-        lines = datafiles.text_of(p).split('\n')
+        # a member of a zip archive (<archive>!<member>) is re-read in memory like a file
+        lines = datafiles.text_at(repo, c['file']).split('\n')
     except (OSError, datafiles.NotAssessed):
         return set()
     line = lines[c['line'] - 1] if 0 < c['line'] <= len(lines) else ''
@@ -258,14 +258,14 @@ def flagged_values(c: dict, repo: Path) -> set[str]:
         return vals
     if c['rule'] in ('name_and_address', 'dob_with_name'):
         try:
-            for r in datafiles.load_records(p, c['file']):
+            for r in datafiles.records_at(repo, c['file']):
                 if any(v['line'] == c['line'] for v in r['fields'].values()):
                     nm = c['details'].get('name_field')
                     if nm in r['fields']:
                         vals.add(str(r['fields'][nm]['value']))
                     if c['field'] in r['fields']:
                         vals.add(str(r['fields'][c['field']]['value']))
-        except datafiles.NotAssessed:
+        except (OSError, datafiles.NotAssessed):
             pass
         return {v for v in vals if len(v) >= 6}
     for m in scan_data.EMAIL.finditer(line):
@@ -432,9 +432,8 @@ def basis_errors(f: dict, repo: Path | None, evidence: Path | None) -> list[str]
         if echo:
             errs.append(f'{where}: the excerpt contains {echo}; quote the code around a value, never the value')
         if repo is not None:
-            p = repo / b['file']
             try:
-                lines = datafiles.text_of(p).split('\n')
+                lines = datafiles.text_at(repo, b['file']).split('\n')
             except (OSError, datafiles.NotAssessed):
                 errs.append(f'{where}: {b["file"]} is not in the repository')
                 continue
@@ -444,6 +443,11 @@ def basis_errors(f: dict, repo: Path | None, evidence: Path | None) -> list[str]
                 errs.append(f'{where}: the excerpt is not on {b["file"]}:{b["line"]}')
     if files and f['location']['file'] not in files:
         errs.append(f'{w}: location is not one of its basis files')
+    if f['category'] in ('personal_data', 'secret') and not files:
+        # the leak check protects the values on a basis line; an evidence file alone protects nothing
+        errs.append(f'{w}: a {f["category"]} finding found by review cites at least one file and line (a member of a zip '
+                    'archive as <archive>!<member>), so the validator can re-read the value and keep it out of the report; '
+                    'an evidence file alone leaves the value unprotected')
     if f['category'] == 'time_bomb' and f['confidence'] == 'confirmed' and not f.get('fails_on_date'):
         errs.append(f'{w}: a confirmed time bomb found by review names the date it fails on (bracket it with dated runs)')
     if f['category'] == 'residue' and not any('evidence' in b for b in basis):
@@ -473,7 +477,7 @@ def live_host_errors(f: dict, evidence: Path | None, repo: Path | None = None) -
             texts.append(b['excerpt'])
         if repo is not None and 'file' in b and isinstance(b.get('line'), int):
             try:
-                lines = datafiles.text_of(repo / b['file']).split('\n')
+                lines = datafiles.text_at(repo, b['file']).split('\n')
                 texts.append(lines[b['line'] - 1] if 0 < b['line'] <= len(lines) else '')
             except (OSError, datafiles.NotAssessed):
                 pass
