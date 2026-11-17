@@ -59,6 +59,8 @@ sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this 
 from match_canaries import EMAIL, PHONE_RX, CARD, card_like, encodings  # noqa: E402
 from domains import registrable  # noqa: E402
 from merge_candidates import load_declared  # noqa: E402
+import archive_text  # noqa: E402
+import home_paths  # noqa: E402
 
 DATA = HERE.parent / 'data'
 CATS = json.loads((DATA / 'categories.json').read_text(encoding='utf-8'))
@@ -167,6 +169,52 @@ PROMISES = ('consent_step', 'no_third_parties', 'vendor_list', 'purpose', 'reten
 # the personal-data categories a vendor of each category receives when its tag runs (data/vendors.json category_data)
 CATEGORY_DATA = {k: v for k, v in (VENDORS.get('category_data') or {}).items() if k != 'note'}
 TRACKING_TYPES = ('tracking_before_consent', 'tracking_after_reject')
+# a dismissal of a home path that is still on the cited line must say why the name in it is no person's account
+NOT_A_PERSON = re.compile(r'placeholder|generic|(service|shared|role|system|test|default|build) account|\bCI\b|container|\bbot\b|build (agent|machine)|'
+                          r'not a person|no person|fictional|invented|synthetic|made[- ]up|sample|example|fixture|documentation', re.I)
+# how a limitation may name a script language the scan does not read
+SCRIPT_WORDS = {'Shell': r'\bshell\b|\bbash\b|\.sh\b', 'PowerShell': r'powershell|\.ps1\b', 'Batch': r'\bbatch\b|\.bat\b|\.cmd\b'}
+HISTORY_TEXT = re.compile(r'\bhistory\b|\b(earlier|previous|past|older) commits\b', re.I)
+
+
+def real_reason(text) -> bool:
+    """A triage reason that says something: a few words at least ("no", "n/a" and "false positive" say nothing about why)."""
+    return len(re.findall(r'[A-Za-z]{2,}', str(text or ''))) >= 4
+
+
+def artifact_line(repo: Path, x: dict, archives: dict) -> tuple[str | None, str | None]:
+    """The line an artifact location cites, re-read from the repository: (line, None), or (None, why it could not be
+    read). {file, line} is a text file; {file, member, line} a text member of a zip archive, read in memory with the
+    shared archive_text.py (an archive or a binary file has no line of its own to cite)."""
+    file, member, n = str(x.get('file')), x.get('member'), x.get('line')
+    p_ = repo / file
+    if not p_.is_file():
+        return None, 'not found in the repository'
+    if member:
+        if p_.suffix.lower() not in archive_text.OPENED:
+            return None, 'is not a zip archive: a member of it cannot be re-read'
+        got = archives.get(file) or archives.setdefault(file, archive_text.read_archive(p_))
+        mem = next((m for m in got['read'] if m['name'] == member or home_paths.scrub(m['name']) == member), None)
+        if mem is None:
+            why = next((k['reason'] for k in got['skipped'] if k['name'] == member), None) or got.get('error')
+            return None, f'could not be re-read ({why})' if why else 'not found in the archive'
+        text = mem['text']
+    else:
+        if archive_text.is_archive_name(p_.name):
+            return None, ('is an archive: cite the member that holds the identifier ({file, member, line}); a line of the '
+                          'archive file itself holds nothing a reader can check')
+        got = archive_text.read_text(p_, 1 << 30)
+        if got is None:
+            return None, 'is a binary file: no line of it can be re-read'
+        text = got['text']
+    lines = text.splitlines()
+    if not isinstance(n, int) or not 1 <= n <= len(lines):
+        return None, 'not found in the repository'
+    return lines[n - 1], None
+
+
+def artifact_where(x: dict) -> str:
+    return f'{x.get("file")}!{x["member"]}:{x.get("line")}' if x.get('member') else f'{x.get("file")}:{x.get("line")}'
 
 
 def vendor_category_of(f: dict, own: list[dict]) -> str | None:
@@ -257,6 +305,13 @@ def pii_problems(text: str, where: str, canary_values: list[str]) -> list[str]:
             out.append(f'{where}: an unredacted canary value')
     if SECRET.search(text):
         out.append(f'{where}: a secret-like value')
+    # the auditor's own home directory (an absolute repository or evidence path) names their OS account: the very
+    # identifier the audit reports in the target. The account is not repeated here.
+    homes = home_paths.real_accounts(text)
+    if homes:
+        lines = sorted({text.count('\n', 0, s_) + 1 for s_, _, _ in homes})
+        out.append(f'{where}: a home-directory path naming an account (line {", ".join(map(str, lines[:5]))}{" ..." if len(lines) > 5 else ""}) - '
+                   'record the repository and every file by name or relative path, never by absolute path')
     return out
 
 
@@ -324,6 +379,7 @@ def main() -> int:
     cands = {c['id']: c for c in cfile['candidates']}
     errs: list[str] = []
     e = errs.append
+    archives: dict = {}   # zip archives re-read for artifact locations, by file
     # the inputs the merge recorded, found wherever the merge ran (the repository root, usually): --recompute and the
     # checks below read them
     recorded = {'static': cfile.get('static'), 'capture': cfile.get('capture'), **{k: v for k, v in (cfile.get('inputs') or {}).items()
@@ -345,6 +401,9 @@ def main() -> int:
             e(f'missing top-level field {k}')
     if errs:
         print('\n'.join(errs)); return 1
+    versions = json.loads((HERE.parent / 'schemas' / 'privacy_audit.schema.json').read_text(encoding='utf-8'))['properties']['schema_version']['enum']
+    if rep['schema_version'] not in versions:
+        e(f'schema_version {rep["schema_version"]!r} is not one of {versions} (the current one is {versions[-1]})')
     if a.write_summary or a.fix_ratings:
         for f in rep['findings']:
             if a.fix_ratings and ratable(f):
@@ -456,11 +515,17 @@ def main() -> int:
                 e(f'{fid}: identifier_in_artifact needs artifacts: [{{file, line, what}}] naming each committed file and line that holds the '
                   'identifier (the value itself is not quoted)')
             elif a.repo:
+                # each location is re-read: the line must exist and must hold an identifier (a home path naming an
+                # account, the key the location names, or a host, user or machine field), not just any line of the file
                 for x in arts:
-                    p_ = a.repo / x['file']
-                    n_ = len(p_.read_text(encoding='utf-8', errors='replace').splitlines()) if p_.is_file() else 0
-                    if not 1 <= x['line'] <= n_:
-                        e(f'{fid}: artifact {x["file"]}:{x["line"]} not found in the repository')
+                    line_, why = artifact_line(a.repo, x, archives)
+                    if line_ is None:
+                        e(f'{fid}: artifact {artifact_where(x) if "not found" in why or "re-read (" in why else x["file"]} {why}')
+                    elif not home_paths.identifier_on(line_, x.get('key')):
+                        e(f'{fid}: artifact {artifact_where(x)} holds no identifier: ' + (
+                            f'the key {x["key"]!r} is not on that line with a value' if x.get('key') else
+                            'no home-directory path naming an account and no host, user or machine field is on that line (name the '
+                            'field with "key" when it has another name); cite the lines that hold it'))
         if f['reach'] not in (1, 2, 3):
             e(f'{fid}: reach {f["reach"]}')
             continue
@@ -663,6 +728,8 @@ def main() -> int:
         elif d == 'inventory':
             if not t.get('reason'):
                 e(f'{cid}: inventory without a reason')
+            elif not real_reason(t['reason']):
+                e(f'{cid}: the inventory reason must say why (a sentence about this candidate, not {str(t["reason"])[:40]!r})')
             if c['type'] in ('tracking_after_reject', 'sensitive_category_flow') or any(x in CATS['special'] for x in c.get('categories', [])):
                 e(f'{cid}: a {c["type"]} candidate or a special category cannot be recorded as inventory only')
         elif d == 'dismissed':
@@ -670,6 +737,16 @@ def main() -> int:
             facts = c.get('facts') or {}
             if code not in DISMISS or not t.get('reason'):
                 e(f'{cid}: dismissal needs a reason_code from {sorted(DISMISS)} and a reason')
+            elif not real_reason(t['reason']):
+                e(f'{cid}: the dismissal reason must say why (a sentence about this candidate, not {str(t["reason"])[:40]!r})')
+            # a home path the scan found is re-read: while an account is still on the cited line, calling it a false match
+            # needs the reason to say why that name is no person's account
+            if c.get('subtype') == 'home_path_in_artifact' and code in ('false_match', 'not_personal_data', 'constant_in_source') and a.repo:
+                line_, _ = artifact_line(a.repo, c, archives)
+                if line_ is not None and home_paths.real_accounts(line_) and not NOT_A_PERSON.search(t.get('reason') or ''):
+                    e(f'{cid}: dismissed as {code}, but {artifact_where(c)} still holds a home-directory path naming an account: the '
+                      "reason must say why that name is no person's account (a placeholder, a CI or service account, an invented "
+                      'sample), or the candidate is a finding')
             if code == 'strictly_necessary':
                 flags = c.get('cookie_flags') or {}
                 csrf = bool(CSRF_COOKIE.search(c.get('cookie') or '')) and re.search(r'csrf|xsrf|double[- ]submit', t.get('reason', ''), re.I)
@@ -709,6 +786,15 @@ def main() -> int:
             if (seen.get(cid) or {}).get('finding') != f['id']:
                 e(f'{f["id"]}: lists {cid}, but triage does not promote it there')
 
+    # --- identifiers in committed files: the scan (and a rescan after a fix) reads the current tree only
+    in_artifacts = (any(f.get('type') == 'identifier_in_artifact' for f in rep['findings'])
+                    or any(c.get('type') == 'identifier_in_artifact' for c in cfile['candidates'])
+                    or bool(((st_ or {}).get('redacted_home_paths') or {}).get('count')))
+    if in_artifacts and not any(HISTORY_TEXT.search(x) for x in rep['limitations']):
+        e('identifiers were found in committed files (or home paths there already carry a placeholder), and the scan reads the '
+          'current tree only: a limitation must say that git history was not searched (an identifier removed from the tree may '
+          'remain in earlier commits)')
+
     # --- file uploads the static scan found: what the files hold is unknown until someone says
     if st_ is not None:
         # a language the scan does not analyse that holds much of the code: nothing it found there, so the report must say so
@@ -718,6 +804,11 @@ def main() -> int:
             if not re.search(rf'(?<![\w+#]){re.escape(lang)}(?![\w+#])', lims, re.I):
                 e(f'the static scan does not analyse {lang}, which holds most of the code ({(cov.get("unsupported") or {}).get(lang, "?")} '
                   f'files): a limitation must name {lang} and say its sends, logs and identifiers were not scanned')
+        # script languages the scan does not read (PowerShell, shell, batch: installers that download and write files)
+        for kind in cov.get('needs_limitation_scripts') or []:
+            if not re.search(SCRIPT_WORDS.get(kind) or re.escape(kind), lims, re.I):
+                e(f'the static scan does not read {kind} scripts ({(cov.get("scripts") or {}).get(kind, "?")} file(s)): a limitation must '
+                  f'name {kind} and say that what the scripts download, send or write was not scanned')
         # a directory skipped as build output that holds more source than the scan read (scan_privacy.py build_output_dirs):
         # if it is the app's front end, nothing in it was scanned
         for dir_ in cov.get('needs_limitation_dirs') or []:
@@ -757,6 +848,8 @@ def main() -> int:
         e(f'the audit says {m.group(0)!r}: never call an app compliant or private')
     # the disclaimer names what was audited: "the app" by default, or the tool, code, repository, library... it was run on
     forms = [PROV['disclaimer'].replace('the app', subj) for subj in PROV.get('disclaimer_subjects') or ['the app']]
+    # a plural subject takes "are or aren't" (the ungrammatical "the tools is or isn't" of earlier reports is still accepted)
+    forms += [PROV['disclaimer'].replace("the app is or isn't", f"{subj} are or aren't") for subj in PROV.get('disclaimer_plural_subjects') or []]
     if not any(x in rep['headline'].get('disclaimer', '') for x in forms):
         e('headline.disclaimer must carry the disclaimer from data/provisions.json (naming the app, or one of '
           f'{", ".join((PROV.get("disclaimer_subjects") or ["the app"])[1:])} instead)')
@@ -824,7 +917,11 @@ def main() -> int:
                 e(f'recompute: the recorded {k} input {recorded[k]} was not found (looked in the current directory and in '
                   f'{a.candidates.resolve().parent} and the folders above it): run from the directory merge_candidates.py ran in')
         else:
-            arg = {k: str(resolved[k]) for k in need}
+            # run the merge where its recorded (relative) inputs resolve, with the paths as recorded, so what it records
+            # again is the same; inputs found in different places are passed by their resolved paths
+            base = next((b for b in (Path.cwd(), *a.candidates.resolve().parents)
+                         if all(not Path(recorded[k]).is_absolute() and (b / recorded[k]).exists() for k in need)), None)
+            arg = {k: recorded[k] if base else str(resolved[k]) for k in need}
             with tempfile.TemporaryDirectory() as d:
                 out = Path(d) / 'c.json'
                 cmd = [sys.executable, str(HERE / 'merge_candidates.py'), '--regions', inp['regions'], '--out', str(out)]
@@ -834,7 +931,7 @@ def main() -> int:
                     cmd += ['--run-status-reason', cfile.get('run_status_reason') or '']
                     cmd += [x for k in ('lists', 'flows') if k in arg for x in ('--' + k, arg[k])]
                 cmd += [x for k in ('static', 'declared') if k in arg for x in ('--' + k, arg[k])]
-                r = subprocess.run(cmd, capture_output=True, text=True)
+                r = subprocess.run(cmd, capture_output=True, text=True, cwd=base)
                 if r.returncode:
                     e(f'recompute failed: {r.stderr.strip()[-300:]}')
                 else:

@@ -25,5 +25,6 @@
   },
   "disclaimer": "These are references for a qualified privacy professional, who decides whether there is a breach. This report is not legal advice and does not say the app is or isn't compliant.",
   "disclaimer_subjects": ["the app", "the site", "the service", "the tool", "the tools", "the library", "the code", "the repository", "the project"],
-  "disclaimer_subjects_note": "The disclaimer names what was audited: \"the app\" may be replaced by one of these (a repository of command-line tools is not an app); nothing else in it may change."
+  "disclaimer_plural_subjects": ["the tools", "the scripts", "the libraries", "the services", "the apps", "the sites"],
+  "disclaimer_subjects_note": "The disclaimer names what was audited: \"the app\" may be replaced by one of these (a repository of command-line tools is not an app); a plural subject (disclaimer_plural_subjects) takes \"are or aren't\" in place of \"is or isn't\". Nothing else in it may change."
 }

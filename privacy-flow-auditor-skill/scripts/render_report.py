@@ -3,7 +3,8 @@
 
     python render_report.py audit.json [--brief] [--color auto|always|never]
 
---brief prints the headline, the consent matrix and the findings table only.
+--brief prints the headline, the consent matrix, the findings table, each finding's title with where it is (an
+artifact, as archive!member:line inside an archive, or a code line) and the limitations.
 """
 from __future__ import annotations
 import argparse, json, os, sys
@@ -85,7 +86,22 @@ def main() -> int:
         out.append(f'| {f["id"]}{" (found by review)" if f.get("source") == "agent" else ""} | {c(f["priority"], f["priority"])} | {f["type"]} | {f.get("vendor") or f.get("domain") or "-"} '
                    f'| {", ".join(f["categories"])} | {f["sensitivity"]}x{f["flow"]}x{f["reach"]}={f["score"]} | {f["confidence"]} |')
     out.append('')
-    if not a.brief:
+    if a.brief:
+        # what each finding is and where: the title, and the first place that shows it (an artifact, a code line, a basis)
+        def where(f: dict) -> str:
+            x = next(iter(f.get('artifacts') or []), None)
+            if x:
+                more = len(f['artifacts']) - 1
+                return (f'{x["file"]}!{x["member"]}:{x["line"]}' if x.get('member') else f'{x["file"]}:{x["line"]}') + (f' (+{more} more)' if more else '')
+            x = next(iter(f['evidence'].get('code_path') or []), None) or next((b for b in f.get('basis') or [] if 'file' in b), None)
+            if x:
+                return f'{x["file"]}:{x["line"]}'
+            q = next(iter(f['evidence'].get('requests') or []), None)
+            return f'request {q["state"]} #{q["n"]}' if q else '-'
+        for f in sorted(r['findings'], key=lambda f: (f['priority'], f['id'])):
+            out.append(f'- {f["id"]} {c(f["priority"], f["priority"])} {f["title"]} ({where(f)})')
+        out += ['', '## Limitations', ''] + [f'- {x}' for x in r['limitations']]
+    else:
         for f in sorted(r['findings'], key=lambda f: (f['priority'], f['id'])):
             ev = f['evidence']
             out += [f'### {f["id"]} {c(f["priority"], f["priority"])} {f["title"]}' + (' (found by review)' if f.get('source') == 'agent' else ''),
@@ -97,7 +113,7 @@ def main() -> int:
                 where = f'`{pol["file"]}:{pol["line"]}`' if pol.get('file') else pol.get('url', '')
                 out.append(f'- Policy promise ({pol.get("promise")}): {where} "{pol.get("excerpt", "")}"')
             for x in f.get('artifacts') or []:
-                out.append(f'- Written into: `{x["file"]}:{x["line"]}`' + (f' ({x["what"]})' if x.get('what') else ''))
+                out.append(f'- Written into: `{x["file"]}' + (f'!{x["member"]}' if x.get('member') else '') + f':{x["line"]}`' + (f' ({x["what"]})' if x.get('what') else ''))
             if f.get('categories_basis'):
                 out.append(f'- Categories: {f["categories_basis"]}')
             if f.get('consent_states'):

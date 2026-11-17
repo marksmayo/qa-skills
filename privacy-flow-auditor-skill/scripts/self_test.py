@@ -251,11 +251,14 @@ def telemetry_finding(**kw) -> dict:
 
 
 def run_validator(rep: dict, extra: list[str] | None = None, cands: dict | None = None, evidence: dict | None = None,
-                  repo: Path | None = None) -> str:
+                  repo: Path | None = None, static: dict | None = None) -> str:
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / 'audit.json'
         p.write_text(json.dumps(rep, indent=1), encoding='utf-8')
         cp = CANDS
+        if static is not None:   # a changed static scan, recorded beside the candidates file (never by absolute path)
+            cands = dict(cands if cands is not None else json.loads(CANDS.read_text(encoding='utf-8')), static='static.json')
+            (Path(d) / 'static.json').write_text(json.dumps(static), encoding='utf-8')
         if cands is not None:
             cp = Path(d) / 'candidates.json'
             cp.write_text(json.dumps(cands), encoding='utf-8')
@@ -372,28 +375,22 @@ def language_limitation() -> None:
     st = json.loads((ROOT / cands['static']).read_text(encoding='utf-8'))
     st['language_coverage'] = {'status': 'unsupported_dominant', 'dominant': 'Rust', 'dominant_unsupported_language': 'Rust',
                                'unsupported': {'Rust': 40}, 'supported': {'JavaScript': 3}, 'needs_limitation': ['Rust']}
-    with tempfile.TemporaryDirectory() as d:
-        sp = Path(d) / 'static.json'
-        sp.write_text(json.dumps(st), encoding='utf-8')
-        cands['static'] = str(sp)
-        out = run_validator(base(), cands=cands)
+    if True:
+        out = run_validator(base(), cands=cands, static=st)
         check('rust' in out.lower() and 'limitation' in out, 'validator: an unanalysed dominant language needs a limitation naming it')
         rep = base()
         rep['limitations'].append('Rust code (40 files) was not analysed by the static scan; telemetry and logging in it were read by hand only.')
-        out = run_validator(rep, cands=cands)
+        out = run_validator(rep, cands=cands, static=st)
         check('rust' not in out.lower(), 'validator: a limitation naming the language satisfies it')
     cands = json.loads(CANDS.read_text(encoding='utf-8'))
     st = json.loads((ROOT / cands['static']).read_text(encoding='utf-8'))
     st['language_coverage'] = dict(st.get('language_coverage') or {}, needs_limitation_dirs=['site/dist/'])
-    with tempfile.TemporaryDirectory() as d:
-        sp = Path(d) / 'static.json'
-        sp.write_text(json.dumps(st), encoding='utf-8')
-        cands['static'] = str(sp)
-        out = run_validator(base(), cands=cands)
+    if True:
+        out = run_validator(base(), cands=cands, static=st)
         check('site/dist/' in out and 'limitation' in out, 'validator: skipped build output holding most of the source needs a limitation naming it')
         rep = base()
         rep['limitations'].append('site/dist/ was skipped as build output and not scanned; its sends and logs were not read.')
-        out = run_validator(rep, cands=cands)
+        out = run_validator(rep, cands=cands, static=st)
         check('site/dist/' not in out, 'validator: a limitation naming the skipped directory satisfies it')
 
 
@@ -818,11 +815,8 @@ def rust_dominant_by_lines() -> None:
     cands = json.loads(CANDS.read_text(encoding='utf-8'))
     ex = json.loads((ROOT / cands['static']).read_text(encoding='utf-8'))
     ex['language_coverage'] = cov
-    with tempfile.TemporaryDirectory() as d:
-        sp = Path(d) / 'static.json'
-        sp.write_text(json.dumps(ex), encoding='utf-8')
-        cands['static'] = str(sp)
-        out = run_validator(base(), cands=cands)
+    if True:
+        out = run_validator(base(), cands=cands, static=ex)
         check('does not analyse Rust' in out, 'validator: a report on a Rust-dominant repository with no Rust limitation fails')
 
 
@@ -989,27 +983,24 @@ def open_line(p: Path, n: int) -> str:
 
 
 def artifact_finding() -> None:
-    f = telemetry_finding(type='identifier_in_artifact', title='The run recorder writes the host name into a committed results file',
-                          categories=['device_identifier'], flow_basis='committed', default_on=None, reach=3,
-                          reach_source='the repository is public', fields=['host'],
-                          basis=[{'file': 'serve.py', 'line': 1, 'excerpt': open_line(REPO / 'serve.py', 1)}],
-                          artifacts=[{'file': 'serve.py', 'line': 2, 'what': 'host name'}],
-                          references={r: vpa.PROV['types'].get('identifier_in_artifact', {}).get(r, []) for r in ('EU', 'AU')},
-                          evidence={'summary': 'Found by review: the recorder writes the host name into a committed file.',
-                                    'code_path': [{'file': 'serve.py', 'line': 1}]})
-    f.pop('default_on')
-    rep = base()
-    rep['findings'].append(f)
-    out = run_validator(rep)
-    check(': valid (' in out, f'validator: an identifier_in_artifact finding with committed flow and an artifact location is valid ({out.strip()[-300:]})')
-    rep = base()
-    rep['findings'].append(dict(f, artifacts=[{'file': 'serve.py', 'line': 99999, 'what': 'host name'}]))
-    check('F06: artifact serve.py:99999' in run_validator(rep), 'validator: an artifact location is re-read with --repo')
-    rep = base()
-    g = dict(f)
-    g.pop('artifacts')
-    rep['findings'].append(g)
-    check('F06: identifier_in_artifact needs artifacts' in run_validator(rep), 'validator: identifier_in_artifact needs the artifact locations')
+    with tempfile.TemporaryDirectory() as d:
+        root = clinic_copy(d)
+        f = artifact_of(title='The run recorder writes the host name into a committed results file', categories=['device_identifier'], reach=3,
+                        reach_source='the repository is public', fields=['host'],
+                        artifacts=[{'file': 'results/run.json', 'line': 4, 'what': 'host name', 'key': 'host'}])
+        rep = base()
+        rep['limitations'].append(HISTORY_LIMITATION)
+        rep['findings'].append(f)
+        out = run_validator(rep, repo=root)
+        check(': valid (' in out, f'validator: an identifier_in_artifact finding with committed flow and an artifact location is valid ({out.strip()[-300:]})')
+        rep = base()
+        rep['findings'].append(dict(f, artifacts=[{'file': 'results/run.json', 'line': 99999, 'what': 'host name'}]))
+        check('F06: artifact results/run.json:99999' in run_validator(rep, repo=root), 'validator: an artifact location is re-read with --repo')
+        rep = base()
+        g = dict(f)
+        g.pop('artifacts')
+        rep['findings'].append(g)
+        check('F06: identifier_in_artifact needs artifacts' in run_validator(rep, repo=root), 'validator: identifier_in_artifact needs the artifact locations')
     rep = base()
     rep['findings'].append(telemetry_finding(flow_basis='committed'))
     check('F06: flow_basis committed' in run_validator(rep), 'validator: flow_basis committed is for identifier_in_artifact only')
@@ -1269,8 +1260,350 @@ def tool_values_not_identifiers() -> None:
     check(not got, f'scan: an exit code from a run given the home as env=, and a "profile" key, are not identifiers or a profile object (got {got})')
 
 
+# ------------------------------------------------------------------ committed archives, logs, placeholders, write helpers
+# A results page whose embedded JSON holds the placeholder a redaction step wrote, JSON-escaped (\u003cuser\u003e), other
+# redaction tokens, and one real-looking (invented) account that must still be found.
+ESCAPED_HTML = (r'<script>const DATA = {"cwd": "C:\\Users\\\u003cuser\u003e\\AppData\\Local\\bench", '
+                r'"log": "C:\\Users\\\u003cuser\u003e\\bench\\run.log"};</script>' '\n'
+                '<p>/home/[REDACTED]/bench and C:/Users/redacted/bench and /Users/&lt;user&gt;/bench and /home/__user__/x</p>\n')
+ESCAPED_REAL = r'{"cwd": "C:\\Users\\jdoe\\bench", "again": "C:\\Users\\jdoe\\bench\\a", "more": "C:\\Users\\jdoe\\b"}' '\n'
+
+
+def scan_tree(build, args: list[str] | None = None, absolute: bool = True) -> tuple[dict, str]:
+    """Scan a repository that build(root) fills (binary files and archives too)."""
+    with tempfile.TemporaryDirectory() as d:
+        root, out = Path(d) / 'repo', Path(d) / 'static.json'
+        root.mkdir()
+        build(root)
+        r = subprocess.run([sys.executable, str(HERE / 'scan_privacy.py'), str(root) if absolute else 'repo', '--out', str(out)] + (args or []),
+                           capture_output=True, text=True, cwd=d)
+        if r.returncode or not out.is_file():
+            raise AssertionError(f'scan_privacy.py failed: {r.stderr[-400:]}')
+        return json.loads(out.read_text(encoding='utf-8')), r.stdout + r.stderr
+
+
+def escaped_placeholder() -> None:
+    st, _ = scan({'tool.py': 'print("hi")\n', 'results/report.html': ESCAPED_HTML})
+    arts = [(c['file'], c['line'], c.get('excerpt')) for c in st['candidates'] if c['type'] == 'identifier_in_artifact']
+    check(not arts, f'scan: a JSON-escaped <user> placeholder and other redaction tokens are not an account (got {arts})')
+    st, _ = scan({'tool.py': 'print("hi")\n', 'results/run.json': ESCAPED_REAL})
+    arts = [c for c in st['candidates'] if c['type'] == 'identifier_in_artifact']
+    check(len(arts) == 1 and arts[0]['line'] == 1, 'scan: a JSON-escaped path naming an account is still a candidate')
+    also = (arts[0].get('also_at') or []) if arts else ['?']
+    check(len(also) == len(set(also)) and 'results/run.json:1' not in also and (arts[0].get('facts') or {}).get('occurrences') == 3,
+          f'scan: also_at lists each place once and never the candidate\'s own line (got {also})')
+
+
+def make_zip(path: Path, members: dict) -> None:
+    import zipfile
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
+        for name, data in members.items():
+            z.writestr(name, data)
+
+
+def bench_zip(root: Path) -> None:
+    import io, zipfile
+    inner = io.BytesIO()
+    with zipfile.ZipFile(inner, 'w') as z:
+        z.writestr('x.txt', 'nothing\n')
+    make_zip(root / 'results' / 'bench.zip', {
+        'run/a.json': '{\n "cwd": "C:\\\\Users\\\\jdoe\\\\bench\\\\run1"\n}\n',
+        'run/stderr.log': 'warning: cache at /home/jdoe/.cache/bench is cold\n',
+        'run/clean.json': '{"cwd": "C:/Users/<user>/bench"}\n',
+        'bin/tool.exe': b'MZ\x00\x01\x02\x00\x00binary',
+        'inner.zip': inner.getvalue()})
+
+
+def archives_and_logs() -> None:
+    def build(root: Path) -> None:
+        write(root, {'tool.py': 'print("hi")\n', 'results/run.log': 'started in /home/msmith/work/bench\n'})
+        bench_zip(root)
+        (root / 'results' / 'old.tar.gz').write_bytes(b'\x1f\x8b\x08\x00not really a tarball')
+        (root / 'results' / 'broken.zip').write_bytes(b'PK\x03\x04 truncated')
+    st, out = scan_tree(build)
+    arts = [c for c in st['candidates'] if c['type'] == 'identifier_in_artifact']
+    z = next((c for c in arts if c['file'] == 'results/bench.zip'), {})
+    check(z.get('member') == 'run/a.json' and z.get('line') == 2 and z.get('subtype') == 'home_path_in_artifact',
+          f'scan: an account home path inside a committed zip is a candidate citing the archive, the member and the line '
+          f'(got {[(c["file"], c.get("member"), c["line"]) for c in arts]})')
+    check('results/bench.zip!run/stderr.log:1' in (z.get('also_at') or []), f'scan: other members are under also_at as archive!member:line (got {z.get("also_at")})')
+    check(any(c['file'] == 'results/run.log' for c in arts), 'scan: a committed .log file is read for home paths')
+    sk = {x['file']: x['reason'] for x in st['skipped']}
+    check('nested archive' in sk.get('results/bench.zip!inner.zip', ''), f'scan: a nested archive is listed under skipped with its reason (got {sorted(sk)})')
+    check('not read' in sk.get('results/old.tar.gz', '') and 'gzip' in sk.get('results/old.tar.gz', ''),
+          f'scan: an archive format that is not opened is listed under skipped (got {sk.get("results/old.tar.gz")})')
+    check('could not be opened' in sk.get('results/broken.zip', ''), f'scan: a corrupt archive is listed, never an exception (got {sk.get("results/broken.zip")})')
+    arc = {x['file']: x for x in st.get('archives') or []}
+    b = arc.get('results/bench.zip') or {}
+    check(b.get('members') == 5 and b.get('read') == 3 and b.get('complete') is False and arc.get('results/old.tar.gz', {}).get('read') == 0,
+          f'scan: archives lists each archive with what was read (got {arc})')
+    check('jdoe' not in json.dumps(st) and 'msmith' not in json.dumps(st), 'scan: no account name from an archive or a log reaches the output')
+    check('archive' in out and 'bench.zip' in out, 'scan: the summary names the archives read')
+
+
+WRITER_PY = '''import json
+import platform
+from collection_io import write_json
+
+
+def record(out_dir):
+    record = {
+        'tool': 'bench',
+        'host': platform.node(),
+    }
+    with open(out_dir / 'session.json', 'w') as fh:
+        json.dump(record, fh)
+    session = dict(
+        host=platform.node(),
+        runs=3,
+    )
+    write_json(out_dir / 'summary.json', session)
+    plain = {'runs': 3}
+    write_json(out_dir / 'plain.json', plain)
+'''
+COLLECTION_IO_PY = '''import json
+
+
+def write_json(path, payload):
+    path.write_text(json.dumps(payload, indent=2))
+'''
+
+
+def identifier_writes_linked() -> None:
+    st, _ = scan({'scripts/writer.py': WRITER_PY, 'scripts/collection_io.py': COLLECTION_IO_PY,
+                  'results/run1/session.json': '{"tool": "bench", "host": "<host>"}\n'})
+    arts = {c['line']: c for c in st['candidates'] if c['type'] == 'identifier_in_artifact' and c['file'] == 'scripts/writer.py'}
+    check(12 in arts and arts[12].get('subtype') == 'identifier_written',
+          f'scan: json.dump of a dict literal spread over several lines that holds the host name is an identifier_written candidate (got lines {sorted(arts)})')
+    check(17 in arts, f'scan: a write through a small helper (write_json) of a dict(...) built with the host name is a candidate (got lines {sorted(arts)})')
+    check(19 not in arts, 'scan: the same helper writing a dict with no identifier is not a candidate')
+    f12 = (arts.get(12) or {}).get('facts') or {}
+    check(f12.get('written_to') == ['session.json'] and f12.get('files_named_alike') == ['results/run1/session.json'],
+          f'scan: the candidate names the file the write lands in and the repository files of that name (got {f12})')
+    check(((arts.get(17) or {}).get('facts') or {}).get('written_to') == ['summary.json'], 'scan: the helper call\'s target file is named too')
+    check(any(w['name'] == 'write_json' and w['kind'] == 'file_write' for w in st['wrappers']), 'scan: the write helper is listed under wrappers')
+
+
+RUST_READS = '''use std::{env, process::Command};
+
+pub fn player() -> std::io::Result<std::process::Child> {
+    let program = env::var("TOOL_PLAYER").unwrap_or_else(|_| "player".to_string());
+    Command::new(program).arg("--idle").spawn()
+}
+
+pub fn python() -> String {
+    env::var("TOOL_PYTHON").unwrap_or_default()
+}
+'''
+
+
+def rust_reads() -> None:
+    st, out = scan({'runner/Cargo.toml': '[package]\nname = "runner"\n', 'runner/src/lib.rs': RUST_READS})
+    rust = st.get('rust') or {}
+    env = {(e['file'], e['line'], e.get('name')) for e in rust.get('env_reads') or []}
+    check({('runner/src/lib.rs', 4, 'TOOL_PLAYER'), ('runner/src/lib.rs', 9, 'TOOL_PYTHON')} <= env,
+          f'scan: Rust environment reads are listed with file, line and name (got {sorted(env)})')
+    proc = [(p['file'], p['line']) for p in rust.get('process_launches') or []]
+    check(proc == [('runner/src/lib.rs', 5)], f'scan: Rust process launches are listed (got {proc})')
+    check('Rust: 2 environment read(s), 1 process launch(es)' in out, 'scan: the summary says what was read from Rust')
+
+
+POLL_PY = '''import json
+import urllib.request
+
+
+def poll(port, auth):
+    status_url = f'http://127.0.0.1:{port}/requests/status.json'
+    request = urllib.request.Request(status_url, headers={'Authorization': 'Basic ' + auth})
+    with urllib.request.urlopen(request, timeout=.15) as response:
+        return json.load(response)
+
+
+def ping():
+    target = 'http://localhost:8765/ping'
+    return urllib.request.urlopen(target).read()
+
+
+def fetch(package):
+    with urllib.request.urlopen(package['url']) as resp:
+        return resp.read()
+'''
+
+
+def loopback_not_unresolved() -> None:
+    st, _ = scan({'scripts/poll.py': POLL_PY})
+    unres = [u['line'] for u in st.get('outbound_unresolved') or []]
+    check(unres == [18], f'scan: a call to a loopback URL held in a variable is not an unresolved outbound call; one whose host the code '
+                         f'never spells out is (got lines {unres})')
+    check(not st['outbound_hosts'], 'scan: loopback is no outbound host')
+
+
+def script_languages_named() -> None:
+    st, out = scan({'app.py': 'import requests\nrequests.get("https://api.example-sync.io/v1")\n',
+                    'packaging/Install-Runtime.ps1': 'winget install example.runtime\nInvoke-WebRequest https://downloads.example-tools.io/x.zip\n',
+                    'install.sh': '#!/bin/sh\ncurl -fsSL https://downloads.example-tools.io/x.tgz | tar xz\n'})
+    cov = st.get('language_coverage') or {}
+    check(set(cov.get('scripts') or {}) == {'PowerShell', 'Shell'} and sorted(cov.get('needs_limitation_scripts') or []) == ['PowerShell', 'Shell'],
+          f'scan: PowerShell and shell scripts are counted and named as not read (got {cov.get("scripts")}, {cov.get("needs_limitation_scripts")})')
+    check('PowerShell' in out and 'not read' in out, 'scan: the summary says the scripts were not read')
+    out = run_validator(base(), static=dict(json.loads((SKILL / 'examples' / 'run' / 'static.json').read_text(encoding='utf-8')), language_coverage=cov))
+    check('PowerShell' in out and 'limitation' in out, f'validator: unread script languages need a limitation naming them ({out.strip()[-200:]})')
+    rep = base()
+    rep['limitations'].append('The PowerShell installer and the shell script (install.sh) were not read by the scan; their downloads were read by hand.')
+    out = run_validator(rep, static=dict(json.loads((SKILL / 'examples' / 'run' / 'static.json').read_text(encoding='utf-8')), language_coverage=cov))
+    check('PowerShell' not in out and ': valid (' in out, f'validator: a limitation naming them satisfies it ({out.strip()[-200:]})')
+
+
+HISTORY_LIMITATION = ('Git history was not searched: an identifier removed from the current tree may remain in earlier commits.')
+
+
+def clinic_copy(d: str) -> Path:
+    """The sample app copied to a scratch folder with a results file, a log and an archive that hold an invented account's
+    home path, and a page that holds none."""
+    import shutil
+    root = Path(d) / 'clinic'
+    shutil.copytree(REPO, root)
+    write(root, {'results/run.json': '{\n "tool": "bench",\n "cwd": "C:/Users/jdoe/bench",\n "host": "bench-box-01"\n}\n',
+                 'docs/players.md': '# Local players\n\nInstalled under /Users/jdoe/Applications.\n'})
+    bench_zip(root)
+    return root
+
+
+def artifact_of(**kw) -> dict:
+    f = telemetry_finding(type='identifier_in_artifact', title='The run recorder writes the account home path into committed results',
+                          categories=['identity'], flow_basis='committed', default_on=None, reach=1,
+                          reach_source='the repository is private', fields=['home_path'],
+                          basis=[{'file': 'serve.py', 'line': 1, 'excerpt': open_line(REPO / 'serve.py', 1)}],
+                          artifacts=[{'file': 'results/run.json', 'line': 3, 'what': 'home path'}],
+                          references={r: vpa.PROV['types'].get('identifier_in_artifact', {}).get(r, []) for r in ('EU', 'AU')},
+                          evidence={'summary': 'Found by review: the recorder writes the working directory into a committed file.',
+                                    'code_path': [{'file': 'serve.py', 'line': 1}]})
+    f.pop('default_on')
+    f.update(kw)
+    return f
+
+
+def artifact_citations() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = clinic_copy(d)
+
+        def run(arts, limitation=True):
+            rep = base()
+            rep['findings'].append(artifact_of(artifacts=arts))
+            if limitation:
+                rep['limitations'].append(HISTORY_LIMITATION)
+            return run_validator(rep, repo=root)
+        out = run([{'file': 'results/run.json', 'line': 3, 'what': 'home path'}])
+        check(': valid (' in out, f'validator: an artifact line that holds an account home path is accepted ({out.strip()[-300:]})')
+        out = run([{'file': 'docs/players.md', 'line': 1, 'what': 'home path'}])
+        check('F06: artifact docs/players.md:1 holds no identifier' in out, f'validator: an artifact line with no identifier on it (a page title) is rejected ({out.strip()[-300:]})')
+        out = run([{'file': 'results/run.json', 'line': 4, 'what': 'host name', 'key': 'host'}])
+        check(': valid (' in out, f'validator: a host name is cited by the key it sits under, which must be on the line ({out.strip()[-300:]})')
+        out = run([{'file': 'results/run.json', 'line': 2, 'what': 'host name', 'key': 'host'}])
+        check('F06: artifact results/run.json:2' in out and "'host'" in out, 'validator: a key that is not on the cited line is rejected')
+        out = run([{'file': 'results/bench.zip', 'line': 1, 'what': 'home path'}])
+        check('F06: artifact results/bench.zip' in out and 'member' in out, f'validator: an archive is cited by member, never as line 1 of the binary ({out.strip()[-300:]})')
+        out = run([{'file': 'results/bench.zip', 'member': 'run/a.json', 'line': 2, 'what': 'home path'}])
+        check(': valid (' in out, f'validator: an archive member and line is re-read from the archive ({out.strip()[-300:]})')
+        out = run([{'file': 'results/bench.zip', 'member': 'run/clean.json', 'line': 1, 'what': 'home path'}])
+        check('F06: artifact results/bench.zip!run/clean.json:1 holds no identifier' in out, 'validator: a member line holding only a placeholder is rejected')
+        out = run([{'file': 'results/bench.zip', 'member': 'run/nope.json', 'line': 1, 'what': 'home path'}])
+        check('F06: artifact results/bench.zip!run/nope.json' in out and 'not found' in out, 'validator: a member the archive does not hold is rejected')
+        out = run([{'file': 'results/run.json', 'line': 3, 'what': 'home path'}], limitation=False)
+        check('git history' in out and 'limitation' in out, f'validator: an identifier_in_artifact finding needs a limitation about git history ({out.strip()[-300:]})')
+    skill_md = (SKILL / 'SKILL.md').read_text(encoding='utf-8')
+    check(re.search(r'git history', skill_md, re.I) is not None and 'earlier commits' in skill_md,
+          'SKILL.md: says the scan reads the current tree only and asks for the history limitation')
+
+
+def dismissal_reasons() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = clinic_copy(d)
+        cands = json.loads(CANDS.read_text(encoding='utf-8'))
+        cands['candidates'].append({'id': 'S900', 'source': 'static', 'type': 'identifier_in_artifact', 'subtype': 'home_path_in_artifact',
+                                    'file': 'results/run.json', 'line': 3, 'fields': ['home_path'], 'categories': ['identity'],
+                                    'confidence': 'pattern', 'facts': {'account': 'account 1', 'occurrences': 1}})
+
+        def run(reason, code='false_match', cid='S900'):
+            rep = base()
+            rep['limitations'].append(HISTORY_LIMITATION)
+            for t in rep['triage']:
+                if t['candidate'] == cid:
+                    t.update(decision='dismissed', reason_code=code, reason=reason)
+                    t.pop('finding', None)
+                    break
+            else:
+                rep['triage'].append({'candidate': cid, 'decision': 'dismissed', 'reason_code': code, 'reason': reason})
+            return run_validator(rep, cands=cands, repo=root)
+        out = run('no')
+        check('S900: the dismissal reason' in out, f'validator: a dismissal whose reason is "no" is rejected ({out.strip()[-300:]})')
+        out = run('This one is not something we need to report at all.')
+        check('S900: dismissed as false_match, but results/run.json:3 still holds a home-directory path' in out,
+              f'validator: a home path that is still on the cited line cannot be dismissed without saying why it names no person ({out.strip()[-300:]})')
+        out = run('The path is a placeholder the sample generator writes; it names an invented account, not a person.')
+        check('S900' not in out, f'validator: a reason that says why the name is no person\'s account is accepted ({out.strip()[-300:]})')
+        rep = base()
+        rep['limitations'].append(HISTORY_LIMITATION)
+        rep['triage'].append({'candidate': 'S900', 'decision': 'inventory', 'reason': 'ok'})
+        check('S900: the inventory reason' in run_validator(rep, cands=cands, repo=root), 'validator: an inventory reason must say why too')
+
+
+def no_home_paths_in_outputs() -> None:
+    st, _ = scan_tree(lambda root: write(root, {'tool.py': 'print("hi")\n'}))
+    check(st.get('repo') == 'repo', f'scan: a repository given by absolute path is recorded by name, never by the auditor\'s path (got {st.get("repo")!r})')
+    st, _ = scan_tree(lambda root: write(root, {'tool.py': 'print("hi")\n'}), absolute=False)
+    check(st.get('repo') == 'repo', 'scan: a relative repository path is recorded as given')
+    rep = base()
+    rep['scope']['repo'] = 'C:/Users/jdoe/src/clinic-signup'
+    out = run_validator(rep)
+    check('home-directory path' in out and 'audit.json' in out, f'validator: a home-directory path naming an account in the audit is rejected ({out.strip()[-300:]})')
+    check('jdoe' not in out, 'validator: the message does not repeat the account name')
+    out = run_validator(base(), evidence={'notes.txt': 'scanned from /home/jdoe/src/clinic\n'})
+    check('notes.txt' in out and 'home-directory path' in out, 'validator: evidence files are checked for home paths too')
+    with tempfile.TemporaryDirectory() as d:
+        proj = Path(d) / 'proj'
+        (proj / 'run').mkdir(parents=True)
+        sp = proj / 'run' / 'static.json'
+        sp.write_text((SKILL / 'examples' / 'run' / 'static.json').read_text(encoding='utf-8'), encoding='utf-8')
+        r = subprocess.run([sys.executable, str(HERE / 'merge_candidates.py'), '--static', str(sp), '--regions', 'AU,EU',
+                            '--run-status-reason', 'not run', '--out', str(proj / 'run' / 'candidates.json')], capture_output=True, text=True, cwd=d)
+        c = json.loads((proj / 'run' / 'candidates.json').read_text(encoding='utf-8'))
+        check(r.returncode == 0 and c['static'] == 'proj/run/static.json',
+              f'merge: an input given by absolute path is recorded relative to the working directory (else to the candidates file), never absolute (got {c.get("static")!r})')
+
+
+def disclaimer_plural() -> None:
+    rep = base()
+    rep['headline']['disclaimer'] = vpa.PROV['disclaimer'].replace("the app is or isn't", "the tools are or aren't")
+    out = run_validator(rep)
+    check('disclaimer' not in out, f'validator: a plural subject takes "are or aren\'t" ({out.strip()[-200:]})')
+    rep['headline']['disclaimer'] = vpa.PROV['disclaimer'].replace("the app is or isn't", "the tool are or aren't")
+    check('disclaimer' in run_validator(rep), 'validator: a singular subject does not')
+
+
+def brief_names_findings() -> None:
+    r = subprocess.run([sys.executable, str(HERE / 'render_report.py'), str(BASE), '--brief', '--color', 'never'], capture_output=True, text=True)
+    rep = json.loads(BASE.read_text(encoding='utf-8'))
+    f = rep['findings'][0]
+    check(f['title'] in r.stdout, 'render --brief: each finding is listed with its title')
+    where = (f['evidence'].get('code_path') or [{}])[0]
+    check(bool(where) and f'{where.get("file")}:{where.get("line")}' in r.stdout, 'render --brief: and with where it is (file and line)')
+    check('## Limitations' in r.stdout and rep['limitations'][0][:60] in r.stdout, 'render --brief: the limitations are shown')
+
+
+def example_schema_version() -> None:
+    latest = json.loads((SKILL / 'schemas' / 'privacy_audit.schema.json').read_text(encoding='utf-8'))['properties']['schema_version']['enum'][-1]
+    for name in ('privacy_audit.example.json', 'privacy_audit.static-only.example.json'):
+        got = json.loads((SKILL / 'examples' / name).read_text(encoding='utf-8'))['schema_version']
+        check(got == latest, f'examples/{name}: schema_version {got} is the schema\'s current one ({latest})')
+    check(f'schema_version` is `{latest}`' in (SKILL / 'SKILL.md').read_text(encoding='utf-8'), 'SKILL.md: states the current schema version')
+
+
 def main() -> int:
-    for t in (tool_values_not_identifiers, generic_names_need_context,strings_not_sinks, home_path_in_artifact, outbound_opener_constants, fixtures_excluded,
+    for t in (escaped_placeholder, archives_and_logs, identifier_writes_linked, rust_reads, loopback_not_unresolved, script_languages_named,
+              artifact_citations, dismissal_reasons, no_home_paths_in_outputs, disclaimer_plural, brief_names_findings, example_schema_version,
+              tool_values_not_identifiers, generic_names_need_context,strings_not_sinks, home_path_in_artifact, outbound_opener_constants, fixtures_excluded,
               fixture_dismissal, disclaimer_subject, recompute_elsewhere, copies_grouped,
               literal_ranges, fetch_lists_checks_before_write,rust_dominant_by_lines, host_and_account_names, outbound_constant, subtitles_not_title, regex_literal_not_sink,
               minified_speed, by_the_code_statement, artifact_finding, go_scan, unanalysed_language, template_loaders, fonts_not_tracker, undeclared_without_canary, telemetry_before_consent, declared_must_name, inventory_and_headline,
