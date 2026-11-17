@@ -1380,6 +1380,18 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
                         f'(data_dir_code): {", ".join(sorted(fs)[:3])}{", ..." if len(fs) > 3 else ""}. A module of records '
                         'written as code is listed and scanned; personal data in other product code belongs to '
                         'code-security-auditor and privacy-flow-auditor')
+    # a tree named with --data-dir or --evidence-dir that yields nothing: said, with what it held, never silent
+    fixture_trees = {f['dir'] for f in fdirs}
+    for d in sorted(DATA_DIRS - fixture_trees):
+        if any(i['path'].startswith(d + '/') for i in items) or d in served or d in code_under:
+            continue
+        there = [f for f in all_files if f.startswith(d + '/')]
+        if not (root / d).is_dir():
+            warnings.append(f'{d}/ (named with --data-dir or --evidence-dir) does not exist: nothing was read there')
+        else:
+            warnings.append(f'{d}/ (named with --data-dir or --evidence-dir) gave no data source: {len(there)} file(s) there'
+                            + (f' ({", ".join(PurePosixPath(f).name for f in there[:5])}{", ..." if len(there) > 5 else ""}), '
+                               'documentation and code are not test data' if there else ', it is empty'))
     extra = {}
     if served:
         extra['served_dirs'] = served

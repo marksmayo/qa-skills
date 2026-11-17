@@ -1366,6 +1366,21 @@ GROUPS: list = [long_line_is_linear, archives_and_logs, local_path_false_positiv
                 rust_tests_modelled, required_limitations, residue_directories]
 
 
+def empty_data_dir() -> None:
+    """A --data-dir (or --evidence-dir) that yields no source says so, naming what it held, instead of printing nothing."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, {'tests/test_x.py': 'def test_x():\n    assert True\n', 'media/README.md': '# Media\n\nNot committed.\n'})
+        invd = inv.build(root, None, {}, ['media', 'nowhere'])
+    ws = invd.get('warnings', [])
+    check(any(w.startswith('media/') and 'no data source' in w and 'README.md' in w for w in ws),
+          f'inventory: a --data-dir holding only documentation is named in a warning (got {ws})')
+    check(any(w.startswith('nowhere/') and 'does not exist' in w for w in ws), 'inventory: a --data-dir that does not exist is named')
+
+
+GROUPS.append(empty_data_dir)
+
+
 def main(argv=None) -> int:
     """self_test.py [group ...]: all groups, or only the named ones."""
     names = list(sys.argv[1:] if argv is None else argv)
