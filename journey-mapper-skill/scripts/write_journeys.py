@@ -18,6 +18,7 @@ import argparse, json, re, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from journey_md import ORDER, JourneyError, is_journey_file, load, render  # noqa: E402
 
 PRIORITY_ORDER = {'P1': 0, 'P2': 1, 'P3': 2}

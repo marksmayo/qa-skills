@@ -49,6 +49,7 @@ GH_API = 'https://api.github.com'
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 # SafeRedirect (shared/scripts/safe_http.py): credentials are sent only to the origin they were given for; an https
 # URL is never followed to plain http except on loopback. OPENER is module-level so the self-test can swap it.
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from safe_http import CREDENTIAL_HEADERS, SafeRedirect, _loopback, origin as _origin  # noqa: E402,F401
 OPENER = urllib.request.build_opener(SafeRedirect)
 

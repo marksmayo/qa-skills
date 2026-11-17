@@ -12,6 +12,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from watch import draft_md  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from term_safe import load_json  # noqa: E402  (report strings lose terminal control characters)

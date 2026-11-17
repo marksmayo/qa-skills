@@ -15,6 +15,7 @@ import argparse, json, re, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import fetch_ticket, hash_tests  # noqa: E402
 
 REQUIRED = ['metadata', 'conventions', 'requirements', 'open_questions', 'manual_checks', 'traceability', 'runs',

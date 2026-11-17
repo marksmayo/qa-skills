@@ -50,6 +50,7 @@ from urllib.parse import urljoin, urlsplit
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import schema_check  # noqa: E402
 
 CACHE_HEADERS = ('age', 'x-vercel-cache', 'x-vercel-id', 'cf-cache-status', 'cf-ray', 'x-cache', 'x-cache-hits', 'via', 'x-served-by',

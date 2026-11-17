@@ -19,6 +19,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from detect import evaluate, step  # noqa: E402
 from sources import Sources, parse  # noqa: E402
 from watch import metric_eval, sentry_eval  # noqa: E402

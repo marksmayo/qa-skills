@@ -76,6 +76,7 @@ from urllib.parse import urlparse
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import png_io  # noqa: E402
 
 WEIGHT = {'Critical': 4, 'High': 3, 'Medium': 2, 'Low': 1}

@@ -30,6 +30,7 @@ from urllib.parse import urlsplit
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from classify import derive_baselines  # noqa: E402
 
 SKILL_VERSION = '1.4.0'

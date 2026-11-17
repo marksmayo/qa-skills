@@ -35,6 +35,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import schema_check  # noqa: E402
 from classify import derive_baselines  # noqa: E402
 from build_report import confidence, faults_split, scrub  # noqa: E402

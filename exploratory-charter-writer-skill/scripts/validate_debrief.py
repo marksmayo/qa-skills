@@ -17,6 +17,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import parse_notes, schema_check  # noqa: E402
 
 SCHEMA = json.loads((HERE.parent / 'schemas' / 'debrief.schema.json').read_text(encoding='utf-8'))

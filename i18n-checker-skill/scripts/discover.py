@@ -31,6 +31,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import parse_resources as pr  # noqa: E402
 import repo_walk  # noqa: E402
 import next_app  # noqa: E402

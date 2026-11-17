@@ -18,6 +18,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from adb_device import Device, PendingRestore, short_reason  # noqa: E402
 from explore import Explorer, now  # noqa: E402
 

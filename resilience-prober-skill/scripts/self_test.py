@@ -17,6 +17,7 @@ Exit 0 when every check passes, 1 otherwise.
 from __future__ import annotations
 import json, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 
 HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent

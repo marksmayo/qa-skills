@@ -33,6 +33,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from parse_results import (LT_ASSERT, LT_DOC, LT_PANIC_AT, LT_RUNNING, NT_LINE, libtest_target, nextest_target,  # noqa: E402
                            parse_junit, parse_libtest, parse_nextest_output)
 

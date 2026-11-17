@@ -31,6 +31,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import repo_walk  # noqa: E402
 import jsx_text  # noqa: E402
 LETTERS = re.compile(r'[^\W\d_]{2}')     # two letters in any script

@@ -67,6 +67,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import browserslist_lite as bl  # noqa: E402
 import lang_census  # noqa: E402  (shared copy; edit shared/scripts/lang_census.py)
 import next_app  # noqa: E402  (shared copy; edit shared/scripts/next_app.py)

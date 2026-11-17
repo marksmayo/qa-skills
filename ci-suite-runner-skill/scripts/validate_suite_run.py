@@ -19,6 +19,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from parse_results import parse_junit  # noqa: E402
 from run_suite import is_loopback, tags_ok  # noqa: E402
 

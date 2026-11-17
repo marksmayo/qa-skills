@@ -17,6 +17,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from orchestrate import Refused, evaluate_criteria, trusted_config, trusted_root, validator_command  # noqa: E402
 
 BANNED = re.compile(r'(?i)\b(qa (is )?(complete|done|signed off)|release (is )?approved by qa|fully tested|qa approved the release|all quality gates passed)\b')

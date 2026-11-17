@@ -19,6 +19,7 @@ import argparse, json, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import journey_md  # noqa: E402
 
 RANK = {'none': 0, 'partial': 1, 'automated': 2}

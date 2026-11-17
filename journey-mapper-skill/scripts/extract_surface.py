@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from py_routes import scan_python, blank_strings          # noqa: E402
 import py_routes, py_extras                                 # noqa: E402  (mounts, conditions, CLIs, PHP, dist/)
 import next_app                                            # noqa: E402  (Next.js file conventions, scripts, workers)
