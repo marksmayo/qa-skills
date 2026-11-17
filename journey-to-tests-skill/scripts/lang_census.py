@@ -1026,6 +1026,12 @@ def language_coverage(c: dict, supported, tool: str = 'this script', what: str =
     files): the templates are the browser-facing code it reads, and the server language is outside its scope rather
     than unanalysed product UI. That case is status 'partial' with `server_rendered` and a `note` to carry into the
     report instead of a warning."""
+    # the tool may be one script ('scan_rs.py', 'this script') or several ("this report's mutation engines")
+    last = tool.split()[-1] if tool.split() else ''
+    if last.endswith('s') and not last.endswith('ss') and '.' not in last:
+        does, counts, reads, it, its = 'do', 'count', 'read', 'they', 'their'
+    else:
+        does, counts, reads, it, its = 'does', 'counts', 'reads', 'it', 'its'
     supported = set(supported)
     reads_templates = reads_templates or 'HTML' in supported
     supported.discard('HTML')
@@ -1130,8 +1136,9 @@ def language_coverage(c: dict, supported, tool: str = 'this script', what: str =
             out.update({'status': 'unsupported_dominant', 'dominant_unsupported_language': sd[0],
                         'dominant_unsupported_files': scr[sd[0]], 'dominant_unsupported_lines': sd[1],
                         'decided_by': 'lines', 'supported_lines': 0, 'unsupported_lines': sum(scr_lines.values())})
-            out['warning'] = (f'This repository holds no source file in a language {tool} counts, only {sd[0]} scripts '
-                              f'({sd[1]} lines in {scr[sd[0]]} file(s)), which it does not analyse: its output is NOT a '
+            out['warning'] = (f'This repository holds no source file in a language {tool} {counts}, only {sd[0]} '
+                              f'scripts ({sd[1]} lines in {scr[sd[0]]} file(s)), which {it} {does} not analyse: {its} '
+                              f'output is NOT a '
                               f'{what} of this repository. Record {sd[0]} as not assessed.' + hint)
         return out
     if uns:
@@ -1170,7 +1177,7 @@ def language_coverage(c: dict, supported, tool: str = 'this script', what: str =
             out['server_rendered'] = sr
             out['note'] = (f'This repository is a server-rendered {sr["framework"]} web app: its {sr["templates"]} '
                            f'template file(s) ({", ".join(sr["template_dirs"][:3])}) are the browser-facing code, which '
-                           f'{tool} reads. Its {n} {lang} file(s) are the server that renders them, not browser code; '
+                           f'{tool} {reads}. Its {n} {lang} file(s) are the server that renders them, not browser code; '
                            f'record that server code as outside this {what}, not as the UI left unread.')
         elif dominates:
             out['status'] = 'unsupported_dominant'
@@ -1178,9 +1185,9 @@ def language_coverage(c: dict, supported, tool: str = 'this script', what: str =
             if by_lines:
                 out['dominant_unsupported_lines'] = n_l
             out['warning'] = (f'This repository is predominantly {lang} ({size}, vendored and third-party '
-                              f'trees excluded), which {tool} does not analyse: it covers '
+                              f'trees excluded), which {tool} {does} not analyse: {it} cover{"" if it == "they" else "s"} '
                               f'{", ".join(sorted(supported)) or "no language"} only. {n_sup} supported source '
-                              f'file(s) were found, so its output covers that minority and is NOT a {what} of this '
+                              f'file(s) were found, so {its} output covers that minority and is NOT a {what} of this '
                               f'repository\'s {lang} code. Do not present it as one; record {lang} as not assessed.'
                               + hint)
         else:
@@ -1196,8 +1203,9 @@ def language_coverage(c: dict, supported, tool: str = 'this script', what: str =
                         'unsupported_lines': product_lines - sup_l + sum(scr_lines.values())})
             out['warning'] = (f'This repository is predominantly {sd[0]} scripts ({sd[1]} lines in {scr[sd[0]]} '
                               f'file(s) outside test and tooling folders, against {product_lines} product line(s) in '
-                              f'every counted language), which {tool} does not analyse: it covers '
-                              f'{", ".join(sorted(supported)) or "no language"} only, so its output is NOT a {what} '
+                              f'every counted language), which {tool} {does} not analyse: {it} '
+                              f'cover{"" if it == "they" else "s"} '
+                              f'{", ".join(sorted(supported)) or "no language"} only, so {its} output is NOT a {what} '
                               f'of this repository\'s {sd[0]} code. Do not present it as one; record {sd[0]} as not '
                               f'assessed.' + hint)
     return out
@@ -1452,6 +1460,13 @@ def _line_checks(tree) -> list:
     checks.append(('a repository of shell scripts alone is unsupported_dominant with a warning, never no_source',
                    cov.get('status') == 'unsupported_dominant' and 'Shell' in (cov.get('warning') or '')
                    and cov.get('dominant_unsupported_language') == 'Shell', cov))
+    plural = language_coverage(so, {'Python'}, tool="this report's mutation engines")
+    checks.append(('a plural tool name takes a plural verb in the warning, a singular one keeps its own',
+                   'engines count, ' in (plural.get('warning') or '')
+                   and 'they do not analyse: their output' in (plural.get('warning') or '')
+                   and 'scan_py.py counts, ' in (cov.get('warning') or '')
+                   and 'it does not analyse: its output' in (cov.get('warning') or ''),
+                   (plural.get('warning') or '')[:160]))
     sd = census(tree({'install.sh': 'echo step\n' * 600, 'helper.py': py_body * 5}))
     cov = language_coverage(sd, {'Python'}, tool='scan_py.py')
     checks.append(('shell scripts that outweigh the analysed product code are unsupported_dominant',
