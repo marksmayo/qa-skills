@@ -74,13 +74,21 @@ python scripts/render_report.py examples/triage.example.json
   time is recorded as queue time (`queued_for_s`), and a run of only such jobs is `not_run`. The history
   covers the branch, the default branch (whose newest green run starts the range when the branch has none,
   `--default-branch` for Azure DevOps) and the runs of the same commit, each query bounded and recorded
-  (`history_query`).
+  (`history_query`). On a live GitHub fetch the default branch is read from the repository (one GET); when it
+  cannot be read it is recorded as unknown and the script says to give `--default-branch`. A run with no job also
+  gets the commit's other workflows (`same_commit_runs`).
+- `scripts/extract_failures.py` also reads rustfmt and rustc paths as Windows runners print them, panic lines with a
+  thread id and panics printed under `--nocapture`; groups one defect seen on several jobs (`groups`); and lists
+  the steps and jobs a failure kept from running (`checks_not_run`).
+- `scripts/validate_triage.py` applies `schemas/triage.schema.json` first, then the run: one draft per failure
+  group, one owning change across a group's legs, the skipped checks named, the evidence checks recomputed.
 - `scripts/extract_failures.py`, `scripts/rerun.py`, `scripts/owning_change.py`, `scripts/classify.py`
 - `scripts/validate_triage.py`, `scripts/render_report.py`
 - `scripts/self_test.py`: loopback redirect and download-failure checks, log extraction (including Go
   test, build, race, lint and format output, and `cargo test`, nextest, Rust compile, clippy, rustfmt and
   coverage-gate output), Go signatures, a synthetic GitHub recording of a Rust workspace's checks, a job
-  that never started (billing annotation, queue time, a later pass on the same commit), `files_written`, a run with no job, agent-named tests, local
+  that never started (billing annotation, queue time, a later pass on the same commit), `files_written`, a run with no job (and its sibling workflows), one
+  defect on three matrix legs (one group, one draft, one owner, skipped checks, the schema, `--brief`), agent-named tests, local
   repeat runs, the owning change with and without a last green run, and a synthetic run through the whole
   pipeline with seeded violations (`python scripts/self_test.py`)
 - `<run>/local_runs.json` (optional, written by the agent): local repeat runs of a failing test on the

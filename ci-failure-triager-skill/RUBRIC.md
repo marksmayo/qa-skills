@@ -45,7 +45,9 @@ Commits in `last_green..commit` (the last green run of the same workflow on the 
 none, the newest on the default branch before the run, recorded as `range.last_green_branch` and
 `range.basis`), scored by shared files: traceback frame 3; test file, imported module,
 data file the test reads, a Go test's own package source files 2 each. No last green run: no range and
-`not_identified`, unless `--max-commits N` bounds a search (recorded as `range.bounded`). Highest score wins; ties go to the most recent and are listed. Nothing
+`not_identified`, unless `--max-commits N` bounds a search (recorded as `range.bounded`). Highest score wins; ties go to the most recent and are listed (`ties`), and the report names them beside the owner: the newest of the
+tied commits may be a follow-up (a reformat) to the one that made the change, so read both. The legs of one failure group have one
+owner: a member left `not_identified` beside a member that names a commit fails validation. Nothing
 shared: `not_identified`. In a monorepo only commits touching the failing package count. A failing
 or last green commit missing from the checkout gives `not_identified` with the fetch command, and the
 repository check below scores 0.
@@ -97,3 +99,17 @@ A step failure the extractor read no test for may be given a test by the agent (
 A log or artifact that could not be downloaded is listed in `run.json` `fetch_problems` with its status
 (`unavailable`: 404/410, expired or deleted; `fetch_failed`: 401/403 or network; `skipped`: over the size
 cap). Each must be named in the triage's limitations.
+
+## Failure groups and checks that never ran
+
+One defect on several jobs (the legs of a matrix) is one failure group: every member is triaged with its own
+evidence, and the group gets one draft (`covers` lists the other members). `summary.defects_drafted` counts drafts,
+so it counts defects, not jobs. Steps skipped after a job's first failed step, and skipped jobs, are
+`checks_not_run`: no result on this commit, named in the triage, never counted as passed or failed.
+
+## Evidence checks
+
+`summary.evidence_checks` names the five checks behind the evidence completeness: `logs`, `test_results`, `rerun`,
+`last_green`, `repository`. Each is true, false or `not_applicable` (nothing to check, such as test results when no
+test step failed; it earns nothing, as before). The score is the share that are true, so a format failure with a
+decisive log (logs true, test results not applicable) reads differently from a job with no log at all.
