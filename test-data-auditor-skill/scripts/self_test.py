@@ -30,6 +30,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import inventory as inv, residue, scan_data, schema_drift, validate_test_data_report as vtd  # noqa: E402
 
 FAILS: list[str] = []

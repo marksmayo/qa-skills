@@ -50,6 +50,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import archive_text, datafiles, detect_conventions, jsparse, py_loads, repo_layout  # noqa: E402
 
 SKIP_DIRS = detect_conventions.SKIP_DIRS | {'.git', '.turbo', '.cache', '.venv', 'venv', '__pycache__'}

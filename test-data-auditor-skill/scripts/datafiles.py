@@ -18,6 +18,7 @@ A record is {"source", "kind" (object|row|dict_literal), "hint" (table or key it
 from __future__ import annotations
 import ast, csv, io, json, re, sys
 from pathlib import Path
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 
 DATA_EXT = {'.json': 'json', '.yaml': 'yaml', '.yml': 'yaml', '.csv': 'csv', '.tsv': 'csv', '.sql': 'sql', '.py': 'python',
             # text read line by line (no records)
