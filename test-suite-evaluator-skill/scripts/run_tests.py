@@ -179,6 +179,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import parse_results  # noqa: E402
 
 SKIP_DIRS = {'.git', '.hg', '.svn', 'node_modules', '__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache',

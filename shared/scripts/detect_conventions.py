@@ -68,6 +68,7 @@ SKIP_DIRS = {'.git', 'node_modules', 'vendor', 'dist', 'build', 'out', 'target',
 # Folders named like build output are decided by evidence (lang_census.BuildEvidence: gitignored, a build config or
 # minified bundles -> build output; served by the app or git-tracked and hand-written -> source), never by name alone.
 BUILD_NAMES = {'dist', 'build', 'out', 'obj'}
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 try:   # shipped next to this script in every skill that carries detect_conventions.py
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import lang_census as _lc   # noqa: E402

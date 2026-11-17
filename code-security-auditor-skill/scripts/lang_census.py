@@ -94,6 +94,7 @@ from __future__ import annotations
 import argparse, json, os, re, shutil, sys, tempfile
 from collections import Counter
 from pathlib import Path, PurePosixPath
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 
 LANG_BY_EXT = {
     '.py': 'Python', '.pyi': 'Python',

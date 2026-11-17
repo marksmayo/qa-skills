@@ -56,6 +56,7 @@ import argparse, hashlib, json, os, re, sys
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 
 EXCERPT = 600
 ASSERTION_RX = re.compile(r'AssertionError|AssertError|assert\s|expect\(|Expected|expected .* (to|but)|toBe|toEqual|toHave|'

@@ -20,6 +20,7 @@ Used by list_interfaces.py (and, as an identical copy, by the journey mapper's e
 from __future__ import annotations
 import ast, json, re, sys
 from pathlib import Path, PurePosixPath
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 
 BUILD_DIRS = ('dist', 'build', 'out')
 
