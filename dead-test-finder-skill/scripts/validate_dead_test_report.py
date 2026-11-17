@@ -113,14 +113,39 @@ def fill(rep: dict) -> None:
         f['priority'] = priority(f)
 
 
+def static_ids(ev: dict) -> set[str]:
+    """Definitions of languages the scan read statically only (candidates.json `static_only`: Rust), which nothing
+    lists or neutralises."""
+    langs = {s['language'].lower() for s in ev['candidates'].get('static_only') or []}
+    return {d['id'] for d in ev['candidates']['definitions'] if str(d.get('lang', '')).lower() in langs}
+
+
+def language_share(ev: dict) -> float:
+    """The share of the repository's product code in languages the scan read: 1.0 unless the scan warned that an
+    unread language dominates, then supported / (supported + unsupported), by lines (or files when the census
+    decided by files)."""
+    cov = ev['candidates'].get('language_coverage') or {}
+    if cov.get('status') != 'unsupported_dominant':
+        return 1.0
+    key = 'lines' if cov.get('decided_by') == 'lines' else 'files'
+    sup, uns = cov.get(f'supported_{key}') or 0, cov.get(f'unsupported_{key}') or 0
+    return sup / (sup + uns) if sup + uns else 0.0
+
+
 def completeness(rep: dict, ev: dict) -> float:
+    """The mean of the collected share, the neutralised share of flagged candidates and the checked-ticket share,
+    multiplied by the share of tests the skill can list and run (not those of a language scanned statically only)
+    and by the share of product code in languages the scan read."""
     # per test, not per package: a package whose list failed for most of its tests (or a runner with no list command)
     # leaves those tests not_assessed, and they count against completeness however many packages did list
     col = ev['collection']
-    defined = col.get('defined') or 0
-    collected = (defined - len(col.get('not_assessed', []))) / defined if defined else 1.0
-    neut_cands = [c for c in ev['candidates']['candidates']
-                  if c['category'] in ('no_assertion', 'tautology', 'unreached_assertion', 'swallowed_failure', 'async_not_awaited', 'mock_only')]
+    static = static_ids(ev)
+    total = len(ev['candidates']['definitions'])
+    defined = (col.get('defined') or 0) - len(static)
+    unassessed = [t for t in col.get('not_assessed', []) if t not in static]
+    collected = (defined - len(unassessed)) / defined if defined > 0 else 1.0
+    neut_cands = [c for c in ev['candidates']['candidates'] if not set(c['test_ids']) & static and
+                  c['category'] in ('no_assertion', 'tautology', 'unreached_assertion', 'swallowed_failure', 'async_not_awaited', 'mock_only')]
     done = {def_id(ev, r['test_id']) for r in ev['neutralisations']['results'] if not r.get('patch') and r['outcome'] in NEUTRALISED}
     noth = {def_id(ev, r['test_id']) for r in ev['neutralisations']['results'] if not r.get('patch') and r['outcome'] == 'not_run'
             and r.get('note')}
@@ -128,7 +153,8 @@ def completeness(rep: dict, ev: dict) -> float:
     skips = (ev.get('skips') or {}).get('skips', [])
     keyed = [s for s in skips if s.get('ticket')]
     tick = len([s for s in keyed if s['ticket']['checked']]) / len(keyed) if keyed else 1.0
-    return round((collected + neut + tick) / 3, 4)
+    runnable = (total - len(static)) / total if total else 1.0
+    return round((collected + neut + tick) / 3 * runnable * language_share(ev), 4)
 
 
 def summary(rep: dict, ev: dict) -> dict:
@@ -427,6 +453,7 @@ def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
                 problem = patch_problem((base / pp).read_text(encoding='utf-8'), repo)
                 if problem:
                     errs.append(f'{f["id"]}: patch {pp} no longer applies ({problem})')
+    errs += coverage_limitation_errors(rep, ev)
     # text
     texts = [('summary.headline', rep['summary'].get('headline', ''))] + [(f'limitations[{i}]', t) for i, t in enumerate(rep['limitations'])] + \
         [(f'{f["id"]}.why', f['why']) for f in rep['findings']] + [(f'{f["id"]}.proposal', f['proposal']['rationale']) for f in rep['findings']]
@@ -445,6 +472,26 @@ def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
             errs.append(f'summary.{k}: {rep["summary"].get(k)!r} but computed {v!r} (run --write-summary)')
     if any(f['priority'] == 'P0' for f in rep['findings']) and 'P0' not in rep['summary'].get('headline', ''):
         errs.append('summary.headline: name the P0 findings')
+    return errs
+
+
+def coverage_limitation_errors(rep: dict, ev: dict) -> list[str]:
+    """What the scan could not read or run must reach the report: when scan_tests.py warned that an unread language
+    dominates, a limitation names that language; when a language's tests were scanned statically only (Rust), a
+    limitation names it and says they were not neutralised (or scanned statically)."""
+    errs = []
+    lims = ' '.join(rep.get('limitations') or [])
+    cov = ev['candidates'].get('language_coverage') or {}
+    lang = cov.get('dominant_unsupported_language') or cov.get('dominant')
+    if cov.get('status') == 'unsupported_dominant' and lang and not re.search(rf'\b{re.escape(lang)}\b', lims):
+        errs.append(f'limitations: the scan warned that {lang}, the main language, was not analysed; say so in the '
+                    f'limitations (and in the headline if it matters), never present this as the whole repository')
+    for s in ev['candidates'].get('static_only') or []:
+        lang = s['language']
+        if not any(re.search(rf'\b{re.escape(lang)}\b', x) and re.search(r'static|neutralis|not (?:run|listed)', x, re.I)
+                   for x in rep.get('limitations') or []):
+            errs.append(f'limitations: the {s["tests"]} {lang} test(s) were scanned statically only; a limitation must '
+                        f'name {lang} and say they were not listed or neutralised')
     return errs
 
 

@@ -13,10 +13,18 @@ the nearest pytest configuration (benchmarks/pytest.ini with bench_*.py), and sc
 (detect_conventions self_tests: their tests are the functions the runner runs, framework and
 runner `selftest`). A test_*.py that product modules import is product code (`product_files`);
 fixture projects are left out unless --include-fixtures (`fixtures_excluded`). Every Python
-definition records its `runner` (pytest, selftest or unknown).
+definition records its `runner` (pytest, unittest, selftest or unknown): the area's runner comes
+from detect_conventions' python_runner (CI's test gate first) and is listed in `python_runners`.
+unittest.TestCase classes are tests whatever python_classes says; under unittest, module-level test
+functions, plain classes and files discovery never loads are never_runs candidates. Scripts a test
+loads by file path (py_loads.py) and what same-file helpers reach are targets.
+
+Rust tests (a Cargo project, read with cargo_project.py by rust_tests.py) are definitions scanned
+statically: never listed or neutralised, recorded under `static_only` with a loud note.
 
 Candidate categories: never_runs (a file outside the collect patterns, a stray .only),
-no_assertion, tautology, unreached_assertion, swallowed_failure, async_not_awaited, mock_only,
+no_assertion, tautology, unreached_assertion, swallowed_failure, async_not_awaited, mock_only (also a
+test whose only checks are on a mock's call record: assert_not_called, assert_called*, call_count),
 skipped and duplicate (normalised AST similarity >= the threshold in data/rules.json, within one
 package, and for Python with the same literal values: same-shape tests with different values are
 input cases, counted in `near_duplicates` rather than flagged). Each candidate cites the test ids,
@@ -30,7 +38,7 @@ from pathlib import Path, PurePosixPath
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
-import detect_conventions, diff_scope, go_tests, lang_census, repo_layout  # noqa: E402
+import detect_conventions, diff_scope, go_tests, lang_census, py_loads, repo_layout  # noqa: E402
 
 RULES = json.loads((HERE.parent / 'data' / 'rules.json').read_text(encoding='utf-8'))
 PY, JS = RULES['python'], RULES['javascript']
@@ -376,8 +384,14 @@ def returned_records(fn: ast.AST) -> set[int]:
 
 
 class PyScanner:
-    def __init__(self, root: Path, rel: str, pkg: str, conf: dict, selftest: dict | None = None):
+    def __init__(self, root: Path, rel: str, pkg: str, conf: dict, selftest: dict | None = None,
+                 runner: dict | None = None):
         self.root, self.rel, self.pkg, self.conf = root, rel, pkg, conf
+        # the area's Python runner ({runner: unittest, start, pattern, command, reason}) when it is not pytest
+        self.unit = runner if runner and runner.get('runner') == 'unittest' else None
+        self._testcases: set[str] | None = None
+        self._loaded: dict[str, str] | None = None
+        self._helper_calls: dict[str, list[str]] = {}
         self.text = (root / rel).read_text(encoding='utf-8', errors='replace')
         self.tree = ast.parse(self.text)
         self.imports = self.imported_names()
@@ -435,6 +449,115 @@ class PyScanner:
     def matches(self, name: str, pats: list[str]) -> bool:
         return any(fnmatch.fnmatch(name, p) for p in pats)
 
+    def testcases(self) -> set[str]:
+        """Names of the file's unittest.TestCase subclasses (detect_conventions.unittest_classes), read once and only
+        when a rule needs them."""
+        if self._testcases is None:
+            self._testcases = {c['name'] for c in detect_conventions.unittest_classes(self.text)}
+        return self._testcases
+
+    def plain_class(self, cls: ast.ClassDef, depth: int = 0) -> bool:
+        """cls is certainly no TestCase: it has no base, or only bases defined in this file that are plain too. A
+        base imported from elsewhere may be a TestCase, so such a class is never called plain."""
+        if cls.name in self.testcases() or depth > 5:
+            return False
+        local = {n.name: n for n in self.tree.body if isinstance(n, ast.ClassDef)}
+        for b in cls.bases:
+            if isinstance(b, ast.Name) and b.id == 'object':
+                continue
+            if not (isinstance(b, ast.Name) and b.id in local and self.plain_class(local[b.id], depth + 1)):
+                return False
+        return True
+
+    def subclassed(self, cls: ast.ClassDef) -> bool:
+        """cls is a base of another class of this file, or is named as a mixin or base (its tests run through the
+        TestCase classes that inherit them)."""
+        if re.search(r'Mixin|Base|Abstract|Common|Shared', cls.name):
+            return True
+        return any(isinstance(n, ast.ClassDef) and n is not cls and any(isinstance(b, ast.Name) and b.id == cls.name
+                                                                          for b in n.bases) for n in self.tree.body)
+
+    def unittest_file_reason(self) -> tuple[str, str, dict] | None:
+        """Why `python -m unittest discover` never loads this file: (rule, why, details), or None. Its name does not
+        match the pattern (-p, default test*.py), or a folder between the start directory (-s) and the file has no
+        __init__.py (discovery only descends into packages)."""
+        u = self.unit
+        name = PurePosixPath(self.rel).name
+        if not fnmatch.fnmatch(name, u['pattern']):
+            return ('file_pattern', f'{name} does not match the unittest discovery pattern {u["pattern"]!r} '
+                    f'({u["command"]}), so unittest never loads it', {'pattern': u['pattern']})
+        start = u.get('start')
+        if start is None:
+            return None
+        base = '' if start == '.' else start.rstrip('/') + '/'
+        if base and not self.rel.startswith(base):
+            return None                                 # outside the start directory: left to the collect step
+        parts = PurePosixPath(self.rel[len(base):]).parts[:-1]
+        for i in range(len(parts)):
+            folder = base + '/'.join(parts[:i + 1])
+            if not (self.root / folder / '__init__.py').is_file():
+                return ('not_a_package', f'{folder}/ has no __init__.py, and unittest discovery ({u["command"]}) only '
+                        f'descends into packages, so it never loads {name}', {'folder': folder})
+        return None
+
+    def loaded(self) -> dict[str, str]:
+        """{variable: script path} for the modules this file loads by file path (importlib's spec_from_file_location,
+        SourceFileLoader, runpy.run_path; a hyphenated script name too), from the shared py_loads. Read once, and only
+        for a file whose text can hold such a load."""
+        if self._loaded is None:
+            self._loaded = {}
+            if py_loads.may_load(self.text):
+                try:
+                    res = py_loads.script_loads(self.tree, self.rel, lambda p: (self.root / p).is_file())
+                except (ValueError, RecursionError):
+                    res = {'loads': []}
+                for ld in res.get('loads', []):
+                    if ld.get('via', '').startswith('import'):
+                        continue                        # an ordinary import through sys.path: named by its module
+                    for name in ld.get('bound') or []:
+                        self._loaded.setdefault(name, ld['path'])
+        return self._loaded
+
+    def direct_targets(self, node: ast.AST) -> list[str]:
+        """The product functions node calls: imported names, attributes of imported modules, and functions of a
+        script loaded by file path (`rates.main()`, `self.module.main()` -> `scripts/fetch-rates.py:main`)."""
+        out = []
+        loaded = self.loaded()
+        for n in ast.walk(node):
+            if isinstance(n, ast.Call):
+                f = n.func
+                if isinstance(f, ast.Name) and f.id in self.imports:
+                    out.append(self.imports[f.id])
+                elif isinstance(f, ast.Attribute):
+                    v = f.value
+                    if isinstance(v, ast.Name) and v.id in loaded:
+                        out.append(f'{loaded[v.id]}:{f.attr}')
+                    elif isinstance(v, ast.Name) and v.id in self.imports:
+                        out.append(f'{self.imports[v.id]}.{f.attr}')
+                    elif loaded and isinstance(v, ast.Attribute) and isinstance(v.value, ast.Name) and \
+                            v.value.id in ('self', 'cls') and v.attr in loaded:
+                        out.append(f'{loaded[v.attr]}:{f.attr}')
+        return out
+
+    def helper_targets(self, fn: ast.AST, depth: int = 0) -> list[str]:
+        """What the same-file helpers fn calls reach (`self.sample()`, `_build(x)`), two calls deep: a test that
+        reaches the product only through a helper still has targets."""
+        out = []
+        for n in ast.walk(fn):
+            if not isinstance(n, ast.Call):
+                continue
+            f = n.func
+            name = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) and \
+                isinstance(f.value, ast.Name) and f.value.id in ('self', 'cls') else None
+            if name is None or name not in self.helpers or name in self.recorders:
+                continue
+            if name not in self._helper_calls:
+                self._helper_calls[name] = []           # set first: a helper that calls itself stops here
+                h = self.helpers[name]
+                self._helper_calls[name] = self.direct_targets(h) + (self.helper_targets(h, depth + 1) if depth < 1 else [])
+            out += self._helper_calls[name]
+        return out
+
     def tests(self):
         """(test id, function node, class name) for every test-like function, collectable or not; for a script
         self-test, the functions its runner calls."""
@@ -460,6 +583,12 @@ class PyScanner:
                    f'{m["kind"]} skips every test in the module' + (f' ({m["condition"]})' if m['condition'] else '') +
                    f': {m["reason"] or "no reason given"}')
             add(cat, m['kind'], all_ids, m['line'], why, m)
+        unit_file = None
+        if self.unit is not None and self.selftest is None and all_ids:
+            unit_file = self.unittest_file_reason()
+            if unit_file is not None:                   # one candidate for the file, listing every test in it
+                add('never_runs', unit_file[0], all_ids, self.tests()[0][1].lineno, unit_file[1],
+                    {**unit_file[2], 'runner': 'unittest', 'command': self.unit['command']})
         for tid, fn, cls in self.tests():
             d = {'id': tid, 'file': self.rel, 'line': fn.lineno, 'name': fn.name, 'lang': 'python', 'package': self.pkg,
                  'calls': self.called_targets(fn)}
@@ -467,6 +596,21 @@ class PyScanner:
                 # run by the script's own runner, never by pytest (its check() records failures pytest never sees)
                 d.update(framework='selftest', runner='selftest', selftest_command=self.selftest['command'])
                 defs.append(d)
+                self.rules(tid, fn, add, cls)
+                continue
+            if self.unit is not None:
+                # the suite's runner is unittest (CI runs `python -m unittest`, or every test module is a TestCase
+                # module and nothing names pytest): only methods of TestCase classes in files discovery loads run
+                d['runner'] = 'unittest'
+                defs.append(d)
+                if unit_file is None and (cls is None or (self.plain_class(cls) and not self.subclassed(cls))):
+                    what = (f'{fn.name} is a module-level function' if cls is None else
+                            f'class {cls.name} is no unittest.TestCase')
+                    add('never_runs', 'not_a_testcase', [tid], fn.lineno,
+                        f'{what}, and the suite runs with unittest ({self.unit["command"]}; {self.unit["reason"]}), '
+                        'which only runs methods of unittest.TestCase classes: pytest would collect it, unittest never '
+                        'does' + ('' if cls is None else ' (unless another module subclasses it together with TestCase)'),
+                        {'runner': 'unittest', 'command': self.unit['command']})
                 self.rules(tid, fn, add, cls)
                 continue
             d['runner'] = 'pytest' if file_ok else 'unknown'
@@ -478,19 +622,17 @@ class PyScanner:
                 add('never_runs', 'file_pattern', [tid], fn.lineno,
                     f'{PurePosixPath(self.rel).name} does not match python_files {self.conf["python_files"]} '
                     f'({self.conf["source"]}), so pytest never collects it', {'python_files': self.conf['python_files']})
-            elif cls is not None and not self.matches(cls.name, self.conf['python_classes']):
-                add('never_runs', 'class_pattern', [tid], fn.lineno, f'class {cls.name} does not match python_classes', {})
+            elif cls is not None and not self.matches(cls.name, self.conf['python_classes']) and self.plain_class(cls):
+                # pytest collects every unittest.TestCase subclass whatever python_classes says, so only a class that
+                # is certainly no TestCase is a candidate
+                add('never_runs', 'class_pattern', [tid], fn.lineno,
+                    f'class {cls.name} does not match python_classes and is no unittest.TestCase', {})
             self.rules(tid, fn, add, cls)
 
     def called_targets(self, fn) -> list[str]:
-        out = []
-        for n in ast.walk(fn):
-            if isinstance(n, ast.Call):
-                f = n.func
-                if isinstance(f, ast.Name) and f.id in self.imports:
-                    out.append(self.imports[f.id])
-                elif isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id in self.imports:
-                    out.append(f'{self.imports[f.value.id]}.{f.attr}')
+        out = self.direct_targets(fn)
+        if self.helpers:
+            out += self.helper_targets(fn)
         # a self-test inside a product script (a --self-test flag, a self_test() function) checks that script's own
         # functions: they are its targets, as <module>.<function>
         if self.selftest is not None and PurePosixPath(self.rel).name not in detect_conventions.SELF_TEST_NAMES:
@@ -561,6 +703,21 @@ class PyScanner:
                 add('mock_only', 'subject_is_mocked', [tid], fn.lineno,
                     f'{fn.name} patches {", ".join(sorted(patched.values()))} and then asserts on that same function, so it '
                     'only checks the mock', {'patched': sorted(patched.values())})
+                return
+        # mock_only: every check is a call-record check on a mock (assert_not_called, assert_called_once_with,
+        # mock.call_count ...), so nothing is asserted about what the code under test returned or did
+        kinds = [mock_check(a) for a in asserts]
+        if all(kinds) and not any(isinstance(n, ast.Call) and call_name(n) in self.helpers and
+                                  asserts_in(self.helpers[call_name(n)], self.helpers, self.is_check) for n in body_nodes):
+            names = sorted({k[1] for k in kinds})
+            if all(k[0] == 'neg' for k in kinds):
+                add('mock_only', 'only_negative_mock_checks', [tid], asserts[0].lineno,
+                    f'{fn.name} checks only that a mock was not called ({", ".join(names)}): it asserts nothing about '
+                    'what the code did, and passes when the code under test does nothing at all', {'checks': names})
+            else:
+                add('mock_only', 'only_mock_call_checks', [tid], asserts[0].lineno,
+                    f'{fn.name} checks only calls on its mocks ({", ".join(names)}) and nothing about a result or an '
+                    'effect; neutralise the code under test to see whether those calls depend on it', {'checks': names})
 
     def skip_info(self, fn, cls=None):
         for d in list(fn.decorator_list) + (list(cls.decorator_list) if cls is not None else []):
@@ -628,6 +785,46 @@ class PyScanner:
                     visit(st.finalbody, guard)
         visit(self.tree.body, None)
         return out
+
+
+MOCK_NEG = {'assert_not_called', 'assert_not_awaited'}
+MOCK_POS = {'assert_called', 'assert_called_once', 'assert_called_with', 'assert_called_once_with', 'assert_any_call',
+            'assert_has_calls', 'assert_awaited', 'assert_awaited_once', 'assert_awaited_with', 'assert_awaited_once_with',
+            'assert_any_await', 'assert_has_awaits'}
+MOCK_ATTRS = {'called', 'call_count', 'call_args', 'call_args_list', 'mock_calls', 'await_count', 'await_args',
+              'await_args_list', 'method_calls'}
+
+
+def mock_check(a: ast.AST) -> tuple[str, str] | None:
+    """('neg' | 'pos', what) when a check only looks at a mock's call record: m.assert_not_called(),
+    assertFalse(m.called), `assert not m.called` and assertEqual(m.call_count, 0) are negative (they pass when nothing
+    ran at all); assert_called*, assert_awaited* and other uses of called / call_count / call_args are positive. None
+    for any other check."""
+    if isinstance(a, ast.Call):
+        name = call_name(a)
+        if name in MOCK_NEG:
+            return 'neg', name
+        if name in MOCK_POS:
+            return 'pos', name
+        if not ASSERT_CALL.match(name):
+            return None
+        args = list(a.args) + [k.value for k in a.keywords if k.arg != 'msg']
+        attrs = [x.attr for arg in args for x in ast.walk(arg) if isinstance(x, ast.Attribute) and x.attr in MOCK_ATTRS]
+        if not attrs:
+            return None
+        zero = any(isinstance(arg, ast.Constant) and (arg.value == 0 or arg.value is False) for arg in args)
+        return ('neg' if name == 'assertFalse' or (zero and name in ('assertEqual', 'assertEquals', 'assertIs')) else 'pos',
+                attrs[0])
+    if isinstance(a, ast.Assert):
+        t = a.test
+        attrs = [x.attr for x in ast.walk(t) if isinstance(x, ast.Attribute) and x.attr in MOCK_ATTRS]
+        if not attrs:
+            return None
+        neg = (isinstance(t, ast.UnaryOp) and isinstance(t.op, ast.Not)) or (
+            isinstance(t, ast.Compare) and isinstance(t.ops[0], (ast.Eq, ast.Is)) and
+            any(isinstance(c, ast.Constant) and (c.value == 0 or c.value is False) for c in t.comparators))
+        return ('neg' if neg else 'pos', attrs[0])
+    return None
 
 
 def loop_subjects(it: ast.AST) -> list[str]:
@@ -2090,7 +2287,9 @@ def scan(root: Path, extra_test_files: list[str] | None = None, include_fixtures
     roots = sorted({a['root'] for a in det['areas']}, key=len, reverse=True)
     pkg_of = lambda rel: next((r for r in roots if r != '.' and (rel == r or rel.startswith(r + '/'))), '.')  # noqa: E731
     cands, defs, notes = [], [], []
-    self_tests = {s['file']: s for s in det.get('self_tests', []) if not repo_layout.is_fixture(s['file'], fixtures)}
+    # the runner each area's Python tests really run with (CI's command first): unittest is not pytest
+    runners = {a['root']: python_runner_info(a['python_runner']) for a in det['areas'] if a.get('python_runner')}
+    self_tests ={s['file']: s for s in det.get('self_tests', []) if not repo_layout.is_fixture(s['file'], fixtures)}
     conf_of = lambda rel: pytest_config(root, PurePosixPath(rel).parent.as_posix())  # noqa: E731
     py_tests, cfg_dirs = [], set()
     for rel in files:
@@ -2139,7 +2338,7 @@ def scan(root: Path, extra_test_files: list[str] | None = None, include_fixtures
         if rel in py_tests:
             conf = conf_of(rel)
             try:
-                s = PyScanner(root, rel, pkg, conf, self_tests.get(rel))
+                s = PyScanner(root, rel, pkg, conf, self_tests.get(rel), runners.get(pkg))
             except SyntaxError as exc:
                 notes.append(f'{rel}: not parsed ({exc.msg})')
                 continue
@@ -2164,6 +2363,22 @@ def scan(root: Path, extra_test_files: list[str] | None = None, include_fixtures
             except (RecursionError, IndexError, ValueError) as exc:
                 notes.append(f'{rel}: not parsed ({exc!r}); its tests are missing from definitions')
     near = duplicates(pyscanners, adder(None), RULES['similarity_threshold'], js_bodies)
+    # Rust: listed and scanned statically through the shared cargo_project (only when the repository holds a Cargo
+    # project); never listed by a runner or neutralised, which the output says under static_only
+    static_only = []
+    if any(f.endswith('.rs') for f in files) and any(PurePosixPath(f).name == 'Cargo.toml' for f in files):
+        import rust_tests
+        kept_files = set(files)
+        try:
+            info = rust_tests.scan(root, det, adder, defs, skip=lambda rel: rel not in kept_files)
+        except (OSError, ValueError, KeyError, IndexError, RecursionError) as exc:
+            info = None
+            notes.append(f'Rust tests: not read ({exc!r}); they are missing from definitions')
+        if info:
+            static_only.append(info)
+            for d in defs:
+                if d['lang'] == 'rust':
+                    package_of[d['file']] = d['package']
     out = []
     for i, c in enumerate(sorted(cands, key=lambda c: (c['file'], c['line'], c['category'])), 1):
         out.append({'id': f'C{i}', **c})
@@ -2181,13 +2396,49 @@ def scan(root: Path, extra_test_files: list[str] | None = None, include_fixtures
                           **({'near_duplicates': near} if near else {})},
               'notes': notes + ([f'{near} pairs of same-shape tests in one package differ only in their literal values (input '
                                  'cases, worth parametrising); they are not duplicate candidates'] if near else [])}
-    cov = lang_census.language_coverage(cen, SCANNED_LANGS, tool='scan_tests.py', what='dead-test analysis')
+    used = {d['runner'] for d in defs if d.get('lang') == 'python' and d.get('runner')}
+    if runners and used - {'selftest'}:
+        result['python_runners'] = {r: v for r, v in sorted(runners.items())}
+    scanned = SCANNED_LANGS | {s['language'] for s in static_only}
+    cov = lang_census.language_coverage(cen, scanned, tool='scan_tests.py', what='dead-test analysis')
     if cen.get('excluded'):
         result['excluded_trees'] = [{'path': e['path'], 'reason': e['reason']} for e in cen['excluded']]
     if cov['status'] == 'unsupported_dominant':
         result['language_coverage'] = cov
         result['summary']['language_warning'] = cov['warning']
+    elif cov.get('notes'):
+        # languages, scripts and tooling folders the scan did not read although none of them dominates: for the
+        # report's limitations
+        result['language_notes'] = list(cov['notes'])
+    if static_only:
+        result['static_only'] = static_only
+        result['summary']['static_only_warning'] = '; '.join(
+            f'{s["tests"]} {s["language"]} test(s) were scanned statically only: none was listed by its runner or '
+            f'neutralised, so no {s["language"]} candidate is confirmed by a run and a {s["language"]} test the rules '
+            f'do not flag may still be unable to fail. Say so in the report\'s limitations' for s in static_only)
     return result
+
+
+def python_runner_info(pr: dict) -> dict:
+    """detect_conventions' python_runner for an area ({runner, reason, evidence, command}) with, for unittest, what
+    its command tells discovery: `start` (-s, default the current directory; None when the command names modules
+    instead of discovering), `pattern` (-p, default test*.py) and `top` (-t). `source` is ci when the command was
+    read from a CI file, inferred otherwise."""
+    out = {'runner': pr.get('runner'), 'reason': pr.get('reason'), 'evidence': list(pr.get('evidence') or []),
+           'command': pr.get('command'), 'source': 'ci' if str(pr.get('reason') or '').startswith('CI ') else 'inferred'}
+    if out['runner'] != 'unittest':
+        return out
+    cmd = out['command'] or ''
+
+    def opt(short: str, long: str) -> str | None:
+        m = re.search(rf'(?:\s{short}|\s--{long})[=\s]+(?:"([^"]+)"|\'([^\']+)\'|(\S+))', cmd)
+        return next((g for g in m.groups() if g), None) if m else None
+    tail = cmd.split('unittest', 1)[1] if 'unittest' in cmd else ''
+    names_modules = bool(re.match(r'\s+(?!discover\b)[\w./]+', re.sub(r'\s-[vqfbc]\b|\s--(?:verbose|quiet|failfast|buffer|catch|locals)\b', '', tail)))
+    start = opt('-s', 'start-directory')
+    out.update(start=None if names_modules else (start or '.').replace('\\', '/').rstrip('/').removeprefix('./') or '.',
+               pattern=opt('-p', 'pattern') or 'test*.py', top=opt('-t', 'top-level-directory'))
+    return out
 
 
 def main(argv=None) -> int:
@@ -2216,6 +2467,14 @@ def main(argv=None) -> int:
         print(guard['warning'], file=sys.stderr)
         print('=' * 78, file=sys.stderr)
     s = res['summary']
+    if s.get('static_only_warning'):
+        print('=' * 78, file=sys.stderr)
+        print('NOTE: scanned statically only - not listed by a runner, not neutralised.', file=sys.stderr)
+        print(s['static_only_warning'], file=sys.stderr)
+        print('=' * 78, file=sys.stderr)
+    for r, v in (res.get('python_runners') or {}).items():
+        if v.get('runner') == 'unittest':
+            print(f'{r}: Python tests run with unittest ({v["command"]}; {v["reason"]}), not pytest', file=sys.stderr)
     scope = ' (minority supported files only; see WARNING above)' if guard else ''
     print(f'{s["tests_defined"]} tests defined{scope}, {s["candidates"]} candidates: '
           + ', '.join(f'{v} {k}' for k, v in s['by_category'].items()) + f' -> {args.out}')

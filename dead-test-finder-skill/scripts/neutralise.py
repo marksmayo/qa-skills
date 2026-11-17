@@ -25,15 +25,21 @@ passed to run_tests.py (a fake DATABASE_URL for a setup file, the repo's `npm te
 --package-env PACKAGE:K=V adds variables for one package's runs only.
 
 Python tests run with the suite's own runner, the `runner` scan_tests.py recorded (--runner
-overrides it for the invocation): pytest, or a script's own self-test (run_tests.py --preset
-selftest with the script's command), never pytest for a self-test whose check() records failures
-pytest never sees. A self-test runs one test at a time: the script's other tests are silenced
+overrides it for the invocation): pytest, unittest (run_tests.py --preset unittest on the
+file::Class::method id, with discovery's start directory from the candidates' python_runners), or
+a script's own self-test (run_tests.py --preset selftest with the script's command), never pytest
+for a self-test whose check() records failures pytest never sees. Rust tests are not neutralised
+(not_run with the reason; scan_tests.py reads them statically only). A self-test runs one test at a time: the script's other tests are silenced
 (`return None`, listed in `silenced`) for its runs, its status is failed when any check line failed
 or the script exited non-zero (a crash before any check line too), errored when it could not start
 or timed out. A test no known runner runs (`runner: unknown`) is not_run with not_run_reason.
 Python targets are looked up from the package directory, then from the directories the test file
-puts on sys.path, its own directory and each parent (a self-test importing a sibling module); a
-target may also be a file, `scripts/pricing.py:fare`.
+(and the conftest.py files above it) put on sys.path, read with the shared py_loads.py
+(`Path(__file__).resolve().parents[1] / "scripts"` included), its own directory and each parent (a
+self-test importing a sibling module); a target may also be a file, `scripts/pricing.py:fare` (a
+script the test loads with spec_from_file_location gets such targets from scan_tests.py). A target
+not found behind a sys.path entry that cannot be worked out (os.getcwd(), the environment) says so
+with its line; a test none of whose targets ran is not_run with not_run_reason.
 
 The outcome is `passed_neutralised` or `failed_neutralised` only when the unchanged test passed
 and at least one neutralised (`return`) run ran it. When the unchanged test did not run (not
@@ -70,7 +76,7 @@ from pathlib import Path, PurePosixPath
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
-import collect_check, go_tests, run_tests, scan_tests, tree_guard, unified_diff  # noqa: E402
+import collect_check, go_tests, py_loads, run_tests, scan_tests, tree_guard, unified_diff  # noqa: E402
 
 MARK = 'neutralised by dead-test-finder'
 # Never copied into the scratch copy: VCS data, caches and installed dependencies. --copy-ignore adds more.
@@ -149,63 +155,42 @@ def py_target_file(pkg_dir: Path, dotted: str, bases: list[Path] | None = None) 
     return None
 
 
-def _path_value(node: ast.AST, names: dict, file: Path):
-    """The directory a sys.path expression names, for the shapes test files use: Path(__file__).resolve().parent,
-    .parent chains, / 'sub', os.path.dirname/abspath/join, str(...) and module-level names bound to those. None
-    when it is anything else."""
-    if isinstance(node, ast.Name):
-        if node.id == '__file__':
-            return file
-        return _path_value(names[node.id], names, file) if node.id in names else None
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value
-    if isinstance(node, ast.Attribute):
-        v = _path_value(node.value, names, file)
-        if isinstance(v, Path):
-            return v.parent if node.attr == 'parent' else v if node.attr in ('absolute',) else None
-        return None
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
-        a, b = _path_value(node.left, names, file), _path_value(node.right, names, file)
-        return a / b if isinstance(a, Path) and isinstance(b, str) else None
-    if isinstance(node, ast.Call):
-        fname = scan_tests.call_name(node)
-        if isinstance(node.func, ast.Attribute) and fname in ('resolve', 'absolute'):
-            return _path_value(node.func.value, names, file)
-        args = [_path_value(a, names, file) for a in node.args]
-        if fname in ('Path', 'PurePath', 'str', 'abspath', 'realpath', 'fspath') and len(args) == 1:
-            return Path(args[0]) if isinstance(args[0], (str, Path)) else None
-        if fname == 'dirname' and len(args) == 1 and isinstance(args[0], Path):
-            return args[0].parent
-        if fname == 'join' and args and isinstance(args[0], Path) and all(isinstance(a, str) for a in args[1:]):
-            return args[0].joinpath(*args[1:])
-    return None
-
-
 def py_search_bases(work: Path, test_file: Path) -> list[Path]:
-    """Where a test file's imports are found: the directories it puts on sys.path (sys.path.insert(0, str(HERE)),
-    HERE.parent / 'scripts'), its own directory (Python adds a script's directory; pytest's rootdir import mode its
-    first directory without __init__.py) and each parent up to the package directory."""
+    """Where a test file's imports are found: the directories it puts on sys.path, read with the shared py_loads
+    (`Path(__file__).resolve().parents[1] / "scripts"`, `.parent` chains, os.path.join/dirname, names bound to those,
+    and the folders a conftest.py above it adds), its own directory (Python adds a script's directory; pytest's
+    rootdir import mode its first directory without __init__.py) and each parent up to the package directory."""
+    return py_bases_info(work, test_file)[0]
+
+
+def py_bases_info(work: Path, test_file: Path) -> tuple[list[Path], list[int]]:
+    """(search bases, lines of sys.path changes whose folder could not be worked out, such as
+    `os.path.join(os.getcwd(), 'scripts')` or an environment variable)."""
     out: list[Path] = []
-    try:
-        tree = ast.parse(test_file.read_text(encoding='utf-8', errors='replace'))
-    except (OSError, SyntaxError, ValueError):
-        tree = None
-    if tree is not None:
-        names = {t.id: st.value for st in tree.body if isinstance(st, ast.Assign) for t in st.targets if isinstance(t, ast.Name)}
-        for n in ast.walk(tree):
-            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in ('insert', 'append') and \
-                    scan_tests.call_name(n.func.value) == 'path' and n.args:
-                v = _path_value(n.args[-1], names, test_file)
-                if isinstance(v, Path) and v.is_dir():
-                    out.append(v.resolve())
-    d = test_file.parent.resolve()
+    unknown: list[int] = []
     w = work.resolve()
+    try:
+        rel = test_file.resolve().relative_to(w).as_posix()
+    except ValueError:
+        rel = None
+    if rel is not None:
+        exists = lambda p: (w / p).exists()  # noqa: E731
+        for f in py_loads.conftests_above(rel, exists) + [rel]:
+            try:
+                tree = ast.parse((w / f).read_text(encoding='utf-8', errors='replace'))
+            except (OSError, SyntaxError, ValueError):
+                continue
+            dirs, unk = py_loads.sys_path_dirs(tree, f)
+            out += [(w / d).resolve() for d in dirs if (w / d).is_dir()]
+            if f == rel:
+                unknown += unk
+    d = test_file.parent.resolve()
     while True:
         out.append(d)
         if d == w or w not in d.parents:
             break
         d = d.parent
-    return list(dict.fromkeys(out))
+    return list(dict.fromkeys(out)), unknown
 
 
 def py_find(tree: ast.Module, qual: str) -> ast.AST | None:
@@ -477,6 +462,12 @@ def run_test(defn: dict, work: Path, run_dir: Path, label: str, prefix: str, ext
         prefix_pkg = defn['package'] + '/' if defn['package'] != '.' else ''
         cmd = ' '.join(t[len(prefix_pkg):] if prefix_pkg and t.startswith(prefix_pkg) else t for t in cmd.split(' '))
         args = ['--preset', 'selftest', '--selftest-cmd', cmd]
+    elif defn['lang'] == 'python' and defn.get('runner') == 'unittest':
+        # the suite's own runner: run_tests.py's unittest preset loads the test by name as `python -m unittest
+        # <module.Class.method>` does, with discovery's start (or top-level) directory first on sys.path
+        args = ['--preset', 'unittest', '--tests', rel + '::' + defn['run_id'].split('::', 1)[1]]
+        if '--runner-args' not in extra and defn.get('unittest_args'):
+            args += ['--runner-args', defn['unittest_args']]
     elif defn['lang'] == 'python':
         args = ['--preset', 'pytest', '--tests', rel + '::' + defn['run_id'].split('::', 1)[1]]
     else:
@@ -561,9 +552,10 @@ def main(argv=None) -> int:
     ap.add_argument('--copy-ignore', nargs='+', action='append', default=[], metavar='GLOB',
                     help='leave matching files or directories out of the scratch copy ("*.jpg", "images", "data/raw/*"); '
                          'only what the tests never read (several globs per flag, or repeat the flag)')
-    ap.add_argument('--runner', choices=['auto', 'pytest', 'selftest'], default='auto',
-                    help='Python tests: run them with pytest or with their script\'s own self-test runner. auto (the '
-                         'default) takes the runner scan_tests.py recorded, and refuses a test no known runner runs')
+    ap.add_argument('--runner', choices=['auto', 'pytest', 'unittest', 'selftest'], default='auto',
+                    help='Python tests: run them with pytest, unittest or their script\'s own self-test runner. auto '
+                         '(the default) takes the runner scan_tests.py recorded (unittest when CI runs `python -m '
+                         'unittest`), and refuses a test no known runner runs')
     ap.add_argument('--env', nargs='+', action='append', default=[], metavar='K=V',
                     help='passed to run_tests.py (several pairs per flag, or repeat the flag)')
     ap.add_argument('--package-env', action='append', default=[], metavar='PACKAGE:K=V',
@@ -585,7 +577,9 @@ def main(argv=None) -> int:
         pairs = {**env, **pkg_env.get(pkg, {})}
         return (['--env', *[f'{k}={v}' for k, v in pairs.items()]] if pairs else []) + runner
     root = args.repo.resolve()
-    defs = {d['id']: d for d in json.loads(args.candidates.read_text(encoding='utf-8'))['definitions']}
+    cand_data = json.loads(args.candidates.read_text(encoding='utf-8'))
+    defs = {d['id']: d for d in cand_data['definitions']}
+    unit_runners = {p: r for p, r in (cand_data.get('python_runners') or {}).items() if r.get('runner') == 'unittest'}
     packages = sorted({d['package'] for d in defs.values()}, key=len, reverse=True)
     overrides = dict(x.split('=', 1) for x in args.cwd)
     forced: dict[str, list[str]] = {}
@@ -625,12 +619,26 @@ def main(argv=None) -> int:
                 results = [r for r in results if not (r['test_id'] == tid and r.get('patch') == patch_name)] + [entry]
                 print(f'{tid}: not run (Playwright)')
                 continue
+            if d['lang'] == 'rust':
+                entry.update(original={'run_id': 'none', 'test_status': 'not_run'}, outcome='not_run', checks_no_exception=False,
+                             not_run_reason='Rust tests are scanned statically only; neutralise.py does not neutralise '
+                                            'Rust. Neutralise the function by hand in a scratch copy and record the '
+                                            'cargo runs with run_tests.py --preset cargo (see SKILL.md)')
+                results = [r for r in results if not (r['test_id'] == tid and r.get('patch') == patch_name)] + [entry]
+                print(f'{tid}: not run (Rust is scanned statically only)')
+                continue
             if d['lang'] == 'python':
                 # the suite's own runner: pytest never sees a failure a script's check() records, so a self-test run
                 # under pytest would pass with any neutral body
                 py_runner = args.runner if args.runner != 'auto' else (d.get('runner') or 'pytest')
                 d = {**d, 'runner': py_runner}
                 entry['runner'] = py_runner
+                u = unit_runners.get(d['package'])
+                if py_runner == 'unittest' and u:
+                    # discovery's start and top-level directories, so the test module is imported as CI imports it
+                    ua = ([f'-s {u["start"]}'] if u.get('start') else []) + ([f'-t {u["top"]}'] if u.get('top') else [])
+                    if ua:
+                        d['unittest_args'] = ' '.join(ua)
                 if py_runner == 'unknown':
                     entry.update(original={'run_id': 'none', 'test_status': 'not_run'}, outcome='not_run',
                                  checks_no_exception=False, not_run_reason=(
@@ -705,7 +713,8 @@ def main(argv=None) -> int:
                     local = gdir[len(prefix):] if prefix and gdir.startswith(prefix) else gdir
                     loc, patcher = go_tests.find_target(work, f'{local}:{gfn}'), go_tests.patch
                 elif d['lang'] == 'python':
-                    loc, patcher = py_target_file(work, tgt, py_search_bases(work, work / d['file'][len(prefix):])), py_patch
+                    bases, unknown_lines = py_bases_info(work, work / d['file'][len(prefix):])
+                    loc, patcher = py_target_file(work, tgt, bases), py_patch
                     if loc and is_support(loc[0], work):
                         entry['targets'].append({'target': tgt, 'file': None, 'variants': [], 'note': (
                             f'{tgt} is defined in test code ({Path(os.path.relpath(loc[0], work)).as_posix()}): a test '
@@ -725,9 +734,21 @@ def main(argv=None) -> int:
                             f'with --target')})
                         continue
                 if not loc:
-                    entry['targets'].append({'target': tgt, 'file': None, 'variants': [], 'note': (
-                        'definition not found in this package (another package or an installed library); name the function '
-                        'with --target if it is the code under test' if d['lang'] == 'python' else 'definition not found')})
+                    if d['lang'] != 'python':
+                        note = 'definition not found'
+                    elif ':' in tgt and tgt.split(':', 1)[0].endswith('.py'):
+                        note = f'{tgt.split(":", 1)[0]} is not a file of this package'
+                    elif unknown_lines:
+                        # the import probably comes through a sys.path entry this reader could not work out (a path
+                        # from os.getcwd() or the environment): say that, not "another package"
+                        note = (f'not found: the test file puts a folder on sys.path that could not be worked out (line '
+                                f'{", ".join(map(str, unknown_lines))} of {d["file"]}), so the module may be there; name '
+                                f'the function by file with --target {tid}=<path/to/file.py>:<function>')
+                    else:
+                        note = ('definition not found in this package or the folders the test puts on sys.path (another '
+                                'package or an installed library); name the function with --target '
+                                '(<module.function> or <path/to/file.py>:<function>) if it is the code under test')
+                    entry['targets'].append({'target': tgt, 'file': None, 'variants': [], 'note': note})
                     continue
                 path, func = loc
                 original = path.read_bytes()
@@ -758,6 +779,10 @@ def main(argv=None) -> int:
                                         f'{rid}. Name another target with --target, or neutralise by hand')
                 entry['targets'].append(tres)
             entry.update(outcome_of(status, entry['targets']))
+            if entry['outcome'] == 'not_run' and entry['targets'] and not entry.get('not_run_reason'):
+                # targets named but none neutralised: say why, target by target (counts against completeness)
+                entry['not_run_reason'] = 'no target was neutralised: ' + '; '.join(
+                    f'{t["target"]}: {t.get("note") or "not run"}' for t in entry['targets'])
             ran = [t for t in entry['targets'] if t['variants']]
             entry['checks_no_exception'] = entry['outcome'] != 'errored' and any(
                 v['variant'] == 'raise' and v['test_status'] in ('failed', 'error') for t in ran for v in t['variants'])

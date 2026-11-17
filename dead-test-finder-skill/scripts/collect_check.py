@@ -73,12 +73,47 @@ NO_LIST = {
     'unknown': 'no test runner found in package.json (dependencies or scripts) for this package',
     'selftest': "a script's own self-test (python <script>, or --self-test) runs its functions itself; it has no list "
                 'command, and its tests run whenever the script runs',
+    'cargo-test': 'Rust tests are scanned statically only: `cargo test -- --list` builds every test binary, so no list '
+                  'command is run for them here (list them yourself with it, or with `cargo nextest list`, and compare)',
 }
+
+# What `python -m unittest discover` would load, printed one id per line (<file>::<Class>::<method>, the file relative
+# to the working directory) without running a test; a module that cannot be imported is an `ERROR <file>` line.
+# Loading imports the test modules, as pytest's --collect-only does.
+UNITTEST_LIST = r'''
+import inspect, os, sys, unittest
+start, pattern, top = sys.argv[1], sys.argv[2], (sys.argv[3] or None)
+cwd = os.getcwd()
+
+
+def flat(suite):
+    for t in suite:
+        if isinstance(t, unittest.TestSuite):
+            yield from flat(t)
+        else:
+            yield t
+
+
+for t in flat(unittest.TestLoader().discover(start, pattern, top)):
+    cls, name = type(t), getattr(t, "_testMethodName", "")
+    if cls.__name__ == "_FailedTest":
+        print("ERROR " + os.path.join(top or start, *name.split(".")).replace(os.sep, "/") + ".py")
+        continue
+    try:
+        f = os.path.relpath(inspect.getsourcefile(cls) or "", cwd).replace(os.sep, "/")
+    except (TypeError, ValueError):
+        f = cls.__module__.replace(".", "/") + ".py"
+    print(f + "::" + cls.__qualname__ + "::" + name)
+'''
+UNITTEST_ID = re.compile(r'^(\S+\.py)::([\w.<>]+)::(\w+)$')
 
 
 def framework_of(d: dict, pkg_dir: Path, root: Path | None = None) -> str:
     if d['lang'] == 'python':
-        return 'selftest' if d.get('framework') == 'selftest' else 'pytest'
+        # the runner scan_tests.py recorded: a script self-test, unittest (CI runs `python -m unittest`), else pytest
+        return 'selftest' if d.get('framework') == 'selftest' else 'unittest' if d.get('runner') == 'unittest' else 'pytest'
+    if d['lang'] == 'rust':
+        return 'cargo-test'
     if d['lang'] == 'go':
         return 'go-test'
     if d.get('framework') in ('playwright', 'node-test', 'custom'):
@@ -262,7 +297,7 @@ def go_list_ids(out: str, cwd: Path, prefix: str, known: set[str]) -> tuple[list
 
 def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None, env: dict, reuse: dict | None,
             n_defined: int = 0, known: set[str] | None = None, ignore: list[str] | None = None,
-            guard: tree_guard.TreeGuard | None = None, part: str = '') -> dict:
+            guard: tree_guard.TreeGuard | None = None, part: str = '', unit: dict | None = None) -> dict:
     prefix = '' if pkg == '.' else pkg + '/'
     tag = (pkg.replace('/', '_') if pkg != '.' else 'root') + ('' if fw in ('pytest', 'vitest', 'jest') else f'-{fw}') + part
     local = [f[len(prefix):] for f in files] if files is not None else []
@@ -278,6 +313,16 @@ def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None
             (f' <{len(local)} files>' if local else '')
         raw = run_dir / f'collect-{tag}.txt'
         hashed = cmd[1:]
+    elif fw == 'unittest':
+        # unittest has no list flag: its own loader discovers with the start directory, pattern and top-level
+        # directory of the suite's command (scan_tests.py's python_runners), and the ids are printed, not run
+        u = unit or {}
+        start, pattern, top = u.get('start') or '.', u.get('pattern') or 'test*.py', u.get('top') or ''
+        cmd = [sys.executable, '-c', UNITTEST_LIST, start, pattern, top]
+        shown = (f'python -c "<unittest.TestLoader().discover: -s {start} -p {pattern}' + (f' -t {top}' if top else '')
+                 + '; ids printed, nothing run>"')
+        raw = run_dir / f'collect-{tag}.txt'
+        hashed = ['unittest-list', start, pattern, top]
     elif fw == 'go-test':
         # go test -list builds each test binary (vet included) and prints the test names, then one ok/FAIL line per
         # package; nothing runs
@@ -356,6 +401,18 @@ def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None
     if fw == 'go-test':
         ids, errored_files, ok = go_list_ids(out, cwd, prefix, known or set())
         code = code if ok else (code or 1)
+    elif fw == 'unittest':
+        for line in out.splitlines():
+            line = line.strip()
+            m = UNITTEST_ID.match(line)
+            if m:
+                ids.append(prefix + map_pytest_path(m.group(1), cwd, known or set())
+                           + f'::{m.group(2).replace(".", "::")}::{m.group(3)}')
+            elif line.startswith('ERROR ') and line.endswith('.py'):
+                errored_files.append(prefix + map_pytest_path(line[6:].strip(), cwd, known or set()))
+        ok = code == 0
+        if errored_files and not ids:
+            ok, errored_files = False, []                # nothing listed at all: the whole list errored
     elif fw == 'pytest':
         for line in out.splitlines():
             line = line.strip()
@@ -406,8 +463,8 @@ def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None
                 **({'env': sorted(env)} if env else {}), 'collected': sorted(set(ids)), 'errored_files': errored_files,
                 'note': f'{len(errored_files)} test file(s) in packages that did not build here ([build failed]); '
                         'their tests are not assessed'}
-    if fw == 'pytest' and errored_files:
-        note = (f'{len(errored_files)} test file(s) could not be collected (ERROR lines in the summary: an import error, '
+    if fw in ('pytest', 'unittest') and errored_files:
+        note = (f'{len(errored_files)} test file(s) could not be collected (ERROR lines in the list output: an import error, '
                 f'a missing dependency); their tests are not assessed, the other files were listed')
         return {'package': pkg, 'framework': fw, 'command': shown, 'exit_code': code, 'status': 'partial',
                 'raw_output': raw.name, 'scope': 'all' if files is None else f'{len(local)} files', 'input_hash': input_hash,
@@ -503,9 +560,10 @@ def main(argv=None) -> int:
             penv = {**env, **pkg_env.get(pkg, {})}
             known = {d['file'][len(prefix):] for d in ds}
             rec = collect(pkg, fw, cwd, args.run_dir, files, penv, previous.get((pkg, fw)),
-                          len([d for d in ds if files is None or d['file'] in files]), known, inner, guard)
+                          len([d for d in ds if files is None or d['file'] in files]), known, inner, guard,
+                          unit=(data.get('python_runners') or {}).get(pkg))
             all_files = files if files is not None else sorted({d['file'] for d in ds})
-            if rec['status'] == 'errored' and args.split_on_error and len(all_files) > 1 and fw != 'pytest':
+            if rec['status'] == 'errored' and args.split_on_error and len(all_files) > 1 and fw not in ('pytest', 'unittest'):
                 rec = split_collect(rec, pkg, fw, cwd, args.run_dir, all_files, penv, guard, args.split_on_error, known)
             pkgs.append(rec)
     except tree_guard.GuardError as exc:
@@ -549,7 +607,7 @@ def main(argv=None) -> int:
         elif d['file'] in errored_files:
             not_assessed.append(d['id'])
             reasons[d['id']] = (f'{key[1]} could not collect this file (an ERROR line in the list output: an import error '
-                                f'or a missing dependency)' if key[1] == 'pytest' else
+                                f'or a missing dependency)' if key[1] in ('pytest', 'unittest') else
                                 f'{key[1]} could not list this file on its own (see the package\'s split list outputs)')
         elif is_collected(d):
             n_collected += 1

@@ -77,7 +77,7 @@
             "properties": {
               "neutralisation": {"type": "object", "required": ["test_id", "original_run_id", "targets", "outcome"],
                                  "properties": {"test_id": {"type": "string"}, "original_run_id": {"type": "string"},
-                                                "targets": {"type": "array"}, "outcome": {"enum": ["passed_neutralised", "failed_neutralised", "not_run", "errored"]},
+                                                "targets": {"type": "array", "items": {"$ref": "#/$defs/neutralised_target"}}, "outcome": {"enum": ["passed_neutralised", "failed_neutralised", "not_run", "errored"]},
                                                 "checks_no_exception": {"type": "boolean"}, "error_reason": {"type": "string"}}},
               "collection": {"type": "object", "required": ["not_collected", "raw_output"],
                              "properties": {"not_collected": {"type": "boolean"}, "raw_output": {"type": "string"}, "marker": {"type": "string"}}},
@@ -132,6 +132,16 @@
     "files_changed": {"type": "array", "items": {"type": "string"}}
   },
   "$defs": {
+    "neutralised_target": {
+      "type": "object",
+      "description": "One target of a neutralisation, as neutralisations.json records it: the function (module.function or path/to/file.py:function), the file patched, and a run per variant",
+      "required": ["target", "variants"],
+      "properties": {"target": {"type": "string"}, "file": {"type": ["string", "null"]}, "note": {"type": ["string", "null"]},
+                     "variants": {"type": "array", "items": {"type": "object", "required": ["variant", "test_status"],
+                                                             "properties": {"variant": {"enum": ["return", "raise"]},
+                                                                            "run_id": {"type": "string"},
+                                                                            "test_status": {"type": "string"}}}}}
+    },
     "basis": {
       "type": "object",
       "description": "A repo file line with an excerpt of it (re-read by the validator with --repo), or an evidence file in the run directory",
