@@ -206,12 +206,15 @@ TEST_ATTR = re.compile(r'#\[\s*(?:[\w:]+::)?(test|rstest|test_case|test_matrix|q
 # attributes that make one function several libtest tests (fn::case_1, fn::one, fn::a_1_b_3 ...)
 PARAM_ATTR = re.compile(r'#\[\s*(?:[\w:]+::)?(rstest|test_case|test_matrix|case|values)\b')
 CFG_ATTR = re.compile(r'#\[\s*cfg\s*\((.*)\)\s*\]\s*$', re.S)
+IGNORE_ATTR = re.compile(r'#\[\s*cfg_attr\s*\(\s*(.+?)\s*,\s*ignore\b', re.S)
 FEATURE = re.compile(r'feature\s*=\s*"([^"]+)"')
 ENV_READ = re.compile(r'\b(?:std::)?env::(var|var_os)\s*\(\s*"([^"]*)"|\b(option_env|env)!\s*\(\s*"([^"]*)"')
 ENV_DYNAMIC = re.compile(r'\b(?:std::)?env::(?:var|var_os)\s*\(\s*([^")\s][^)]*)\)')
 LIB_LOAD = re.compile(r'\b((?:libloading::)?(?:os::\w+::)?Library::(?:new|open|load_with_flags)|dlopen'
                       r'|LoadLibrary(?:Ex)?[AW]?)\s*\(')
 PROCESS_CALL = re.compile(r'\b((?:std::|tokio::|async_std::)?process::)?Command::new\s*\(')
+USE_STD = re.compile(r'\buse\s+(?:std|tokio|async_std)\b[^;]*;')
+PROCESS_USE = re.compile(r'\bprocess::(?:Command\b|\{[^{}]*\bCommand\b)')
 CURRENT_DIR = re.compile(r'\b(?:std::)?env::current_dir\s*\(\s*\)|\bcurrent_dir\s*\(\s*\)')
 
 
@@ -485,6 +488,7 @@ def scan_file(path: Path, rel: str) -> dict:
                 if any(TEST_ATTR.search(a) for a in attrs):
                     res['tests'].append({'name': name, 'line': ln, 'inline': inline,
                                          'ignored': any(re.match(r'#\[\s*ignore\b', a) for a in attrs),
+                                         'ignore_cfg': [x.group(1).strip() for x in map(IGNORE_ATTR.match, attrs) if x],
                                          'should_panic': any(re.match(r'#\[\s*should_panic\b', a) for a in attrs),
                                          'parameterised': any(PARAM_ATTR.match(a) for a in attrs),
                                          'cfg': cfgs + own_cfg})
@@ -585,7 +589,9 @@ def _safety(olines: list[str], i: int, attrs: list[str]) -> bool:
 
 def full_scan(orig: str, masked: str, res: dict) -> None:
     clap_cmd = bool(re.search(r'\buse\s+clap::(?:\{[^}]*\bCommand\b|Command\b)|\bclap::Command\b', orig))
-    proc_cmd = bool(re.search(r'\buse\s+(?:std|tokio|async_std)::process::(?:\{[^}]*\bCommand\b|Command\b)', orig))
+    # `use std::process::Command`, `use std::process::{Child, Command}` and the nested forms
+    # `use std::{ffi::OsString, process::Command}` / `use std::{io, process::{Child, Command, Stdio}}`
+    proc_cmd = any(PROCESS_USE.search(u.group(0)) for u in USE_STD.finditer(masked))
     bindings = _path_bindings(orig, masked)
 
     def relpath(ln, idx, expr, used_for):
@@ -601,7 +607,7 @@ def full_scan(orig: str, masked: str, res: dict) -> None:
         expr = _arg_text(orig, masked, open_idx)
         tail = masked[mt.end():mt.end() + 400]
         explicit = bool(mt.group(1))
-        chain_proc = bool(re.search(r'\.(spawn|output|status|current_dir|stdin|stdout|stderr)\s*\(', tail[:300]))
+        chain_proc = bool(re.search(r'\.(spawn|output|status|exec|current_dir|stdin|stdout|stderr)\s*\(', tail[:300]))
         chain_clap = bool(re.search(r'\.(subcommand|about|version|arg\s*\(\s*Arg::|author)\b', tail[:300]))
         is_proc = explicit or (proc_cmd and not clap_cmd) or (proc_cmd and clap_cmd and chain_proc and not chain_clap) \
             or (not clap_cmd and not proc_cmd and chain_proc)
@@ -749,6 +755,171 @@ def cfg_features(cfgs: list[str]) -> tuple[list[str], list[list[str]]]:
         req |= r
         alts += [g for g in a if g not in alts]
     return sorted(req), [g for g in alts if not set(g) & req]
+
+
+PLATFORMS = {
+    'linux': {'unix': True, 'windows': False, 'target_os': 'linux', 'target_family': 'unix'},
+    'macos': {'unix': True, 'windows': False, 'target_os': 'macos', 'target_family': 'unix', 'target_vendor': 'apple'},
+    'windows': {'unix': False, 'windows': True, 'target_os': 'windows', 'target_family': 'windows'},
+}
+CFG_FALSE = {'miri', 'loom', 'fuzzing', 'kani', 'docsrs', 'doc', 'doctest', 'bench', 'wasm', 'target_has_atomic_load_store'}
+CFG_TRUE = {'test', 'debug_assertions', 'panic_unwind'}
+SYS_PLATFORM = {'win32': 'windows', 'cygwin': 'windows', 'msys': 'windows', 'darwin': 'macos', 'linux': 'linux',
+                'linux2': 'linux', 'windows': 'windows', 'macos': 'macos'}
+
+
+def _cfg_eval(n, env: dict, features: set):
+    """A parsed cfg tree under one platform and feature set: True, False, or None when a predicate cannot be decided
+    (target_arch, target_pointer_width, a custom --cfg)."""
+    if n is None:
+        return None
+    if n[0] == 'pred':
+        name, value = n[1], n[2]
+        if name == 'feature':
+            return value in features
+        if value is None:
+            if name in env:
+                return bool(env[name])
+            return True if name in CFG_TRUE else (False if name in CFG_FALSE else None)
+        if name in ('target_os', 'target_family', 'target_vendor'):
+            return env.get(name) == value if name in env else None
+        return None
+    kids = [_cfg_eval(k, env, features) for k in n[1]]
+    if n[0] == 'not':
+        return None if not kids or kids[0] is None else not kids[0]
+    if n[0] == 'all':
+        return False if any(k is False for k in kids) else (None if any(k is None for k in kids) else True)
+    return True if any(k is True for k in kids) else (None if any(k is None for k in kids) else False)
+
+
+def _cfgs_eval(cfgs, env, features):
+    vals = [_cfg_eval(_cfg_parse(cf), env, features) for cf in cfgs]
+    return False if any(v is False for v in vals) else (None if any(v is None for v in vals) else True)
+
+
+def default_run(test: dict, crate: dict) -> dict:
+    """Whether a plain `cargo test` (default features, no `-- --ignored`, the host's own target) runs a test:
+    {runs_by_default, why, platforms?}.
+
+    runs_by_default  True; False when a gate keeps it out on at least one of Linux, macOS and Windows; None when a
+                     cfg cannot be decided here (target_arch, target_pointer_width, a custom --cfg: `why` quotes it)
+    why              [{gate, detail, ...}], empty when it runs:
+                       ignored            #[ignore], or #[cfg_attr(<cond>, ignore)] (then `platforms`)
+                       feature            a cfg needs a feature the defaults do not enable (`features`, or
+                                          `features_any`: one of them)
+                       required_features  its target has required-features the defaults do not enable (`features`):
+                                          cargo skips the whole target
+                       platform           a cfg on unix, windows, target_os, target_family (`platforms`)
+                       target             a bench or example target: `cargo test` builds it but runs no test of it
+                       doc                a doc test marked ignore or no_run
+                       cfg                a cfg that is false everywhere here, or cannot be decided
+    platforms        with a platform gate: the platforms (linux, macos, windows) where it does run
+
+    Features another workspace member turns on (feature unification under --workspace) are not modelled."""
+    feats = crate.get('features') or {}
+    enabled = set(feats.get('all') or []) - set(feats.get('optional') or [])
+    every = set(feats.get('all') or []) | enabled
+    why: list[dict] = []
+    target = next((t for t in crate.get('targets') or [] if t.get('kind') == test.get('target_kind')
+                   and t.get('name') == test.get('target')), None)
+    if test.get('kind') == 'doc':
+        if test.get('ignored') or test.get('no_run'):
+            why.append({'gate': 'doc', 'detail': 'doc test marked ' + ('ignore' if test.get('ignored') else 'no_run')})
+    elif test.get('ignored'):
+        why.append({'gate': 'ignored', 'detail': '#[ignore]: runs only with `-- --ignored` or `-- --include-ignored`'})
+    if target and target.get('kind') in ('bench', 'example'):
+        why.append({'gate': 'target', 'detail': f'{target["kind"]} target: `cargo test` builds it and runs no test of '
+                                                f'it (needs --{target["kind"]}s)'})
+    missing = sorted(set((target or {}).get('required_features') or []) - enabled)
+    if missing:
+        why.append({'gate': 'required_features', 'features': missing,
+                    'detail': f'target {target["name"]} has required-features {", ".join(missing)}, not enabled by '
+                              f'default: cargo skips the target (needs --features {",".join(missing)})'})
+    cfgs = list(test.get('cfg') or [])
+    undecided = False
+    platforms = None
+    if cfgs:
+        per = {name: _cfgs_eval(cfgs, env, enabled) for name, env in PLATFORMS.items()}
+        if all(v is False for v in per.values()):
+            full = {name: _cfgs_eval(cfgs, env, every) for name, env in PLATFORMS.items()}
+            need = sorted(set(test.get('features') or []) - enabled)
+            alts = [g for g in test.get('features_any') or [] if not set(g) & enabled]
+            if any(v is not False for v in full.values()) and (need or alts):
+                gate = {'gate': 'feature', 'detail': 'needs ' + ' and '.join(
+                    [f'--features {",".join(need)}'] * bool(need) + [f'one of {", ".join(g)}' for g in alts])
+                    + ', not enabled by default'}
+                if need:
+                    gate['features'] = need
+                if alts:
+                    gate['features_any'] = alts
+                why.append(gate)
+                if not all(v is True for v in full.values()) and any(v is True for v in full.values()):
+                    platforms = sorted(k for k, v in full.items() if v is True)
+                    why.append({'gate': 'platform', 'platforms': platforms,
+                                'detail': 'compiled only on ' + ', '.join(platforms)})
+            else:
+                why.append({'gate': 'cfg', 'detail': 'cfg(' + ') and cfg('.join(cfgs) + ') is false with default features '
+                                                     'on Linux, macOS and Windows'})
+        elif any(v is False for v in per.values()):
+            platforms = sorted(k for k, v in per.items() if v is True)
+            why.append({'gate': 'platform', 'platforms': platforms,
+                        'detail': 'compiled only on ' + (', '.join(platforms) or 'a platform this reader cannot name')
+                                  + ': cfg(' + ') and cfg('.join(cfgs) + ')'})
+        elif any(v is None for v in per.values()):
+            undecided = True
+    for cond in test.get('ignore_cfg') or []:
+        ign = {name: _cfg_eval(_cfg_parse(cond), env, enabled) for name, env in PLATFORMS.items()}
+        if all(v is False for v in ign.values()):
+            continue
+        runs = sorted(k for k, v in ign.items() if v is False)
+        if any(v is None for v in ign.values()) and not any(v is True for v in ign.values()):
+            undecided = True
+            continue
+        platforms = runs if platforms is None else sorted(set(platforms) & set(runs))
+        why.append({'gate': 'ignored', 'platforms': platforms,
+                    'detail': f'#[cfg_attr({cond}, ignore)]: ignored where the condition holds'
+                              + (', runs on ' + ', '.join(runs) if runs else '')})
+    out = {'runs_by_default': False if why else (None if undecided else True), 'why': why}
+    if undecided and not why:
+        out['why_undecided'] = 'cfg(' + ') and cfg('.join(cfgs + list(test.get('ignore_cfg') or [])) + ')'
+    if platforms is not None:
+        out['platforms'] = platforms
+    return out
+
+
+def runs_on(test: dict, platform: str | None = None) -> bool | None:
+    """Whether the default `cargo test` runs an annotated test on one platform (sys.platform or linux/macos/windows;
+    the current one when omitted): its only gates are platform ones and the platform is among `platforms`."""
+    plat = SYS_PLATFORM.get(platform or sys.platform, platform or sys.platform)
+    if test.get('runs_by_default') is not False:
+        return test.get('runs_by_default')
+    gates = test.get('why') or []
+    if any('platforms' not in g for g in gates):
+        return False
+    return plat in (test.get('platforms') or [])
+
+
+def default_run_summary(model: dict, platform: str | None = None) -> dict:
+    """Counts over every test of the model: {tests, run, not_run, undecided, by_gate: {gate: tests},
+    not_run_ids: [...]}. With `platform` (sys.platform or linux/macos/windows) platform gates are decided for it."""
+    out = {'tests': 0, 'run': 0, 'not_run': 0, 'undecided': 0, 'by_gate': {}, 'not_run_ids': []}
+    for c in model.get('crates') or []:
+        for t in c.get('tests') or []:
+            out['tests'] += 1
+            v = runs_on(t, platform) if platform else t.get('runs_by_default')
+            if v is True:
+                out['run'] += 1
+            elif v is None:
+                out['undecided'] += 1
+            else:
+                out['not_run'] += 1
+                out['not_run_ids'].append(t.get('id') or f"{c['name']}: {t.get('name')}")
+                for g in {g['gate'] for g in t.get('why') or []}:
+                    out['by_gate'][g] = out['by_gate'].get(g, 0) + 1
+    out['by_gate'] = dict(sorted(out['by_gate'].items()))
+    if platform:
+        out['platform'] = SYS_PLATFORM.get(platform, platform)
+    return out
 
 
 def _builder_items(text: str) -> list[dict]:
@@ -980,6 +1151,7 @@ def _crate(cdir: Path, root: Path, ws: dict, notes: list) -> dict | None:
                                'module': modpath, 'ignored': t['ignored'], 'should_panic': t['should_panic'],
                                'parameterised': t.get('parameterised', False),
                                'cfg': cfgs, 'features': feats, 'features_any': feats_any,
+                               'ignore_cfg': list(t.get('ignore_cfg') or []),
                                'target': test_tg['name'] if test_tg else None,
                                'target_kind': test_tg['kind'] if test_tg else None,
                                'id': f'{test_tg["name"]}::{full}' if test_tg else None})
@@ -1110,7 +1282,12 @@ def read_cargo(repo, metadata: dict | None = None) -> dict:
                         #[values]: libtest runs generated cases such as fn::case_1, never fn itself),
                         cfg: [cfg exprs of the fn, its inline modules and the `mod x;`
                         declarations that include its file], features (required: see cfg_features), features_any
-                        ([[a, b]]: one of them needed), target, target_kind,
+                        ([[a, b]]: one of them needed), ignore_cfg ([cond] of #[cfg_attr(cond, ignore)]),
+                        runs_by_default (does a plain `cargo test` run it: True, False, or None when a cfg
+                        cannot be decided), why ([{gate, detail, features?, platforms?}]: ignored, feature,
+                        required_features, platform, target, doc, cfg) and platforms (where a platform-gated
+                        test runs): see default_run(); runs_on(test, platform) decides for one host,
+                        target, target_kind,
                         id: '<target>::<name>' (None for doc tests; the target part is qualified_target's:
                             '<crate>/<target>' or '<crate>/<kind>/<target>' when the name is not unique)}],
                clis: [{bin, target, file, line, style derive|builder, name, struct, parent,
@@ -1162,9 +1339,49 @@ def read_cargo(repo, metadata: dict | None = None) -> dict:
         for t in c['tests']:
             if t.get('id') and t.get('target'):
                 t['id'] = f"{qualified_target(out, c['name'], t['target_kind'], t['target'])}::{t['name']}"
+            t.update(default_run(t, c))
     if not any(c['tests'] for c in out['crates']):
         notes.append('no #[test] function or doc test was found')
     return out
+
+
+def _slashed(p: str) -> str:
+    return re.sub(r'/+', '/', str(p).replace('\\', '/')).rstrip('/')
+
+
+def _tail(p) -> str:
+    """The last parts of a path, for a note that must not carry another machine's folders."""
+    parts = _slashed(p or '').split('/')
+    return '/'.join(parts[-3:]) if len(parts) > 3 else '/'.join(parts)
+
+
+def _under(path: str, base: str) -> str | None:
+    """path relative to base, both '/'-separated; case-insensitive on a drive-letter base."""
+    if not base:
+        return None
+    a, b = (path.lower(), base.lower()) if re.match(r'^[A-Za-z]:', base) else (path, base)
+    return path[len(base) + 1:] if a.startswith(b + '/') else None
+
+
+def _metadata_path(src: str, root: Path, workspace_root, manifest_path, crate_dir: str) -> str | None:
+    """A cargo metadata src_path as a repository-relative path. cargo writes absolute paths of the checkout it ran
+    in, which may be another checkout or a scratch copy of this repository (or another machine's): the path is taken
+    relative to this root, else to the metadata's workspace_root, else to the package's manifest folder."""
+    src_s = _slashed(src)
+    if not src_s:
+        return None
+    if not (src_s.startswith('/') or re.match(r'^[A-Za-z]:', src_s)):
+        return src_s
+    try:
+        return Path(src).resolve().relative_to(root).as_posix()
+    except (ValueError, OSError):
+        pass
+    rel = _under(src_s, _slashed(root)) or _under(src_s, _slashed(workspace_root or ''))
+    if rel is None and manifest_path:
+        inner = _under(src_s, _slashed(manifest_path).rsplit('/', 1)[0])
+        if inner is not None:
+            rel = inner if crate_dir in ('.', '') else f'{crate_dir}/{inner}'
+    return rel
 
 
 def _apply_metadata(out: dict, meta: dict, root: Path, notes: list) -> None:
@@ -1180,10 +1397,13 @@ def _apply_metadata(out: dict, meta: dict, root: Path, notes: list) -> None:
             kind = 'build' if 'custom-build' in kinds else ('lib' if any(k in ('lib', 'rlib', 'cdylib', 'staticlib',
                                                                               'dylib', 'proc-macro') for k in kinds)
                                                             else (kinds[0] if kinds else 'unknown'))
-            try:
-                path = Path(t.get('src_path', '')).resolve().relative_to(root).as_posix()
-            except ValueError:
+            path = _metadata_path(t.get('src_path') or '', root, meta.get('workspace_root'), p.get('manifest_path'),
+                                  c['dir'])
+            if path is None:
                 path = t.get('src_path')
+                notes.append(f'cargo metadata target {t.get("name")} of {c["name"]}: {_tail(path)} is outside the '
+                             f'repository (not under its workspace_root or the package folder), so its files are '
+                             f'not mapped')
             targets.append({'kind': kind, 'name': t.get('name'), 'path': path,
                             'required_features': t.get('required-features') or [], 'harness': t.get('test', True)
                             if kind != 'bench' else True, 'autodiscovered': None, 'from': 'cargo metadata'})
@@ -1709,6 +1929,93 @@ def self_test() -> int:
     mc = next(c for c in mm['crates'] if c['name'] == 'tides-core')
     check('--metadata replaces targets and features with cargo\'s own', mc['features']['all'] == ['gui']
           and mc['targets'][0].get('from') == 'cargo metadata', mc['features'])
+    # cargo metadata made in another checkout or a scratch copy: absolute src_path values under ITS workspace root
+    for other in ('/elsewhere/checkout', 'D:\\other\\copy'):
+        sep = '\\' if '\\' in other else '/'
+        mo = read_cargo(d, metadata={'workspace_root': other, 'packages': [{
+            'name': 'tides-core', 'manifest_path': sep.join([other, 'crates', 'tides-core', 'Cargo.toml']),
+            'targets': [{'kind': ['lib'], 'name': 'tides_core',
+                         'src_path': sep.join([other, 'crates', 'tides-core', 'src', 'lib.rs'])}]}]})
+        oc = next(c for c in mo['crates'] if c['name'] == 'tides-core')
+        check(f'--metadata from another checkout ({other}): src_path maps to the module tree through workspace_root',
+              oc['targets'][0]['path'] == 'crates/tides-core/src/lib.rs'
+              and 'crates/tides-core/src/height.rs' in oc['target_files'].get('lib:tides_core', []),
+              (oc['targets'][0]['path'], oc['target_files']))
+    mo = read_cargo(d, metadata={'packages': [{
+        'name': 'tides-core', 'manifest_path': '/scratch/copy-7/crates/tides-core/Cargo.toml',
+        'targets': [{'kind': ['lib'], 'name': 'tides_core', 'src_path': '/scratch/copy-7/crates/tides-core/src/lib.rs'},
+                    {'kind': ['bin'], 'name': 'stray', 'src_path': '/opt/generated/stray.rs'}]}]})
+    oc = next(c for c in mo['crates'] if c['name'] == 'tides-core')
+    check('--metadata with no workspace_root: src_path maps through the package manifest folder, and a target '
+          'outside the repository is noted, never silently left without files',
+          oc['targets'][0]['path'] == 'crates/tides-core/src/lib.rs'
+          and 'crates/tides-core/src/height.rs' in oc['target_files'].get('lib:tides_core', [])
+          and any('stray' in n and 'outside' in n for n in mo['notes']), (oc['targets'], mo['notes']))
+    # which tests the default `cargo test` runs, and launches behind a nested use
+    gates = Path(tempfile.mkdtemp(prefix='cargo-gates-'))
+    filler = ''.join(f'    cmd.arg("--step-{i}");\n' for i in range(14))
+    for rel, body in {
+            'Cargo.toml': '[package]\nname = "tide-desk"\nversion = "0.1.0"\n\n[features]\ndefault = ["metric"]\n'
+                          'metric = []\ndesktop = []\n\n[[bin]]\nname = "tide-desk-ui"\npath = "src/bin/ui.rs"\n'
+                          'required-features = ["desktop"]\n',
+            'src/lib.rs': 'use std::{ffi::OsString, path::PathBuf, process::Command};\npub mod runner;\n'
+                          'pub fn launch(program: PathBuf, extra: OsString) {\n'
+                          '    let mut command = Command::new(program);\n    command.arg(extra);\n'
+                          '    let _ = command.exec();\n}\n'
+                          '#[cfg(test)]\nmod tests {\n'
+                          '    #[test]\n    fn plain() {}\n'
+                          '    #[test]\n    #[ignore]\n    fn slow() {}\n'
+                          '    #[cfg(unix)]\n    #[test]\n    fn unix_only() {}\n'
+                          '    #[cfg(windows)]\n    #[test]\n    fn windows_only() {}\n'
+                          '    #[cfg(target_os = "linux")]\n    #[test]\n    fn linux_only() {}\n'
+                          '    #[cfg(feature = "desktop")]\n    #[test]\n    fn needs_desktop() {}\n'
+                          '    #[cfg(feature = "metric")]\n    #[test]\n    fn default_feature() {}\n'
+                          '    #[cfg(not(feature = "desktop"))]\n    #[test]\n    fn without_desktop() {}\n'
+                          '    #[cfg(target_pointer_width = "64")]\n    #[test]\n    fn wide() {}\n'
+                          '    #[test]\n    #[cfg_attr(windows, ignore)]\n    fn not_on_windows() {}\n'
+                          '}\n',
+            'src/runner.rs': 'use std::{\n    io,\n    process::{Child, Command, Stdio},\n};\n'
+                             'pub fn start() -> io::Result<Child> {\n    let mut cmd = Command::new("tide-helper");\n'
+                             + filler + '    cmd.stdout(Stdio::null());\n    cmd.spawn()\n}\n',
+            'src/bin/ui.rs': 'fn main() {}\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn ui_test() {}\n}\n',
+    }.items():
+        (gates / rel).parent.mkdir(parents=True, exist_ok=True)
+        (gates / rel).write_text(body, encoding='utf-8')
+    gm = read_cargo(gates)
+    gc = gm['crates'][0]
+    launches = sorted((x['file'], x['line']) for x in gc['process_launches'])
+    check('a nested `use std::{..., process::Command}` (one line or many) makes Command::new a process launch, '
+          'also when only .exec() or a far .spawn() follows',
+          launches == [('src/lib.rs', 4), ('src/runner.rs', 6)], launches)
+    gt = {t['fn']: t for t in gc['tests']}
+    got = {k: v.get('runs_by_default', 'missing') for k, v in gt.items()}
+    check('runs_by_default: plain, default-feature and not(feature) tests run; #[ignore], cfg(unix|windows|target_os), '
+          'non-default features and a bin with required-features do not; an undecidable cfg is None',
+          got == {'plain': True, 'slow': False, 'unix_only': False, 'windows_only': False, 'linux_only': False,
+                  'needs_desktop': False, 'default_feature': True, 'without_desktop': True, 'wide': None,
+                  'not_on_windows': False, 'ui_test': False}, got)
+    why = {k: [w.get('gate') for w in v.get('why') or []] for k, v in gt.items()}
+    check('why names the gate of each test that does not run',
+          why.get('slow') == ['ignored'] and why.get('unix_only') == ['platform']
+          and why.get('needs_desktop') == ['feature'] and why.get('ui_test') == ['required_features']
+          and why.get('not_on_windows') == ['ignored'] and why.get('plain') == []
+          and (gt.get('needs_desktop', {}).get('why') or [{}])[0].get('features') == ['desktop']
+          and (gt.get('ui_test', {}).get('why') or [{}])[0].get('features') == ['desktop'], why)
+    plats = {k: v.get('platforms') for k, v in gt.items() if v.get('platforms')}
+    check('platforms lists where a platform-gated test runs',
+          plats == {'unix_only': ['linux', 'macos'], 'windows_only': ['windows'], 'linux_only': ['linux'],
+                    'not_on_windows': ['linux', 'macos']}, plats)
+    check('runs_on(test, platform) answers for one host',
+          'runs_on' in globals() and globals()['runs_on'](gt['unix_only'], 'linux') is True
+          and globals()['runs_on'](gt['unix_only'], 'win32') is False
+          and globals()['runs_on'](gt['slow'], 'linux') is False
+          and globals()['runs_on'](gt['not_on_windows'], 'darwin') is True
+          and globals()['runs_on'](gt['plain'], 'win32') is True, None)
+    summ = globals()['default_run_summary'](gm) if 'default_run_summary' in globals() else {}
+    check('default_run_summary counts tests the default command runs, skips and cannot decide',
+          (summ.get('tests'), summ.get('run'), summ.get('not_run'), summ.get('undecided')) == (11, 3, 7, 1)
+          and summ.get('by_gate', {}).get('platform') == 3, summ)
+    shutil.rmtree(gates, ignore_errors=True)
     # two crates with tests/cli.rs, and a crate whose lib and integration test share a name
     two = Path(tempfile.mkdtemp(prefix='cargo-two-'))
     for rel, body in {'Cargo.toml': '[workspace]\nmembers = ["recipe-scale", "pantry"]\n',
@@ -1788,6 +2095,11 @@ def main(argv=None) -> int:
     n_t = sum(len(c['tests']) for c in m['crates'])
     print(f'{len(m["crates"])} crate(s), {sum(len(c["targets"]) for c in m["crates"])} target(s), {n_t} test(s), '
           f'{sum(len(c["clis"]) for c in m["crates"])} CLI(s)', file=sys.stderr)
+    dr = default_run_summary(m)
+    if dr['not_run'] or dr['undecided']:
+        gates = ', '.join(f'{v} {k}' for k, v in dr['by_gate'].items())
+        print(f'a plain `cargo test` runs {dr["run"]} of {dr["tests"]} test(s) on every platform: {dr["not_run"]} gated '
+              f'({gates}), {dr["undecided"]} undecided (tests[].runs_by_default, why)', file=sys.stderr)
     return 0
 
 
