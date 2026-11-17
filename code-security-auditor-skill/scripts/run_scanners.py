@@ -109,14 +109,15 @@ def inventory(root: Path, exclude_dirs: list[str] | None = None, data_dirs: bool
     for dirpath, dirnames, filenames in os.walk(root):
         # vendored and bundled trees (vendor/, Pods/, PrivateHeaders/, *.app, *.framework...) are not the repository's code;
         # data directories (thousands of JSON records) and --exclude-dir paths are not opened (see data_dirs.py)
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and (not d.startswith('.') or d in ALLOWED_DOT_DIRS)
-                       and not test_paths.vendored_dir(d) and not data.why(Path(dirpath) / d)]
+        # sorted: the inventory (and every list built from it) must not depend on the filesystem's listing order
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and (not d.startswith('.') or d in ALLOWED_DOT_DIRS)
+                             and not test_paths.vendored_dir(d) and not data.why(Path(dirpath) / d))
         rel = Path(dirpath).relative_to(root).as_posix()
         fx = audit_scope.fixture_of(rel, fixtures) if fixture_dirs_set and rel != '.' else None
         if fx:
-            fixture_files += [(f'{rel}/{f}', fx) for f in filenames]
+            fixture_files += [(f'{rel}/{f}', fx) for f in sorted(filenames)]
             continue
-        for f in filenames:
+        for f in sorted(filenames):
             names.append(f'{rel}/{f}' if rel != '.' else f)
             for lang, exts in EXT.items():
                 if Path(f).suffix in exts:

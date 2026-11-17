@@ -309,6 +309,20 @@ def ferry(root: Path) -> None:
     deps = run_scanners.dependency_inventory(root, inv)
     check([[l['file'], l['ecosystem'], l['packages']] for l in deps['lockfiles']] == want['dependency_lockfiles'],
           'lockfiles listed without the network')
+    real_walk = run_scanners.os.walk
+
+    def reversed_walk(top, *a, **kw):   # a filesystem (ext4) that lists directory entries in hash order
+        for dp, dns, fns in real_walk(top, *a, **kw):
+            dns.reverse()
+            fns.reverse()
+            yield dp, dns, fns
+    run_scanners.os.walk = reversed_walk
+    try:
+        rev = run_scanners.inventory(root)
+    finally:
+        run_scanners.os.walk = real_walk
+    check(rev['files'] == inv['files'] and rev['lockfiles'] == inv['lockfiles'],
+          f"the inventory does not depend on the order the filesystem lists entries in ({rev['lockfiles']})")
     adv = run_scanners.advisory_status([{'name': 'pip-audit', 'area': 'dependencies', 'status': 'ran'}], deps)
     check(adv['status'] == 'partial' and 'npm' in adv['reason'], 'pip-audit alone leaves the npm lockfile unassessed: partial')
     check(run_scanners.advisory_status([], deps)['status'] == 'not_assessed', 'no advisory tool: not_assessed')
