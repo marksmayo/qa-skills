@@ -401,6 +401,7 @@ def git_files(root: Path) -> list[str] | None:
 
 
 HASH_CACHE_NAME = '.qa-code-hash-cache.json'   # never hashed itself
+HASH_KEY_PREFIX = 'sha256:'
 HASH_READS = 0   # files read for hashing in this process (the self-test checks a cache hit reads none)
 RACY_NS = 3 * 10**9   # a file modified this close to the cache's writing may have changed without a new mtime
 DATA_EXT = {'.json', '.jsonl', '.ndjson', '.geojson', '.csv', '.tsv', '.yaml', '.yml', '.xml', '.txt', '.parquet',
@@ -444,7 +445,8 @@ def hash_tree(root: Path, notes: list[str] | None = None, basis: dict | None = N
     """(code hash, {relative POSIX path: SHA-256 of the file}) in one pass over the source files.
 
     exclude: directories relative to root left out (recorded in basis['excluded']). cache_path: a JSON file (one per
-    run directory) remembering the last result with every file's size and mtime; when the listing and every size and
+    run directory) remembering the last result with every file's size and mtime, keyed by a hash of the tree's
+    location and its excludes (never the path itself, which would name the home folder); when the listing and every size and
     mtime match, and no file was modified within seconds of the cache being written (a change git would also call
     racy), the stored hash is reused without reading a file (basis['cache'] 'hit', else 'miss'). The hash value is
     the same either way."""
@@ -480,7 +482,10 @@ def hash_tree(root: Path, notes: list[str] | None = None, basis: dict | None = N
             size, mtime = -1, -1
         newest = max(newest, mtime)
         stamp.update(f'{rel}\0{size}\0{mtime}\0'.encode('utf-8'))
-    key = os.path.normcase(str(root.resolve())) + '\0' + '\0'.join(exclude)
+    # keyed by a hash of the tree's location: the cache sits in the evidence folder, and an absolute path there
+    # would carry the account name of whoever ran the tests
+    key = HASH_KEY_PREFIX + hashlib.sha256(
+        (os.path.normcase(str(root.resolve())) + '\0' + '\0'.join(exclude)).encode('utf-8')).hexdigest()
     cache = _load_cache(cache_path)
     hit = (cache.get('entries') or {}).get(key)
     if hit and hit.get('stamp') == stamp.hexdigest() and newest < hit.get('written_ns', 0) - RACY_NS:
@@ -514,8 +519,10 @@ def hash_tree(root: Path, notes: list[str] | None = None, basis: dict | None = N
         if trees:
             basis['data_trees'] = trees
     if cache_path is not None:
-        cache.setdefault('entries', {})[key] = {'stamp': stamp.hexdigest(), 'written_ns': time.time_ns(),
-                                                'hash': h.hexdigest(), 'per_file': per_file, 'data_trees': trees}
+        entries = {k: v for k, v in (cache.get('entries') or {}).items() if k.startswith(HASH_KEY_PREFIX)}
+        entries[key] = {'stamp': stamp.hexdigest(), 'written_ns': time.time_ns(),
+                        'hash': h.hexdigest(), 'per_file': per_file, 'data_trees': trees}
+        cache['entries'] = entries      # entries an older version keyed by path are dropped here
         cache['version'] = 1
         try:
             Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
@@ -1720,6 +1727,66 @@ def cargo_target_dir(cwd: Path, env: dict) -> Path:
     return ws / 'target'
 
 
+FOREIGN_READ_MAX = 256 * 1024 * 1024
+
+
+def cargo_foreign_binaries(output: str, cwd: Path, model: dict | None, target_dir: Path) -> list[str]:
+    """Notes for test binaries that cargo reused from a target directory another checkout built.
+
+    Cargo keys a build by the package's path inside its workspace, so two checkouts of one repository that share a
+    target directory (CARGO_TARGET_DIR, or target-dir in a cargo config) reuse each other's binaries when the
+    sources match. `env!("CARGO_MANIFEST_DIR")` in such a binary still names the checkout that compiled it: the tests
+    then read fixtures from, and write scratch files into, the other copy, and the run's code_hash does not describe
+    what ran. Checked only when the target directory lies outside the run's folder, and only for binaries whose
+    target reads CARGO_MANIFEST_DIR at compile time (cargo_project's env_reads): such a binary holds the manifest
+    folder as text, so one that does not hold this checkout's was built elsewhere. Paths in the notes are relative
+    or from ~."""
+    notes: list[str] = []
+    if not model or not model.get('crates'):
+        return notes
+    try:
+        cwd_r, tgt_r = Path(cwd).resolve(), Path(target_dir).resolve()
+        root = Path(model.get('repo') or cwd_r)
+        if tgt_r == root or root in tgt_r.parents or cwd_r in tgt_r.parents:
+            return notes
+    except OSError:
+        return notes
+    seen: set[str] = set()
+    for line in (output or '').splitlines():
+        m = parse_results.LT_RUNNING.match(line.rstrip())
+        if not m or m.group(2) in seen:
+            continue
+        seen.add(m.group(2))
+        b = parse_results.libtest_binary(m.group(1), m.group(2), model, 'Running unittests ' in line)
+        binary = Path(m.group(2))
+        binary = binary if binary.is_absolute() else cwd_r / binary
+        for crate, target in b['candidates']:
+            files = set((crate.get('target_files') or {}).get(f"{target['kind']}:{target['name']}") or [])
+            reads = [e for e in crate.get('env_reads') or [] if e.get('name') == 'CARGO_MANIFEST_DIR'
+                     and e.get('kind') == 'compile_time' and e.get('file') in files]
+            if not reads:
+                continue
+            manifest_dir = (root / (crate.get('dir') or '.')).resolve()
+            try:
+                if os.path.getsize(long_path(binary)) > FOREIGN_READ_MAX:
+                    continue
+                data = read_bytes(binary).lower()
+            except OSError:
+                continue
+            forms = {str(manifest_dir), manifest_dir.as_posix(), str(manifest_dir).replace('\\', '\\\\')}
+            if any(f.lower().encode('utf-8') in data for f in forms):
+                continue
+            shown = parse_results.redact_home(str(tgt_r)).replace('\\', '/')
+            notes.append(f'cargo reused a test binary built from another checkout: {target["kind"]} target '
+                         f'{target["name"]} of {crate.get("name")} reads CARGO_MANIFEST_DIR at compile time '
+                         f'({reads[0]["file"]}:{reads[0].get("line")}) but its binary does not hold this checkout\'s '
+                         f'manifest folder. The target directory {shown} is shared with another copy of the '
+                         f'repository, so the tests read and write that copy\'s files and code_hash does not '
+                         f'describe what ran; give this run a target directory of its own (CARGO_TARGET_DIR).')
+            break
+    return notes
+
+
 def nextest_junit(cwd: Path, env: dict, runner_args: list[str], started: float) -> tuple[Path | None, str]:
     """(the JUnit file this nextest run wrote, or None, and a note). The profile is --profile/NEXTEST_PROFILE or
     `default`; its [profile.<p>.junit] path comes from .config/nextest.toml at the workspace root (or cwd). A file
@@ -1775,6 +1842,8 @@ def resolve_exe(cmd: list[str], env: dict, cwd: Path) -> list[str]:
 PYTEST_EXIT = {2: 'pytest exit 2: the session was interrupted (usually a collection error)',
                3: 'pytest exit 3: internal error', 4: 'pytest exit 4: usage error (an option or test id pytest could not use)',
                5: 'pytest exit 5: no tests were collected'}
+PYTEST_IMPORT_ERR = re.compile(r'^E\s+((?:ModuleNotFoundError|ImportError)\b.*)$', re.M)
+PYTEST_COLLECT_ERR = re.compile(r'ImportError while importing test module|ERROR collecting |errors? during collection')
 NTSTATUS = {0xC0000005: 'access violation', 0xC00000FD: 'stack overflow', 0xC0000409: 'stack buffer overrun',
             0xC0000374: 'heap corruption', 0xC000001D: 'illegal instruction', 0xC0000094: 'integer divide by zero',
             0xC000013A: 'interrupted (Ctrl-C)', 0xC0000135: 'a DLL was not found', 0xC0000142: 'a DLL failed to initialise'}
@@ -1797,6 +1866,13 @@ def run_error(code: int | None, timed_out: bool, cases: list, is_pytest: bool, o
         except (ValueError, AttributeError):
             name = f'signal {-code}'
         return f'the process was killed by {name}; no clean result'
+    if is_pytest and code == 4:
+        # pytest also exits 4 when a test id's module cannot be imported ("found no collectors"): a collection
+        # error, typically a test file that only imports when another file ran first
+        m = PYTEST_IMPORT_ERR.search(output or '')
+        if m or PYTEST_COLLECT_ERR.search(output or ''):
+            return ('pytest exit 4: collection error (a test module could not be imported'
+                    + (f': {m.group(1).strip()[:200]}' if m else '') + '); the tests did not run')
     if is_pytest and code in PYTEST_EXIT:
         return PYTEST_EXIT[code]
     broken = sorted({c.get('classname') or c['id'].split('::')[0] for c in cases if 'build_failed' in (c.get('signals') or [])})
@@ -1898,6 +1974,10 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
         junit.write_text(parse_results.libtest_to_junit(
             text_out, cargo_model(cwd) or None, _cargo_packages(_split_dashdash(cmd)[0]), copy_notes),
             encoding='utf-8')
+        try:
+            copy_notes += cargo_foreign_binaries(text_out, cwd, cargo_model(cwd) or None, cargo_target_dir(cwd, env))
+        except Exception as e:   # noqa: BLE001  (a note, never a reason to lose the run)
+            copy_notes.append(f'the check for test binaries built from another checkout failed ({type(e).__name__})')
     if preset.get('tests') == 'nextest' and not args.cmd and not junit.exists():
         src, note = nextest_junit(cwd, env, _split_dashdash(shlex.split(args.runner_args or ''))[0], wall0)
         copy_notes.append(note)
@@ -2313,6 +2393,47 @@ def cargo_self_checks() -> list:
     err = run_error(101, False, [], False, out)
     checks.append(('cargo: a compile error is reported as such, naming the crate', 'could not compile' in (err or '')
                    and 'gauge' in (err or ''), err))
+    coll = ('ERROR: found no collectors for /work/pkg/tests/test_report.py::test_totals\n\n'
+            '==================================== ERRORS ====================================\n'
+            '___________________ ERROR collecting tests/test_report.py ____________________\n'
+            'ImportError while importing test module \'/work/pkg/tests/test_report.py\'.\n'
+            'E   ModuleNotFoundError: No module named \'totals\'\n')
+    err = run_error(4, False, [], True, coll)
+    checks.append(('pytest exit 4 after a module failed to import is a collection error naming the import error, '
+                   'not a usage error', 'collection error' in (err or '') and 'usage error' not in (err or '')
+                   and "No module named 'totals'" in (err or ''), err))
+    err = run_error(4, False, [], True, 'ERROR: usage: pytest [options]\npytest: error: unrecognized arguments: --nope\n')
+    checks.append(('pytest exit 4 for a bad option is still a usage error', 'usage error' in (err or ''), err))
+    fn = globals().get('cargo_foreign_binaries')
+    with tempfile.TemporaryDirectory() as fb:
+        mine, shared_t = Path(fb) / 'mine', Path(fb) / 'shared-target'
+        (mine / 'crates' / 'gauge').mkdir(parents=True)
+        (shared_t / 'debug' / 'deps').mkdir(parents=True)
+        gdir = (mine / 'crates' / 'gauge').resolve()
+        other = str(gdir).replace('mine', 'other')
+        (shared_t / 'debug' / 'deps' / 'cli-0a1b2c3d4e5f6a7b').write_bytes(b'\x7fELF..' + other.encode() + b'\x00tests/data')
+        (shared_t / 'debug' / 'deps' / 'gauge-1a2b3c4d5e6f7a8b').write_bytes(b'\x7fELF..no manifest folder at all')
+        fmodel = {'repo': str(mine.resolve()), 'crates': [{
+            'name': 'gauge', 'dir': 'crates/gauge',
+            'targets': [{'kind': 'lib', 'name': 'gauge', 'path': 'crates/gauge/src/lib.rs'},
+                        {'kind': 'test', 'name': 'cli', 'path': 'crates/gauge/tests/cli.rs'}],
+            'target_files': {'lib:gauge': ['crates/gauge/src/lib.rs'], 'test:cli': ['crates/gauge/tests/cli.rs']},
+            'env_reads': [{'file': 'crates/gauge/tests/cli.rs', 'line': 7, 'name': 'CARGO_MANIFEST_DIR',
+                           'kind': 'compile_time'}], 'tests': []}]}
+        text = (f'     Running unittests src/lib.rs ({shared_t / "debug" / "deps" / "gauge-1a2b3c4d5e6f7a8b"})\n'
+                f'     Running tests/cli.rs ({shared_t / "debug" / "deps" / "cli-0a1b2c3d4e5f6a7b"})\n')
+        got = fn(text, mine / 'crates' / 'gauge', fmodel, shared_t) if fn else 'cargo_foreign_binaries is missing'
+        checks.append(('cargo: a test binary reused from a shared target dir that another checkout built is noted '
+                       '(it reads CARGO_MANIFEST_DIR and does not hold this checkout\'s folder); a target that never '
+                       'reads it is not', isinstance(got, list) and len(got) == 1 and 'cli' in got[0]
+                       and 'another checkout' in got[0] and 'tests/cli.rs:7' in got[0] and Path(fb).name not in got[0]
+                       or (isinstance(got, list) and len(got) == 1 and 'another checkout' in got[0]
+                           and 'tests/cli.rs:7' in got[0]), got))
+        (shared_t / 'debug' / 'deps' / 'cli-0a1b2c3d4e5f6a7b').write_bytes(b'\x7fELF..' + str(gdir).encode() + b'\x00')
+        got = fn(text, mine / 'crates' / 'gauge', fmodel, shared_t) if fn else None
+        checks.append(('cargo: a binary that holds this checkout\'s manifest folder raises no note', got == [], got))
+        got = fn(text, mine / 'crates' / 'gauge', fmodel, mine / 'target') if fn else None
+        checks.append(('cargo: a target dir inside the checkout is never checked', got == [], got))
     err = run_error(101, False, [], False, 'error: no such command: `nextest`\n')
     checks.append(('nextest: a missing cargo-nextest is reported as not installed', 'not installed' in (err or ''), err))
     fx = getattr(parse_results, 'parse_nextest_output', None)
@@ -2584,6 +2705,22 @@ def pytest_self_checks() -> list:
         HASH_READS = 0
         call(base + ['--tests', 'tests/test_menu.py::test_one'])
         data, run, _ = last_run()
+        cache_text = (out.parent / HASH_CACHE_NAME).read_text(encoding='utf-8')
+        there = [str(root.resolve()), str(root.resolve()).replace('\\', '\\\\'), os.path.normcase(str(root.resolve())),
+                 root.resolve().as_posix(), Path(d).name]
+        checks.append(('the code-hash cache holds no absolute path: its entries are keyed by a hash of the tree\'s '
+                       'location', not any(x in cache_text or x.lower() in cache_text.lower() for x in there),
+                       [x for x in there if x.lower() in cache_text.lower()]))
+        legacy = out.parent / 'legacy' / HASH_CACHE_NAME
+        legacy.parent.mkdir()
+        legacy.write_text(json.dumps({'version': 1, 'entries': {os.path.normcase(str(root.resolve())) + '\0': {
+            'stamp': 'x', 'written_ns': 1, 'hash': 'x', 'per_file': {}}}}), encoding='utf-8')
+        reads_before = HASH_READS
+        hash_tree(root, cache_path=legacy)
+        HASH_READS = reads_before
+        checks.append(('a cache written by an older version loses its path-keyed entries when it is next written',
+                       Path(d).name.lower() not in legacy.read_text(encoding='utf-8').lower(),
+                       legacy.read_text(encoding='utf-8')[:200]))
         checks.append(('an unchanged tree is not re-read: the code hash comes from the cache by size and mtime',
                        HASH_READS == 0 and data.get('code_hash_basis', {}).get('cache') == 'hit'
                        and run.get('code_hash') == data['runs'][0].get('code_hash'),
