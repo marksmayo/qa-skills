@@ -411,9 +411,12 @@ limitation: the report's `tests[]` marks them `neutralised`, but nothing else re
   | `neutralise.py` | `--env PYTHONPATH=<skill>/scripts --runner-args "-p net_guard"` | `--env "NODE_OPTIONS=--require <skill>/scripts/net_guard.cjs"` |
   | `similarity.py` | `--env "PYTHONPATH=<skill>/scripts" "PYTEST_ADDOPTS=-p net_guard"` | (Python only) |
 
-  unittest runs and script self-tests are not pytest, so the plugin cannot load there: run them under
-  `net_guard_proxy.py run --log <run>/net_guard.log -- <command>` (it guards only clients that honour
-  the proxy variables; say so), or name the gap in the limitations. Add `QA_NET_GUARD_LOG` with the
+  unittest runs and script self-tests are not pytest, so the plugin cannot load there: pass
+  `--env "PYTHONPATH=<skill>/scripts/py_guard_site"` (the variables `scripts/py_guard.py env --log
+  <log>` prints), whose `sitecustomize.py` loads `net_guard.py` in every Python process that inherits
+  it, child processes included; each logs its own `loaded` line. A process started with `-I`, `-E`
+  or `-S` is not guarded, and non-Python children need `net_guard_proxy.py` (it guards only clients
+  that honour the proxy variables); name what stayed unguarded in the limitations. Add `QA_NET_GUARD_LOG` with the
   same `--env`. A `PYTHONPATH` you give replaces the package's own, so add the package directories the
   tests need to it (`;`-separated on Windows). Set `QA_NET_GUARD_LOG=<run>/net_guard.log`: with it set the guards write only to
   the log, never to stderr, so tests of a CLI that assert on a child's stderr are not broken by

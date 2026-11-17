@@ -406,11 +406,11 @@ slashes>/net_guard.cjs" QA_NET_GUARD_LOG=<run>/net_guard.log`, which reaches Vit
 workers; combine it with the clock preload in the same `NODE_OPTIONS`) and `scripts/net_guard.py`
 for pytest (`PYTHONPATH` to a directory holding a copy, `PYTEST_ADDOPTS=-p net_guard`). The pytest
 plugin guards the pytest process only: for a `python -m unittest` suite, and for tests that start
-child Python processes (`subprocess.run([sys.executable, ...])`), make a scratch folder holding a
-copy of `net_guard.py` and a one-line `sitecustomize.py` (`import net_guard`), and pass its path as
-`--env PYTHONPATH=<folder>` (with `QA_NET_GUARD_LOG`): Python imports `sitecustomize` at start-up in
-every process that inherits the variable, so each logs its own `loaded` line (a process started
-with `-I`, `-E` or `-S` is not guarded; say so). Check the log has a `net_guard: loaded` line per
+child Python processes (`subprocess.run([sys.executable, ...])`), run the command through
+`scripts/py_guard.py run --log <run>/net_guard.log -- <command>` (or set the variables
+`py_guard.py env --log <log>` prints): it puts `scripts/py_guard_site/` first on `PYTHONPATH`, whose
+`sitecustomize.py` loads `net_guard.py` at start-up in every process that inherits the variable, so
+each logs its own `loaded` line (a process started with `-I`, `-E` or `-S` is not guarded; say so). Check the log has a `net_guard: loaded` line per
 process, or the guard was not on; each refusal names the
 host and the calling file and line (`from <file>:<line>`). Keep the log with the run's evidence
 and say in the limitations which tests were refused. Unset provider credentials as well.
