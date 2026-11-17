@@ -18,6 +18,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import datafiles, scan_data  # noqa: E402
 
 SCHEMA = HERE.parent / 'schemas' / 'test_data_report.schema.json'
@@ -27,8 +28,9 @@ DOWN = {'critical': 'serious', 'serious': 'moderate', 'moderate': 'minor', 'mino
 BANDS = [(9, 'P0'), (6, 'P1'), (3, 'P2'), (0, 'P3')]
 CONFIRMABLE = ('time_bomb', 'shared_mutable', 'locale_assumption')
 # a headline left as written by a template or a draft
-PLACEHOLDER_HEADLINE = re.compile(r'\bplaceholder\b|\bTODO\b|\bTBD\b|lorem ipsum|\bdraft headline\b|to be (?:replaced|written)'
-                                  r'|\bheadline here\b|^\s*$', re.I)
+# (the word "placeholder" alone is ordinary in this skill: a headline may say the data carries one)
+PLACEHOLDER_HEADLINE = re.compile(r'^\W*placeholder\b|\bplaceholder (?:headline|text)\b|[<\[{]\s*placeholder\s*[>\]}]|\bTODO\b|\bTBD\b'
+                                  r'|lorem ipsum|\bdraft headline\b|to be (?:replaced|written)|\bheadline here\b|^\s*$', re.I)
 GENERIC_LOCAL = {'admin', 'administrator', 'contact', 'demo', 'example', 'hello', 'info', 'noreply', 'no-reply', 'postmaster',
                  'sample', 'support', 'test', 'tester', 'testing', 'user', 'users', 'webmaster', 'no.reply', 'do-not-reply',
                  'donotreply', 'test.user', 'first.last', 'john.doe', 'jane.doe'}
@@ -205,27 +207,27 @@ def spans_on(line: str) -> set[str]:
     return out
 
 
-def extract_values(c: dict, p: Path) -> set[str]:
+def extract_values(c: dict, repo: Path) -> set[str]:
     """The values of a flagged extract column that could identify someone: names of two or more words, or long ones."""
     vals = set()
     try:
-        for r in datafiles.load_records(p, c['file']):
+        for r in datafiles.records_at(repo, c['file']):
             v = r['fields'].get(c['field'], {}).get('value')
             if isinstance(v, str) and (len(v.strip()) >= 8 or (' ' in v.strip() and len(v.strip()) >= 6)):
                 vals.add(v.strip())
             if len(vals) >= 5000:
                 break
-    except datafiles.NotAssessed:
+    except (OSError, datafiles.NotAssessed):
         pass
     return vals
 
 
 def flagged_values(c: dict, repo: Path) -> set[str]:
-    p = repo / c['file']
     if c['rule'] == 'customer_extract':
-        return extract_values(c, p)
+        return extract_values(c, repo)
     try:
-        lines = datafiles.text_of(p).split('\n')
+        # a member of a zip archive (<archive>!<member>) is re-read in memory like a file
+        lines = datafiles.text_at(repo, c['file']).split('\n')
     except (OSError, datafiles.NotAssessed):
         return set()
     line = lines[c['line'] - 1] if 0 < c['line'] <= len(lines) else ''
@@ -258,14 +260,14 @@ def flagged_values(c: dict, repo: Path) -> set[str]:
         return vals
     if c['rule'] in ('name_and_address', 'dob_with_name'):
         try:
-            for r in datafiles.load_records(p, c['file']):
+            for r in datafiles.records_at(repo, c['file']):
                 if any(v['line'] == c['line'] for v in r['fields'].values()):
                     nm = c['details'].get('name_field')
                     if nm in r['fields']:
                         vals.add(str(r['fields'][nm]['value']))
                     if c['field'] in r['fields']:
                         vals.add(str(r['fields'][c['field']]['value']))
-        except datafiles.NotAssessed:
+        except (OSError, datafiles.NotAssessed):
             pass
         return {v for v in vals if len(v) >= 6}
     for m in scan_data.EMAIL.finditer(line):
@@ -432,9 +434,8 @@ def basis_errors(f: dict, repo: Path | None, evidence: Path | None) -> list[str]
         if echo:
             errs.append(f'{where}: the excerpt contains {echo}; quote the code around a value, never the value')
         if repo is not None:
-            p = repo / b['file']
             try:
-                lines = datafiles.text_of(p).split('\n')
+                lines = datafiles.text_at(repo, b['file']).split('\n')
             except (OSError, datafiles.NotAssessed):
                 errs.append(f'{where}: {b["file"]} is not in the repository')
                 continue
@@ -444,6 +445,11 @@ def basis_errors(f: dict, repo: Path | None, evidence: Path | None) -> list[str]
                 errs.append(f'{where}: the excerpt is not on {b["file"]}:{b["line"]}')
     if files and f['location']['file'] not in files:
         errs.append(f'{w}: location is not one of its basis files')
+    if f['category'] in ('personal_data', 'secret') and not files:
+        # the leak check protects the values on a basis line; an evidence file alone protects nothing
+        errs.append(f'{w}: a {f["category"]} finding found by review cites at least one file and line (a member of a zip '
+                    'archive as <archive>!<member>), so the validator can re-read the value and keep it out of the report; '
+                    'an evidence file alone leaves the value unprotected')
     if f['category'] == 'time_bomb' and f['confidence'] == 'confirmed' and not f.get('fails_on_date'):
         errs.append(f'{w}: a confirmed time bomb found by review names the date it fails on (bracket it with dated runs)')
     if f['category'] == 'residue' and not any('evidence' in b for b in basis):
@@ -473,7 +479,7 @@ def live_host_errors(f: dict, evidence: Path | None, repo: Path | None = None) -
             texts.append(b['excerpt'])
         if repo is not None and 'file' in b and isinstance(b.get('line'), int):
             try:
-                lines = datafiles.text_of(repo / b['file']).split('\n')
+                lines = datafiles.text_at(repo, b['file']).split('\n')
                 texts.append(lines[b['line'] - 1] if 0 < b['line'] <= len(lines) else '')
             except (OSError, datafiles.NotAssessed):
                 pass
@@ -558,6 +564,38 @@ def tests_found_errors(rep: dict, cand_doc: dict | None) -> list[str]:
     return errs
 
 
+NOT_SCANNED_DIR = re.compile(r'^(\S+/) holds \d+ data files that test code names, but the inventory does not cover it')
+ARCHIVE_UNREAD = re.compile(r'^zip archive partly read|^zip archive that could not be opened|archive: not opened')
+
+
+def limitation_errors(rep: dict, cand_doc: dict | None) -> list[str]:
+    """What the scan could not read must be in the limitations (SKILL.md): every language whose test code was read as
+    text only, schema drift not assessed when the repository's models are in a language it does not read, a data tree
+    tests name that was not inventoried, and an archive that was not opened or only partly read."""
+    if not cand_doc:
+        return []
+    lims = ' '.join(rep['limitations']).lower()
+    errs = []
+    for lang in sorted(((cand_doc.get('language_coverage') or {}).get('text_only') or {})):
+        if lang.lower() not in lims:
+            errs.append(f'limitations: {lang} test code was read as text only (language_coverage.text_only in the candidates); '
+                        f'a limitation must name {lang} and the code rules not run on it')
+    if any(n.startswith('schema drift:') for n in cand_doc.get('notes', [])) and 'drift' not in lims:
+        errs.append('limitations: schema_drift.py does not read the models of the dominant language (the schema drift note in '
+                    'the candidates); a limitation must say schema drift was not assessed for it')
+    for n in cand_doc.get('notes', []):
+        m = NOT_SCANNED_DIR.match(n)
+        if m and m.group(1).lower() not in lims and m.group(1).rstrip('/').lower() + ' ' not in lims + ' ':
+            errs.append(f'limitations: {m.group(1)} holds data files the tests name but nothing scanned them; a limitation must '
+                        f'name {m.group(1)}')
+    for path, st in sorted((cand_doc.get('inventory_status') or {}).items()):
+        if st.get('status') == 'not_assessed' and ARCHIVE_UNREAD.search(st.get('reason') or '') and path.lower() not in lims \
+                and path.rsplit('/', 1)[-1].lower() not in lims:
+            errs.append(f'limitations: {path} was not opened or only partly read ({st["reason"][:80]}...); a limitation must '
+                        'name the archive and what was not read')
+    return errs
+
+
 def runs_errors(rep: dict, runs: dict | None) -> list[str]:
     """A run_tests.py tool that ran left a runs file: the report names it and the validator reads it."""
     ran = [t['name'] for t in rep['tools'] if 'run_tests' in t['name'] and t['status'] == 'ran']
@@ -582,6 +620,7 @@ def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, e
                     'are no tests ("the repository has no tests"), so an empty audit is not read as clean test data')
     errs += tests_found_errors(rep, cand_doc)
     errs += runs_errors(rep, runs)
+    errs += limitation_errors(rep, cand_doc)
     ids =[f['id'] for f in fs]
     if len(set(ids)) != len(ids):
         errs.append('findings: duplicate ids')

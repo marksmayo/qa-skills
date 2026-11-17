@@ -30,6 +30,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 import inventory as inv, residue, scan_data, schema_drift, validate_test_data_report as vtd  # noqa: E402
 
 FAILS: list[str] = []
@@ -1078,13 +1079,320 @@ def arithmetic_time_bomb() -> None:
           'renderer: a bomb confirmed by date arithmetic says so, with no empty run list')
 
 
-def main() -> int:
+# ---------------------------------------------------------------- gaps found on a Rust workspace with Python tooling
+def long_line_is_linear() -> None:
+    """A report page with its data embedded on one line (hundreds of thousands of characters, thousands of quoted
+    strings): the attribute look-behind reads a short window before each string, never the whole line so far."""
+    import time
+    cells = ''.join('<td class="n" data-k="v%d">row %d</td>' % (i, i) for i in range(9000))
+    page = '<!doctype html>\n<html><body><table><tr>' + cells + '</tr></table>\n<p title="Contact">Ada Example, ' \
+           + place_mailbox() + '</p></body></html>\n'
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, {'tests/test_page.py': 'def test_page():\n    assert open("tests/fixtures/report.html").read()\n',
+                     'tests/fixtures/report.html': page})
+        invd = inv.build(root, None, {})
+        t0 = time.process_time()
+        res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
+        took = time.process_time() - t0
+    check(len(cells) > 300_000 and took < 6.0,
+          f'scan: one {len(cells) // 1000}k-character line with 18,000 quoted strings scans in under 6 s of CPU time '
+          f'(took {took:.1f} s)')
+    check(any(c['rule'] == 'email' and c['file'] == 'tests/fixtures/report.html' and c['line'] == 3 for c in res['candidates']),
+          'scan: the address after the long line is still found, on its own line')
+
+
+def archive_mailbox() -> str:
+    # invented, assembled at run time
+    return 'wren.ottley' + '@' + 'fernmail' + '.co'
+
+
+def archives_and_logs() -> None:
+    """A zip of run logs committed beside the tests, and a loose .log: both are read (the zip in memory), every member
+    is listed, candidates cite <archive>!<member> and the line in the member, and an unread member says why."""
+    import io, zipfile
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, {'tests/test_runs.py': ('from pathlib import Path\n\n\ndef test_runs():\n'
+                                            '    assert (Path(__file__).parent / "fixtures" / "runs.zip").exists()\n'),
+                     'tests/fixtures/player.log': 'started\nwrote /home/quillfern/media/clip.mp4\n'})
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+            z.writestr('logs/run1.log', 'start\ncontact ' + archive_mailbox() + '\nend\n')
+            z.writestr('logs/run2.json', '{"cmd": "/Users/quillfern/bin/player"}\n')
+            z.writestr('inner/older.tar', b'\x00' * 64)
+            z.writestr('shots/frame.png', b'\x89PNG\r\n\x1a\n' + b'\x00' * 32)
+        (root / 'tests/fixtures/runs.zip').write_bytes(buf.getvalue())
+        invd = inv.build(root, None, {})
+        by = {i['path']: i for i in invd['inventory']}
+        z = by.get('tests/fixtures/runs.zip', {})
+        m1, m2 = by.get('tests/fixtures/runs.zip!logs/run1.log', {}), by.get('tests/fixtures/runs.zip!inner/older.tar', {})
+        check(m1.get('status') == 'scanned' and m1.get('lines') == 3 and 'tests/test_runs.py::test_runs' in m1.get('loaded_by', []),
+              f'inventory: a text member of a committed zip is listed as <archive>!<member>, scanned, loaded by the archive\'s '
+              f'tests (got {m1})')
+        check(m2.get('status') == 'not_assessed' and 'nested archive' in (m2.get('reason') or ''),
+              f'inventory: a nested archive inside a zip is listed not_assessed with the reason (got {m2.get("reason")})')
+        check(z.get('status') == 'not_assessed' and 'partly read' in (z.get('reason') or '')
+              and (z.get('archive_members') or {}).get('members') == 4,
+              f'inventory: a zip with a member it could not read is not_assessed, partly read, with its member count (got {z})')
+        check(any('runs.zip' in w for w in invd.get('warnings', [])), 'inventory: a partly read archive is a WARNING')
+        check(by.get('tests/fixtures/player.log', {}).get('status') == 'scanned', 'inventory: a .log file is read as text')
+        check('tests/fixtures/runs.zip!logs/run1.log' not in invd['summary']['unused'], 'inventory: archive members are never "unused"')
+        res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
+        cs = {(c['rule'], c['file'], c['line']) for c in res['candidates']}
+        check(('email', 'tests/fixtures/runs.zip!logs/run1.log', 2) in cs,
+              f'scan: an address inside a zip member is a candidate citing the archive, the member and the line (got {sorted(cs)})')
+        check(('local_path', 'tests/fixtures/runs.zip!logs/run2.json', 1) in cs and ('local_path', 'tests/fixtures/player.log', 2) in cs,
+              'scan: home-folder paths in a zip member and in a loose .log are found')
+        # the validator re-reads a member: a basis line in it, and the values on it are protected
+        f = {'id': 'F1', 'category': 'personal_data', 'source': 'agent', 'candidates': [], 'confidence': 'static',
+             'location': {'file': 'tests/fixtures/runs.zip!logs/run1.log', 'line': 2},
+             'basis': [{'file': 'tests/fixtures/runs.zip!logs/run1.log', 'line': 2, 'excerpt': 'contact'}]}
+        errs = vtd.basis_errors(f, root, None)
+        check(errs == [], f'validator: a basis line inside a zip member is re-read (got {errs})')
+        per = vtd.protected_values({}, root, {'findings': [f], 'dismissed': []})
+        check(archive_mailbox() in per.get('F1', set()), 'validator: the values on a basis line inside a zip member are protected')
+        ev_only = dict(f, basis=[{'evidence': 'zip_members.json'}])
+        check(any('evidence file alone' in e for e in vtd.basis_errors(ev_only, root, None)),
+              'validator: a review personal_data finding with only an evidence basis is rejected (nothing would be protected)')
+        cands = {c['id']: c for c in res['candidates']}
+        cid = next((c['id'] for c in res['candidates'] if c['rule'] == 'email' and '!' in c['file']), None)
+        prot = vtd.protected_values(cands, root, {'findings': [], 'dismissed': []})
+        check(cid is not None and archive_mailbox() in prot.get(cid, set()),
+              'validator: a candidate inside a zip member has its value protected (the report must not quote it)')
+
+
+def local_path_false_positives() -> None:
+    """Paths that are not someone's machine: a placeholder account fed to a redaction test, a reserved-domain URL whose
+    path starts /home/, and a CI runner's home (Windows and macOS runners too). A real-looking account still counts."""
+    res = scan({
+        'tests/test_redact.py': (
+            'from tool import redact\n\n\ndef test_redacts_accounts():\n'
+            "    raw = [r'C:\\Users\\private-account\\movie.mp4', '/home/private-account/movie.mp4', '/Users/some-user/a.mp4']\n"
+            '    assert all("account" not in redact(x) for x in raw)\n\n\n'
+            'def test_source_url():\n'
+            "    assert redact('https://example.org/home/contributor/media') == 'https://example.org/home/contributor/media'\n\n\n"
+            'def test_runner_home():\n'
+            "    env = {'LOCALAPPDATA': 'C:/Users/runner/AppData/Local', 'HOME': '/Users/runner/', 'X': r'C:\\Users\\runneradmin\\x'}\n"
+            '    assert env\n\n\n'
+            'def test_real_looking():\n'
+            "    assert redact('/home/tamsin.oakridge/clip.mp4')\n"),
+        'tool.py': 'def redact(s):\n    return s\n'})
+    lp = [c for c in res['candidates'] if c['rule'] == 'local_path']
+    live = {c['line'] for c in lp if not c['auto_dismiss']}
+    dismissed = {c['line'] for c in lp if c['auto_dismiss']}
+    check(live == {19}, f'scan: local_path stays only for a real-looking account (line 19); got live lines {sorted(live)}')
+    check(5 in dismissed, f'scan: a placeholder account (private-account, some-user) is dismissed by rule, not dropped '
+                          f'(got dismissed lines {sorted(dismissed)})')
+    check(not any(c['line'] in (10, 14) for c in lp), 'scan: a reserved-domain URL path and a CI runner home are not local paths')
+
+
+# a tooling repository: scripts/ that tests load by file path, catalogues in catalog/ that tests read by repository
+# path, a results tree a script globs, and an output file name a script writes
+TOOL_SCRIPTS = {
+    'scripts/build-page.py': ('from pathlib import Path\nROOT = Path(__file__).resolve().parents[1]\n\n\n'
+                              'def render(data):\n    template = (ROOT / "pages/page.template.html").read_text()\n'
+                              '    return template.replace("<!-- DATA -->", data)\n'),
+    'scripts/refresh.py': ('import json\nfrom pathlib import Path\nROOT = Path(__file__).resolve().parents[1]\n\n\n'
+                           'def collect(bundles=ROOT / "catalog/results"):\n'
+                           '    return [json.loads(p.read_text()) for p in sorted(bundles.glob("*.json"))]\n\n\n'
+                           'def features():\n    return json.loads((ROOT / "catalog/features.json").read_text())\n'),
+    'scripts/compare.py': ('import json\nfrom pathlib import Path\n\n\ndef save(output, payload):\n'
+                           '    path = output / "comparison.json"\n    if (output / "comparison.json").exists():\n'
+                           '        raise SystemExit("exists")\n    path.write_text(json.dumps(payload))\n'),
+    'tests/test_page.py': ('import importlib.util\nfrom pathlib import Path\nROOT = Path(__file__).resolve().parents[1]\n'
+                           'SPEC = importlib.util.spec_from_file_location("build_page", ROOT / "scripts/build-page.py")\n'
+                           'page = importlib.util.module_from_spec(SPEC)\nSPEC.loader.exec_module(page)\n\n\n'
+                           'def test_render():\n    assert "x" in page.render("x")\n'),
+    'tests/test_refresh.py': ('import sys\nfrom pathlib import Path\nROOT = Path(__file__).resolve().parents[1]\n'
+                              'sys.path.insert(0, str(ROOT / "scripts"))\nimport refresh\n\n\n'
+                              'def test_features():\n    assert refresh.features()\n\n\n'
+                              'def test_catalogue_by_path():\n'
+                              '    assert (ROOT / "catalog/events.json").read_text()\n'),
+    'tests/test_compare.py': ('import sys\nfrom pathlib import Path\nROOT = Path(__file__).resolve().parents[1]\n'
+                              'sys.path.insert(0, str(ROOT / "scripts"))\nimport compare\n\n\n'
+                              'def test_save(tmp_path):\n    compare.save(tmp_path, {})\n    assert (tmp_path / "comparison.json").exists()\n'),
+    'pages/page.template.html': '<html><body><!-- DATA --></body></html>\n',
+    'catalog/features.json': '{"features": ["a"]}\n',
+    'catalog/events.json': '{"events": ["b"]}\n',
+    'catalog/other-inventory.json': '{"other": 1}\n',
+    'catalog/results/r1.json': '{"run": 1}\n',
+    'results/old/comparison.json': '{"trials": []}\n',
+}
+
+
+def loaded_by_reach() -> None:
+    """Files tests reach through scripts they load by path count as loaded; a glob of one folder does not reach its
+    parent's files; a name a script only writes is not a load; and data files tests read by repository path are
+    inventoried even without --data-dir."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, TOOL_SCRIPTS)
+        invd = inv.build(root, None, {}, ['catalog', 'pages', 'results'])
+        by = {i['path']: i for i in invd['inventory']}
+        tpl = by.get('pages/page.template.html', {}).get('loaded_by', [])
+        check('tests/test_page.py::test_render' in tpl,
+              f'inventory: a template read by a script the test loads with spec_from_file_location is loaded by it (got {tpl})')
+        feats = by.get('catalog/features.json', {}).get('loaded_by', [])
+        check('tests/test_refresh.py::test_features' in feats,
+              f'inventory: a file read by a script imported from a sys.path folder is loaded by the importing tests (got {feats})')
+        other = by.get('catalog/other-inventory.json', {}).get('loaded_by', [])
+        check(other == [], f'inventory: a glob over catalog/results does not reach files directly under catalog/ (got {other})')
+        r1 = by.get('catalog/results/r1.json', {}).get('loaded_by', [])
+        check('tests/test_refresh.py::test_features' in r1, f'inventory: the globbed folder\'s own files are reached (got {r1})')
+        cmp_ = by.get('results/old/comparison.json', {}).get('loaded_by', [])
+        check(cmp_ == [], f'inventory: a file name a script and a test only write or probe is not a load (got {cmp_})')
+        invd = inv.build(root, None, {})
+        by = {i['path']: i for i in invd['inventory']}
+        ev = by.get('catalog/events.json', {})
+        check(ev.get('status') == 'scanned' and 'tests/test_refresh.py::test_catalogue_by_path' in ev.get('loaded_by', []),
+              f'inventory: a data file outside the test areas that a test names by its repository path is inventoried by '
+              f'default (got {ev})')
+        check(any('catalog' in w for w in invd.get('warnings', [])) or any(
+            u['dir'] == 'catalog' for u in invd.get('unlisted_data_dirs', [])),
+              'inventory: a data folder tests read by path but not inventoried whole is named in a warning')
+
+
+def log_ids_and_grouped_paths() -> None:
+    """A player's debug log: bracketed object addresses and labelled ids that happen to be Luhn-valid digit runs are not
+    card numbers; a home path repeated on many lines of one file is one local_path candidate listing its lines; and an
+    evidence tree (--evidence-dir) is scanned but never called unused."""
+    addr = luhn_complete('400000000000000')            # a 16-digit run that passes Luhn
+    lines = ['[%s] main stream debug: looking for module "any": 12 candidates' % addr,
+             '[00000a1b2c3d4e5f] demux debug: |   + TrackUID: %s' % luhn_complete('411111111111111111'),
+             'opened /home/quillfern/media/a.mkv', 'opened /home/quillfern/media/b.mkv', 'opened /home/quillfern/media/c.mkv']
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, {'tests/test_x.py': 'def test_x():\n    assert True\n', 'runs/r1/stderr.log': '\n'.join(lines) + '\n',
+                     'runs/r1/summary.json': '{"ok": true}\n'})
+        invd = inv.build(root, None, {}, evidence_dirs=['runs'])
+        res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
+    cards = [c for c in res['candidates'] if c['rule'] == 'card']
+    check(cards == [], f'scan: a bracketed log address and a labelled TrackUID are not card numbers (got {[c["line"] for c in cards]})')
+    lp = [c for c in res['candidates'] if c['rule'] == 'local_path']
+    check(len(lp) == 1 and lp[0]['line'] == 3 and lp[0]['details'].get('lines') == [3, 4, 5],
+          f'scan: one local_path candidate per file, listing every line (got {[(c["line"], c["details"]) for c in lp]})')
+    check(not [c for c in res['candidates'] if c['rule'] == 'unused'] and any(
+        i['path'] == 'runs/r1/summary.json' for i in invd['inventory']),
+          'inventory: files under --evidence-dir are inventoried and scanned, never called unused')
+
+
+RUST_WORKSPACE = {
+    'Cargo.toml': '[workspace]\nmembers = ["crates/reel"]\n',
+    'crates/reel/Cargo.toml': '[package]\nname = "reel"\nversion = "0.1.0"\nedition = "2021"\n',
+    'crates/reel/src/lib.rs': ('pub fn frames(n: u32) -> u32 { n * 2 }\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n'
+                               '    #[test]\n    fn doubles() {\n        assert_eq!(frames(2), 4);\n    }\n\n'
+                               '    #[test]\n    fn reads_script() {\n'
+                               '        let s = std::fs::read_to_string("tests/fixtures/controls.lua").unwrap();\n'
+                               '        assert!(s.contains("play"));\n    }\n}\n'),
+    'crates/reel/tests/cli.rs': ('use std::process::Command;\n\n#[test]\nfn runs_helper() {\n'
+                                 '    let out = Command::new(env!("CARGO_BIN_EXE_reel")).output();\n    assert!(out.is_ok());\n}\n\n'
+                                 '#[test]\nfn reads_fixture() {\n'
+                                 '    assert!(std::fs::read_to_string("tests/fixtures/clip.json").is_ok());\n}\n'),
+    'crates/reel/tests/fixtures/player.rs': 'fn main() {\n    println!("{}", "ready");\n}\n',
+    'crates/reel/tests/fixtures/controls.lua': 'mp.add_key_binding("p", "play", function() end)\n',
+    'crates/reel/tests/fixtures/clip.json': '{"frames": 4}\n',
+    'tests/test_tool.py': 'def test_tool():\n    assert True\n',
+}
+
+
+def rust_tests_modelled() -> None:
+    """A Rust workspace read through cargo_project.py: #[test] functions in #[cfg(test)] modules of src/ files are
+    inventoried, a helper program under tests/fixtures is not a test, tests_found counts test functions, and a fixture
+    of an unknown type is listed (not_assessed) instead of dropped."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, RUST_WORKSPACE)
+        invd = inv.build(root, None, {})
+        res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
+    by = {i['path']: i for i in invd['inventory']}
+    lib = by.get('crates/reel/src/lib.rs', {})
+    check(lib.get('kind') == 'inline' and len(lib.get('loaded_by', [])) == 2,
+          f'inventory: a src/ file with #[cfg(test)] tests is inventoried as test code with its test ids (got {lib})')
+    helper = by.get('crates/reel/tests/fixtures/player.rs', {})
+    check(helper.get('kind') != 'inline' and not any('player.rs' in t for t in invd['tests']),
+          f'inventory: a helper program under tests/fixtures is not a test (got {helper.get("kind")}, '
+          f'{[t for t in invd["tests"] if "player" in t]})')
+    check(res['tests_found'] == 5, f'scan: tests_found counts test functions: 4 Rust and 1 Python (got {res["tests_found"]}: '
+                                   f'{invd["tests"]})')
+    lua = by.get('crates/reel/tests/fixtures/controls.lua', {})
+    check(lua.get('status') == 'not_assessed' and 'unknown format' in (lua.get('reason') or ''),
+          f'inventory: a fixture of an unknown type is listed not_assessed, not dropped (got {lua})')
+    clip = by.get('crates/reel/tests/fixtures/clip.json', {}).get('loaded_by', [])
+    check(any(t.endswith('reads_fixture') for t in clip), f'inventory: a fixture a Rust test names is loaded by that test (got {clip})')
+
+
+def required_limitations() -> None:
+    """The limitations SKILL.md asks for are enforced: languages read as text only, schema drift not assessed for the
+    dominant language, a data tree tests name but nothing scanned, a partly read archive. The word placeholder in a
+    headline that describes placeholder data is fine; a stock draft headline still is not."""
+    cand_doc = {'tests_found': 12, 'candidates': [], 'language_coverage': {'code_rules': ['python'], 'text_only': {'rust': 7}},
+                'notes': ['schema drift: This repository is predominantly Rust ... NOT a schema drift check',
+                          'catalog/ holds 60 data files that test code names, but the inventory does not cover it: NOT scanned '
+                          'for personal data, time bombs or duplicates (inventory it with --data-dir catalog)'],
+                'inventory_status': {'results/runs.zip': {'status': 'not_assessed', 'reason': 'zip archive partly read: 3 '
+                                                          'member(s) read as text, not read: a.tar (nested archive: not opened)'}}}
+    ex = report_with(limitations=['Static rules only.'])
+    ex['metadata']['tests_found'] = 12
+    errs = vtd.check(ex, None, None, None, None, json.dumps(ex), None, None, cand_doc=cand_doc)
+    for what in ('rust', 'schema drift', 'catalog/', 'results/runs.zip'):
+        check(any('limitation' in e and what in e for e in errs),
+              f'validator: a report whose limitations leave out {what} is rejected (got {[e[:90] for e in errs]})')
+    ex['limitations'] = ['Rust test code (7 files) was read as text only: no Rust code rules ran.',
+                         'Schema drift was not assessed: the models are Rust structs, which schema_drift.py does not read.',
+                         'catalog/ (60 data files the tests read) was not inventoried or scanned.',
+                         'results/runs.zip was only partly read: a nested archive in it was not opened.']
+    errs = vtd.check(ex, None, None, None, None, json.dumps(ex), None, None, cand_doc=cand_doc)
+    check(not any('limitation' in e for e in errs), f'validator: limitations that name them pass (got {errs})')
+    ex['summary']['headline'] = 'The unpacked copies carry a placeholder instead of the account name; the archive does not.'
+    errs = vtd.check(ex, None, None, None, None, json.dumps(ex), None, None)
+    check(not any('is a placeholder' in e for e in errs), 'validator: a headline about placeholder data is not itself a placeholder')
+
+
+def residue_directories() -> None:
+    """Tests that keep scratch folders inside the repository and remove only their own subfolder leave the parents
+    behind, empty: the diff lists directories a run created (dirs_added), empty ones included."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, {'a.txt': 'a\n', 'results/keep.md': 'k\n'})
+        before = residue.snapshot_all(root)
+        (root / 'results' / 'local').mkdir()
+        (root / 'scratch' / 'test-tmp').mkdir(parents=True)
+        res = residue.diff(before, residue.snapshot_all(root))
+    check(res.get('dirs_added') == ['results/local', 'scratch', 'scratch/test-tmp'] and res['summary'].get('dirs_added') == 3,
+          f'residue: empty directories a run created are listed under dirs_added (got {res.get("dirs_added")})')
+
+
+GROUPS: list = [long_line_is_linear, archives_and_logs, local_path_false_positives, loaded_by_reach, log_ids_and_grouped_paths,
+                rust_tests_modelled, required_limitations, residue_directories]
+
+
+def empty_data_dir() -> None:
+    """A --data-dir (or --evidence-dir) that yields no source says so, naming what it held, instead of printing nothing."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, {'tests/test_x.py': 'def test_x():\n    assert True\n', 'media/README.md': '# Media\n\nNot committed.\n'})
+        invd = inv.build(root, None, {}, ['media', 'nowhere'])
+    ws = invd.get('warnings', [])
+    check(any(w.startswith('media/') and 'no data source' in w and 'README.md' in w for w in ws),
+          f'inventory: a --data-dir holding only documentation is named in a warning (got {ws})')
+    check(any(w.startswith('nowhere/') and 'does not exist' in w for w in ws), 'inventory: a --data-dir that does not exist is named')
+
+
+GROUPS.append(empty_data_dir)
+
+
+def main(argv=None) -> int:
+    """self_test.py [group ...]: all groups, or only the named ones."""
+    names = list(sys.argv[1:] if argv is None else argv)
     for t in (fixture_dirs_by_default, commands_count_as_use, prose_formats, time_bombs_stay_in_project, code_is_not_an_email,
               near_duplicates_scale, capped_pairs_are_noted, placeholder_headline, arithmetic_time_bomb,
               baseline_on_audit_date, go_rules, url_credentials_and_cards, placeholders, coverage_and_drift, residue_outside_tree, live_endpoint_severity,
               big_data_tree, cwd_relative_paths, agent_personal_data_leak, empty_repository, data_dir_unknown_format,
               served_data_dir, data_dir_code, no_tests_statement, tests_found_field, runs_required, drift_nothing_to_check,
-              write_summary_line_endings):
+              write_summary_line_endings, *GROUPS):
+        if names and t.__name__ not in names:
+            continue
         try:
             t()
         except Exception as exc:  # a crash in one group is a failure, not the end of the run

@@ -75,6 +75,12 @@ and `<` it is the fixed date itself.
 
 ## Personal data
 
+- **An OS account name is personal data.** A real person's account name in a home path
+  (`C:\Users\<name>\`, `/home/<name>/`) inside committed evidence (a recorded run, a log, a zip
+  of either) is promoted as `personal_data` by review (data type "an OS account name in a home
+  path"), besides any `local_path` candidate; a CI runner's home and a stand-in folder name
+  (`private-account`) are not. Cite a member of an archive as `<archive>!<member>` and its line,
+  so the validator protects the name.
 - **Every finding:**
   - `real_looking: true`;
   - names what made it look real;
