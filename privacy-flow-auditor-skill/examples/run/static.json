@@ -1,7 +1,7 @@
 {
  "repo": "privacy-flow-auditor-skill/examples/clinic-signup",
  "files_scanned": 7,
- "seconds": 1.3,
+ "seconds": 1.2,
  "skipped": [
   {
    "file": "stub-vendors/",
@@ -507,11 +507,21 @@
   "status": "ok",
   "warning": null,
   "needs_limitation": [],
+  "needs_limitation_scripts": [],
   "needs_limitation_dirs": []
  },
  "fixtures": [],
  "fixtures_excluded": [],
  "home_paths": [],
+ "archives": [],
+ "redacted_home_paths": {
+  "count": 0,
+  "files": []
+ },
+ "history": {
+  "scanned": false,
+  "note": "the scan reads the current tree only: an identifier removed from a file (or replaced by a placeholder) may remain in earlier commits; search them with git log -S for the values the code writes"
+ },
  "git_tracked": true,
  "copies_folded": 0,
  "host_mentions": [

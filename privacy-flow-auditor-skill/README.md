@@ -60,7 +60,11 @@ python scripts/render_report.py run/privacy_audit.json [--brief]
 
 Auditing a repository that holds sample projects (a tool's `examples/` with planted problems), the scan
 leaves those out and lists them (`fixtures_excluded`); `--include-fixtures` scans them. A repository of
-command-line tools rather than an app may name "the tool" (or the code, the repository) in the disclaimer.
+command-line tools rather than an app may name "the tool" (or the code, the repository) in the disclaimer. The scan
+also reads committed `.log` files and the text members of committed `.zip` archives for home-directory paths
+(anything it cannot read is listed under `skipped`), and records the repository by relative path or name,
+never by the auditor's absolute path. It reads the current tree only: the audit names git history as a
+limitation when identifiers were found in committed files.
 
 When the browser capture can't run, the audit is still delivered from the static scan alone, marked
 `run_status: not_run`, with no consent state claimed:

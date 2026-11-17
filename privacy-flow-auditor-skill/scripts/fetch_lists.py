@@ -38,6 +38,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 from domains import PSL_FILE, psl_sha256, registrable  # noqa: E402
 LOCK = HERE.parent / 'data' / 'lists.lock.json'
 VENDORS = HERE.parent / 'data' / 'vendors.json'
