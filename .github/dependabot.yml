@@ -1,0 +1,38 @@
+# The manifests and lockfiles under examples/ belong to synthetic sample projects that the skills' self-tests and
+# example reports read: several are deliberately out of date or vulnerable, some hold fake integrity hashes, and some
+# are tied to recorded runs. They are never installed or deployed, so Dependabot leaves them alone.
+#
+# open-pull-requests-limit: 0 keeps the current behaviour (security updates only, no scheduled version updates);
+# security updates still follow each entry's exclude-paths.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directories: ["/**"]
+    exclude-paths: ["**/examples/**"]
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+  - package-ecosystem: pip
+    directories: ["/**"]
+    exclude-paths: ["**/examples/**"]
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+  - package-ecosystem: cargo
+    directories: ["/**"]
+    exclude-paths: ["**/examples/**"]
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+  - package-ecosystem: gomod
+    directories: ["/**"]
+    exclude-paths: ["**/examples/**"]
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+  - package-ecosystem: gradle
+    directories: ["/**"]
+    exclude-paths: ["**/examples/**"]
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
