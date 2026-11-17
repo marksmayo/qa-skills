@@ -1348,8 +1348,22 @@ def required_limitations() -> None:
     check(not any('is a placeholder' in e for e in errs), 'validator: a headline about placeholder data is not itself a placeholder')
 
 
+def residue_directories() -> None:
+    """Tests that keep scratch folders inside the repository and remove only their own subfolder leave the parents
+    behind, empty: the diff lists directories a run created (dirs_added), empty ones included."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, {'a.txt': 'a\n', 'results/keep.md': 'k\n'})
+        before = residue.snapshot_all(root)
+        (root / 'results' / 'local').mkdir()
+        (root / 'scratch' / 'test-tmp').mkdir(parents=True)
+        res = residue.diff(before, residue.snapshot_all(root))
+    check(res.get('dirs_added') == ['results/local', 'scratch', 'scratch/test-tmp'] and res['summary'].get('dirs_added') == 3,
+          f'residue: empty directories a run created are listed under dirs_added (got {res.get("dirs_added")})')
+
+
 GROUPS: list = [long_line_is_linear, archives_and_logs, local_path_false_positives, loaded_by_reach, log_ids_and_grouped_paths,
-                rust_tests_modelled, required_limitations]
+                rust_tests_modelled, required_limitations, residue_directories]
 
 
 def main(argv=None) -> int:
