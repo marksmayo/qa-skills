@@ -31,6 +31,7 @@ file while the tests run in worker threads, where the assignment does not change
 from __future__ import annotations
 import argparse, json, os, re, sys, tempfile
 from pathlib import Path, PurePosixPath
+sys.dont_write_bytecode = True   # no __pycache__ in the skill folder when this script imports its siblings
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE.parent / 'data' / 'pitfalls.json'
