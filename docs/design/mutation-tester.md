@@ -1,6 +1,6 @@
 # Design: `mutation-tester-skill`
 
-Status: Built (v1.9.0), see "As built" at the end. Build order: 9.
+Status: Built (v1.10.0), see "As built" at the end. Build order: 9.
 
 ## Mission
 
@@ -509,3 +509,37 @@ self-test case written to fail first:
   (`declared_product`), and the validator's fresh census agrees.
 
 The validator still cannot check that an `equivalent` argument is true; that stays a reviewer's job.
+
+### Second review of a Rust workspace with Python tooling (v1.10.0)
+
+A second run on a Rust workspace whose Python helper scripts carry the tests (unittest in CI, the change a
+deletion in one script plus a `#[cfg(unix)]` block in Rust) showed these gaps, each fixed with a self-test case
+written to fail first:
+
+- **A real kill recorded as `runtime_error`** (`unittest_runner_non_locale_failure`). `unittest_runner.py` opened
+  its null stream in the locale encoding; on a cp1252 console a failure message with an emoji raised
+  UnicodeEncodeError and the run died. The stream is UTF-8 with `backslashreplace`, and stdout/stderr never raise.
+- **Deletion-only or comment-only changes** (`builtin_deletion_only_scope`, `report_names_unmutated_changes`). They
+  gave "0 mutants" and exit 0. The engine now warns, naming each function that lost lines and the path scope that
+  mutates it, records `unmutated_changes`, and the report (schema 1.5.0, on the engine record) needs a limitation
+  naming each; with no changed line at all, the refusal names them too.
+- **Evidence completeness 1.0 with the product unmutated** (`completeness_not_run_engine_and_product`). From schema
+  1.5.0 a mutation engine in `tools[]` that did not run counts as requested and not run, and an unmutated product
+  language adds an item of 0. Older reports keep the old rule.
+- **`--brief` dropped what the scores do not cover** (`render_brief_keeps_limitations`): it now keeps the not-killed
+  counts with ids, the engines and tools that did not run, and the limitations.
+- **Proximity of nested functions** (`proximity_nested_function`): `outer.<locals>.inner` counts a test calling
+  `outer` as direct.
+- **The headline and `--write-summary` are two passes** (`write_summary_prints_priorities`): the validator prints the
+  computed priorities and says to write the headline and run again; SKILL.md says so.
+- **Dict key reads dominated** (`builtin_key_reads_grouped`): 114 of 265 mutants emptied a key. Reads of one key in
+  one function are now one mutant (`also_at`, `--all-key-reads`); on the review run 265 became 239, and every
+  dropped mutant had been killed.
+- **Regular expressions** (`builtin_regex_note`): a pattern is one mutant, now noted as such.
+- **cfg-gated Rust** (`rust_cfg_gated_scope`): `rust_gates.py` lists scoped items not compiled on this platform or
+  with the default features; `run_engine.py cargo-mutants` warns and records them even when cargo-mutants is missing.
+- **Choosing the baseline tests** (`baseline_tests_helper`): `baseline_tests.py` reads imports, re-exports, loads by
+  path (shared `py_loads.py`) and child-process launches; on the review run it found the ten test files that reach the
+  scoped module, where the reviewer had grepped.
+- **Script languages** (`detect_tools_names_scripts`): PowerShell and shell scripts get a WARNING; `--product-path` is
+  passed to the census as `product_dirs`.
